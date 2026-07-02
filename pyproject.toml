@@ -12,6 +12,8 @@ license = "MIT"
 dependencies = [
     "fastmcp>=3.4.2",
     "graphifyy",
+    "tree-sitter>=0.25.2",
+    "tree-sitter-language-pack>=1.12.2",
 ]
 
 [project.scripts]
