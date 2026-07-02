@@ -5,6 +5,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from .adapters import list_adapters
 from .constants import SCHEMA_VERSION
 from .indexer import write_index
 from .paths import context_file, idx_path, mdir, now, roots_file
@@ -63,6 +64,18 @@ def cmd_context(a):
     for i,r in enumerate(rows,1): lines += [f"### {i}. `{r['path']}`", f"Score: {r['score']}", f"Reason: {r['reason']}", ""]
     lines += ["## Relevant Symbols / Entities","Use `mimry symbol <name>` for concrete symbols.","","## Relationship Paths","Early MVP uses file definitions and Graphify folder clusters.","","## Suggested Reading Order"] + [f"{i}. `{r['path']}`" for i,r in enumerate(rows,1)] + ["","## Risk Notes","- Open source files before editing.","- Re-run `mimry reindex` after changes.","","## Suggested Verification","- Run project tests/typecheck/build for affected files.","","## Source of Truth Reminder","Original files, tests, builds, and human verification remain final truth.",""]
     context_file(root).parent.mkdir(parents=True, exist_ok=True); context_file(root).write_text("\n".join(lines)); print(f"Context pack generated.\nOutput: {context_file(root)}"); return 0
+
+
+def cmd_adapters(a):
+    adapters = list_adapters(include_planned=not getattr(a, "active_only", False))
+    print("MIMRY adapters")
+    for adapter in adapters:
+        exts = ", ".join(adapter["extensions"])
+        print(f"- {adapter['name']} [{adapter['status']}/{adapter['kind']}] {exts}")
+        print(f"  parser: {adapter['parser']}")
+        print(f"  emits: {', '.join(adapter['emits'])}")
+        print(f"  agent use: {adapter['agent_use']}")
+    return 0
 
 
 def cmd_roots(a):

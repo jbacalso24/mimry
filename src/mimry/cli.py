@@ -8,6 +8,7 @@ from .commands import (
     cmd_context,
     cmd_find,
     cmd_index,
+    cmd_adapters,
     cmd_init,
     cmd_related,
     cmd_roots,
@@ -21,6 +22,7 @@ def build_parser():
     p=argparse.ArgumentParser(prog="mimry"); p.add_argument("--root", default="."); sub=p.add_subparsers(dest="command", required=True)
     s=sub.add_parser("init"); s.add_argument("--root-type", default="repo"); s.set_defaults(func=cmd_init)
     sub.add_parser("index").set_defaults(func=cmd_index); sub.add_parser("reindex").set_defaults(func=cmd_index); sub.add_parser("status").set_defaults(func=cmd_status)
+    s=sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins"); s.add_argument("--active-only", action="store_true"); s.set_defaults(func=cmd_adapters)
     s=sub.add_parser("find"); s.add_argument("query"); s.add_argument("--limit", type=int, default=10); s.set_defaults(func=cmd_find)
     s=sub.add_parser("related"); s.add_argument("query"); s.add_argument("--limit", type=int, default=10); s.set_defaults(func=cmd_related)
     s=sub.add_parser("symbol"); s.add_argument("name"); s.set_defaults(func=cmd_symbol)
