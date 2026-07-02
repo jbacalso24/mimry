@@ -9,13 +9,16 @@ description = "Modular Intelligence Memory for Repos"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = []
+dependencies = ["graphifyy"]
 
 [project.scripts]
 mimry = "mimry.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.8"]
+
+[tool.uv.sources]
+graphifyy = { path = "vendor/graphify", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
