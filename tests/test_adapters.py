@@ -17,10 +17,11 @@ def test_active_only_adapter_registry_hides_planned_adapters():
     adapters = list_adapters(include_planned=False)
     assert {a["status"] for a in adapters} == {"active"}
     assert "python-ast" in {a["name"] for a in adapters}
-    assert "typescript-ast" not in {a["name"] for a in adapters}
+    assert "typescript-ast" in {a["name"] for a in adapters}
+    assert "js-ts-regex" not in {a["name"] for a in adapters}
 
 
 def test_adapter_for_extension_routes_known_code_extensions():
     assert adapter_for_extension(".py").name == "python-ast"
-    assert adapter_for_extension(".tsx").name == "js-ts-regex"
+    assert adapter_for_extension(".tsx").name == "typescript-ast"
     assert adapter_for_extension(".unknown").name == "generic-text"

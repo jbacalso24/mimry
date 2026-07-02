@@ -4,9 +4,9 @@ import ast
 import hashlib
 from pathlib import Path
 
-from .constants import EXPORT_RE, IMPORT_RE
 from .paths import stable_id
 from .security import is_text, safe_root, should_ignore
+from .ts_ast_adapter import parse_ts_like
 
 def text_hint(path, limit=12000):
     if not is_text(path): return ""
@@ -48,9 +48,7 @@ def adapt(path, root):
                 elif isinstance(node, ast.ImportFrom) and node.module: imports.append(node.module)
         except SyntaxError as e: f=file_record(path, root, "python-ast", f"parse_error:{e.__class__.__name__}", hint)
     elif ext in {".js", ".jsx", ".ts", ".tsx"}:
-        f=file_record(path, root, "js-ts-regex", "ok", hint); text=path.read_text(encoding="utf-8", errors="ignore") if is_text(path) else ""
-        imports=[a or b for a,b in IMPORT_RE.findall(text) if a or b]; exports=[m for m in EXPORT_RE.findall(text) if m]
-        for name in exports:
-            sid=stable_id(f["file_id"], name, "export"); symbols.append({"symbol_id": sid, "file_id": f["file_id"], "name": name, "kind": "export", "language": ext.lstrip('.'), "exported": True, "line_start": None, "line_end": None})
-            edges.append({"edge_id": stable_id(f["file_id"], sid, "defines"), "source_type": "file", "source_id": f["file_id"], "target_type": "symbol", "target_id": sid, "edge_type": "defines", "confidence": .8})
+        f=file_record(path, root, "typescript-ast", "ok", hint)
+        symbols, edges, imports, exports, status = parse_ts_like(path, root, f)
+        f=file_record(path, root, "typescript-ast", status, hint)
     return f, symbols, edges, sorted(set(imports)), sorted(set(exports))

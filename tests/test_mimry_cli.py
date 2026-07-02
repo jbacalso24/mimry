@@ -63,3 +63,22 @@ def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):
     assert "src/auth/session.py" in first_section or "src/auth/middleware.py" in first_section
     assert "docs/auth-plan.md" not in first_section
     assert "backend/alembic/versions/add_auth_token_to_users.py" not in first_section
+
+
+def test_typescript_ast_extracts_tsx_symbols(tmp_path):
+    repo=copy_fixture(tmp_path)
+    src=repo/"src"
+    (src/"LoginScreen.tsx").write_text('import React, { useState } from "react";\nexport function LoginScreen() {\n  const [token, setToken] = useState(null);\n  return <View><Text>Login</Text></View>;\n}\nconst HelperCard = () => <Text />;\n')
+    cache=tmp_path/"cache"
+    assert run_cli(repo,cache,"init").returncode == 0
+    assert run_cli(repo,cache,"index").returncode == 0
+    ptr=json.loads((repo/".mimry"/"pointer.json").read_text())
+    idx=Path(ptr["indexPath"])
+    files=(idx/"files.jsonl").read_text()
+    symbols=(idx/"symbols.jsonl").read_text()
+    assert '"adapter": "typescript-ast"' in files
+    assert "LoginScreen" in symbols
+    assert "HelperCard" in symbols
+    assert "jsx_element" in symbols
+    sym=run_cli(repo,cache,"symbol","LoginScreen")
+    assert "LoginScreen.tsx" in sym.stdout

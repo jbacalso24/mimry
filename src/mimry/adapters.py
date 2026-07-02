@@ -37,14 +37,14 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         notes="Currently extracts FunctionDef, AsyncFunctionDef, ClassDef, imports, line_start, line_end.",
     ),
     AdapterInfo(
-        name="js-ts-regex",
+        name="typescript-ast",
         status="active",
         kind="code",
         extensions=(".js", ".jsx", ".ts", ".tsx"),
-        parser="regex import/export scanner",
-        emits=("files", "imports", "exports", "defines_edges"),
-        agent_use="Basic React/TypeScript routing before full TS AST exists.",
-        notes="Good enough for import/export hints; not a true AST and does not understand JSX/component bodies yet.",
+        parser="tree-sitter-language-pack",
+        emits=("files", "symbols", "imports", "exports", "defines_edges", "component_edges", "jsx_elements", "line_ranges"),
+        agent_use="Frontend agents can find React/TypeScript components, functions, classes, imports, JSX usage, and edit locations without reading every TSX file.",
+        notes="Extracts functions, classes, variable/arrow components, JSX element references, import/export hints, and line ranges. Call graph is still future work.",
     ),
     AdapterInfo(
         name="generic-text",
@@ -60,14 +60,14 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
 
 PLANNED_ADAPTERS: tuple[AdapterInfo, ...] = (
     AdapterInfo(
-        name="typescript-ast",
+        name="js-ts-regex",
         status="planned",
         kind="code",
         extensions=(".ts", ".tsx", ".js", ".jsx"),
-        parser="tree-sitter-typescript or TypeScript compiler AST",
-        emits=("files", "symbols", "imports", "exports", "component_edges", "hook_edges", "route_edges", "line_ranges"),
-        agent_use="Required for Maggy/Otty Control frontend agents: components, hooks, route hierarchy, props/state flow.",
-        notes="Highest priority before embeddings because current repos are frontend-heavy.",
+        parser="regex import/export scanner",
+        emits=("files", "imports", "exports", "defines_edges"),
+        agent_use="Fallback path if tree-sitter is unavailable in a constrained environment.",
+        notes="Kept as fallback; active adapter is now typescript-ast.",
     ),
     AdapterInfo(
         name="react-native-expo",
