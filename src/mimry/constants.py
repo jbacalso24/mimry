@@ -1,0 +1,10 @@
+from __future__ import annotations
+
+import re
+
+SCHEMA_VERSION = "0.1.0"
+HEAVY_IGNORES = {"node_modules", "dist", "build", ".next", ".nuxt", "coverage", ".git", ".mimry", ".cache", ".expo", "target", "bin", "obj", "vendor", "__pycache__", ".pytest_cache", ".mypy_cache", ".venv", "venv"}
+SENSITIVE_PATTERNS = [".env", ".env.*", "*.pem", "*.key", "id_rsa", "id_ed25519", "secrets.*", "credentials.*", "*.p12", "*.pfx"]
+TEXT_EXTS = {".py", ".js", ".jsx", ".ts", ".tsx", ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".css", ".html", ".sql", ".sh"}
+IMPORT_RE = re.compile(r"(?:from|import)\s+['\"]([^'\"]+)['\"]|import\s+([\w./@-]+)")
+EXPORT_RE = re.compile(r"export\s+(?:default\s+)?(?:function|class|const|let|var)?\s*([A-Za-z_$][\w$]*)?")
