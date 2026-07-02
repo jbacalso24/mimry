@@ -43,3 +43,23 @@ def test_cache_wipe_current(tmp_path):
     repo=copy_fixture(tmp_path); cache=tmp_path/"cache"; assert run_cli(repo,cache,"init").returncode == 0; assert run_cli(repo,cache,"index").returncode == 0
     ptr=json.loads((repo/".mimry"/"pointer.json").read_text()); idx=Path(ptr["indexPath"]); assert idx.exists()
     res=run_cli(repo,cache,"cache","wipe","--current"); assert res.returncode == 0; assert not idx.exists()
+
+
+def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):
+    repo=copy_fixture(tmp_path)
+    cache=tmp_path/"cache"
+    docs=repo/"docs"
+    docs.mkdir()
+    (docs/"auth-plan.md").write_text("auth login token user session " * 80)
+    mig=repo/"backend"/"alembic"/"versions"
+    mig.mkdir(parents=True)
+    (mig/"add_auth_token_to_users.py").write_text("auth login token user session " * 60)
+    assert run_cli(repo,cache,"init").returncode == 0
+    assert run_cli(repo,cache,"index").returncode == 0
+    ctx=run_cli(repo,cache,"context","understand auth flow and where to edit login token user session")
+    assert ctx.returncode == 0, ctx.stderr
+    text=(repo/".mimry"/"context"/"latest.md").read_text()
+    first_section=text.split("### 2.",1)[0]
+    assert "src/auth/session.py" in first_section or "src/auth/middleware.py" in first_section
+    assert "docs/auth-plan.md" not in first_section
+    assert "backend/alembic/versions/add_auth_token_to_users.py" not in first_section
