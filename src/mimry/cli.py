@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -206,6 +207,69 @@ def cmd_cache_wipe(a):
     if a.all: shutil.rmtree(cache_home(), ignore_errors=True); print(f"Wiped all MIMRY cache: {cache_home()}"); return 0
     ptr=require(Path(a.root).resolve()); shutil.rmtree(Path(ptr["indexPath"]), ignore_errors=True); print(f"Wiped current root cache: {ptr['indexPath']}"); return 0
 
+def repo_root():
+    return Path(__file__).resolve().parents[2]
+
+def graphify_vendor_path():
+    return repo_root() / "vendor" / "graphify"
+
+def graphify_commit():
+    vendor = graphify_vendor_path()
+    if not vendor.exists():
+        return "missing"
+    try:
+        return subprocess.check_output(["git", "-C", str(vendor), "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:
+        return "unknown"
+
+def graphify_output_dir(root: Path):
+    return mdir(root) / "graphify"
+
+def cmd_graphify_status(a):
+    vendor = graphify_vendor_path()
+    print("Graphify status")
+    print(f"Vendor path: {vendor.relative_to(repo_root()) if vendor.exists() else vendor}")
+    print(f"Vendor exists: {vendor.exists()}")
+    print(f"Pinned commit: {graphify_commit()}")
+    print("Allowed MIMRY wrapper commands: status, build")
+    print("Blocked by design: graphify install, graphify hook, provider config, assistant integrations")
+    return 0 if vendor.exists() else 2
+
+def cmd_graphify_build(a):
+    root = Path(a.root).resolve()
+    safe_root(root)
+    out = graphify_output_dir(root)
+    vendor = graphify_vendor_path()
+    cmd = [sys.executable, "-m", "graphify", "update", str(root)]
+    env = {**os.environ, "PYTHONPATH": str(vendor), "GRAPHIFY_OUT": str(out)}
+    if a.dry_run or not a.execute:
+        print("MIMRY Graphify build: DRY RUN")
+        print(f"Root: {root}")
+        print(f"Vendor: {vendor}")
+        print(f"Pinned commit: {graphify_commit()}")
+        print(f"GRAPHIFY_OUT={out}")
+        print("Command: python -m graphify update <root>")
+        print("To execute: mimry --root <root> graphify build --execute")
+        return 0
+    if not vendor.exists():
+        print("Graphify vendor submodule is missing. Run `git submodule update --init --recursive`.", file=sys.stderr)
+        return 2
+    out.mkdir(parents=True, exist_ok=True)
+    print(f"Running safe Graphify build with GRAPHIFY_OUT={out}")
+    res = subprocess.run(cmd, cwd=root, env=env, text=True, capture_output=True, check=False)
+    if res.stdout.strip(): print(res.stdout.strip())
+    if res.stderr.strip(): print(res.stderr.strip(), file=sys.stderr)
+    if res.returncode != 0:
+        print(f"Graphify build failed with exit {res.returncode}", file=sys.stderr)
+        return res.returncode
+    print(f"Graphify output: {out}")
+    return 0
+
+def cmd_graphify(a):
+    if a.graphify_command == "status": return cmd_graphify_status(a)
+    if a.graphify_command == "build": return cmd_graphify_build(a)
+    raise SystemExit("unknown graphify command")
+
 def build_parser():
     p=argparse.ArgumentParser(prog="mimry"); p.add_argument("--root", default="."); sub=p.add_subparsers(dest="command", required=True)
     s=sub.add_parser("init"); s.add_argument("--root-type", default="repo"); s.set_defaults(func=cmd_init)
@@ -215,6 +279,13 @@ def build_parser():
     s=sub.add_parser("symbol"); s.add_argument("name"); s.set_defaults(func=cmd_symbol)
     s=sub.add_parser("context"); s.add_argument("query"); s.set_defaults(func=cmd_context)
     sub.add_parser("roots").set_defaults(func=cmd_roots); cache=sub.add_parser("cache"); cs=cache.add_subparsers(required=True); w=cs.add_parser("wipe"); w.add_argument("--all", action="store_true"); w.add_argument("--current", action="store_true"); w.set_defaults(func=cmd_cache_wipe)
+    g=sub.add_parser("graphify", help="Safe MIMRY-owned wrapper around pinned Graphify")
+    gs=g.add_subparsers(dest="graphify_command", required=True)
+    gs.add_parser("status").set_defaults(func=cmd_graphify)
+    gb=gs.add_parser("build")
+    gb.add_argument("--dry-run", action="store_true", help="Show the safe Graphify command without running it")
+    gb.add_argument("--execute", action="store_true", help="Run the safe local Graphify build with output under .mimry/graphify")
+    gb.set_defaults(func=cmd_graphify)
     return p
 
 def main(argv=None):
