@@ -9,10 +9,14 @@ description = "Modular Intelligence Memory for Repos"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["graphifyy"]
+dependencies = [
+    "fastmcp>=3.4.2",
+    "graphifyy",
+]
 
 [project.scripts]
 mimry = "mimry.cli:main"
+mimry-mcp = "mimry.mcp_server:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.8"]
