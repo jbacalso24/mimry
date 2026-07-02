@@ -5,6 +5,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from mimry.adapters import list_adapters
 from mimry.commands import require
 from mimry.indexer import write_index
 from mimry.paths import context_file
@@ -45,6 +46,12 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
         "deleted_files": missing,
         "index_path": str(idx),
     }
+
+
+@mcp.tool
+def mimry_list_adapters(active_only: bool = False) -> dict[str, Any]:
+    """List active and planned MIMRY adapter plugins for coding-agent routing."""
+    return {"adapters": list_adapters(include_planned=not active_only)}
 
 
 @mcp.tool
