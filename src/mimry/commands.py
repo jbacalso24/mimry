@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 from .adapters import list_adapters
 from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_index_path
@@ -189,37 +190,27 @@ def cmd_status(a):
     return 0 if state == "current" else 2
 
 
-def cmd_find(a):
-    root = Path(a.root).resolve()
-    ptr = require(root)
-    print_rows(f"Search results for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, root=root))
-    return 0
+def _index_and_graphify_health(root: Path, ptr: dict):
+    fresh = index_freshness(root, ptr)
+    graphify = graphify_health(root, index_state=fresh["state"])
+    return fresh, graphify
 
 
-def cmd_related(a):
-    root = Path(a.root).resolve()
-    ptr = require(root)
-    print_rows(f"Related files for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, True, root=root))
-    return 0
+def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
+    print(
+        "Status summary:"
+        f"\n- Index: {fresh['state']}"
+        f"\n- Last indexed: {ptr.get('lastIndexedAt') or 'never'}"
+        f"\n- Files indexed: {len(fresh['files'])}"
+        f"\n- Changed/deleted files: {len(fresh['changed'])}/{len(fresh['missing'])}"
+        f"\n- Graph nodes/edges: {len(fresh['graph'].get('nodes', []))}/{len(fresh['graph'].get('edges', []))}"
+        f"\n- Graphify: {graphify['status']}"
+        f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; output {graphify['output_dir']})"
+    )
 
 
-def cmd_symbol(a):
-    ptr = require(Path(a.root).resolve())
-    print(f"Symbol search: {a.name}")
-    files = {f["file_id"]: f for f in load_jsonl(Path(ptr["indexPath"]) / "files.jsonl")}
-    for i, s in enumerate(
-        [s for s in load_jsonl(Path(ptr["indexPath"]) / "symbols.jsonl") if a.name.lower() in s["name"].lower()], 1
-    ):
-        print(
-            f"{i}. {s['name']} ({s['kind']}, {s['language']}) — {files.get(s['file_id'], {}).get('rel_path', s['file_id'])}:{s.get('line_start') or ''}"
-        )
-    return 0
-
-
-def cmd_context(a):
-    root = Path(a.root).resolve()
-    ptr = require(root)
-    rows = find_rows(Path(ptr["indexPath"]), a.query, 8, True, root=root)
+def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) -> list[dict]:
+    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root)
     paths = [r["path"] for r in rows]
     relationship_lines = graphify_relationship_lines(root, paths)
     report_excerpt = graphify_report_excerpt(root)
@@ -227,7 +218,7 @@ def cmd_context(a):
         "# MIMRY Context Pack",
         "",
         "## Query",
-        a.query,
+        query,
         "",
         "## Index Status",
         "Generated from Graphify artifacts when available; MIMRY index is fallback.",
@@ -272,6 +263,98 @@ def cmd_context(a):
     )
     context_file(root).parent.mkdir(parents=True, exist_ok=True)
     context_file(root).write_text("\n".join(lines), encoding="utf-8")
+    return rows
+
+
+def cmd_preflight(a):
+    root = Path(a.root).resolve()
+    safe_root(root)
+    root.mkdir(parents=True, exist_ok=True)
+
+    init_ran = False
+    ptr = load_pointer(root)
+    if not ptr:
+        init_ran = True
+        init_status = cmd_init(SimpleNamespace(root=str(root), root_type="repo", skip_graphify=False))
+        if init_status != 0:
+            return init_status
+        ptr = require(root)
+
+    fresh, graphify = _index_and_graphify_health(root, ptr)
+    reasons = []
+    if fresh["state"] != "current":
+        reasons.append(f"index {fresh['state']}")
+    if graphify["status"] != "current":
+        reasons.append(f"Graphify {graphify['status']}")
+    if getattr(a, "force_refresh", False):
+        reasons.append("forced")
+
+    refresh_ran = bool(reasons)
+    if refresh_ran:
+        print("Preflight refresh: running (" + ", ".join(reasons) + ")")
+        graphify_status = run_graphify_build(root, execute=True)
+        if graphify_status != 0:
+            print("Preflight stopped: Graphify build failed.")
+            return graphify_status
+        stats = write_index(root, ptr)
+        print(
+            f"MIMRY indexing complete. Files: {stats['files']}; Symbols: {stats['symbols']}; "
+            f"Graph edges: {stats['edges']}; Index: {stats['index']}"
+        )
+        ptr = require(root)
+        fresh, graphify = _index_and_graphify_health(root, ptr)
+    else:
+        print("Preflight refresh: skipped (index and Graphify are current)")
+
+    rows = _write_context_pack(root, ptr, a.task)
+
+    print("MIMRY preflight complete")
+    print(f"Root: {root}")
+    print(f"Init ran: {'yes' if init_ran else 'no'}")
+    print(f"Refresh ran: {'yes' if refresh_ran else 'no'}")
+    _print_status_summary(ptr, fresh, graphify)
+    print(f"Context: {context_file(root)}")
+    print("Top files:")
+    if rows:
+        for i, row in enumerate(rows[:5], 1):
+            print(f"{i}. {row['path']} (score {row['score']}) — {row['reason']}")
+    else:
+        print("- none")
+    print(f"Next: read {context_file(root)} before opening files.")
+    return 0
+
+
+def cmd_find(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    print_rows(f"Search results for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, root=root))
+    return 0
+
+
+def cmd_related(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    print_rows(f"Related files for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, True, root=root))
+    return 0
+
+
+def cmd_symbol(a):
+    ptr = require(Path(a.root).resolve())
+    print(f"Symbol search: {a.name}")
+    files = {f["file_id"]: f for f in load_jsonl(Path(ptr["indexPath"]) / "files.jsonl")}
+    for i, s in enumerate(
+        [s for s in load_jsonl(Path(ptr["indexPath"]) / "symbols.jsonl") if a.name.lower() in s["name"].lower()], 1
+    ):
+        print(
+            f"{i}. {s['name']} ({s['kind']}, {s['language']}) — {files.get(s['file_id'], {}).get('rel_path', s['file_id'])}:{s.get('line_start') or ''}"
+        )
+    return 0
+
+
+def cmd_context(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    _write_context_pack(root, ptr, a.query)
     print(f"Context pack generated.\nOutput: {context_file(root)}")
     return 0
 

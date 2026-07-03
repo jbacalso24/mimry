@@ -7,6 +7,12 @@ Python-first, Graphify-powered local intelligence memory CLI for repos, folders,
 MVP loop:
 
 ```bash
+mimry preflight "fix auth bug"
+```
+
+Manual loop:
+
+```bash
 mimry init
 mimry refresh
 mimry status
@@ -67,6 +73,15 @@ mimry v0.1.0
 ## Use
 
 Use MIMRY from inside any local repo. MIMRY defaults to the current working directory:
+
+```bash
+cd /path/to/repo
+mimry preflight "understand auth flow"
+```
+
+`mimry preflight <task>` is the recommended one-command agent discipline workflow. It initializes the root if needed, checks index freshness and Graphify artifact health, refreshes only when state is missing/stale (or when `--force-refresh` is passed), generates `.mimry/context/latest.md`, prints the top files, and reminds agents to read the context pack before opening files.
+
+Manual commands remain available:
 
 ```bash
 cd /path/to/repo
