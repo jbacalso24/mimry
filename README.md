@@ -16,7 +16,9 @@ mimry context "fix auth bug"
 
 MIMRY is local-first. Source files remain the final truth.
 
-## Local install / use
+## Install
+
+MIMRY uses modern `pyproject.toml` packaging with Hatchling and exposes global CLI commands through `[project.scripts]`.
 
 From a fresh machine:
 
@@ -25,16 +27,37 @@ git clone --recurse-submodules https://github.com/jbacalso24/mimry.git
 cd mimry
 uv sync
 uv run pytest -q
-uv run mimry --help
+uv tool install --editable . --force
 ```
 
-Install the CLI globally from this checkout:
+If you already cloned without submodules:
 
 ```bash
-uv tool install --editable /path/to/mimry --force
+cd mimry
+git submodule update --init --recursive
+uv sync
+uv tool install --editable . --force
 ```
 
-Use it from inside any local repo. MIMRY defaults to the current working directory:
+Verify the global CLI install:
+
+```bash
+command -v mimry
+mimry --help
+uv tool list
+```
+
+Expected `uv tool list` output includes:
+
+```text
+mimry v0.1.0
+- mimry
+- mimry-mcp
+```
+
+## Use
+
+Use MIMRY from inside any local repo. MIMRY defaults to the current working directory:
 
 ```bash
 cd /path/to/repo
