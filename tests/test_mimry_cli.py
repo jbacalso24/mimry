@@ -59,6 +59,37 @@ def test_init_creates_pointer_config_agent_rules(tmp_path):
     assert (repo / ".mimry" / "AGENT_RULES.md").exists()
 
 
+def test_init_adds_mimry_to_gitignore_without_clobbering_existing_content(tmp_path):
+    repo = copy_fixture(tmp_path)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / ".gitignore").write_text("dist/\n# keep me\n", encoding="utf-8")
+
+    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graphify")
+
+    assert res.returncode == 0, res.stderr
+    gitignore = (repo / ".gitignore").read_text(encoding="utf-8")
+    assert "dist/\n# keep me\n" in gitignore
+    assert gitignore.count(".mimry/") == 1
+    ignored = subprocess.run(
+        ["git", "check-ignore", ".mimry/pointer.json"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert ignored.returncode == 0, ignored.stderr
+
+
+def test_init_gitignore_is_idempotent_for_existing_mimry_root(tmp_path):
+    repo = copy_fixture(tmp_path)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+
+    assert run_cli(repo, tmp_path / "cache", "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, tmp_path / "cache", "init", "--skip-graphify").returncode == 0
+
+    assert (repo / ".gitignore").read_text(encoding="utf-8").count(".mimry/") == 1
+
+
 def test_init_defaults_to_current_working_directory(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

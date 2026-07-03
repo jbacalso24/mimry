@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -18,12 +19,62 @@ from .security import safe_root
 from .storage import load_jsonl, load_pointer, register_root, save_pointer
 
 
+def _git_toplevel(root: Path) -> Path | None:
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    if res.returncode != 0:
+        return None
+    return Path(res.stdout.strip()).resolve()
+
+
+def ensure_mimry_gitignore(root: Path) -> bool:
+    """Ensure repo-local MIMRY metadata is ignored in initialized Git worktrees."""
+    git_root = _git_toplevel(root)
+    if git_root is None:
+        return False
+
+    try:
+        rel = root.relative_to(git_root)
+    except ValueError:
+        return False
+    pattern = ".mimry/" if rel == Path(".") else f"/{rel.as_posix()}/.mimry/"
+    pointer_rel = Path(".mimry/pointer.json") if rel == Path(".") else rel / ".mimry" / "pointer.json"
+    ignored = subprocess.run(
+        ["git", "-C", str(git_root), "check-ignore", "--quiet", "--", pointer_rel.as_posix()],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if ignored.returncode == 0:
+        return False
+
+    gitignore = git_root / ".gitignore"
+    existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    lines = {line.strip() for line in existing.splitlines()}
+    if pattern in lines:
+        return False
+
+    prefix = "" if not existing or existing.endswith("\n") else "\n"
+    gitignore.write_text(f"{existing}{prefix}{pattern}\n", encoding="utf-8")
+    return True
+
+
 def cmd_init(a):
     root = Path(a.root).resolve()
     safe_root(root)
     root.mkdir(parents=True, exist_ok=True)
+    gitignore_updated = ensure_mimry_gitignore(root)
     if load_pointer(root):
         print("MIMRY is already initialized for this root.")
+        if gitignore_updated:
+            print("Added a MIMRY metadata ignore entry to the target Git worktree .gitignore.")
         return 0
     rid = str(uuid.uuid4())
     ptr = {
@@ -53,8 +104,15 @@ def cmd_init(a):
                 "MIMRY initialized, but Graphify bootstrap failed. Run `mimry graphify build --execute` after fixing Graphify."
             )
             return graphify_status
+    hygiene = (
+        "Added a MIMRY metadata ignore entry to the target Git worktree .gitignore."
+        if gitignore_updated
+        else "No .gitignore change needed."
+    )
     print(
-        'MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- .mimry/graphify/\nNext: Run `mimry refresh`, then `mimry context "<task>"`.'
+        "MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- .mimry/graphify/\nGit hygiene:\n- "
+        + hygiene
+        + '\nNext: Run `mimry refresh`, then `mimry context "<task>"`.'
     )
     return 0
 

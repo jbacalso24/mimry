@@ -25,7 +25,7 @@ def build_parser():
     )
     p.add_argument("--root", default=".", help="Repo/folder to operate on (default: current working directory)")
     sub = p.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("init")
+    s = sub.add_parser("init", help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees")
     s.add_argument("--root-type", default="repo")
     s.add_argument("--skip-graphify", action="store_true", help="Create MIMRY metadata without bootstrapping Graphify")
     s.set_defaults(func=cmd_init)
