@@ -38,7 +38,7 @@ def copy_fixture(tmp_path: Path) -> Path:
 
 def test_init_creates_pointer_config_agent_rules(tmp_path):
     repo = copy_fixture(tmp_path)
-    res = run_cli(repo, tmp_path / "cache", "init")
+    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graphify")
     assert res.returncode == 0, res.stderr
     assert (repo / ".mimry" / "pointer.json").exists()
     assert (repo / ".mimry" / "config.toml").exists()
@@ -49,7 +49,7 @@ def test_init_defaults_to_current_working_directory(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
 
-    res = run_cli_from_cwd(repo, cache, "init")
+    res = run_cli_from_cwd(repo, cache, "init", "--skip-graphify")
 
     assert res.returncode == 0, res.stderr
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
@@ -60,7 +60,7 @@ def test_init_defaults_to_current_working_directory(tmp_path):
 def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     res = run_cli(repo, cache, "index")
     assert res.returncode == 0, res.stderr
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
@@ -76,7 +76,7 @@ def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
 def test_status_find_symbol_related_context_loop(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     status = run_cli(repo, cache, "status")
     assert status.returncode == 0, status.stdout
@@ -98,7 +98,7 @@ def test_status_find_symbol_related_context_loop(tmp_path):
 def test_reindex_detects_changed_file(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     target.write_text(target.read_text() + "\ndef validate_session():\n    return True\n")
@@ -112,7 +112,7 @@ def test_reindex_detects_changed_file(tmp_path):
 def test_cache_wipe_current(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])
@@ -131,7 +131,7 @@ def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):
     mig = repo / "backend" / "alembic" / "versions"
     mig.mkdir(parents=True)
     (mig / "add_auth_token_to_users.py").write_text("auth login token user session " * 60)
-    assert run_cli(repo, cache, "init").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     ctx = run_cli(repo, cache, "context", "understand auth flow and where to edit login token user session")
     assert ctx.returncode == 0, ctx.stderr
@@ -149,7 +149,7 @@ def test_typescript_ast_extracts_tsx_symbols(tmp_path):
         'import React, { useState } from "react";\nexport function LoginScreen() {\n  const [token, setToken] = useState(null);\n  return <View><Text>Login</Text></View>;\n}\nconst HelperCard = () => <Text />;\n'
     )
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])

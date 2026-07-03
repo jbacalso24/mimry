@@ -56,8 +56,14 @@ def cmd_graphify_status(a):
     return 0 if source != "missing" else 2
 
 
-def cmd_graphify_build(a):
-    root = Path(a.root).resolve()
+def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> int:
+    """Run MIMRY's safe Graphify build wrapper for a root.
+
+    This is intentionally narrower than raw `graphify .`: output stays under
+    `.mimry/graphify` and we call Graphify's code-update path instead of its
+    broad installer/provider/assistant surfaces.
+    """
+    root = root.resolve()
     safe_root(root)
     out = graphify_output_dir(root)
     vendor = graphify_vendor_path()
@@ -66,7 +72,7 @@ def cmd_graphify_build(a):
     env = {**os.environ, "GRAPHIFY_OUT": str(out)}
     if graphify_vendor_available():
         env["PYTHONPATH"] = str(vendor)
-    if a.dry_run or not a.execute:
+    if dry_run or not execute:
         print("MIMRY Graphify build: DRY RUN")
         print(f"Root: {root}")
         print(f"Vendor: {vendor}")
@@ -91,6 +97,10 @@ def cmd_graphify_build(a):
         return res.returncode
     print(f"Graphify output: {out}")
     return 0
+
+
+def cmd_graphify_build(a):
+    return run_graphify_build(Path(a.root), execute=a.execute, dry_run=a.dry_run)
 
 
 def cmd_graphify(a):
