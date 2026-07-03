@@ -11,6 +11,7 @@ from .commands import (
     cmd_adapters,
     cmd_init,
     cmd_related,
+    cmd_refresh,
     cmd_roots,
     cmd_status,
     cmd_symbol,
@@ -30,6 +31,7 @@ def build_parser():
     s.set_defaults(func=cmd_init)
     sub.add_parser("index").set_defaults(func=cmd_index)
     sub.add_parser("reindex").set_defaults(func=cmd_index)
+    sub.add_parser("refresh", help="Run Graphify build, MIMRY index, then status").set_defaults(func=cmd_refresh)
     sub.add_parser("status").set_defaults(func=cmd_status)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
     s.add_argument("--active-only", action="store_true")

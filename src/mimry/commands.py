@@ -73,6 +73,21 @@ def cmd_index(a):
     return 0
 
 
+def cmd_refresh(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    print("Refreshing MIMRY: Graphify build -> MIMRY index -> status")
+    graphify_status = run_graphify_build(root, execute=True)
+    if graphify_status != 0:
+        print("Refresh stopped: Graphify build failed.")
+        return graphify_status
+    stats = write_index(root, ptr)
+    print(
+        f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nIndex saved: {stats['index']}"
+    )
+    return cmd_status(a)
+
+
 def cmd_status(a):
     root = Path(a.root).resolve()
     ptr = load_pointer(root)
