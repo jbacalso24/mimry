@@ -919,8 +919,81 @@ def test_context_pack_final_checklist_includes_feedback_reminder(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
-    res = run_cli(repo, cache, "context", "auth session")
+    res = run_cli(repo, cache, "context", "fix login auth session")
 
     assert res.returncode == 0, res.stderr
     text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
     assert "After verification, run `mimry feedback ...`" in text
+
+
+def test_semantic_index_stores_local_chunks_without_sensitive_files(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    res = run_cli(repo, cache, "index")
+
+    assert res.returncode == 0, res.stderr
+    assert "Semantic: current" in res.stdout
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
+    idx = Path(ptr["indexPath"])
+    with sqlite3.connect(idx / "mimry.sqlite") as con:
+        chunks = con.execute("select rel_path, chunk_kind, chunk_text_preview from semantic_chunks").fetchall()
+    assert chunks
+    chunk_text = "\n".join(" ".join(str(part or "") for part in row) for row in chunks)
+    assert "src/auth/session.py" in chunk_text
+    assert ".env" not in chunk_text
+    assert "SECRET" not in chunk_text.upper()
+
+
+def test_semantic_command_returns_explainable_local_results(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "semantic", "create session repository save")
+
+    assert res.returncode == 0, res.stderr
+    assert "Semantic results for: create session repository save" in res.stdout
+    assert "src/auth/session.py" in res.stdout
+    assert "semantic" in res.stdout
+
+
+def test_find_semantic_blends_labels_without_hiding_exact_match(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "find", "session repository save", "--semantic")
+
+    assert res.returncode == 0, res.stderr
+    first_result = next(line for line in res.stdout.splitlines() if line.startswith("1. "))
+    assert "src/auth/session.py" in first_result
+    assert "semantic" in res.stdout
+
+
+def test_semantic_missing_index_degrades_honestly(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+
+    res = run_cli(repo, cache, "semantic", "session repository")
+
+    assert res.returncode == 0, res.stderr
+    assert "Semantic index is missing" in res.stdout
+    assert "mimry refresh" in res.stdout
+
+
+def test_context_semantic_marks_semantic_reasons_and_keeps_source_truth(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "context", "create session repository save", "--semantic")
+
+    assert res.returncode == 0, res.stderr
+    text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
+    assert "semantic" in text
+    assert "Source of Truth Reminder" in text

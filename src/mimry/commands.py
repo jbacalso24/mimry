@@ -26,6 +26,7 @@ from .indexer import write_index
 from .paths import context_file, idx_path, mdir, now, roots_file
 from .search import find_rows, print_rows
 from .security import safe_root
+from .semantic import build_semantic_index, semantic_health, semantic_rows
 from .storage import load_jsonl, load_pointer, register_root, save_pointer
 
 
@@ -138,7 +139,7 @@ def cmd_index(a):
     root = Path(a.root).resolve()
     stats = write_index(root, require(root))
     print(
-        f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nIndex saved: {stats['index']}"
+        f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nSemantic: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})\nIndex saved: {stats['index']}"
     )
     return 0
 
@@ -153,7 +154,7 @@ def cmd_refresh(a):
         return graphify_status
     stats = write_index(root, ptr)
     print(
-        f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nIndex saved: {stats['index']}"
+        f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nSemantic: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})\nIndex saved: {stats['index']}"
     )
     return cmd_status(a)
 
@@ -173,6 +174,7 @@ def cmd_status(a):
     state = fresh["state"]
     g = fresh["graph"]
     graphify = graphify_health(root, index_state=state)
+    semantic = semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files))
     print(
         f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nIndex path: {idx}"
     )
@@ -192,6 +194,7 @@ def cmd_status(a):
         f"\nGraphify source changes: {len(graphify['source_changed_files'])} changed, {len(graphify['source_missing_files'])} missing"
         f"\nGraphify output stale/missing: {'yes' if graphify['status'] != 'current' else 'no'}"
     )
+    print(f"Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})")
     if state == "stale":
         print("Recommended: Run `mimry reindex`.")
     if graphify["status"] != "current":
@@ -206,6 +209,7 @@ def _index_and_graphify_health(root: Path, ptr: dict):
 
 
 def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
+    semantic = semantic_health(Path(fresh["index_path"]), ptr.get("rootId"), expected_files=len(fresh["files"]))
     print(
         "Status summary:"
         f"\n- Index: {fresh['state']}"
@@ -215,6 +219,7 @@ def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
         f"\n- Graph nodes/edges: {len(fresh['graph'].get('nodes', []))}/{len(fresh['graph'].get('edges', []))}"
         f"\n- Graphify: {graphify['status']}"
         f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; output {graphify['output_dir']})"
+        f"\n- Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})"
     )
 
 
@@ -430,9 +435,12 @@ def _graphify_context_lines(root: Path, rows: list[dict], graphify: dict) -> lis
     return lines
 
 
-def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) -> list[dict]:
-    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root, root_id=ptr.get("rootId"))
+def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, semantic: bool = False) -> list[dict]:
+    rows = find_rows(
+        Path(ptr["indexPath"]), query, limit, True, root=root, root_id=ptr.get("rootId"), semantic=semantic
+    )
     fresh, graphify = _index_and_graphify_health(root, ptr)
+    semantic_state = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"), expected_files=len(fresh["files"]))
     file_records = _selected_file_records(fresh, rows)
     verification_commands = _verification_commands(fresh)
     lines = [
@@ -446,6 +454,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) ->
         f"- Index: {fresh['state']} (last indexed: {ptr.get('lastIndexedAt') or 'never'}; files: {len(fresh['files'])}; symbols: {len(fresh['symbols'])})",
         f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
         f"- Graphify: {graphify['status']} ({graphify['graph_nodes']} nodes / {graphify['graph_edges']} edges; output: `{_relative_status_path(root, graphify['output_dir'])}`)",
+        f"- Semantic: {semantic_state['status']} ({semantic_state['chunks']} chunks, backend {semantic_state['backend']}; mode: {'on' if semantic else 'off'})",
         f"- Graphify artifacts: graph.json {'present' if graphify['graph_exists'] else 'missing'}, GRAPH_REPORT.md {'present' if graphify['report_exists'] else 'missing'}, manifest.json {'present' if graphify['manifest_exists'] else 'missing'}",
         f"- Refresh action: {_refresh_action(fresh, graphify)}",
         "",
@@ -503,7 +512,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) ->
         ),
         "",
         "## Source of Truth Reminder",
-        "MIMRY narrows context; source files, tests, build output, and human/operator verification remain the source of truth.",
+        "MIMRY narrows context; semantic search is a local fuzzy-recall supplement only. Source files, tests, build output, and human/operator verification remain the source of truth.",
         "",
         "## Final Report Checklist",
         "- Context query used and context path read.",
@@ -651,12 +660,49 @@ def cmd_feedback(a):
     return 0
 
 
+def _print_semantic_degrade(idx: Path, root_id: str | None) -> None:
+    health = semantic_health(idx, root_id)
+    if health["status"] != "current":
+        print(
+            f"Semantic index is {health['status']} ({health['chunks']} chunks, backend {health['backend']}). "
+            "Run `mimry refresh` or `mimry index` to rebuild local semantic chunks."
+        )
+
+
+def cmd_semantic(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    idx = Path(ptr["indexPath"])
+    query = getattr(a, "query", None)
+    if query == "status":
+        health = semantic_health(idx, ptr.get("rootId"))
+        print(f"Semantic: {health['status']} ({health['chunks']} chunks, backend {health['backend']})")
+        return 0
+    if query == "index":
+        stats = build_semantic_index(idx, ptr["rootId"])
+        print(f"Semantic indexed: current ({stats['chunks']} chunks, backend {stats['backend']})")
+        return 0
+    if not query:
+        print('Semantic search requires a query, e.g. `mimry semantic "vague phrase"`.')
+        return 2
+    rows, health = semantic_rows(idx, ptr.get("rootId"), query, getattr(a, "limit", 10))
+    if health["status"] != "current":
+        _print_semantic_degrade(idx, ptr.get("rootId"))
+        return 0
+    print_rows(f"Semantic results for: {query}", rows)
+    return 0
+
+
 def cmd_find(a):
     root = Path(a.root).resolve()
     ptr = require(root)
+    idx = Path(ptr["indexPath"])
+    semantic = getattr(a, "semantic", False)
+    if semantic:
+        _print_semantic_degrade(idx, ptr.get("rootId"))
     print_rows(
         f"Search results for: {a.query}",
-        find_rows(Path(ptr["indexPath"]), a.query, a.limit, root=root, root_id=ptr.get("rootId")),
+        find_rows(idx, a.query, a.limit, root=root, root_id=ptr.get("rootId"), semantic=semantic),
     )
     return 0
 
@@ -839,7 +885,9 @@ def cmd_symbol(a):
 def cmd_context(a):
     root = Path(a.root).resolve()
     ptr = require(root)
-    _write_context_pack(root, ptr, a.query)
+    if getattr(a, "semantic", False):
+        _print_semantic_degrade(Path(ptr["indexPath"]), ptr.get("rootId"))
+    _write_context_pack(root, ptr, a.query, semantic=getattr(a, "semantic", False))
     print(f"Context pack generated.\nOutput: {context_file(root)}")
     return 0
 

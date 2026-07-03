@@ -174,6 +174,25 @@ Feedback affects future `find`, `related`, `context`, `preflight`, `explain`, an
 
 Agent final-report pattern: after verification, include the context query/path, files suggested/opened/changed/missed/ignored, verification outcome, then run `mimry feedback ...` so the next agent gets better local rankings.
 
+## Local semantic search
+
+MIMRY semantic search is local-only fuzzy recall over bounded path, symbol, adapter-fact, doc-heading, and content-hint chunks. It is not remote embeddings, not telemetry, and not a replacement for Graphify, FTS, framework adapters, source reads, tests, or feedback ranking. The default backend is deterministic `local-hash-v1`, so tests and ordinary use do not require provider keys, model downloads, GPU access, or network calls.
+
+```bash
+mimry refresh                                    # builds regular index + semantic chunks
+mimry semantic "vague thing I remember"
+mimry find "auth redirect weirdness" --semantic
+mimry context "payment flow bug" --semantic
+mimry semantic status
+mimry semantic index
+```
+
+Semantic chunks live in the current root's local SQLite cache (`semantic_chunks` and `semantic_metadata`). They store relative paths, chunk kinds, hashes, bounded previews, and sparse local vectors. MIMRY does not store full source contents in semantic storage and continues to skip `.env`/credential files through the normal scanner/security rules.
+
+Semantic influence is always labeled separately, for example `semantic match`, `semantic path/symbol match`, or `semantic adapter-fact match`. `find --semantic` blends semantic candidates into normal FTS/Graphify/framework/feedback results, but exact filename/symbol and strong Graphify evidence remain primary. If the semantic index is missing or stale, MIMRY degrades honestly and tells you to run `mimry refresh` or `mimry semantic index`.
+
+Future stronger local backends can plug into the same interface, but remote/cloud embeddings are not part of the default local-first contract.
+
 You can still target another repo explicitly when needed:
 
 ```bash
