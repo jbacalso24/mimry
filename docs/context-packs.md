@@ -18,7 +18,7 @@ Required sections:
 - risk notes for generated/cache paths, secrets/privacy-sensitive paths, broad dirty work, tests/docs/config support files
 - suggested verification commands detected from config manifests and repo docs
 - source-of-truth reminder
-- final report checklist for agents
+- final report checklist for agents, including a reminder to record `mimry feedback` after verification
 
 Rules:
 

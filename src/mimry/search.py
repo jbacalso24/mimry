@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from .feedback import apply_feedback_to_rows
 from .graphify_artifacts import graphify_available, graphify_rows
 from .intent import apply_intent_adjustment, query_terms
 from .storage import load_jsonl
@@ -35,12 +36,14 @@ def score(f, q):
     return s, reasons
 
 
-def find_rows(idx, q, limit=10, graph=False, root=None):
+def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None):
     fallback_rows = []
+    files = load_jsonl(idx / "files.jsonl")
+    known_paths = {f["rel_path"] for f in files}
     clusters = {}
     if graph and (idx / "graph.json").exists():
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
-    for f in load_jsonl(idx / "files.jsonl"):
+    for f in files:
         s, rs = score(f, q)
         if s:
             folder = f["rel_path"].rsplit("/", 1)[0] if "/" in f["rel_path"] else "."
@@ -87,9 +90,10 @@ def find_rows(idx, q, limit=10, graph=False, root=None):
             ]
             if operating_context:
                 operating_context = operating_context[: min(2, limit)]
-                return rows[: max(limit - len(operating_context), 0)] + operating_context
-            return rows[:limit]
-    return fallback_rows[:limit]
+                merged = rows[: max(limit - len(operating_context), 0)] + operating_context
+                return apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)[:limit]
+            return apply_feedback_to_rows(rows, idx, root_id, q, known_paths=known_paths)[:limit]
+    return apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)[:limit]
 
 
 def print_rows(title, rows):

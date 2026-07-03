@@ -18,6 +18,7 @@ mimry refresh
 mimry status
 mimry find "auth"
 mimry context "fix auth bug"
+mimry feedback --query "fix auth bug" --context .mimry/context/latest.md --opened src/auth/session.py --changed src/auth/session.py --verification "uv run pytest -q passed" --outcome passed
 mimry explain "login route bug"
 mimry path "ui hook" "sqlite cache"
 mimry why src/auth/session.py --query "login auth bug"
@@ -122,6 +123,56 @@ mimry refresh
 ```
 
 `mimry init` creates local generated metadata under `.mimry/`. When the target root is inside an initialized Git worktree, MIMRY safely verifies or appends the appropriate `.mimry/` ignore entry to that worktree's `.gitignore` without replacing existing content.
+
+## Agent usage feedback
+
+`mimry feedback` records local operational metadata about what an agent actually used after a task. It is not Hermes Memory Intake, not durable user memory, and not telemetry. MIMRY stores only bounded task metadata and paths in the current root's local SQLite cache; it does not store full source contents, parse secrets, call remote models, or send feedback over the network.
+
+CLI example:
+
+```bash
+mimry feedback --query "fix board card click bridge unavailable" \
+  --context .mimry/context/latest.md \
+  --opened src/features/boards/api.ts,src/app/api/bridge/[...path]/route.ts \
+  --changed src/app/api/bridge/[...path]/route.ts \
+  --missed bridge/fastapi_app.py \
+  --ignored README.md \
+  --verification "npm run build passed" \
+  --outcome passed
+```
+
+JSON input is also supported:
+
+```bash
+mimry feedback --json feedback.json
+```
+
+```json
+{
+  "query": "fix board card click bridge unavailable",
+  "context_path": ".mimry/context/latest.md",
+  "suggested": ["src/app/api/bridge/[...path]/route.ts", "bridge/fastapi_app.py"],
+  "opened": ["src/features/boards/api.ts", "src/app/api/bridge/[...path]/route.ts"],
+  "changed": ["src/app/api/bridge/[...path]/route.ts"],
+  "missed": ["bridge/fastapi_app.py"],
+  "ignored": ["README.md"],
+  "verification": [{"command": "npm run build", "status": "passed"}],
+  "outcome": "passed",
+  "notes": "Bridge proxy was source of truth."
+}
+```
+
+Read commands:
+
+```bash
+mimry feedback stats
+mimry feedback list --limit 10
+mimry feedback show <feedback_id>
+```
+
+Feedback affects future `find`, `related`, `context`, `preflight`, `explain`, and MCP search/context results only as a modest explainable ranking signal when the new query overlaps a previous task query. It can add these labels: `feedback changed-file boost`, `feedback opened-file boost`, `feedback missed-file recovery boost`, and `feedback ignored suggestion downrank`. Exact filename/symbol/Graphify/framework evidence remains primary; feedback should help break ties and recover missed files, not override source-truth signals.
+
+Agent final-report pattern: after verification, include the context query/path, files suggested/opened/changed/missed/ignored, verification outcome, then run `mimry feedback ...` so the next agent gets better local rankings.
 
 You can still target another repo explicitly when needed:
 

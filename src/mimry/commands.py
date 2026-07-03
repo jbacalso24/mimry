@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from .adapters import list_adapters
 from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_index_path
 from .constants import SCHEMA_VERSION
+from .feedback import feedback_payload_from_args, feedback_stats, list_feedback, record_feedback, show_feedback
 from .freshness import index_freshness
 from .graphify_artifacts import (
     graphify_evidence_for_path,
@@ -430,7 +431,7 @@ def _graphify_context_lines(root: Path, rows: list[dict], graphify: dict) -> lis
 
 
 def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) -> list[dict]:
-    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root)
+    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root, root_id=ptr.get("rootId"))
     fresh, graphify = _index_and_graphify_health(root, ptr)
     file_records = _selected_file_records(fresh, rows)
     verification_commands = _verification_commands(fresh)
@@ -509,6 +510,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) ->
         "- Key source files inspected directly (with paths).",
         "- Files changed and why.",
         "- Verification commands run with exact results.",
+        "- After verification, run `mimry feedback ...` with suggested/opened/changed/missed/outcome so future agents get better rankings.",
         "- MIMRY refreshed after meaningful changes, or reason not refreshed.",
         "- Yellow marks/blockers, especially stale Graphify/index data or risky paths.",
         "",
@@ -576,17 +578,96 @@ def cmd_preflight(a):
     return 0
 
 
+def _format_paths(paths: list[str], limit: int = 6) -> str:
+    if not paths:
+        return "none"
+    suffix = "" if len(paths) <= limit else f", +{len(paths) - limit} more"
+    return ", ".join(paths[:limit]) + suffix
+
+
+def cmd_feedback(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    idx = Path(ptr["indexPath"])
+    action = getattr(a, "feedback_action", None)
+
+    if action == "stats":
+        stats = feedback_stats(idx, ptr["rootId"])
+        print("MIMRY feedback stats")
+        print(f"Records: {stats['records']}")
+        print("Outcomes:")
+        if stats["outcomes"]:
+            for outcome, count in sorted(stats["outcomes"].items()):
+                print(f"- {outcome}: {count}")
+        else:
+            print("- none")
+        print("Path counts:")
+        for label, count in stats["path_counts"].items():
+            print(f"- {label}: {count}")
+        return 0
+
+    if action == "list":
+        rows = list_feedback(idx, ptr["rootId"], getattr(a, "limit", 10))
+        print("MIMRY feedback records")
+        for row in rows:
+            print(f"- {row['feedback_id']} {row['created_at']} outcome={row['outcome']} query={row['query'][:120]}")
+        if not rows:
+            print("- none")
+        return 0
+
+    if action == "show":
+        row = show_feedback(idx, ptr["rootId"], a.feedback_id)
+        if not row:
+            print(f"Feedback record not found: {a.feedback_id}")
+            return 1
+        print(json.dumps(row, indent=2, sort_keys=True))
+        return 0
+
+    payload = feedback_payload_from_args(root, a)
+    if not payload["query"]:
+        print("Feedback requires --query or --json with a query field.")
+        return 2
+    row = record_feedback(idx, ptr["rootId"], payload)
+    influences = []
+    if row["changed_paths"]:
+        influences.append("changed-file boost")
+    if row["opened_paths"]:
+        influences.append("opened-file boost")
+    if row["missed_paths"]:
+        influences.append("missed-file recovery boost")
+    if row["ignored_paths"]:
+        influences.append("ignored suggestion downrank")
+    print("MIMRY feedback recorded")
+    print(f"Feedback ID: {row['feedback_id']}")
+    print(f"Outcome: {row['outcome']}")
+    print(f"Suggested: {_format_paths(row['suggested_paths'])}")
+    print(f"Opened: {_format_paths(row['opened_paths'])}")
+    print(f"Changed: {_format_paths(row['changed_paths'])}")
+    print(f"Missed: {_format_paths(row['missed_paths'])}")
+    print(f"Ignored: {_format_paths(row['ignored_paths'])}")
+    print(
+        "Ranking influence: " + (", ".join(influences) if influences else "none until more path evidence is recorded")
+    )
+    return 0
+
+
 def cmd_find(a):
     root = Path(a.root).resolve()
     ptr = require(root)
-    print_rows(f"Search results for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, root=root))
+    print_rows(
+        f"Search results for: {a.query}",
+        find_rows(Path(ptr["indexPath"]), a.query, a.limit, root=root, root_id=ptr.get("rootId")),
+    )
     return 0
 
 
 def cmd_related(a):
     root = Path(a.root).resolve()
     ptr = require(root)
-    print_rows(f"Related files for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, True, root=root))
+    print_rows(
+        f"Related files for: {a.query}",
+        find_rows(Path(ptr["indexPath"]), a.query, a.limit, True, root=root, root_id=ptr.get("rootId")),
+    )
     return 0
 
 
@@ -625,7 +706,9 @@ def cmd_explain(a):
     root = Path(a.root).resolve()
     ptr = require(root)
     fresh, graphify = _index_and_graphify_health(root, ptr)
-    rows = find_rows(Path(ptr["indexPath"]), a.query, getattr(a, "limit", 5), True, root=root)
+    rows = find_rows(
+        Path(ptr["indexPath"]), a.query, getattr(a, "limit", 5), True, root=root, root_id=ptr.get("rootId")
+    )
     print(f"MIMRY explain: {a.query}")
     _print_status_summary(ptr, fresh, graphify)
     print("Top relevant files:")
@@ -695,7 +778,7 @@ def cmd_why(a):
     ptr = require(root)
     fresh, graphify = _index_and_graphify_health(root, ptr)
     idx = Path(ptr["indexPath"])
-    rows = find_rows(idx, a.query, max(getattr(a, "limit", 25), 25), True, root=root)
+    rows = find_rows(idx, a.query, max(getattr(a, "limit", 25), 25), True, root=root, root_id=ptr.get("rootId"))
     surface = a.surface
     surface_lower = surface.lower()
     exact = None

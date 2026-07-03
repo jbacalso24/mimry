@@ -7,6 +7,7 @@ from .commands import (
     cmd_cache_wipe,
     cmd_context,
     cmd_explain,
+    cmd_feedback,
     cmd_find,
     cmd_index,
     cmd_adapters,
@@ -58,6 +59,22 @@ def build_parser():
     s = sub.add_parser("context")
     s.add_argument("query")
     s.set_defaults(func=cmd_context)
+    f = sub.add_parser("feedback", help="Record or inspect local agent usage feedback for this root")
+    f.add_argument("feedback_action", nargs="?", choices=("list", "show", "stats"))
+    f.add_argument("feedback_id", nargs="?", help="Feedback ID for `mimry feedback show <id>`")
+    f.add_argument("--query", help="Task query the agent worked on")
+    f.add_argument("--context", help="Context pack path used for suggestions, usually .mimry/context/latest.md")
+    f.add_argument("--suggested", help="Comma-separated suggested files; defaults to parsing --context when available")
+    f.add_argument("--opened", help="Comma-separated files opened/inspected")
+    f.add_argument("--changed", help="Comma-separated files changed")
+    f.add_argument("--missed", help="Comma-separated important files MIMRY missed")
+    f.add_argument("--ignored", help="Comma-separated suggested files ignored as not useful")
+    f.add_argument("--verification", help="Short verification summary, e.g. 'uv run pytest -q passed'")
+    f.add_argument("--outcome", choices=("passed", "failed", "blocked", "partial", "unknown"), default="unknown")
+    f.add_argument("--notes", help="Optional bounded note; no source contents or secrets")
+    f.add_argument("--json", help="Read feedback payload JSON from a file")
+    f.add_argument("--limit", type=int, default=10, help="Limit for `mimry feedback list`")
+    f.set_defaults(func=cmd_feedback)
     s = sub.add_parser("explain", help="Explain top files, symbols, relationship evidence, and verification for a task")
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=5)
