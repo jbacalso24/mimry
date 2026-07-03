@@ -109,6 +109,22 @@ def test_reindex_detects_changed_file(tmp_path):
     assert "Index: current" in run_cli(repo, cache, "status").stdout
 
 
+def test_index_normalizes_stale_pointer_index_path(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    ptr_path = repo / ".mimry" / "pointer.json"
+    ptr = json.loads(ptr_path.read_text(encoding="utf-8"))
+    ptr["indexPath"] = str(tmp_path / "old-profile-cache" / ptr["rootId"])
+    ptr_path.write_text(json.dumps(ptr, indent=2) + "\n", encoding="utf-8")
+
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    updated = json.loads(ptr_path.read_text(encoding="utf-8"))
+    assert updated["indexPath"].startswith(str(cache))
+    assert "Index: current" in run_cli(repo, cache, "status").stdout
+
+
 def test_cache_wipe_current(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

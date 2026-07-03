@@ -23,8 +23,8 @@ def write_index(root, ptr):
             imports[f["rel_path"]] = im
         if ex:
             exports[f["rel_path"]] = ex
-    ptr = {**ptr, "lastIndexedAt": now()}
     idx = idx_path(ptr["rootId"])
+    ptr = {**ptr, "indexPath": str(idx), "lastIndexedAt": now()}
     idx.mkdir(parents=True, exist_ok=True)
     graph = GraphifyCore().build_graph(files, symbols, edges)
     con = connect(idx)
