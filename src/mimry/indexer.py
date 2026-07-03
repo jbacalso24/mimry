@@ -5,6 +5,7 @@ import json
 from .graphify_core import GraphifyCore
 from .paths import idx_path, now
 from .scanner import adapt, scan
+from .semantic import build_semantic_index
 from .storage import connect, register_root, save_pointer, write_jsonl
 
 
@@ -69,6 +70,7 @@ def write_index(root, ptr):
         + "\n",
         encoding="utf-8",
     )
+    semantic = build_semantic_index(idx, ptr["rootId"])
     save_pointer(root, ptr)
     register_root(ptr)
     return {
@@ -77,4 +79,6 @@ def write_index(root, ptr):
         "edges": len(edges),
         "index": str(idx),
         "graph_engine": graph["engine"],
+        "semantic_chunks": semantic["chunks"],
+        "semantic_backend": semantic["backend"],
     }

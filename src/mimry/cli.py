@@ -17,6 +17,7 @@ from .commands import (
     cmd_related,
     cmd_refresh,
     cmd_roots,
+    cmd_semantic,
     cmd_status,
     cmd_symbol,
     cmd_why,
@@ -48,7 +49,18 @@ def build_parser():
     s = sub.add_parser("find")
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=10)
+    s.add_argument(
+        "--semantic",
+        action="store_true",
+        help="Blend local-only semantic chunks into normal FTS/Graphify/feedback ranking",
+    )
     s.set_defaults(func=cmd_find)
+    s = sub.add_parser(
+        "semantic", help="Local-only semantic search over bounded path/symbol/adapter/content-hint chunks"
+    )
+    s.add_argument("query", nargs="?", help='Query text, or "index"/"status"')
+    s.add_argument("--limit", type=int, default=10)
+    s.set_defaults(func=cmd_semantic)
     s = sub.add_parser("related")
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=10)
@@ -58,6 +70,9 @@ def build_parser():
     s.set_defaults(func=cmd_symbol)
     s = sub.add_parser("context")
     s.add_argument("query")
+    s.add_argument(
+        "--semantic", action="store_true", help="Blend local-only semantic chunks into context file selection"
+    )
     s.set_defaults(func=cmd_context)
     f = sub.add_parser("feedback", help="Record or inspect local agent usage feedback for this root")
     f.add_argument("feedback_action", nargs="?", choices=("list", "show", "stats"))

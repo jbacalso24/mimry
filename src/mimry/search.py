@@ -5,6 +5,7 @@ import json
 from .feedback import apply_feedback_to_rows
 from .graphify_artifacts import graphify_available, graphify_rows
 from .intent import apply_intent_adjustment, query_terms
+from .semantic import merge_semantic_rows, semantic_rows
 from .storage import load_jsonl
 
 
@@ -36,7 +37,15 @@ def score(f, q):
     return s, reasons
 
 
-def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None):
+def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic):
+    if not semantic:
+        return rows[:limit]
+    sem_rows, _health = semantic_rows(idx, root_id, q, limit)
+    merged = merge_semantic_rows(rows, sem_rows, limit=limit)
+    return apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)[:limit]
+
+
+def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=False):
     fallback_rows = []
     files = load_jsonl(idx / "files.jsonl")
     known_paths = {f["rel_path"] for f in files}
@@ -91,9 +100,12 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None):
             if operating_context:
                 operating_context = operating_context[: min(2, limit)]
                 merged = rows[: max(limit - len(operating_context), 0)] + operating_context
-                return apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)[:limit]
-            return apply_feedback_to_rows(rows, idx, root_id, q, known_paths=known_paths)[:limit]
-    return apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)[:limit]
+                ranked = apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)
+                return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic)
+            ranked = apply_feedback_to_rows(rows, idx, root_id, q, known_paths=known_paths)
+            return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic)
+    ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
+    return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic)
 
 
 def print_rows(title, rows):

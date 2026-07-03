@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from .feedback import ensure_feedback_schema
+from .semantic import ensure_semantic_schema
 from .paths import idx_path, pointer_file, roots_file
 
 
@@ -35,6 +36,7 @@ def connect(idx):
         """create table if not exists files(file_id text primary key, rel_path text, filename text, extension text, adapter text, parse_status text, content_hint text, metadata_text text); create table if not exists symbols(symbol_id text primary key, file_id text, name text, kind text, language text, line_start integer); create virtual table if not exists files_fts using fts5(file_id unindexed, rel_path, filename, extension, content_hint, metadata_text);"""
     )
     ensure_feedback_schema(con)
+    ensure_semantic_schema(con)
     return con
 
 

@@ -13,6 +13,7 @@ from mimry.graphify_wrapper import graphify_source, pinned_commit_for_status
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.search import find_rows
+from mimry.semantic import semantic_health, semantic_rows
 from mimry.storage import load_jsonl, load_pointer
 
 mcp = FastMCP("MIMRY")
@@ -47,6 +48,7 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
         "deleted_files": missing,
         "index_path": str(idx),
         "graphify": graphify,
+        "semantic": semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files)),
     }
 
 
@@ -71,12 +73,25 @@ def mimry_reindex(root: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool
-def mimry_find(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
+def mimry_find(query: str, root: str | None = None, limit: int = 10, semantic: bool = False) -> dict[str, Any]:
     """Search indexed files with ranking reasons."""
     root_path = _root(root)
     ptr = require(root_path)
-    rows = find_rows(Path(ptr["indexPath"]), query, limit, root=root_path, root_id=ptr.get("rootId"))
-    return {"query": query, "root": str(root_path), "results": rows}
+    rows = find_rows(Path(ptr["indexPath"]), query, limit, root=root_path, root_id=ptr.get("rootId"), semantic=semantic)
+    payload = {"query": query, "root": str(root_path), "results": rows}
+    if semantic:
+        payload["semantic"] = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))
+    return payload
+
+
+@mcp.tool
+def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
+    """Local-only semantic search over bounded MIMRY chunks."""
+    root_path = _root(root)
+    ptr = require(root_path)
+    idx = Path(ptr["indexPath"])
+    rows, health = semantic_rows(idx, ptr.get("rootId"), query, limit)
+    return {"query": query, "root": str(root_path), "semantic": health, "results": rows}
 
 
 @mcp.tool
@@ -112,11 +127,13 @@ def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool
-def mimry_context(query: str, root: str | None = None) -> dict[str, Any]:
+def mimry_context(query: str, root: str | None = None, semantic: bool = False) -> dict[str, Any]:
     """Generate a MIMRY context pack and return its path plus selected files."""
     root_path = _root(root)
     ptr = require(root_path)
-    rows = find_rows(Path(ptr["indexPath"]), query, 8, True, root=root_path, root_id=ptr.get("rootId"))
+    rows = find_rows(
+        Path(ptr["indexPath"]), query, 8, True, root=root_path, root_id=ptr.get("rootId"), semantic=semantic
+    )
     paths = [r["path"] for r in rows]
     relationship_lines = graphify_relationship_lines(root_path, paths)
     report_excerpt = graphify_report_excerpt(root_path)
