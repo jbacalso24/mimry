@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .adapters import list_adapters
 from .constants import SCHEMA_VERSION
+from .graphify_wrapper import run_graphify_build
 from .indexer import write_index
 from .paths import context_file, idx_path, mdir, now, roots_file
 from .search import find_rows, print_rows
@@ -39,8 +40,16 @@ def cmd_init(a):
     )
     save_pointer(root, ptr)
     register_root(ptr)
+    if not getattr(a, "skip_graphify", False):
+        print("Bootstrapping Graphify under .mimry/graphify ...")
+        graphify_status = run_graphify_build(root, execute=True)
+        if graphify_status != 0:
+            print(
+                "MIMRY initialized, but Graphify bootstrap failed. Run `mimry graphify build --execute` after fixing Graphify."
+            )
+            return graphify_status
     print(
-        "MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\nNext: Run `mimry index`."
+        "MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- .mimry/graphify/\nNext: Run `mimry index`."
     )
     return 0
 
