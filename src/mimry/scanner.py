@@ -4,6 +4,7 @@ import ast
 import hashlib
 from pathlib import Path
 
+from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
 from .paths import stable_id
 from .security import is_text, safe_root, should_ignore
 from .ts_ast_adapter import parse_ts_like
@@ -62,13 +63,17 @@ def file_record(path, root, adapter, status, hint):
 
 def adapt(path, root):
     ext = path.suffix.lower()
-    hint = text_hint(path)
+    hint = safe_hint(path) if is_config_manifest(path) else text_hint(path)
     f = file_record(path, root, "generic", "ok", hint)
     symbols = []
     edges = []
     imports = []
     exports = []
-    if ext == ".py":
+    if is_config_manifest(path):
+        metadata = extract_config_metadata(path, root)
+        f = file_record(path, root, "config-manifest", "ok", hint)
+        f["metadata_text"] = metadata
+    elif ext == ".py":
         f = file_record(path, root, "python-ast", "ok", hint)
         try:
             tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))

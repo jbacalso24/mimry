@@ -18,6 +18,7 @@ def test_active_only_adapter_registry_hides_planned_adapters():
     assert {a["status"] for a in adapters} == {"active"}
     assert "python-ast" in {a["name"] for a in adapters}
     assert "typescript-ast" in {a["name"] for a in adapters}
+    assert "config-manifest" in {a["name"] for a in adapters}
     assert "js-ts-regex" not in {a["name"] for a in adapters}
 
 
