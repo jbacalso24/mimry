@@ -8,7 +8,8 @@ from fastmcp import FastMCP
 from mimry.adapters import list_adapters
 from mimry.commands import require
 from mimry.freshness import index_freshness
-from mimry.graphify_artifacts import graphify_relationship_lines, graphify_report_excerpt
+from mimry.graphify_artifacts import graphify_health, graphify_relationship_lines, graphify_report_excerpt
+from mimry.graphify_wrapper import graphify_source, pinned_commit_for_status
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.search import find_rows
@@ -32,6 +33,9 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
     changed = fresh["changed"]
     missing = fresh["missing"]
     state = fresh["state"]
+    graphify = graphify_health(root_path, index_state=state)
+    graphify["source"] = graphify_source()
+    graphify["pinned_commit"] = pinned_commit_for_status()
     return {
         "initialized": True,
         "root": str(root_path),
@@ -42,6 +46,7 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
         "changed_files": changed,
         "deleted_files": missing,
         "index_path": str(idx),
+        "graphify": graphify,
     }
 
 

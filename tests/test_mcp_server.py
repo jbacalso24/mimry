@@ -58,3 +58,36 @@ def test_mcp_status_uses_hash_freshness_for_same_size_rewrite(tmp_path: Path, mo
 
     assert payload["index_state"] == "stale"
     assert payload["changed_files"] == ["src/auth/session.py"]
+    assert "graphify" in payload
+    assert payload["graphify"]["status"] in {"missing", "stale"}
+
+
+def test_mcp_status_includes_graphify_health_payload(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+    graphify_dir = repo / ".mimry" / "graphify"
+    graphify_dir.mkdir(parents=True)
+    (graphify_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+    (graphify_dir / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
+    (graphify_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    payload = mimry_status(str(repo))
+
+    assert payload["graphify"]["graph_exists"] is True
+    assert payload["graphify"]["report_exists"] is True
+    assert payload["graphify"]["manifest_exists"] is True
+    assert payload["graphify"]["source"] in {"vendor", "installed", "missing"}
+    assert payload["graphify"]["pinned_commit"]

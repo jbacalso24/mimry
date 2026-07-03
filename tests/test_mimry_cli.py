@@ -199,6 +199,56 @@ def test_status_find_symbol_related_context_loop(tmp_path):
     assert "## Suggested Verification" in text
 
 
+def test_status_reports_graphify_artifact_health(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    target = repo / "src" / "auth" / "session.py"
+    graphify_dir = repo / ".mimry" / "graphify"
+    graphify_dir.mkdir(parents=True)
+    (graphify_dir / "graph.json").write_text(
+        '{"nodes": [{"id": "n1"}], "edges": [{"source": "n1", "target": "n1"}]}\n', encoding="utf-8"
+    )
+    (graphify_dir / "GRAPH_REPORT.md").write_text(
+        "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit: `abc123`\n",
+        encoding="utf-8",
+    )
+    (graphify_dir / "manifest.json").write_text(
+        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    status = run_cli(repo, cache, "status")
+
+    assert status.returncode == 0, status.stdout
+    assert "Graphify health" in status.stdout
+    assert "Status: current" in status.stdout
+    assert "graph.json: yes (1 nodes/1 edges" in status.stdout
+    assert "GRAPH_REPORT.md: yes" in status.stdout
+    assert "manifest.json: yes (1 entries" in status.stdout
+    assert "Built from commit: abc123" in status.stdout
+    assert "Graphify output stale/missing: no" in status.stdout
+
+
+def test_status_reports_missing_graphify_graph_without_changing_index_exit_code(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    graphify_dir = repo / ".mimry" / "graphify"
+    graphify_dir.mkdir(parents=True)
+    (graphify_dir / "GRAPH_REPORT.md").write_text("# Graph Report - fixture\n", encoding="utf-8")
+    (graphify_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    status = run_cli(repo, cache, "status")
+
+    assert status.returncode == 0, status.stdout
+    assert "graph.json: missing" in status.stdout
+    assert "Status: missing" in status.stdout
+    assert "Graphify output stale/missing: yes" in status.stdout
+
+
 def test_reindex_detects_changed_file(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

@@ -2,29 +2,123 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .intent import apply_intent_adjustment, query_terms
 from .paths import graphify_output_dir
+
+
+def _iso_mtime(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+
+
+def _load_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def graphify_graph_path(root: Path) -> Path:
     return graphify_output_dir(root) / "graph.json"
 
 
+def graphify_report_path(root: Path) -> Path:
+    return graphify_output_dir(root) / "GRAPH_REPORT.md"
+
+
+def graphify_manifest_path(root: Path) -> Path:
+    return graphify_output_dir(root) / "manifest.json"
+
+
 def load_graphify_graph(root: Path) -> dict:
     path = graphify_graph_path(root)
     if not path.exists():
         return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    graph = _load_json(path)
+    return graph if isinstance(graph, dict) else {}
 
 
 def graphify_available(root: Path) -> bool:
     g = load_graphify_graph(root)
     return bool(g.get("nodes"))
+
+
+def _report_freshness_lines(path: Path) -> dict[str, str | None]:
+    if not path.exists():
+        return {"report_title": None, "built_from_commit": None}
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return {"report_title": None, "built_from_commit": None}
+    title = lines[0].strip() if lines else None
+    built_from_commit = None
+    for line in lines:
+        if line.startswith("- Built from commit:"):
+            built_from_commit = line.split(":", 1)[1].strip().strip("`")
+            break
+    return {"report_title": title, "built_from_commit": built_from_commit}
+
+
+def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, Any]:
+    """Return cheap Graphify artifact health without invoking Graphify or changing ranking."""
+    out = graphify_output_dir(root)
+    graph_path = graphify_graph_path(root)
+    report_path = graphify_report_path(root)
+    manifest_path = graphify_manifest_path(root)
+    graph = load_graphify_graph(root)
+    manifest = _load_json(manifest_path) if manifest_path.exists() else None
+    manifest_entries = manifest if isinstance(manifest, dict) else {}
+
+    missing_sources: list[str] = []
+    stale_sources: list[str] = []
+    for rel_path, info in manifest_entries.items():
+        if not isinstance(rel_path, str) or rel_path.startswith(".mimry/"):
+            continue
+        source = root / rel_path
+        if not source.exists():
+            missing_sources.append(rel_path)
+            continue
+        if isinstance(info, dict) and isinstance(info.get("mtime"), int | float):
+            if abs(source.stat().st_mtime - float(info["mtime"])) > 1e-6:
+                stale_sources.append(rel_path)
+
+    graph_exists = graph_path.exists()
+    report_exists = report_path.exists()
+    manifest_exists = manifest_path.exists()
+    artifact_missing = not graph_exists or not report_exists or not manifest_exists
+    source_stale = bool(missing_sources or stale_sources)
+    possibly_stale = source_stale or index_state not in (None, "current")
+    status = "missing" if artifact_missing else ("stale" if possibly_stale else "current")
+
+    report_info = _report_freshness_lines(report_path)
+    return {
+        "status": status,
+        "output_dir": str(out),
+        "graph_path": str(graph_path),
+        "graph_exists": graph_exists,
+        "graph_generated_at": _iso_mtime(graph_path),
+        "graph_nodes": len(graph.get("nodes") or []),
+        "graph_edges": len(graph.get("links") or graph.get("edges") or []),
+        "report_path": str(report_path),
+        "report_exists": report_exists,
+        "report_generated_at": _iso_mtime(report_path),
+        "report_title": report_info["report_title"],
+        "built_from_commit": report_info["built_from_commit"],
+        "manifest_path": str(manifest_path),
+        "manifest_exists": manifest_exists,
+        "manifest_generated_at": _iso_mtime(manifest_path),
+        "manifest_entries": len(manifest_entries),
+        "source_stale": source_stale,
+        "source_changed_files": stale_sources,
+        "source_missing_files": missing_sources,
+        "index_state": index_state,
+        "possibly_stale": possibly_stale,
+    }
 
 
 def node_source_file(node: dict) -> str | None:
@@ -128,7 +222,7 @@ def graphify_relationship_lines(root: Path, selected_paths: list[str], max_lines
 
 
 def graphify_report_excerpt(root: Path, max_chars: int = 1200) -> str:
-    path = graphify_output_dir(root) / "GRAPH_REPORT.md"
+    path = graphify_report_path(root)
     if not path.exists():
         return ""
     text = path.read_text(encoding="utf-8", errors="replace")
