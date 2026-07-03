@@ -28,14 +28,27 @@ uv run pytest -q
 uv run mimry --help
 ```
 
-Use it on any local repo:
+Install the CLI globally from this checkout:
 
 ```bash
-uv run mimry --root /path/to/repo init
-uv run mimry --root /path/to/repo index
-uv run mimry --root /path/to/repo status
-uv run mimry --root /path/to/repo find "auth login token"
-uv run mimry --root /path/to/repo context "understand auth flow"
+uv tool install --editable /path/to/mimry --force
+```
+
+Use it from inside any local repo. MIMRY defaults to the current working directory:
+
+```bash
+cd /path/to/repo
+mimry init
+mimry index
+mimry status
+mimry find "auth login token"
+mimry context "understand auth flow"
+```
+
+You can still target another repo explicitly when needed:
+
+```bash
+mimry --root /path/to/repo status
 ```
 
 Expose it to coding agents through MCP:
