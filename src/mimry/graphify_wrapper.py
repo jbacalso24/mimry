@@ -12,6 +12,22 @@ from .paths import graphify_output_dir, graphify_vendor_path, repo_root
 from .security import safe_root
 
 PINNED_GRAPHIFY_COMMIT = "44c0a5e33c7011813dcebf1a8850c1c6005bf500"
+GRAPHIFY_ENV_ALLOWLIST = {
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PYTHONNOUSERSITE",
+    "PYTHONUTF8",
+    "VIRTUAL_ENV",
+    "UV_PROJECT_ENVIRONMENT",
+    "UV_CACHE_DIR",
+}
+SECRET_ENV_MARKERS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "PRIVATE_KEY", "CLIENT_SECRET", "API_KEY")
+SECRET_ENV_PREFIXES = ("OPENAI_", "ANTHROPIC_", "AWS_", "GOOGLE_", "GITHUB_", "GITLAB_", "AZURE_")
 
 
 def graphify_vendor_available():
@@ -44,6 +60,24 @@ def pinned_commit_for_status():
     return commit if commit not in {"missing", "unknown"} else PINNED_GRAPHIFY_COMMIT
 
 
+def graphify_subprocess_env(out: Path, vendor: Path | None = None) -> dict[str, str]:
+    """Return the minimal non-secret environment used for Graphify subprocesses."""
+    env: dict[str, str] = {}
+    for key in GRAPHIFY_ENV_ALLOWLIST:
+        value = os.environ.get(key)
+        upper = key.upper()
+        if value is None:
+            continue
+        if upper.startswith(SECRET_ENV_PREFIXES) or any(marker in upper for marker in SECRET_ENV_MARKERS):
+            continue
+        env[key] = value
+    env["GRAPHIFY_OUT"] = str(out)
+    if vendor is not None:
+        existing = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = str(vendor) if not existing else os.pathsep.join([str(vendor), existing])
+    return env
+
+
 def cmd_graphify_status(a):
     vendor = graphify_vendor_path()
     source = graphify_source()
@@ -73,9 +107,7 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
     cmd = (
         [graphify_cli, "update", str(root)] if graphify_cli else [sys.executable, "-m", "graphify", "update", str(root)]
     )
-    env = {**os.environ, "GRAPHIFY_OUT": str(out)}
-    if graphify_vendor_available():
-        env["PYTHONPATH"] = str(vendor)
+    env = graphify_subprocess_env(out, vendor if graphify_vendor_available() else None)
     if dry_run or not execute:
         print("MIMRY Graphify build: DRY RUN")
         print(f"Root: {root}")
