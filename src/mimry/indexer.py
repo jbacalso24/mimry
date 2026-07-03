@@ -60,13 +60,14 @@ def write_index(root, ptr):
     write_jsonl(idx / "symbols.jsonl", symbols)
     write_jsonl(idx / "imports.jsonl", [{"file": k, "imports": v} for k, v in imports.items()])
     write_jsonl(idx / "exports.jsonl", [{"file": k, "exports": v} for k, v in exports.items()])
-    (idx / "dependencies.json").write_text(json.dumps(imports, indent=2) + "\n")
-    (idx / "graph.json").write_text(json.dumps(graph, indent=2) + "\n")
+    (idx / "dependencies.json").write_text(json.dumps(imports, indent=2) + "\n", encoding="utf-8")
+    (idx / "graph.json").write_text(json.dumps(graph, indent=2) + "\n", encoding="utf-8")
     (idx / "file-hashes.json").write_text(
         json.dumps(
             {f["rel_path"]: {"hash": f["hash"], "mtime": f["mtime"], "size": f["size"]} for f in files}, indent=2
         )
-        + "\n"
+        + "\n",
+        encoding="utf-8",
     )
     save_pointer(root, ptr)
     register_root(ptr)

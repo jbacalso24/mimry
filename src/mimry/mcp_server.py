@@ -164,7 +164,7 @@ def mimry_context(query: str, root: str | None = None) -> dict[str, Any]:
         ]
     )
     context_file(root_path).parent.mkdir(parents=True, exist_ok=True)
-    context_file(root_path).write_text("\n".join(lines))
+    context_file(root_path).write_text("\n".join(lines), encoding="utf-8")
     return {"query": query, "root": str(root_path), "output": str(context_file(root_path)), "files": rows}
 
 

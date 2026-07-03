@@ -16,7 +16,7 @@ def load_graphify_graph(root: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
 
@@ -126,7 +126,7 @@ def graphify_report_excerpt(root: Path, max_chars: int = 1200) -> str:
     path = graphify_output_dir(root) / "GRAPH_REPORT.md"
     if not path.exists():
         return ""
-    text = path.read_text(errors="replace")
+    text = path.read_text(encoding="utf-8", errors="replace")
     keep = []
     capture = False
     for line in text.splitlines():

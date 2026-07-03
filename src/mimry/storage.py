@@ -9,22 +9,22 @@ from .paths import idx_path, pointer_file, roots_file
 
 def load_pointer(root):
     p = pointer_file(root)
-    return json.loads(p.read_text()) if p.exists() else None
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 def save_pointer(root, ptr):
     pointer_file(root).parent.mkdir(parents=True, exist_ok=True)
-    pointer_file(root).write_text(json.dumps(ptr, indent=2) + "\n")
+    pointer_file(root).write_text(json.dumps(ptr, indent=2) + "\n", encoding="utf-8")
 
 
 def register_root(ptr):
     p = roots_file()
     p.parent.mkdir(parents=True, exist_ok=True)
-    reg = json.loads(p.read_text()) if p.exists() else {"roots": []}
+    reg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"roots": []}
     roots = [r for r in reg.get("roots", []) if r.get("rootId") != ptr["rootId"]]
     roots.append(ptr)
     reg["roots"] = sorted(roots, key=lambda r: r.get("rootPath", ""))
-    p.write_text(json.dumps(reg, indent=2) + "\n")
+    p.write_text(json.dumps(reg, indent=2) + "\n", encoding="utf-8")
 
 
 def connect(idx):
@@ -37,8 +37,12 @@ def connect(idx):
 
 
 def write_jsonl(path, rows):
-    path.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
+    path.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows), encoding="utf-8")
 
 
 def load_jsonl(path):
-    return [json.loads(l) for l in path.read_text().splitlines() if l.strip()] if Path(path).exists() else []
+    return (
+        [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        if Path(path).exists()
+        else []
+    )

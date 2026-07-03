@@ -35,9 +35,11 @@ def cmd_init(a):
     }
     mdir(root).mkdir(parents=True, exist_ok=True)
     (mdir(root) / "context").mkdir(exist_ok=True)
-    (mdir(root) / "config.toml").write_text('version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n')
+    (mdir(root) / "config.toml").write_text(
+        'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n', encoding="utf-8"
+    )
     (mdir(root) / "AGENT_RULES.md").write_text(
-        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file reading.\n"
+        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file reading.\n", encoding="utf-8"
     )
     save_pointer(root, ptr)
     register_root(ptr)
@@ -89,7 +91,11 @@ def cmd_status(a):
         elif p.stat().st_size != f["size"] or p.stat().st_mtime != f["mtime"]:
             changed.append(f["rel_path"])
     state = "missing" if not (idx / "files.jsonl").exists() else ("stale" if changed or missing else "current")
-    g = json.loads((idx / "graph.json").read_text()) if (idx / "graph.json").exists() else {"nodes": [], "edges": []}
+    g = (
+        json.loads((idx / "graph.json").read_text(encoding="utf-8"))
+        if (idx / "graph.json").exists()
+        else {"nodes": [], "edges": []}
+    )
     print(
         f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nIndex path: {idx}"
     )
@@ -177,7 +183,7 @@ def cmd_context(a):
         ]
     )
     context_file(root).parent.mkdir(parents=True, exist_ok=True)
-    context_file(root).write_text("\n".join(lines))
+    context_file(root).write_text("\n".join(lines), encoding="utf-8")
     print(f"Context pack generated.\nOutput: {context_file(root)}")
     return 0
 
@@ -195,7 +201,7 @@ def cmd_adapters(a):
 
 
 def cmd_roots(a):
-    reg = json.loads(roots_file().read_text()) if roots_file().exists() else {"roots": []}
+    reg = json.loads(roots_file().read_text(encoding="utf-8")) if roots_file().exists() else {"roots": []}
     print("MIMRY roots")
     [print(f"- {r['rootId']} {r['rootType']} {r['rootPath']} -> {r['indexPath']}") for r in reg.get("roots", [])]
     return 0
