@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json, os, shutil, subprocess, sys
+import json, os, shutil, sqlite3, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +71,65 @@ def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     graph = json.loads((idx / "graph.json").read_text())
     assert graph["engine"] == "mimry-graphify-core"
     assert graph["nodes"]
+
+
+def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_example_names(tmp_path):
+    repo = copy_fixture(tmp_path)
+    (repo / "firebase-adminsdk-prod.json").write_text(
+        json.dumps(
+            {
+                "type": "service_account",
+                "project_id": "demo",
+                "private_key_id": "key-id-123",
+                "private_key": "-----BEGIN PRIVATE KEY-----\\nSERVICE_ACCOUNT_SECRET_VALUE\\n-----END PRIVATE KEY-----\\n",
+                "client_email": "firebase-adminsdk@example.iam.gserviceaccount.com",
+                "client_secret": "GOOGLE_CLIENT_SECRET_VALUE",
+            }
+        )
+    )
+    (repo / ".npmrc").write_text("//registry.npmjs.org/:_authToken=npm_secret_token_value\n")
+    kube = repo / ".kube"
+    kube.mkdir()
+    (kube / "config").write_text("apiVersion: v1\nusers:\n- name: prod\n  user:\n    token: kube_secret_token_value\n")
+    (repo / "deploy.sh").write_text("export GITHUB_TOKEN=ghp_shell_secret_token_value\necho deploy\n")
+    (repo / ".env.example").write_text(
+        "API_URL=https://should-not-be-indexed.example\nSECRET_TOKEN=env_example_secret_value\n"
+    )
+    cache = tmp_path / "cache"
+
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    assert run_cli(repo, cache, "context", "service account npm kube shell env SECRET_TOKEN").returncode == 0
+
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
+    idx = Path(ptr["indexPath"])
+    files_text = (idx / "files.jsonl").read_text()
+    context_text = (repo / ".mimry" / "context" / "latest.md").read_text()
+    with sqlite3.connect(idx / "mimry.sqlite") as con:
+        sqlite_text = "\n".join(
+            " ".join(str(col) for col in row if col is not None)
+            for row in con.execute("select rel_path, filename, content_hint, metadata_text from files")
+        )
+        sqlite_text += "\n" + "\n".join(
+            " ".join(str(col) for col in row if col is not None)
+            for row in con.execute("select rel_path, filename, content_hint, metadata_text from files_fts")
+        )
+
+    for indexed_text in (files_text, sqlite_text, context_text):
+        assert "SERVICE_ACCOUNT_SECRET_VALUE" not in indexed_text
+        assert "GOOGLE_CLIENT_SECRET_VALUE" not in indexed_text
+        assert "npm_secret_token_value" not in indexed_text
+        assert "kube_secret_token_value" not in indexed_text
+        assert "ghp_shell_secret_token_value" not in indexed_text
+        assert "env_example_secret_value" not in indexed_text
+        assert "https://should-not-be-indexed.example" not in indexed_text
+
+    assert "firebase-adminsdk-prod.json" not in files_text
+    assert '"filename": ".npmrc"' not in files_text
+    assert '"rel_path": ".kube/config"' not in files_text
+    assert '"rel_path": "deploy.sh"' not in files_text
+    assert '"rel_path": ".env.example"' in files_text
+    assert "env variables API_URL SECRET_TOKEN" in files_text
 
 
 def test_status_find_symbol_related_context_loop(tmp_path):
