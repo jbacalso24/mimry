@@ -23,20 +23,20 @@ MIMRY uses modern `pyproject.toml` packaging with Hatchling and exposes global C
 From a fresh machine:
 
 ```bash
-git clone --recurse-submodules https://github.com/jbacalso24/mimry.git
+git clone https://github.com/jbacalso24/mimry.git
 cd mimry
 uv sync
 uv run pytest -q
 uv tool install --editable . --force
 ```
 
-If you already cloned without submodules:
+Submodules are optional for normal CLI/test usage. MIMRY installs the pinned Graphify dependency from Git during `uv sync`.
+
+If you specifically want the vendored Graphify checkout under `vendor/graphify`:
 
 ```bash
 cd mimry
 git submodule update --init --recursive
-uv sync
-uv tool install --editable . --force
 ```
 
 Verify the global CLI install:
@@ -96,13 +96,11 @@ generic-text
 
 ## Graphify integration
 
-Graphify is tracked as a pinned git submodule under `vendor/graphify` and wrapped through `src/mimry/graphify_core`.
+Graphify is pinned in `pyproject.toml`/`uv.lock` and installed by `uv sync`. A vendored submodule may also exist under `vendor/graphify` for direct Graphify integration work.
 
-Clone with submodules when working on Graphify integration:
+Fetch the optional submodule when working directly on Graphify integration:
 
 ```bash
-git clone --recurse-submodules https://github.com/jbacalso24/mimry.git
-# or, after clone
 git submodule update --init --recursive
 ```
 

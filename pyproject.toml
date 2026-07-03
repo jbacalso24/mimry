@@ -24,7 +24,7 @@ mimry-mcp = "mimry.mcp_server:main"
 dev = ["pytest>=8", "ruff>=0.8"]
 
 [tool.uv.sources]
-graphifyy = { path = "vendor/graphify", editable = true }
+graphifyy = { git = "https://github.com/safishamsi/graphify.git", rev = "44c0a5e33c7011813dcebf1a8850c1c6005bf500" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
