@@ -579,6 +579,72 @@ def test_typescript_ast_extracts_tsx_symbols(tmp_path):
     assert "LoginScreen.tsx" in sym.stdout
 
 
+def test_framework_adapters_index_routes_endpoints_screens_schemas_and_docs(tmp_path):
+    repo = copy_fixture(tmp_path)
+    (repo / "package.json").write_text(
+        json.dumps(
+            {
+                "packageManager": "pnpm@9.0.0",
+                "scripts": {"build": "next build", "test": "vitest run", "typecheck": "tsc --noEmit"},
+                "dependencies": {"next": "15.0.0", "react": "19.0.0", "expo": "latest"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    next_dir = repo / "src" / "app" / "board" / "[cardId]"
+    next_dir.mkdir(parents=True)
+    (next_dir / "page.tsx").write_text("export default function CardPage() { return <div /> }\n", encoding="utf-8")
+    api_dir = repo / "src" / "app" / "api" / "cards"
+    api_dir.mkdir(parents=True)
+    (api_dir / "route.ts").write_text("export async function GET() { return Response.json({}) }\n", encoding="utf-8")
+    (repo / "api.py").write_text(
+        "from fastapi import FastAPI, APIRouter\napp = FastAPI()\nrouter = APIRouter()\n@app.get('/cards/{card_id}')\ndef read_card(card_id: str):\n    return {'id': card_id}\n@router.post('/cards')\ndef create_card():\n    return {}\n",
+        encoding="utf-8",
+    )
+    (repo / "app.json").write_text(
+        json.dumps({"expo": {"name": "Fixture", "slug": "fixture", "scheme": "fixture", "ios": {}, "android": {}}}),
+        encoding="utf-8",
+    )
+    expo_route = repo / "app" / "cards"
+    expo_route.mkdir(parents=True)
+    (expo_route / "[id].tsx").write_text("export default function CardScreen() { return null }\n", encoding="utf-8")
+    (repo / "schema.sql").write_text(
+        "CREATE TABLE cards (id INTEGER PRIMARY KEY, title TEXT, status TEXT);\n", encoding="utf-8"
+    )
+    docs = repo / "docs"
+    docs.mkdir()
+    (docs / "board.md").write_text(
+        "---\ntitle: Board API\ntags: [cards]\n---\n# Board card click route\nSee [[Card Schema]].\n", encoding="utf-8"
+    )
+    cache = tmp_path / "cache"
+
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
+    idx = Path(ptr["indexPath"])
+    files_text = (idx / "files.jsonl").read_text()
+    symbols_text = (idx / "symbols.jsonl").read_text()
+
+    assert "nextjs app router route /board/:cardId kind page" in files_text
+    assert "nextjs api route /api/cards" in files_text
+    assert "fastapi endpoint GET /cards/{card_id} function read_card" in files_text
+    assert "fastapi endpoint POST /cards function create_card" in files_text
+    assert "expo router route /cards/:id kind screen" in files_text
+    assert "expo native config ios" in files_text
+    assert "sql schema table cards columns id title status" in files_text
+    assert "markdown headings Board card click route" in files_text
+    assert "read_card" in symbols_text
+    assert "cards" in symbols_text
+
+    ctx = run_cli(repo, cache, "context", "board card click route cards endpoint schema docs")
+    assert ctx.returncode == 0, ctx.stderr
+    context_text = (repo / ".mimry" / "context" / "latest.md").read_text()
+    assert "nextjs app router route /board/:cardId" in context_text
+    assert "fastapi endpoint GET /cards/{card_id}" in context_text
+    assert "sql schema table cards" in context_text
+    assert "markdown headings Board card click route" in context_text
+
+
 def test_config_manifest_extracts_package_scripts_frameworks_and_env_names(tmp_path):
     repo = copy_fixture(tmp_path)
     (repo / "package.json").write_text(

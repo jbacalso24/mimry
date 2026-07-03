@@ -18,7 +18,9 @@ def safe_root(root: Path):
 
 ENV_EXAMPLE_NAMES = {".env.example", ".env.sample", ".env.template", "env.example"}
 SECRET_ASSIGNMENT_RE = re.compile(
-    r"(?im)^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET|API[_-]?KEY|AUTH)[A-Za-z0-9_]*\s*=\s*['\"]?[^\s'\"]{6,}"
+    r"(?im)^\s*(?:export\s+)?"
+    r"[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET|API[_-]?KEY|AUTH)[A-Za-z0-9_]*"
+    r"\s*=\s*['\"]?(?P<value>[^\s'\"]{6,})"
 )
 SENSITIVE_VALUE_RE = re.compile(
     r"(?is)(\"private_key\"\s*:\s*\"-----BEGIN PRIVATE KEY-----|"
@@ -26,7 +28,7 @@ SENSITIVE_VALUE_RE = re.compile(
     r"\"client_secret\"\s*:\s*\"[^\"]{6,}|"
     r"//firebase\.google\.com/docs/|"
     r":_authToken\s*=\s*[^\s]+|"
-    r"client-key-data\s*:|client-certificate-data\s*:|token\s*:\s*[^\s]+|"
+    r"client-key-data\s*:|client-certificate-data\s*:|"
     r"aws_access_key_id\s*=|aws_secret_access_key\s*=|"
     r"-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----)"
 )
@@ -60,7 +62,14 @@ def has_sensitive_content(path: Path, *, limit: int = 64_000) -> bool:
         return False
     if not text:
         return False
-    return bool(SENSITIVE_VALUE_RE.search(text) or SECRET_ASSIGNMENT_RE.search(text))
+    if SENSITIVE_VALUE_RE.search(text):
+        return True
+    for match in SECRET_ASSIGNMENT_RE.finditer(text):
+        value = match.group("value")
+        if value.startswith(("process.env.", "os.getenv(", "Deno.env.get(", "import.meta.env.")):
+            continue
+        return True
+    return False
 
 
 def should_ignore(path, root):

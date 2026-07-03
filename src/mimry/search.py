@@ -48,7 +48,17 @@ def find_rows(idx, q, limit=10, graph=False, root=None):
                 s += 5
                 rs.append("Graphify cluster relationship")
             row = {"path": f["rel_path"], "score": s, "reason": ", ".join(rs)}
-            if f.get("adapter") == "config-manifest":
+            if any(
+                adapter in f.get("adapter", "")
+                for adapter in (
+                    "config-manifest",
+                    "nextjs-app-router",
+                    "fastapi",
+                    "react-native-expo",
+                    "sql-schema",
+                    "markdown-docs",
+                )
+            ):
                 row["details"] = f.get("metadata_text", "")[:800]
             fallback_rows.append(row)
     fallback_rows = sorted(fallback_rows, key=lambda r: (-r["score"], r["path"]))
