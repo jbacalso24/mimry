@@ -10,8 +10,8 @@ from .adapters import list_adapters
 from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_index_path
 from .constants import SCHEMA_VERSION
 from .freshness import index_freshness
-from .graphify_artifacts import graphify_relationship_lines, graphify_report_excerpt
-from .graphify_wrapper import run_graphify_build
+from .graphify_artifacts import graphify_health, graphify_relationship_lines, graphify_report_excerpt
+from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build
 from .indexer import write_index
 from .paths import context_file, idx_path, mdir, now, roots_file
 from .search import find_rows, print_rows
@@ -162,11 +162,30 @@ def cmd_status(a):
     missing = fresh["missing"]
     state = fresh["state"]
     g = fresh["graph"]
+    graphify = graphify_health(root, index_state=state)
     print(
         f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nIndex path: {idx}"
     )
+    print(
+        "Graphify health"
+        f"\nStatus: {graphify['status']}"
+        f"\nSource: {graphify_source()}"
+        f"\nPinned commit: {pinned_commit_for_status()}"
+        f"\nOutput dir: {graphify['output_dir']}"
+        f"\ngraph.json: {'yes' if graphify['graph_exists'] else 'missing'}"
+        f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; generated {graphify['graph_generated_at'] or 'unknown'})"
+        f"\nGRAPH_REPORT.md: {'yes' if graphify['report_exists'] else 'missing'}"
+        f" (generated {graphify['report_generated_at'] or 'unknown'})"
+        f"\nmanifest.json: {'yes' if graphify['manifest_exists'] else 'missing'}"
+        f" ({graphify['manifest_entries']} entries; generated {graphify['manifest_generated_at'] or 'unknown'})"
+        f"\nBuilt from commit: {graphify['built_from_commit'] or 'unknown'}"
+        f"\nGraphify source changes: {len(graphify['source_changed_files'])} changed, {len(graphify['source_missing_files'])} missing"
+        f"\nGraphify output stale/missing: {'yes' if graphify['status'] != 'current' else 'no'}"
+    )
     if state == "stale":
         print("Recommended: Run `mimry reindex`.")
+    if graphify["status"] != "current":
+        print("Graphify recommended: Run `mimry graphify build --execute` or `mimry refresh`.")
     return 0 if state == "current" else 2
 
 
