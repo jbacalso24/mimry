@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
+from .framework_adapters import enrich_framework_facts
 from .paths import stable_id
 from .security import is_text, safe_root, should_ignore
 from .ts_ast_adapter import parse_ts_like
@@ -114,4 +115,5 @@ def adapt(path, root):
         f = file_record(path, root, "typescript-ast", "ok", hint)
         symbols, edges, imports, exports, status = parse_ts_like(path, root, f)
         f = file_record(path, root, "typescript-ast", status, hint)
+    f = enrich_framework_facts(path, root, f, symbols, edges)
     return f, symbols, edges, sorted(set(imports)), sorted(set(exports))

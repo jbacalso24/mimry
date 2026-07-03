@@ -305,12 +305,44 @@ def _surface_lines(rows: list[dict], *, edit: bool) -> list[str]:
     return [f"- `{row['path']}` — {_file_role(row['path'])}; score {row['score']}" for row in selected]
 
 
+FRAMEWORK_FACT_MARKERS = (
+    "nextjs app router",
+    "nextjs api route",
+    "fastapi endpoint",
+    "fastapi app instance",
+    "fastapi router instance",
+    "expo router route",
+    "react native mobile surface",
+    "expo config",
+    "sql schema table",
+    "markdown headings",
+    "markdown frontmatter",
+    "markdown wiki links",
+    "markdown doc links",
+)
+
+
+def _framework_detail_lines(record: dict, limit: int = 8) -> list[str]:
+    metadata = record.get("metadata_text", "")
+    if not metadata:
+        return []
+    parts = [part.strip() for part in metadata.split(" | ") if part.strip()]
+    details = []
+    for part in parts:
+        lower = part.lower()
+        if any(marker in lower for marker in FRAMEWORK_FACT_MARKERS):
+            details.append(part[:500])
+        if len(details) >= limit:
+            break
+    return details
+
+
 def _verification_commands(fresh: dict) -> list[str]:
     commands: list[str] = []
     command_re = re.compile(r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) command (?P<cmd>[^|]+)")
     doc_commands_re = re.compile(r"(?:^|\| )commands (?P<cmds>[^|]+)")
     for f in fresh["files"]:
-        if f.get("adapter") != "config-manifest":
+        if "config-manifest" not in f.get("adapter", ""):
             continue
         metadata = f.get("metadata_text", "")
         for match in command_re.finditer(metadata):
@@ -424,8 +456,12 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) ->
             f"Role: {role}",
             f"Evidence: adapter `{adapter}`; relative path only; open source before editing.",
         ]
-        if r.get("details"):
-            lines += [f"Details: {r['details']}"]
+        details = r.get("details") or ""
+        if details:
+            lines += [f"Details: {details}"]
+        framework_details = _framework_detail_lines(file_records.get(r["path"], {}))
+        if framework_details:
+            lines += ["Framework facts:", *[f"- {detail}" for detail in framework_details]]
         lines += [""]
     lines += [
         "## Relevant Symbols / Entities",
