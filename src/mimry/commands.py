@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .adapters import list_adapters
 from .constants import SCHEMA_VERSION
+from .graphify_artifacts import graphify_relationship_lines, graphify_report_excerpt
 from .graphify_wrapper import run_graphify_build
 from .indexer import write_index
 from .paths import context_file, idx_path, mdir, now, roots_file
@@ -98,14 +99,16 @@ def cmd_status(a):
 
 
 def cmd_find(a):
-    ptr = require(Path(a.root).resolve())
-    print_rows(f"Search results for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit))
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    print_rows(f"Search results for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, root=root))
     return 0
 
 
 def cmd_related(a):
-    ptr = require(Path(a.root).resolve())
-    print_rows(f"Related files for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, True))
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    print_rows(f"Related files for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, True, root=root))
     return 0
 
 
@@ -125,7 +128,10 @@ def cmd_symbol(a):
 def cmd_context(a):
     root = Path(a.root).resolve()
     ptr = require(root)
-    rows = find_rows(Path(ptr["indexPath"]), a.query, 8, True)
+    rows = find_rows(Path(ptr["indexPath"]), a.query, 8, True, root=root)
+    paths = [r["path"] for r in rows]
+    relationship_lines = graphify_relationship_lines(root, paths)
+    report_excerpt = graphify_report_excerpt(root)
     lines = [
         "# MIMRY Context Pack",
         "",
@@ -133,10 +139,10 @@ def cmd_context(a):
         a.query,
         "",
         "## Index Status",
-        "Generated from current local MIMRY index.",
+        "Generated from Graphify artifacts when available; MIMRY index is fallback.",
         "",
         "## Summary",
-        f"MIMRY found {len(rows)} relevant file(s) using metadata and Graphify cluster signals.",
+        f"MIMRY found {len(rows)} relevant file(s), preferring Graphify graph nodes/edges/report when available.",
         "",
         "## Relevant Files",
     ]
@@ -148,7 +154,10 @@ def cmd_context(a):
             "Use `mimry symbol <name>` for concrete symbols.",
             "",
             "## Relationship Paths",
-            "Early MVP uses file definitions and Graphify folder clusters.",
+            *(relationship_lines or ["No Graphify relationship path matched the selected files yet."]),
+            "",
+            "## Graphify Report Signals",
+            report_excerpt or "No Graphify report excerpt available.",
             "",
             "## Suggested Reading Order",
         ]
