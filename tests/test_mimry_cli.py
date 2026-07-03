@@ -199,6 +199,107 @@ def test_status_find_symbol_related_context_loop(tmp_path):
     assert "## Suggested Verification" in text
 
 
+def write_current_graphify_artifacts(repo: Path):
+    target = repo / "src" / "auth" / "session.py"
+    graphify_dir = repo / ".mimry" / "graphify"
+    graphify_dir.mkdir(parents=True, exist_ok=True)
+    (graphify_dir / "graph.json").write_text(
+        '{"nodes": [{"id": "session", "label": "session", "source_file": "src/auth/session.py"}], "edges": []}\n',
+        encoding="utf-8",
+    )
+    (graphify_dir / "GRAPH_REPORT.md").write_text(
+        "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit: `abc123`\n",
+        encoding="utf-8",
+    )
+    (graphify_dir / "manifest.json").write_text(
+        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+
+    before = json.loads((repo / ".mimry" / "pointer.json").read_text())["lastIndexedAt"]
+    res = run_cli(repo, cache, "preflight", "fix auth session bug")
+    after = json.loads((repo / ".mimry" / "pointer.json").read_text())["lastIndexedAt"]
+
+    assert res.returncode == 0, res.stderr
+    assert "Preflight refresh: skipped" in res.stdout
+    assert "Init ran: no" in res.stdout
+    assert "Refresh ran: no" in res.stdout
+    assert "Context:" in res.stdout
+    assert "Top files:" in res.stdout
+    assert "Next: read" in res.stdout
+    assert "src/auth/session.py" in res.stdout
+    assert before == after
+    assert (repo / ".mimry" / "context" / "latest.md").exists()
+
+
+def test_preflight_force_refreshes_even_when_current(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+
+    res = run_cli(repo, cache, "preflight", "fix auth session bug", "--force-refresh")
+
+    assert res.returncode == 0, res.stderr
+    assert "Preflight refresh: running (forced)" in res.stdout
+    assert "Refresh ran: yes" in res.stdout
+    assert "Index: current" in res.stdout
+
+
+def test_preflight_refreshes_stale_index(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+    target = repo / "src" / "auth" / "session.py"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\ndef preflight_marker():\n    return True\n", encoding="utf-8"
+    )
+
+    res = run_cli(repo, cache, "preflight", "preflight marker auth session")
+
+    assert res.returncode == 0, res.stderr
+    assert "Preflight refresh: running" in res.stdout
+    assert "index stale" in res.stdout
+    assert "Refresh ran: yes" in res.stdout
+    assert "Index: current" in res.stdout
+
+
+def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
+    repo = tmp_path / "new_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / "app.py").write_text("def build_commands():\n    return 'ok'\n", encoding="utf-8")
+
+    res = run_cli(repo, tmp_path / "cache", "preflight", "test build commands")
+
+    assert res.returncode == 0, res.stderr
+    assert "MIMRY preflight complete" in res.stdout
+    assert "Init ran: yes" in res.stdout
+    assert "Refresh ran: yes" in res.stdout
+    assert "app.py" in res.stdout
+    assert (repo / ".mimry" / "context" / "latest.md").exists()
+    assert ".mimry/" in (repo / ".gitignore").read_text(encoding="utf-8")
+    ignored = subprocess.run(
+        ["git", "check-ignore", ".mimry/pointer.json"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert ignored.returncode == 0, ignored.stderr
+
+
 def test_status_reports_graphify_artifact_health(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
