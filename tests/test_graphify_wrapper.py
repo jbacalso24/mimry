@@ -54,6 +54,9 @@ def test_graphify_build_dry_run_is_safe_and_points_to_mimry_output(tmp_path: Pat
     assert "DRY RUN" in result.stdout
     assert "GRAPHIFY_OUT" in result.stdout
     assert str(repo / ".mimry" / "graphify") in result.stdout
-    assert "python -m graphify update <root>" in result.stdout
+    assert (
+        "Command: graphify update <root>" in result.stdout
+        or "Command: python -m graphify update <root>" in result.stdout
+    )
     assert "graphify install" not in result.stdout
     assert "graphify hook" not in result.stdout

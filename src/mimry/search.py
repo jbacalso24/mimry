@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import PurePosixPath
 
+from .graphify_artifacts import graphify_available, graphify_rows
 from .storage import load_jsonl
 
 EDIT_INTENT_TERMS = {"edit", "fix", "change", "implement", "debug", "where", "flow", "wire", "update"}
@@ -92,7 +93,11 @@ def score(f, q):
     return max(s, 0), reasons
 
 
-def find_rows(idx, q, limit=10, graph=False):
+def find_rows(idx, q, limit=10, graph=False, root=None):
+    if root is not None and graphify_available(root):
+        rows = graphify_rows(root, q, limit)
+        if rows:
+            return rows
     rows = []
     clusters = {}
     if graph and (idx / "graph.json").exists():

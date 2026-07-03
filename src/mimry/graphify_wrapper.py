@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 
@@ -68,7 +69,10 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
     out = graphify_output_dir(root)
     vendor = graphify_vendor_path()
     source = graphify_source()
-    cmd = [sys.executable, "-m", "graphify", "update", str(root)]
+    graphify_cli = shutil.which("graphify")
+    cmd = (
+        [graphify_cli, "update", str(root)] if graphify_cli else [sys.executable, "-m", "graphify", "update", str(root)]
+    )
     env = {**os.environ, "GRAPHIFY_OUT": str(out)}
     if graphify_vendor_available():
         env["PYTHONPATH"] = str(vendor)
@@ -79,7 +83,7 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         print(f"Source: {source}")
         print(f"Pinned commit: {pinned_commit_for_status()}")
         print(f"GRAPHIFY_OUT={out}")
-        print("Command: python -m graphify update <root>")
+        print("Command: graphify update <root>" if graphify_cli else "Command: python -m graphify update <root>")
         print("To execute: mimry --root <root> graphify build --execute")
         return 0
     if source == "missing":
