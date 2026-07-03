@@ -36,7 +36,11 @@ def _is_test_file(rel_path: str) -> bool:
 def _is_doc_or_plan(rel_path: str) -> bool:
     parts = set(_path_parts(rel_path))
     name = PurePosixPath(rel_path).name.lower()
-    return bool(parts & DOC_SEGMENTS) or name.endswith(".md") and ("plan" in rel_path.lower() or "spec" in rel_path.lower())
+    return (
+        bool(parts & DOC_SEGMENTS)
+        or name.endswith(".md")
+        and ("plan" in rel_path.lower() or "spec" in rel_path.lower())
+    )
 
 
 def _is_migration(rel_path: str) -> bool:

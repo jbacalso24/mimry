@@ -47,6 +47,15 @@ mimry --help
 uv tool list
 ```
 
+Install the local Git hooks for development:
+
+```bash
+uv run pre-commit install
+uv run pre-commit run --all-files
+```
+
+The pre-commit hook runs `ruff check` and `ruff format --check` before commits.
+
 Expected `uv tool list` output includes:
 
 ```text

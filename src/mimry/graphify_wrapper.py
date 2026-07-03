@@ -23,7 +23,9 @@ def graphify_commit():
     if not graphify_vendor_available():
         return "missing"
     try:
-        return subprocess.check_output(["git", "-C", str(vendor), "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL).strip()
+        return subprocess.check_output(
+            ["git", "-C", str(vendor), "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
     except Exception:
         return "unknown"
 
@@ -80,8 +82,10 @@ def cmd_graphify_build(a):
     out.mkdir(parents=True, exist_ok=True)
     print(f"Running safe Graphify build with GRAPHIFY_OUT={out}")
     res = subprocess.run(cmd, cwd=root, env=env, text=True, capture_output=True, check=False)
-    if res.stdout.strip(): print(res.stdout.strip())
-    if res.stderr.strip(): print(res.stderr.strip(), file=sys.stderr)
+    if res.stdout.strip():
+        print(res.stdout.strip())
+    if res.stderr.strip():
+        print(res.stderr.strip(), file=sys.stderr)
     if res.returncode != 0:
         print(f"Graphify build failed with exit {res.returncode}", file=sys.stderr)
         return res.returncode
@@ -90,6 +94,8 @@ def cmd_graphify_build(a):
 
 
 def cmd_graphify(a):
-    if a.graphify_command == "status": return cmd_graphify_status(a)
-    if a.graphify_command == "build": return cmd_graphify_build(a)
+    if a.graphify_command == "status":
+        return cmd_graphify_status(a)
+    if a.graphify_command == "build":
+        return cmd_graphify_build(a)
     raise SystemExit("unknown graphify command")

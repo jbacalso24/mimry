@@ -76,7 +76,9 @@ def _fallback_imports_exports(source: str) -> tuple[list[str], list[str]]:
     return sorted(set(imports)), sorted(set(exports))
 
 
-def parse_ts_like(path: Path, root: Path, file_record: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str], str]:
+def parse_ts_like(
+    path: Path, root: Path, file_record: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str], str]:
     """Parse JS/TS/JSX/TSX with tree-sitter and return symbols/edges/imports/exports/status."""
     if not is_text(path):
         return [], [], [], [], "parse_error:non_text"
