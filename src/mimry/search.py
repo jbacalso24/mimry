@@ -94,11 +94,7 @@ def score(f, q):
 
 
 def find_rows(idx, q, limit=10, graph=False, root=None):
-    if root is not None and graphify_available(root):
-        rows = graphify_rows(root, q, limit)
-        if rows:
-            return rows
-    rows = []
+    fallback_rows = []
     clusters = {}
     if graph and (idx / "graph.json").exists():
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
@@ -109,11 +105,44 @@ def find_rows(idx, q, limit=10, graph=False, root=None):
             if graph and folder in clusters:
                 s += 5
                 rs.append("Graphify cluster relationship")
-            rows.append({"path": f["rel_path"], "score": s, "reason": ", ".join(rs)})
-    return sorted(rows, key=lambda r: (-r["score"], r["path"]))[:limit]
+            row = {"path": f["rel_path"], "score": s, "reason": ", ".join(rs)}
+            if f.get("adapter") == "config-manifest":
+                row["details"] = f.get("metadata_text", "")[:800]
+            fallback_rows.append(row)
+    fallback_rows = sorted(fallback_rows, key=lambda r: (-r["score"], r["path"]))
+    fallback_by_path = {r["path"]: r for r in fallback_rows if "config-manifest" in r["reason"]}
+    if root is not None and graphify_available(root):
+        rows = graphify_rows(root, q, limit)
+        if rows:
+            rows = [
+                {
+                    **r,
+                    "reason": r["reason"]
+                    + (", MIMRY config-manifest operating context" if r["path"] in fallback_by_path else ""),
+                    **(
+                        {"details": fallback_by_path[r["path"]].get("details", "")}
+                        if r["path"] in fallback_by_path
+                        else {}
+                    ),
+                }
+                for r in rows
+            ]
+            seen = {r["path"] for r in rows}
+            operating_context = [
+                {**r, "reason": r["reason"] + ", MIMRY config-manifest operating context"}
+                for r in fallback_rows
+                if r["path"] not in seen and "config-manifest" in r["reason"]
+            ]
+            if operating_context:
+                operating_context = operating_context[: min(2, limit)]
+                return rows[: max(limit - len(operating_context), 0)] + operating_context
+            return rows[:limit]
+    return fallback_rows[:limit]
 
 
 def print_rows(title, rows):
     print(title)
     for i, r in enumerate(rows, 1):
         print(f"{i}. {r['path']}\n   Score: {r['score']}\n   Reason: {r['reason']}")
+        if r.get("details"):
+            print(f"   Details: {r['details']}")

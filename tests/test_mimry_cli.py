@@ -177,3 +177,77 @@ def test_typescript_ast_extracts_tsx_symbols(tmp_path):
     assert "jsx_element" in symbols
     sym = run_cli(repo, cache, "symbol", "LoginScreen")
     assert "LoginScreen.tsx" in sym.stdout
+
+
+def test_config_manifest_extracts_package_scripts_frameworks_and_env_names(tmp_path):
+    repo = copy_fixture(tmp_path)
+    (repo / "package.json").write_text(
+        json.dumps(
+            {
+                "packageManager": "pnpm@9.0.0",
+                "scripts": {"dev": "next dev", "build": "next build", "test": "vitest run"},
+                "dependencies": {"next": "15.0.0", "react": "19.0.0", "expo": "latest"},
+                "main": "src/app.ts",
+            }
+        )
+    )
+    (repo / "AGENTS.md").write_text("# Rules\nAlways run pnpm test before commits.\npnpm build\n")
+    (repo / ".env.example").write_text("API_URL=https://example.test\nSECRET_TOKEN=super-secret-value\n")
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
+    idx = Path(ptr["indexPath"])
+    files_text = (idx / "files.jsonl").read_text()
+
+    assert '"adapter": "config-manifest"' in files_text
+    assert "package manager pnpm" in files_text
+    assert "build command pnpm build" in files_text
+    assert "framework hints nextjs react expo" in files_text
+    assert "env variables API_URL SECRET_TOKEN" in files_text
+    assert "super-secret-value" not in files_text
+    assert "https://example.test" not in files_text
+
+    find = run_cli(repo, cache, "find", "test build commands framework env SECRET_TOKEN")
+    assert "package.json" in find.stdout
+    assert ".env.example" in find.stdout
+    assert "super-secret-value" not in find.stdout
+
+
+def test_config_manifest_extracts_pyproject_commands_and_repo_rules(tmp_path):
+    repo = copy_fixture(tmp_path)
+    (repo / "pyproject.toml").write_text(
+        """
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+dependencies = ["fastapi>=0.1"]
+
+[project.scripts]
+demo = "demo.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.8", "mypy>=1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+""".strip()
+    )
+    (repo / "README.md").write_text("# Demo\nNever print secrets.\nuv run pytest -q\n")
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
+    files_text = (Path(ptr["indexPath"]) / "files.jsonl").read_text()
+
+    assert "build backend hatchling.build" in files_text
+    assert "framework hints fastapi pytest" in files_text
+    assert "test command uv run pytest" in files_text
+    assert "lint command uv run ruff check ." in files_text
+    assert "typecheck command uv run mypy ." in files_text
+    assert "entrypoints demo=demo.cli:main" in files_text
+    assert "repo rules Never print secrets." in files_text

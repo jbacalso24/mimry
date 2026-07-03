@@ -52,7 +52,7 @@ def cmd_init(a):
             )
             return graphify_status
     print(
-        "MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- .mimry/graphify/\nNext: Run `mimry index`."
+        'MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- .mimry/graphify/\nNext: Run `mimry refresh`, then `mimry context "<task>"`.'
     )
     return 0
 
@@ -168,7 +168,10 @@ def cmd_context(a):
         "## Relevant Files",
     ]
     for i, r in enumerate(rows, 1):
-        lines += [f"### {i}. `{r['path']}`", f"Score: {r['score']}", f"Reason: {r['reason']}", ""]
+        lines += [f"### {i}. `{r['path']}`", f"Score: {r['score']}", f"Reason: {r['reason']}"]
+        if r.get("details"):
+            lines += [f"Details: {r['details']}"]
+        lines += [""]
     lines += (
         [
             "## Relevant Symbols / Entities",

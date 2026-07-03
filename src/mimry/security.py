@@ -16,6 +16,8 @@ def safe_root(root: Path):
 
 
 def is_sensitive(path):
+    if path.name in {".env.example", ".env.sample", ".env.template", "env.example"}:
+        return False
     return any(fnmatch.fnmatch(path.name, pat) for pat in SENSITIVE_PATTERNS)
 
 

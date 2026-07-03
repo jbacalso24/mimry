@@ -8,20 +8,20 @@ MIMRY should understand a repo through small, inspectable adapter plugins before
 |---|---|---|---|---|
 | `python-ast` | Python stdlib `ast` | `.py` | files, symbols, imports, defines edges, line ranges | Backend/service/test navigation without reading every Python file |
 | `typescript-ast` | Tree-sitter language pack | `.js`, `.jsx`, `.ts`, `.tsx` | files, symbols, imports, exports, defines edges, JSX elements, line ranges | Frontend agents can find React/TypeScript components, functions, classes, imports, JSX usage, and edit locations |
+| `config-manifest` | Manifest-specific safe metadata parsers | `package.json`, `pyproject.toml`, `tsconfig.json`, `vite.config.*`, `next.config.*`, Expo config, `.env.example`, agent docs | commands, package manager, frameworks, entrypoints, env names, repo rules | Operating context for setup/build/test/rules without replacing Graphify code navigation or indexing secret values |
 | `generic-text` | Safe text hints | fallback | files, metadata, content hints | Docs/config fallback while keeping sensitive files skipped |
 
 ## Planned adapters before/alongside embeddings
 
 Priority order:
 
-1. `config-manifest` — package/pyproject/tsconfig/vite/next/agent rule commands and dependency facts.
-2. `nextjs-app-router` — `page.tsx`, `layout.tsx`, `route.ts`, middleware and app-router edges.
-3. `react-native-expo` — Expo routes/config/native module/App Group signals.
-4. `fastapi` — FastAPI routes, dependencies, schemas, auth/service edges.
-5. `sql-alembic` — schema tables, migrations, migration lineage, and DB edit gates.
-6. `markdown-docs` — headings, links, specs, plans, decisions, Obsidian-style links later.
-7. `swift-ios` — native iOS targets, entitlements, share extensions, App Groups.
-8. `js-ts-regex` — fallback path if tree-sitter is unavailable in a constrained environment.
+1. `nextjs-app-router` — `page.tsx`, `layout.tsx`, `route.ts`, middleware and app-router edges.
+2. `react-native-expo` — Expo routes/config/native module/App Group signals.
+3. `fastapi` — FastAPI routes, dependencies, schemas, auth/service edges.
+4. `sql-alembic` — schema tables, migrations, migration lineage, and DB edit gates.
+5. `markdown-docs` — headings, links, specs, plans, decisions, Obsidian-style links later.
+6. `swift-ios` — native iOS targets, entitlements, share extensions, App Groups.
+7. `js-ts-regex` — fallback path if tree-sitter is unavailable in a constrained environment.
 
 Run:
 
@@ -82,7 +82,7 @@ Coding agents should use adapter info like a route table:
 - Backend auth question → prefer `python-ast` + future `fastapi`.
 - React screen/component question → prefer `typescript-ast` + future `nextjs-app-router` or `react-native-expo`.
 - DB/schema question → prefer future `sql-alembic`.
-- Setup/build question → prefer future `config-manifest`.
+- Setup/build question → include active `config-manifest` operating context alongside Graphify results.
 - Product/spec question → prefer future `markdown-docs`.
 
 The MCP surface makes this visible to agents before they decide whether to call `mimry_find`, `mimry_context`, or fall back to direct file inspection.
