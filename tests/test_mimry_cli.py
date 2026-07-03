@@ -265,6 +265,12 @@ def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
     assert "No path was invented" in res.stdout
     assert "Fallback queries" in res.stdout
 
+    broad_token_res = run_cli(repo, cache, "path", "nonexistent-surface", "another-missing-surface")
+    assert broad_token_res.returncode == 0, broad_token_res.stderr
+    assert "No Graphify relationship path found" in broad_token_res.stdout
+    assert "No path was invented" in broad_token_res.stdout
+    assert "Path found" not in broad_token_res.stdout
+
 
 def write_current_graphify_artifacts(repo: Path):
     target = repo / "src" / "auth" / "session.py"

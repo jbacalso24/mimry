@@ -672,7 +672,7 @@ def cmd_path(a):
         print("No path was invented. Run `mimry refresh`, then retry with file paths or symbol names.")
         return 0
     result = graphify_shortest_path(root, a.source, a.target)
-    if result["found"]:
+    if result["found"] and result["steps"]:
         print("Path found:")
         for step in result["steps"]:
             print(_format_path_step(step))
