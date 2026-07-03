@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import uuid
@@ -209,58 +210,266 @@ def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
     )
 
 
-def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) -> list[dict]:
-    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root)
+def _relative_status_path(root: Path, maybe_path: str | Path | None) -> str:
+    if not maybe_path:
+        return "unknown"
+    path = Path(maybe_path)
+    try:
+        return path.resolve().relative_to(root).as_posix()
+    except (OSError, ValueError):
+        return str(maybe_path)
+
+
+def _refresh_action(fresh: dict, graphify: dict) -> str:
+    actions = []
+    if fresh["state"] != "current":
+        actions.append(f"index is {fresh['state']}")
+    if graphify["status"] != "current":
+        actions.append(f"Graphify is {graphify['status']}")
+    if not actions:
+        return "none (index and Graphify are current)"
+    return "run `mimry refresh` (" + "; ".join(actions) + ")"
+
+
+def _selected_file_records(fresh: dict, rows: list[dict]) -> dict[str, dict]:
+    selected = {row["path"] for row in rows}
+    return {f["rel_path"]: f for f in fresh["files"] if f.get("rel_path") in selected}
+
+
+def _symbol_lines(fresh: dict, rows: list[dict], limit: int = 12) -> list[str]:
+    selected = {row["path"] for row in rows}
+    files_by_id = {f["file_id"]: f for f in fresh["files"]}
+    lines = []
+    for sym in fresh["symbols"]:
+        file_rec = files_by_id.get(sym.get("file_id"))
+        rel_path = file_rec.get("rel_path") if file_rec else None
+        if rel_path not in selected:
+            continue
+        loc = f":{sym['line_start']}" if sym.get("line_start") else ""
+        lines.append(f"- `{sym['name']}` ({sym['kind']}, {sym['language']}) — `{rel_path}{loc}`")
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _is_likely_edit_surface(path: str) -> bool:
+    lower = path.lower()
+    if lower.startswith(("docs/", ".mimry/")) or lower.endswith((".md", ".mdx")):
+        return False
+    if (
+        "/test" in lower
+        or lower.startswith("tests/")
+        or lower.endswith(("_test.py", ".test.ts", ".spec.ts", ".test.tsx"))
+    ):
+        return False
+    if lower in {"package.json", "pyproject.toml", "readme.md", "agents.md", "claude.md"}:
+        return False
+    return lower.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".sql", ".toml", ".json", ".yaml", ".yml"))
+
+
+def _file_role(path: str) -> str:
+    lower = path.lower()
+    if _is_likely_edit_surface(path):
+        return "likely edit surface"
+    if (
+        lower.startswith("tests/")
+        or "/test" in lower
+        or lower.endswith(("_test.py", ".test.ts", ".spec.ts", ".test.tsx"))
+    ):
+        return "test/verification support"
+    if lower.endswith((".md", ".mdx")) or lower.startswith("docs/"):
+        return "docs/rules support"
+    if lower in {"package.json", "pyproject.toml", "tsconfig.json"} or "config" in lower:
+        return "config/manifest support"
+    return "supporting context"
+
+
+def _reading_order_lines(rows: list[dict]) -> list[str]:
+    if not rows:
+        return ["- No relevant files were selected; rerun with a narrower query or inspect repo entrypoints directly."]
+    source_rows = [r for r in rows if _is_likely_edit_surface(r["path"])]
+    support_rows = [r for r in rows if not _is_likely_edit_surface(r["path"])]
+    ordered = source_rows + support_rows
+    lines = []
+    for i, row in enumerate(ordered, 1):
+        rationale = "primary code/edit path" if _is_likely_edit_surface(row["path"]) else _file_role(row["path"])
+        lines.append(f"{i}. `{row['path']}` — {rationale}; {row['reason']}")
+    return lines
+
+
+def _surface_lines(rows: list[dict], *, edit: bool) -> list[str]:
+    selected = [row for row in rows if _is_likely_edit_surface(row["path"]) is edit]
+    if not selected:
+        label = "edit surfaces" if edit else "non-edit supporting files"
+        return [f"- No obvious {label} selected by this query."]
+    return [f"- `{row['path']}` — {_file_role(row['path'])}; score {row['score']}" for row in selected]
+
+
+def _verification_commands(fresh: dict) -> list[str]:
+    commands: list[str] = []
+    command_re = re.compile(r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) command (?P<cmd>[^|]+)")
+    doc_commands_re = re.compile(r"(?:^|\| )commands (?P<cmds>[^|]+)")
+    for f in fresh["files"]:
+        if f.get("adapter") != "config-manifest":
+            continue
+        metadata = f.get("metadata_text", "")
+        for match in command_re.finditer(metadata):
+            for cmd in match.group("cmd").split(";"):
+                cmd = cmd.strip()
+                if cmd and cmd not in commands:
+                    commands.append(cmd)
+        for match in doc_commands_re.finditer(metadata):
+            for cmd in match.group("cmds").split(";"):
+                cmd = cmd.strip()
+                if cmd and any(
+                    cmd.startswith(prefix)
+                    for prefix in ("uv ", "npm ", "pnpm ", "yarn ", "bun ", "pytest", "ruff", "make ", "just ")
+                ):
+                    if cmd not in commands:
+                        commands.append(cmd)
+    preferred = [cmd for cmd in ("uv run ruff format .", "uv run ruff check .", "uv run pytest") if cmd in commands]
+    rest = [cmd for cmd in commands if cmd not in preferred]
+    return (preferred + rest)[:10]
+
+
+def _detected_supporting_file_lines(fresh: dict, rows: list[dict], limit: int = 8) -> list[str]:
+    already = {row["path"] for row in rows}
+    candidates = []
+    for f in fresh["files"]:
+        rel_path = f.get("rel_path", "")
+        if rel_path in already:
+            continue
+        role = _file_role(rel_path)
+        if role in {"test/verification support", "docs/rules support", "config/manifest support"}:
+            candidates.append(f"- `{rel_path}` — detected {role}; read if it constrains the change or verification.")
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
+def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
+    selected_paths = [row["path"] for row in rows]
+    dirty = fresh["changed"] or fresh["missing"]
+    lines = [
+        "- Generated/cache paths (`.mimry/`, `.git/`, caches, build outputs) are support artifacts; do not edit them as source fixes.",
+        "- Secrets/privacy-sensitive files are skipped by scanner policy; do not paste secret values into context packs or final reports.",
+        "- Source files/tests/build output are the truth; MIMRY scores are navigation hints, not proof.",
+        "- Tests/docs/config files are supporting evidence unless the task explicitly requires changing them.",
+    ]
+    risky_selected = [
+        p for p in selected_paths if p.startswith(".mimry/") or "/cache" in p.lower() or p.lower().endswith(".lock")
+    ]
+    if risky_selected:
+        lines.append(
+            "- Selected generated/cache/fallback-looking paths: " + ", ".join(f"`{p}`" for p in risky_selected[:8])
+        )
+    if dirty:
+        changed = ", ".join(f"`{p}`" for p in (fresh["changed"] + fresh["missing"])[:8])
+        lines.append(
+            f"- Index detected changed/deleted files ({changed}); avoid broad dirty work until refreshed/verified."
+        )
+    return lines
+
+
+def _graphify_context_lines(root: Path, rows: list[dict], graphify: dict) -> list[str]:
     paths = [r["path"] for r in rows]
     relationship_lines = graphify_relationship_lines(root, paths)
     report_excerpt = graphify_report_excerpt(root)
+    if graphify["status"] != "current":
+        status = graphify["status"]
+        return [
+            f"- Graphify relationship data is missing or stale (`{status}`); run `mimry refresh` before relying on graph paths.",
+            "- No relationship path was invented. Use source imports/callers directly if this remains empty.",
+        ]
+    lines = relationship_lines or [
+        "- Graphify relationship data is current, but no path connected the selected files for this query.",
+        "- No relationship path was invented; rerun with a narrower symbol/file query if graph navigation matters.",
+    ]
+    if report_excerpt:
+        lines += ["", "### Graphify Report Signals", report_excerpt]
+    return lines
+
+
+def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8) -> list[dict]:
+    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root)
+    fresh, graphify = _index_and_graphify_health(root, ptr)
+    file_records = _selected_file_records(fresh, rows)
+    verification_commands = _verification_commands(fresh)
     lines = [
         "# MIMRY Context Pack",
         "",
         "## Query",
         query,
         "",
-        "## Index Status",
-        "Generated from Graphify artifacts when available; MIMRY index is fallback.",
+        "## Status Summary",
+        f"- Root: `{root}`",
+        f"- Index: {fresh['state']} (last indexed: {ptr.get('lastIndexedAt') or 'never'}; files: {len(fresh['files'])}; symbols: {len(fresh['symbols'])})",
+        f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
+        f"- Graphify: {graphify['status']} ({graphify['graph_nodes']} nodes / {graphify['graph_edges']} edges; output: `{_relative_status_path(root, graphify['output_dir'])}`)",
+        f"- Graphify artifacts: graph.json {'present' if graphify['graph_exists'] else 'missing'}, GRAPH_REPORT.md {'present' if graphify['report_exists'] else 'missing'}, manifest.json {'present' if graphify['manifest_exists'] else 'missing'}",
+        f"- Refresh action: {_refresh_action(fresh, graphify)}",
         "",
         "## Summary",
-        f"MIMRY found {len(rows)} relevant file(s), preferring Graphify graph nodes/edges/report when available.",
+        f"MIMRY found {len(rows)} relevant file(s). Use this as an agent handoff: read in order, verify source/tests, and avoid unsupported edits.",
         "",
         "## Relevant Files",
     ]
     for i, r in enumerate(rows, 1):
-        lines += [f"### {i}. `{r['path']}`", f"Score: {r['score']}", f"Reason: {r['reason']}"]
+        role = _file_role(r["path"])
+        adapter = file_records.get(r["path"], {}).get("adapter", "unknown")
+        lines += [
+            f"### {i}. `{r['path']}`",
+            f"Score: {r['score']}",
+            f"Reason: {r['reason']}",
+            f"Role: {role}",
+            f"Evidence: adapter `{adapter}`; relative path only; open source before editing.",
+        ]
         if r.get("details"):
             lines += [f"Details: {r['details']}"]
         lines += [""]
-    lines += (
-        [
-            "## Relevant Symbols / Entities",
-            "Use `mimry symbol <name>` for concrete symbols.",
-            "",
-            "## Relationship Paths",
-            *(relationship_lines or ["No Graphify relationship path matched the selected files yet."]),
-            "",
-            "## Graphify Report Signals",
-            report_excerpt or "No Graphify report excerpt available.",
-            "",
-            "## Suggested Reading Order",
-        ]
-        + [f"{i}. `{r['path']}`" for i, r in enumerate(rows, 1)]
-        + [
-            "",
-            "## Risk Notes",
-            "- Open source files before editing.",
-            "- Re-run `mimry reindex` after changes.",
-            "",
-            "## Suggested Verification",
-            "- Run project tests/typecheck/build for affected files.",
-            "",
-            "## Source of Truth Reminder",
-            "Original files, tests, builds, and human verification remain final truth.",
-            "",
-        ]
-    )
+    lines += [
+        "## Relevant Symbols / Entities",
+        *(
+            _symbol_lines(fresh, rows)
+            or [
+                "- No indexed symbols/entities matched the selected files. Use `mimry symbol <name>` for a narrower lookup."
+            ]
+        ),
+        "",
+        "## Graphify Relationships / Communities",
+        *_graphify_context_lines(root, rows, graphify),
+        "",
+        "## Suggested Reading Order",
+        *_reading_order_lines(rows),
+        "",
+        "## Likely Edit Surfaces",
+        *_surface_lines(rows, edit=True),
+        "",
+        "## Likely Non-Edit Supporting Files",
+        *_surface_lines(rows, edit=False),
+        *_detected_supporting_file_lines(fresh, rows),
+        "",
+        "## Risk Notes",
+        *_risk_lines(fresh, rows),
+        "",
+        "## Suggested Verification Commands",
+        *(
+            [f"- `{cmd}`" for cmd in verification_commands]
+            or ["- No project-specific commands detected; run the nearest tests/typecheck/build for affected files."]
+        ),
+        "",
+        "## Source of Truth Reminder",
+        "MIMRY narrows context; source files, tests, build output, and human/operator verification remain the source of truth.",
+        "",
+        "## Final Report Checklist",
+        "- Context query used and context path read.",
+        "- Key source files inspected directly (with paths).",
+        "- Files changed and why.",
+        "- Verification commands run with exact results.",
+        "- MIMRY refreshed after meaningful changes, or reason not refreshed.",
+        "- Yellow marks/blockers, especially stale Graphify/index data or risky paths.",
+        "",
+    ]
     context_file(root).parent.mkdir(parents=True, exist_ok=True)
     context_file(root).write_text("\n".join(lines), encoding="utf-8")
     return rows
