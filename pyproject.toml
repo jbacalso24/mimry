@@ -21,7 +21,11 @@ mimry = "mimry.cli:main"
 mimry-mcp = "mimry.mcp_server:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.8"]
+dev = [
+    "pre-commit>=4.6.0",
+    "pytest>=8",
+    "ruff>=0.8",
+]
 
 [tool.uv.sources]
 graphifyy = { git = "https://github.com/safishamsi/graphify.git", rev = "44c0a5e33c7011813dcebf1a8850c1c6005bf500" }
@@ -32,6 +36,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+extend-exclude = ["vendor"]
 
 [tool.ruff.lint]
 select = ["E9", "F63", "F7", "F82"]

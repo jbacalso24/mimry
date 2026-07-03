@@ -97,13 +97,15 @@ def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
     for s in load_jsonl(idx / "symbols.jsonl"):
         if name.lower() in s["name"].lower():
             f = files.get(s["file_id"], {})
-            matches.append({
-                "name": s["name"],
-                "kind": s["kind"],
-                "language": s["language"],
-                "path": f.get("rel_path", s["file_id"]),
-                "line_start": s.get("line_start"),
-            })
+            matches.append(
+                {
+                    "name": s["name"],
+                    "kind": s["kind"],
+                    "language": s["language"],
+                    "path": f.get("rel_path", s["file_id"]),
+                    "line_start": s.get("line_start"),
+                }
+            )
     return {"name": name, "root": str(root_path), "symbols": matches}
 
 
@@ -113,10 +115,47 @@ def mimry_context(query: str, root: str | None = None) -> dict[str, Any]:
     root_path = _root(root)
     ptr = require(root_path)
     rows = find_rows(Path(ptr["indexPath"]), query, 8, True)
-    lines = ["# MIMRY Context Pack", "", "## Query", query, "", "## Index Status", "Generated from current local MIMRY index.", "", "## Summary", f"MIMRY found {len(rows)} relevant file(s) using metadata and Graphify cluster signals.", "", "## Relevant Files"]
+    lines = [
+        "# MIMRY Context Pack",
+        "",
+        "## Query",
+        query,
+        "",
+        "## Index Status",
+        "Generated from current local MIMRY index.",
+        "",
+        "## Summary",
+        f"MIMRY found {len(rows)} relevant file(s) using metadata and Graphify cluster signals.",
+        "",
+        "## Relevant Files",
+    ]
     for i, r in enumerate(rows, 1):
         lines += [f"### {i}. `{r['path']}`", f"Score: {r['score']}", f"Reason: {r['reason']}", ""]
-    lines += ["## Relevant Symbols / Entities", "Use `mimry_symbol` for concrete symbols.", "", "## Relationship Paths", "Early MVP uses file definitions and Graphify folder clusters.", "", "## Suggested Reading Order"] + [f"{i}. `{r['path']}`" for i, r in enumerate(rows, 1)] + ["", "## Risk Notes", "- Open source files before editing.", "- Re-run `mimry_reindex` after changes.", "", "## Suggested Verification", "- Run project tests/typecheck/build for affected files.", "", "## Source of Truth Reminder", "Original files, tests, builds, and human verification remain final truth.", ""]
+    lines += (
+        [
+            "## Relevant Symbols / Entities",
+            "Use `mimry_symbol` for concrete symbols.",
+            "",
+            "## Relationship Paths",
+            "Early MVP uses file definitions and Graphify folder clusters.",
+            "",
+            "## Suggested Reading Order",
+        ]
+        + [f"{i}. `{r['path']}`" for i, r in enumerate(rows, 1)]
+        + [
+            "",
+            "## Risk Notes",
+            "- Open source files before editing.",
+            "- Re-run `mimry_reindex` after changes.",
+            "",
+            "## Suggested Verification",
+            "- Run project tests/typecheck/build for affected files.",
+            "",
+            "## Source of Truth Reminder",
+            "Original files, tests, builds, and human verification remain final truth.",
+            "",
+        ]
+    )
     context_file(root_path).parent.mkdir(parents=True, exist_ok=True)
     context_file(root_path).write_text("\n".join(lines))
     return {"query": query, "root": str(root_path), "output": str(context_file(root_path)), "files": rows}
