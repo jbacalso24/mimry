@@ -9,6 +9,10 @@ def run_cli(work: Path, cache: Path, *args: str):
     env=os.environ.copy(); env["PYTHONPATH"]=str(ROOT/"src"); env["MIMRY_CACHE_HOME"]=str(cache)
     return subprocess.run([sys.executable,"-m","mimry.cli","--root",str(work),*args], cwd=ROOT, env=env, text=True, capture_output=True, check=False)
 
+def run_cli_from_cwd(work: Path, cache: Path, *args: str):
+    env=os.environ.copy(); env["PYTHONPATH"]=str(ROOT/"src"); env["MIMRY_CACHE_HOME"]=str(cache)
+    return subprocess.run([sys.executable,"-m","mimry.cli",*args], cwd=work, env=env, text=True, capture_output=True, check=False)
+
 def copy_fixture(tmp_path: Path) -> Path:
     dest=tmp_path/"repo"; shutil.copytree(FIXTURE, dest); return dest
 
@@ -16,6 +20,17 @@ def test_init_creates_pointer_config_agent_rules(tmp_path):
     repo=copy_fixture(tmp_path); res=run_cli(repo,tmp_path/"cache","init")
     assert res.returncode == 0, res.stderr
     assert (repo/".mimry"/"pointer.json").exists(); assert (repo/".mimry"/"config.toml").exists(); assert (repo/".mimry"/"AGENT_RULES.md").exists()
+
+def test_init_defaults_to_current_working_directory(tmp_path):
+    repo=copy_fixture(tmp_path)
+    cache=tmp_path/"cache"
+
+    res=run_cli_from_cwd(repo,cache,"init")
+
+    assert res.returncode == 0, res.stderr
+    ptr=json.loads((repo/".mimry"/"pointer.json").read_text())
+    assert ptr["rootPath"] == str(repo.resolve())
+    assert str(ROOT.resolve()) not in res.stdout
 
 def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     repo=copy_fixture(tmp_path); cache=tmp_path/"cache"; assert run_cli(repo,cache,"init").returncode == 0

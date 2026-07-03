@@ -19,7 +19,7 @@ from .graphify_wrapper import cmd_graphify
 
 
 def build_parser():
-    p=argparse.ArgumentParser(prog="mimry"); p.add_argument("--root", default="."); sub=p.add_subparsers(dest="command", required=True)
+    p=argparse.ArgumentParser(prog="mimry", description="Local repo intelligence memory. Defaults --root to the current working directory."); p.add_argument("--root", default=".", help="Repo/folder to operate on (default: current working directory)"); sub=p.add_subparsers(dest="command", required=True)
     s=sub.add_parser("init"); s.add_argument("--root-type", default="repo"); s.set_defaults(func=cmd_init)
     sub.add_parser("index").set_defaults(func=cmd_index); sub.add_parser("reindex").set_defaults(func=cmd_index); sub.add_parser("status").set_defaults(func=cmd_status)
     s=sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins"); s.add_argument("--active-only", action="store_true"); s.set_defaults(func=cmd_adapters)
