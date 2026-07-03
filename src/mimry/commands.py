@@ -12,7 +12,14 @@ from .adapters import list_adapters
 from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_index_path
 from .constants import SCHEMA_VERSION
 from .freshness import index_freshness
-from .graphify_artifacts import graphify_health, graphify_relationship_lines, graphify_report_excerpt
+from .graphify_artifacts import (
+    graphify_evidence_for_path,
+    graphify_health,
+    graphify_relationship_lines,
+    graphify_report_excerpt,
+    graphify_shortest_path,
+    graphify_surface_matches,
+)
 from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build
 from .indexer import write_index
 from .paths import context_file, idx_path, mdir, now, roots_file
@@ -580,6 +587,156 @@ def cmd_related(a):
     root = Path(a.root).resolve()
     ptr = require(root)
     print_rows(f"Related files for: {a.query}", find_rows(Path(ptr["indexPath"]), a.query, a.limit, True, root=root))
+    return 0
+
+
+def _print_verification_hints(fresh: dict) -> None:
+    commands = _verification_commands(fresh)
+    print("Suggested verification:")
+    if commands:
+        for cmd in commands[:5]:
+            print(f"- {cmd}")
+    else:
+        print("- Run the nearest tests/typecheck/build for affected files.")
+
+
+def _print_candidate_matches(title: str, matches: list[dict]) -> None:
+    print(title)
+    if not matches:
+        print("- none")
+        return
+    for match in matches[:5]:
+        print(f"- `{match['label']}` in `{match['path']}` (score {match['score']})")
+
+
+def _format_path_step(step: dict) -> str:
+    source = step["from"]
+    target = step["to"]
+    edge = step["edge"]
+    relation = edge.get("relation") or edge.get("type") or "relates"
+    source_label = source.get("label") or source.get("id")
+    target_label = target.get("label") or target.get("id")
+    source_file = source.get("source_file") or source.get("path") or "?"
+    target_file = target.get("source_file") or target.get("path") or "?"
+    return f"- `{source_label}` (`{source_file}`) --{relation}--> `{target_label}` (`{target_file}`)"
+
+
+def cmd_explain(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    fresh, graphify = _index_and_graphify_health(root, ptr)
+    rows = find_rows(Path(ptr["indexPath"]), a.query, getattr(a, "limit", 5), True, root=root)
+    print(f"MIMRY explain: {a.query}")
+    _print_status_summary(ptr, fresh, graphify)
+    print("Top relevant files:")
+    if rows:
+        for i, row in enumerate(rows, 1):
+            print(f"{i}. {row['path']} (score {row['score']})")
+            print(f"   why: {row['reason']}")
+            if row.get("details"):
+                print(f"   facts: {row['details'][:300]}")
+    else:
+        print("- none; try a narrower file/symbol/query.")
+
+    print("Symbols/entities:")
+    for line in _symbol_lines(fresh, rows, limit=6) or ["- none matched selected files; try `mimry symbol <name>`."]:
+        print(line)
+
+    print("Relationship paths:")
+    relationship_lines = graphify_relationship_lines(root, [r["path"] for r in rows], max_lines=6)
+    if graphify["status"] != "current":
+        print(f"- Graphify is {graphify['status']}; run `mimry refresh` before relying on relationship paths.")
+        print("- No relationship path was invented.")
+    elif relationship_lines:
+        for line in relationship_lines:
+            print(line)
+    else:
+        print("- No Graphify relationship path connected these ranked files. No relationship path was invented.")
+
+    source = next((r for r in rows if _is_likely_edit_surface(r["path"])), rows[0] if rows else None)
+    print("Likely source of truth:")
+    print(
+        f"- `{source['path']}` — open source and tests before editing." if source else "- unknown from current index."
+    )
+    _print_verification_hints(fresh)
+    return 0
+
+
+def cmd_path(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    fresh, graphify = _index_and_graphify_health(root, ptr)
+    print(f"MIMRY path: {a.source} -> {a.target}")
+    if graphify["status"] != "current":
+        print(f"No Graphify relationship path found: Graphify artifacts are {graphify['status']}.")
+        print("No path was invented. Run `mimry refresh`, then retry with file paths or symbol names.")
+        return 0
+    result = graphify_shortest_path(root, a.source, a.target)
+    if result["found"]:
+        print("Path found:")
+        for step in result["steps"]:
+            print(_format_path_step(step))
+        print("Source of truth: Graphify artifacts plus indexed source files; verify by opening each file above.")
+        return 0
+    print("No Graphify relationship path found between the resolved surfaces.")
+    print("No path was invented.")
+    _print_candidate_matches("Source candidates:", result["source_matches"])
+    _print_candidate_matches("Target candidates:", result["target_matches"])
+    print("Fallback queries:")
+    print(f'- mimry related "{a.source}"')
+    print(f'- mimry related "{a.target}"')
+    print(f'- mimry explain "{a.source} {a.target}"')
+    _print_verification_hints(fresh)
+    return 0
+
+
+def cmd_why(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    fresh, graphify = _index_and_graphify_health(root, ptr)
+    idx = Path(ptr["indexPath"])
+    rows = find_rows(idx, a.query, max(getattr(a, "limit", 25), 25), True, root=root)
+    surface = a.surface
+    surface_lower = surface.lower()
+    exact = None
+    for row in rows:
+        if surface_lower == row["path"].lower() or surface_lower in row["path"].lower():
+            exact = row
+            break
+    if exact is None:
+        files = {f["file_id"]: f for f in load_jsonl(idx / "files.jsonl")}
+        for sym in load_jsonl(idx / "symbols.jsonl"):
+            if surface_lower in sym.get("name", "").lower():
+                path = files.get(sym["file_id"], {}).get("rel_path", "")
+                exact = next((row for row in rows if row["path"] == path), None)
+                if exact:
+                    break
+    print(f"MIMRY why: {surface}")
+    print(f"Ranked for query: {a.query}")
+    if exact:
+        print(f"File: {exact['path']}")
+        print(f"Score: {exact['score']}")
+        print("Ranking signals:")
+        for reason in exact["reason"].split(", "):
+            print(f"- {reason}")
+        if exact.get("details"):
+            print(f"Indexed facts: {exact['details'][:500]}")
+    else:
+        print("This surface was not in the top ranked results for that query.")
+        print("Ranking signals:")
+        print("- no direct filename/symbol/Graphify/config signal found in the current result window")
+        print("Fallback: try a narrower query or `mimry find`/`mimry symbol`.")
+    print("Graphify evidence:")
+    if graphify["status"] != "current":
+        print(f"- Graphify is {graphify['status']}; run `mimry refresh` for current graph evidence.")
+    else:
+        evidence = graphify_evidence_for_path(root, surface)
+        for line in evidence or ["- no matching Graphify node/edge evidence for this surface"]:
+            print(line)
+        matches = graphify_surface_matches(root, surface, limit=3)
+        if matches:
+            _print_candidate_matches("Resolved Graphify candidates:", matches)
+    _print_verification_hints(fresh)
     return 0
 
 
