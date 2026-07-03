@@ -8,7 +8,7 @@ MVP loop:
 
 ```bash
 mimry init
-mimry index
+mimry refresh
 mimry status
 mimry find "auth"
 mimry context "fix auth bug"
@@ -71,11 +71,13 @@ Use MIMRY from inside any local repo. MIMRY defaults to the current working dire
 ```bash
 cd /path/to/repo
 mimry init
-mimry index
+mimry refresh
 mimry status
 mimry find "auth login token"
 mimry context "understand auth flow"
 ```
+
+`mimry init` creates local generated metadata under `.mimry/`. When the target root is inside an initialized Git worktree, MIMRY safely verifies or appends the appropriate `.mimry/` ignore entry to that worktree's `.gitignore` without replacing existing content.
 
 You can still target another repo explicitly when needed:
 
@@ -100,6 +102,7 @@ Active today:
 ```text
 python-ast
 typescript-ast
+config-manifest
 generic-text
 ```
 
