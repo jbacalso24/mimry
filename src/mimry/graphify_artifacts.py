@@ -4,6 +4,7 @@ import json
 from collections import defaultdict, deque
 from pathlib import Path
 
+from .intent import apply_intent_adjustment, query_terms
 from .paths import graphify_output_dir
 
 
@@ -37,7 +38,7 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
     g = load_graphify_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
-    terms = [t.lower() for t in query.replace("_", " ").replace("-", " ").split() if t]
+    terms = query_terms(query)
     if not terms:
         return []
 
@@ -83,6 +84,10 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
 
     rows = []
     for row in by_file.values():
+        row["score"], intent_reasons = apply_intent_adjustment(row["score"], row["path"], terms, graphify=True)
+        if row["score"] <= 0:
+            continue
+        row["reasons"].update(intent_reasons)
         node_preview = ", ".join(row["nodes"][:4])
         reason = ", ".join(sorted(row["reasons"]))
         if node_preview:
