@@ -30,6 +30,20 @@ def run_cli_from_cwd(work: Path, cache: Path, *args: str):
     )
 
 
+def run_cli_with_cache_env(work: Path, cache_value: str, *args: str):
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    env["MIMRY_CACHE_HOME"] = cache_value
+    return subprocess.run(
+        [sys.executable, "-m", "mimry.cli", "--root", str(work), *args],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
 def copy_fixture(tmp_path: Path) -> Path:
     dest = tmp_path / "repo"
     shutil.copytree(FIXTURE, dest)
@@ -168,6 +182,26 @@ def test_reindex_detects_changed_file(tmp_path):
     assert "Index: current" in run_cli(repo, cache, "status").stdout
 
 
+def test_status_detects_same_size_rewrite_with_restored_mtime(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    target = repo / "src" / "auth" / "session.py"
+    original_stat = target.stat()
+    text = target.read_text(encoding="utf-8")
+    changed = text.replace("pass", "True")
+    assert len(changed.encode()) == len(text.encode())
+
+    target.write_text(changed, encoding="utf-8")
+    os.utime(target, (original_stat.st_atime, original_stat.st_mtime))
+
+    stale = run_cli(repo, cache, "status")
+    assert stale.returncode == 2
+    assert "Index: stale" in stale.stdout
+    assert "Changed files: 1" in stale.stdout
+
+
 def test_index_normalizes_stale_pointer_index_path(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
@@ -195,6 +229,61 @@ def test_cache_wipe_current(tmp_path):
     res = run_cli(repo, cache, "cache", "wipe", "--current")
     assert res.returncode == 0
     assert not idx.exists()
+
+
+def test_cache_wipe_all_rejects_unsafe_cache_homes(tmp_path):
+    repo = copy_fixture(tmp_path)
+    unsafe_paths = [Path("/"), Path.home(), repo]
+
+    for unsafe in unsafe_paths:
+        sentinel = repo / "sentinel.txt"
+        sentinel.write_text("do not delete", encoding="utf-8")
+        res = run_cli(repo, unsafe, "cache", "wipe", "--all")
+        assert res.returncode == 2
+        assert "Refusing cache wipe" in res.stdout
+        assert sentinel.exists()
+
+
+def test_cache_wipe_all_rejects_relative_and_empty_cache_home(tmp_path):
+    repo = copy_fixture(tmp_path)
+
+    for cache_value in ("relative-cache", ""):
+        res = run_cli_with_cache_env(repo, cache_value, "cache", "wipe", "--all")
+        assert res.returncode == 2
+        assert "Refusing cache wipe" in res.stdout
+
+
+def test_cache_wipe_all_succeeds_for_mimry_looking_temp_cache(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    assert (cache / "roots.json").exists()
+
+    res = run_cli(repo, cache, "cache", "wipe", "--all")
+
+    assert res.returncode == 0
+    assert not cache.exists()
+
+
+def test_cache_wipe_current_rejects_index_path_outside_safe_cache(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    outside = tmp_path / "outside-index"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("keep", encoding="utf-8")
+    ptr_path = repo / ".mimry" / "pointer.json"
+    ptr = json.loads(ptr_path.read_text(encoding="utf-8"))
+    ptr["indexPath"] = str(outside)
+    ptr_path.write_text(json.dumps(ptr, indent=2) + "\n", encoding="utf-8")
+
+    res = run_cli(repo, cache, "cache", "wipe", "--current")
+
+    assert res.returncode == 2
+    assert "Refusing cache wipe" in res.stdout
+    assert (outside / "keep.txt").exists()
 
 
 def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):

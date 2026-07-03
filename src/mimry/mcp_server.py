@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 
 from mimry.adapters import list_adapters
 from mimry.commands import require
+from mimry.freshness import index_freshness
 from mimry.graphify_artifacts import graphify_relationship_lines, graphify_report_excerpt
 from mimry.indexer import write_index
 from mimry.paths import context_file
@@ -24,18 +25,13 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
     ptr = load_pointer(root_path)
     if not ptr:
         return {"initialized": False, "root": str(root_path), "recommended": "Run `mimry init`."}
-    idx = Path(ptr["indexPath"])
-    files = load_jsonl(idx / "files.jsonl")
-    symbols = load_jsonl(idx / "symbols.jsonl")
-    changed: list[str] = []
-    missing: list[str] = []
-    for f in files:
-        p = root_path / f["rel_path"]
-        if not p.exists():
-            missing.append(f["rel_path"])
-        elif p.stat().st_size != f["size"] or p.stat().st_mtime != f["mtime"]:
-            changed.append(f["rel_path"])
-    state = "missing" if not (idx / "files.jsonl").exists() else ("stale" if changed or missing else "current")
+    fresh = index_freshness(root_path, ptr)
+    idx = fresh["index_path"]
+    files = fresh["files"]
+    symbols = fresh["symbols"]
+    changed = fresh["changed"]
+    missing = fresh["missing"]
+    state = fresh["state"]
     return {
         "initialized": True,
         "root": str(root_path),

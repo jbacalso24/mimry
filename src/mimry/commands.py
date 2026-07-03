@@ -6,7 +6,9 @@ import uuid
 from pathlib import Path
 
 from .adapters import list_adapters
+from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_index_path
 from .constants import SCHEMA_VERSION
+from .freshness import index_freshness
 from .graphify_artifacts import graphify_relationship_lines, graphify_report_excerpt
 from .graphify_wrapper import run_graphify_build
 from .indexer import write_index
@@ -94,23 +96,14 @@ def cmd_status(a):
     if not ptr:
         print("MIMRY status\nInitialized: no\nRecommended: Run `mimry init`.")
         return 1
-    idx = Path(ptr["indexPath"])
-    files = load_jsonl(idx / "files.jsonl")
-    symbols = load_jsonl(idx / "symbols.jsonl")
-    changed = []
-    missing = []
-    for f in files:
-        p = root / f["rel_path"]
-        if not p.exists():
-            missing.append(f["rel_path"])
-        elif p.stat().st_size != f["size"] or p.stat().st_mtime != f["mtime"]:
-            changed.append(f["rel_path"])
-    state = "missing" if not (idx / "files.jsonl").exists() else ("stale" if changed or missing else "current")
-    g = (
-        json.loads((idx / "graph.json").read_text(encoding="utf-8"))
-        if (idx / "graph.json").exists()
-        else {"nodes": [], "edges": []}
-    )
+    fresh = index_freshness(root, ptr)
+    idx = fresh["index_path"]
+    files = fresh["files"]
+    symbols = fresh["symbols"]
+    changed = fresh["changed"]
+    missing = fresh["missing"]
+    state = fresh["state"]
+    g = fresh["graph"]
     print(
         f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nIndex path: {idx}"
     )
@@ -226,13 +219,18 @@ def cmd_roots(a):
 
 
 def cmd_cache_wipe(a):
-    from .paths import cache_home
-
-    if a.all:
-        shutil.rmtree(cache_home(), ignore_errors=True)
-        print(f"Wiped all MIMRY cache: {cache_home()}")
+    root = Path(a.root).resolve()
+    try:
+        if a.all:
+            cache = validated_cache_home(root)
+            shutil.rmtree(cache, ignore_errors=True)
+            print(f"Wiped all MIMRY cache: {cache}")
+            return 0
+        ptr = require(root)
+        idx = validated_current_index_path(Path(ptr["indexPath"]), root)
+        shutil.rmtree(idx, ignore_errors=True)
+        print(f"Wiped current root cache: {idx}")
         return 0
-    ptr = require(Path(a.root).resolve())
-    shutil.rmtree(Path(ptr["indexPath"]), ignore_errors=True)
-    print(f"Wiped current root cache: {ptr['indexPath']}")
-    return 0
+    except UnsafeCachePathError as e:
+        print(f"Refusing cache wipe: {e}")
+        return 2
