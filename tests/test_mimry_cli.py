@@ -799,3 +799,128 @@ testpaths = ["tests"]
     assert "typecheck command uv run mypy ." in files_text
     assert "entrypoints demo=demo.cli:main" in files_text
     assert "repo rules Never print secrets." in files_text
+
+
+def test_feedback_records_cli_payload_normalizes_paths_and_stats(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    absolute_opened = repo / "src" / "auth" / "session.py"
+
+    res = run_cli(
+        repo,
+        cache,
+        "feedback",
+        "--query",
+        "fix auth session ranking",
+        "--opened",
+        str(absolute_opened),
+        "--changed",
+        "src/auth/middleware.py",
+        "--missed",
+        "../outside.txt",
+        "--verification",
+        "uv run pytest -q passed",
+        "--outcome",
+        "passed",
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert "MIMRY feedback recorded" in res.stdout
+    assert "Ranking influence: changed-file boost, opened-file boost, missed-file recovery boost" in res.stdout
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
+    with sqlite3.connect(Path(ptr["indexPath"]) / "mimry.sqlite") as con:
+        row = con.execute("select query, opened_paths, changed_paths, missed_paths, outcome from feedback").fetchone()
+    assert row[0] == "fix auth session ranking"
+    assert json.loads(row[1]) == ["src/auth/session.py"]
+    assert json.loads(row[2]) == ["src/auth/middleware.py"]
+    assert json.loads(row[3])[0].startswith("external:")
+    assert row[4] == "passed"
+
+    stats = run_cli(repo, cache, "feedback", "stats")
+    assert stats.returncode == 0, stats.stderr
+    assert "MIMRY feedback stats" in stats.stdout
+    assert "Records: 1" in stats.stdout
+    assert "- passed: 1" in stats.stdout
+
+
+def test_feedback_json_records_equivalent_data_and_show_lists_it(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    payload = {
+        "query": "login auth session bridge",
+        "context_path": ".mimry/context/latest.md",
+        "suggested": ["README.md", "src/auth/session.py"],
+        "opened": ["src/auth/session.py"],
+        "changed": ["src/auth/session.py"],
+        "missed": ["src/auth/middleware.py"],
+        "ignored": ["README.md"],
+        "verification": [{"command": "uv run pytest -q", "status": "passed"}],
+        "outcome": "passed",
+        "notes": "Session source of truth.",
+    }
+    feedback_json = tmp_path / "feedback.json"
+    feedback_json.write_text(json.dumps(payload), encoding="utf-8")
+
+    res = run_cli(repo, cache, "feedback", "--json", str(feedback_json))
+
+    assert res.returncode == 0, res.stderr
+    feedback_id = next(line.split(": ", 1)[1] for line in res.stdout.splitlines() if line.startswith("Feedback ID:"))
+    shown = run_cli(repo, cache, "feedback", "show", feedback_id)
+    assert shown.returncode == 0, shown.stderr
+    data = json.loads(shown.stdout)
+    assert data["query"] == payload["query"]
+    assert data["changed_paths"] == ["src/auth/session.py"]
+    assert data["ignored_paths"] == ["README.md"]
+    assert data["verification"] == payload["verification"]
+
+
+def test_feedback_ranking_reasons_boost_missed_opened_changed_and_downrank_ignored(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    assert (
+        run_cli(
+            repo,
+            cache,
+            "feedback",
+            "--query",
+            "fix login auth session",
+            "--opened",
+            "src/auth/session.py",
+            "--changed",
+            "src/auth/session.py",
+            "--missed",
+            "src/auth/middleware.py",
+            "--ignored",
+            "src/app.ts",
+            "--outcome",
+            "passed",
+        ).returncode
+        == 0
+    )
+
+    res = run_cli(repo, cache, "find", "login auth session bug")
+
+    assert res.returncode == 0, res.stderr
+    assert "feedback changed-file boost" in res.stdout
+    assert "feedback opened-file boost" in res.stdout
+    assert "feedback missed-file recovery boost" in res.stdout
+    assert "feedback ignored suggestion downrank" in res.stdout
+
+
+def test_context_pack_final_checklist_includes_feedback_reminder(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "context", "auth session")
+
+    assert res.returncode == 0, res.stderr
+    text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
+    assert "After verification, run `mimry feedback ...`" in text

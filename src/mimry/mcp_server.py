@@ -75,7 +75,7 @@ def mimry_find(query: str, root: str | None = None, limit: int = 10) -> dict[str
     """Search indexed files with ranking reasons."""
     root_path = _root(root)
     ptr = require(root_path)
-    rows = find_rows(Path(ptr["indexPath"]), query, limit, root=root_path)
+    rows = find_rows(Path(ptr["indexPath"]), query, limit, root=root_path, root_id=ptr.get("rootId"))
     return {"query": query, "root": str(root_path), "results": rows}
 
 
@@ -84,7 +84,7 @@ def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[
     """Return files related to a query using graph-aware ranking signals."""
     root_path = _root(root)
     ptr = require(root_path)
-    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root_path)
+    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root_path, root_id=ptr.get("rootId"))
     return {"query": query, "root": str(root_path), "results": rows}
 
 
@@ -116,7 +116,7 @@ def mimry_context(query: str, root: str | None = None) -> dict[str, Any]:
     """Generate a MIMRY context pack and return its path plus selected files."""
     root_path = _root(root)
     ptr = require(root_path)
-    rows = find_rows(Path(ptr["indexPath"]), query, 8, True, root=root_path)
+    rows = find_rows(Path(ptr["indexPath"]), query, 8, True, root=root_path, root_id=ptr.get("rootId"))
     paths = [r["path"] for r in rows]
     relationship_lines = graphify_relationship_lines(root_path, paths)
     report_excerpt = graphify_report_excerpt(root_path)
@@ -161,6 +161,9 @@ def mimry_context(query: str, root: str | None = None) -> dict[str, Any]:
             "",
             "## Source of Truth Reminder",
             "Original files, tests, builds, and human verification remain final truth.",
+            "",
+            "## Final Report Checklist",
+            "- After verification, run `mimry feedback ...` with suggested/opened/changed/missed/outcome so future agents get better rankings.",
             "",
         ]
     )
