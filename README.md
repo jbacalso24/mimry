@@ -147,6 +147,11 @@ Active today:
 python-ast
 typescript-ast
 config-manifest
+nextjs-app-router
+fastapi
+react-native-expo
+sql-schema
+markdown-docs
 generic-text
 ```
 
