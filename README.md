@@ -81,6 +81,20 @@ mimry preflight "understand auth flow"
 
 `mimry preflight <task>` is the recommended one-command agent discipline workflow. It initializes the root if needed, checks index freshness and Graphify artifact health, refreshes only when state is missing/stale (or when `--force-refresh` is passed), generates `.mimry/context/latest.md`, prints the top files, and reminds agents to read the context pack before opening files.
 
+The context pack is an evidence-grade agent handoff, not just a file list. It includes:
+
+- query and status summary (root, index freshness, Graphify freshness, refresh action)
+- relevant files with scores, reason labels, adapter evidence, and likely roles
+- relevant symbols/entities when indexed
+- Graphify relationship paths/community/report signals when current; explicit degradation when missing/stale
+- suggested reading order with rationale
+- likely edit surfaces vs non-edit supporting files
+- risk notes for generated/cache paths, privacy-sensitive files, broad dirty work, docs/tests/config support files
+- suggested verification commands detected from config manifests and repo docs
+- source-of-truth reminder and final report checklist for agents
+
+MIMRY context packs remain relative-path-first and never dump full source or secret values. Source files, tests, and real build output remain the final truth. See [`docs/context-packs.md`](docs/context-packs.md) for the section contract.
+
 Manual commands remain available:
 
 ```bash

@@ -240,6 +240,76 @@ def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
     assert (repo / ".mimry" / "context" / "latest.md").exists()
 
 
+def test_preflight_writes_evidence_grade_context_pack_sections(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    (repo / "pyproject.toml").write_text(
+        """
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+dependencies = ["pytest>=8", "ruff>=0.8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+""".strip(),
+        encoding="utf-8",
+    )
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_session.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+
+    res = run_cli(repo, cache, "preflight", "fix auth session pytest ruff verification")
+
+    assert res.returncode == 0, res.stderr
+    text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
+    for section in (
+        "# MIMRY Context Pack",
+        "## Query",
+        "## Status Summary",
+        "## Relevant Files",
+        "## Relevant Symbols / Entities",
+        "## Graphify Relationships / Communities",
+        "## Suggested Reading Order",
+        "## Likely Edit Surfaces",
+        "## Likely Non-Edit Supporting Files",
+        "## Risk Notes",
+        "## Suggested Verification Commands",
+        "## Source of Truth Reminder",
+        "## Final Report Checklist",
+    ):
+        assert section in text
+    assert "Root:" in text
+    assert "Index: current" in text
+    assert "Graphify: current" in text
+    assert "Refresh action: none" in text
+    assert "src/auth/session.py" in text
+    assert "Reason:" in text
+    assert "Score:" in text
+    assert "uv run pytest" in text
+    assert "uv run ruff check ." in text
+    assert "tests/test_session.py" in text
+    assert "MIMRY narrows context" in text
+
+
+def test_context_pack_degrades_when_graphify_relationships_missing(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "context", "auth session")
+
+    assert res.returncode == 0, res.stderr
+    text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
+    assert "Graphify relationship data is missing or stale" in text
+    assert "No relationship path was invented" in text
+
+
 def test_preflight_force_refreshes_even_when_current(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
