@@ -18,6 +18,9 @@ mimry refresh
 mimry status
 mimry find "auth"
 mimry context "fix auth bug"
+mimry explain "login route bug"
+mimry path "ui hook" "sqlite cache"
+mimry why src/auth/session.py --query "login auth bug"
 ```
 
 MIMRY is local-first. Source files remain the final truth.
@@ -104,6 +107,18 @@ mimry refresh
 mimry status
 mimry find "auth login token"
 mimry context "understand auth flow"
+```
+
+Agent-debugging commands use the same Graphify artifacts and MIMRY indexed facts as `find`, `related`, and `context`:
+
+- `mimry explain "<task/debug query>"` prints top ranked files, symbols/entities, Graphify relationship evidence, likely source of truth, and verification hints.
+- `mimry path "<source file/symbol/query>" "<target file/symbol/query>"` finds a real Graphify relationship path when one exists. If no path resolves, it says so, shows candidate surfaces, and suggests fallback queries instead of inventing a connection.
+- `mimry why "<file or symbol>" --query "<task>"` explains the filename/symbol/Graphify/community/adapter/config signals that caused a surface to rank for a task.
+
+These commands are intentionally concise and agent-readable. Refresh first when Graphify or the index is stale:
+
+```bash
+mimry refresh
 ```
 
 `mimry init` creates local generated metadata under `.mimry/`. When the target root is inside an initialized Git worktree, MIMRY safely verifies or appends the appropriate `.mimry/` ignore entry to that worktree's `.gitignore` without replacing existing content.

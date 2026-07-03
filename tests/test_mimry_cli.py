@@ -199,12 +199,88 @@ def test_status_find_symbol_related_context_loop(tmp_path):
     assert "## Suggested Verification" in text
 
 
+def test_explain_summarizes_ranked_files_paths_and_verification_hints(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+
+    res = run_cli(repo, cache, "explain", "auth session bug")
+
+    assert res.returncode == 0, res.stderr
+    assert "MIMRY explain: auth session bug" in res.stdout
+    assert "Top relevant files" in res.stdout
+    assert "src/auth/session.py" in res.stdout or "src/auth/middleware.py" in res.stdout
+    assert "Likely source of truth" in res.stdout
+    assert "Suggested verification" in res.stdout
+    assert "No relationship path was invented" not in res.stdout
+
+
+def test_why_explains_file_ranking_signals_for_query(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+
+    res = run_cli(repo, cache, "why", "src/auth/session.py", "--query", "login auth session")
+
+    assert res.returncode == 0, res.stderr
+    assert "MIMRY why: src/auth/session.py" in res.stdout
+    assert "Ranked for query: login auth session" in res.stdout
+    assert "Ranking signals" in res.stdout
+    assert "Graphify evidence" in res.stdout
+    assert "filename" in res.stdout or "Graphify" in res.stdout
+
+
+def test_path_finds_graphify_relationship_path_between_surfaces(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+
+    res = run_cli(repo, cache, "path", "middleware", "session")
+
+    assert res.returncode == 0, res.stderr
+    assert "MIMRY path: middleware -> session" in res.stdout
+    assert "Path found" in res.stdout
+    assert "src/auth/middleware.py" in res.stdout
+    assert "src/auth/session.py" in res.stdout
+    assert "--imports-->" in res.stdout
+
+
+def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+
+    res = run_cli(repo, cache, "path", "middleware", "missing-target")
+
+    assert res.returncode == 0, res.stderr
+    assert "No Graphify relationship path found" in res.stdout
+    assert "No path was invented" in res.stdout
+    assert "Fallback queries" in res.stdout
+
+
 def write_current_graphify_artifacts(repo: Path):
     target = repo / "src" / "auth" / "session.py"
     graphify_dir = repo / ".mimry" / "graphify"
     graphify_dir.mkdir(parents=True, exist_ok=True)
     (graphify_dir / "graph.json").write_text(
-        '{"nodes": [{"id": "session", "label": "session", "source_file": "src/auth/session.py"}], "edges": []}\n',
+        json.dumps(
+            {
+                "nodes": [
+                    {"id": "middleware", "label": "middleware", "source_file": "src/auth/middleware.py"},
+                    {"id": "session", "label": "session", "source_file": "src/auth/session.py"},
+                ],
+                "edges": [{"source": "middleware", "target": "session", "relation": "imports"}],
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     (graphify_dir / "GRAPH_REPORT.md").write_text(

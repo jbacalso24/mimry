@@ -6,16 +6,19 @@ import sys
 from .commands import (
     cmd_cache_wipe,
     cmd_context,
+    cmd_explain,
     cmd_find,
     cmd_index,
     cmd_adapters,
     cmd_init,
+    cmd_path,
     cmd_preflight,
     cmd_related,
     cmd_refresh,
     cmd_roots,
     cmd_status,
     cmd_symbol,
+    cmd_why,
 )
 from .graphify_wrapper import cmd_graphify
 
@@ -55,6 +58,19 @@ def build_parser():
     s = sub.add_parser("context")
     s.add_argument("query")
     s.set_defaults(func=cmd_context)
+    s = sub.add_parser("explain", help="Explain top files, symbols, relationship evidence, and verification for a task")
+    s.add_argument("query")
+    s.add_argument("--limit", type=int, default=5)
+    s.set_defaults(func=cmd_explain)
+    s = sub.add_parser("path", help="Find a Graphify relationship path between two files/symbols/queries")
+    s.add_argument("source")
+    s.add_argument("target")
+    s.set_defaults(func=cmd_path)
+    s = sub.add_parser("why", help="Explain why a file or symbol ranked for a task query")
+    s.add_argument("surface")
+    s.add_argument("--query", required=True)
+    s.add_argument("--limit", type=int, default=25)
+    s.set_defaults(func=cmd_why)
     sub.add_parser("roots").set_defaults(func=cmd_roots)
     cache = sub.add_parser("cache")
     cs = cache.add_subparsers(required=True)

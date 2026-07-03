@@ -128,6 +128,142 @@ def node_source_file(node: dict) -> str | None:
     return None
 
 
+def _edge_endpoints(edge: dict) -> tuple[str | None, str | None]:
+    source = edge.get("source") or edge.get("from")
+    target = edge.get("target") or edge.get("to")
+    return (str(source) if source else None, str(target) if target else None)
+
+
+def _edge_relation(edge: dict) -> str:
+    return str(edge.get("relation") or edge.get("type") or "relates")
+
+
+def _node_text(node: dict) -> str:
+    return " ".join(
+        str(node.get(k, "")) for k in ("id", "label", "norm_label", "source_file", "path", "type", "kind", "file_type")
+    ).lower()
+
+
+def graphify_surface_matches(root: Path, query: str, limit: int = 5) -> list[dict]:
+    """Resolve a file/symbol/query to Graphify nodes, using artifact text only."""
+    g = load_graphify_graph(root)
+    terms = query_terms(query)
+    if not terms:
+        return []
+    matches = []
+    for node in g.get("nodes") or []:
+        text = _node_text(node)
+        score = 0
+        for term in terms:
+            if term in text:
+                score += 10
+                if term in str(node.get("label", "")).lower():
+                    score += 20
+                if term in str(node.get("source_file") or node.get("path") or "").lower():
+                    score += 15
+                if term == str(node.get("id", "")).lower():
+                    score += 25
+        if score:
+            matches.append(
+                {
+                    "id": str(node.get("id")),
+                    "label": str(node.get("label") or node.get("id")),
+                    "path": node_source_file(node) or "?",
+                    "score": score,
+                    "node": node,
+                }
+            )
+    return sorted(matches, key=lambda m: (-m["score"], m["path"], m["label"]))[:limit]
+
+
+def graphify_evidence_for_path(root: Path, surface: str, max_lines: int = 6) -> list[str]:
+    """Return concise Graphify node/edge evidence for a file or symbol surface."""
+    g = load_graphify_graph(root)
+    nodes = g.get("nodes") or []
+    links = g.get("links") or g.get("edges") or []
+    surface_lower = surface.lower()
+    matched_ids = set()
+    lines = []
+    for node in nodes:
+        src = node_source_file(node) or ""
+        label = str(node.get("label") or node.get("id"))
+        if (
+            surface_lower in src.lower()
+            or surface_lower in label.lower()
+            or surface_lower == str(node.get("id", "")).lower()
+        ):
+            matched_ids.add(str(node.get("id")))
+            lines.append(f"- node `{label}` in `{src or '?'}`")
+            if len(lines) >= max_lines:
+                return lines
+    id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
+    for edge in links:
+        source, target = _edge_endpoints(edge)
+        if source not in matched_ids and target not in matched_ids:
+            continue
+        s = id_to_node.get(source or "", {})
+        t = id_to_node.get(target or "", {})
+        lines.append(f"- edge `{s.get('label') or source}` --{_edge_relation(edge)}--> `{t.get('label') or target}`")
+        if len(lines) >= max_lines:
+            return lines
+    return lines
+
+
+def graphify_shortest_path(root: Path, source_query: str, target_query: str, max_hops: int = 6) -> dict:
+    """Find a shortest relationship path in Graphify artifacts; do not infer missing edges."""
+    g = load_graphify_graph(root)
+    nodes = g.get("nodes") or []
+    links = g.get("links") or g.get("edges") or []
+    id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
+    source_matches = graphify_surface_matches(root, source_query, limit=5)
+    target_matches = graphify_surface_matches(root, target_query, limit=5)
+    if not source_matches or not target_matches:
+        return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
+
+    target_ids = {m["id"] for m in target_matches}
+    adjacency: dict[str, list[tuple[str, dict]]] = defaultdict(list)
+    for edge in links:
+        source, target = _edge_endpoints(edge)
+        if not source or not target:
+            continue
+        adjacency[source].append((target, edge))
+        adjacency[target].append((source, {**edge, "relation": "reverse " + _edge_relation(edge)}))
+
+    for source in source_matches:
+        queue = deque([(source["id"], [])])
+        seen = {source["id"]}
+        while queue:
+            node_id, path_edges = queue.popleft()
+            if node_id in target_ids:
+                steps = []
+                current = source["id"]
+                for edge in path_edges:
+                    edge_source, edge_target = _edge_endpoints(edge)
+                    next_id = edge_target if edge_source == current else edge_source
+                    steps.append(
+                        {
+                            "from": id_to_node.get(current, {"id": current}),
+                            "edge": edge,
+                            "to": id_to_node.get(next_id or "", {"id": next_id}),
+                        }
+                    )
+                    current = next_id or current
+                return {
+                    "found": True,
+                    "source_matches": source_matches,
+                    "target_matches": target_matches,
+                    "steps": steps,
+                }
+            if len(path_edges) >= max_hops:
+                continue
+            for next_id, edge in adjacency.get(node_id, []):
+                if next_id in seen:
+                    continue
+                seen.add(next_id)
+                queue.append((next_id, [*path_edges, edge]))
+    return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
+
+
 def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
     g = load_graphify_graph(root)
     nodes = g.get("nodes") or []
