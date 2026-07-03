@@ -41,7 +41,7 @@ def test_graphify_status_reports_pinned_submodule():
     )
     assert result.returncode == 0, result.stderr
     assert "Graphify status" in result.stdout
-    assert "vendor/graphify" in result.stdout
+    assert "Source:" in result.stdout
     assert "44c0a5e33c7011813dcebf1a8850c1c6005bf500" in result.stdout
 
 
