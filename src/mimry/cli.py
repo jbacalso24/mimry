@@ -33,11 +33,13 @@ def build_parser():
     sub = p.add_subparsers(dest="command", required=True)
     s = sub.add_parser("init", help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees")
     s.add_argument("--root-type", default="repo")
-    s.add_argument("--skip-graphify", action="store_true", help="Create MIMRY metadata without bootstrapping Graphify")
+    s.add_argument(
+        "--skip-graphify", action="store_true", help="Create MIMRY metadata without building graph artifacts"
+    )
     s.set_defaults(func=cmd_init)
     sub.add_parser("index").set_defaults(func=cmd_index)
     sub.add_parser("reindex").set_defaults(func=cmd_index)
-    sub.add_parser("refresh", help="Run Graphify build, MIMRY index, then status").set_defaults(func=cmd_refresh)
+    sub.add_parser("refresh", help="Run internal graph build, MIMRY index, then status").set_defaults(func=cmd_refresh)
     s = sub.add_parser("preflight", help="Initialize if needed, refresh stale state, and generate task context")
     s.add_argument("task", help="Task description to build the context pack around")
     s.add_argument("--force-refresh", action="store_true", help="Refresh even when index and Graphify are current")
@@ -78,7 +80,7 @@ def build_parser():
     f.add_argument("feedback_action", nargs="?", choices=("list", "show", "stats"))
     f.add_argument("feedback_id", nargs="?", help="Feedback ID for `mimry feedback show <id>`")
     f.add_argument("--query", help="Task query the agent worked on")
-    f.add_argument("--context", help="Context pack path used for suggestions, usually .mimry/context/latest.md")
+    f.add_argument("--context", help="Context pack path used for suggestions, usually mimry-out/context/latest.md")
     f.add_argument("--suggested", help="Comma-separated suggested files; defaults to parsing --context when available")
     f.add_argument("--opened", help="Comma-separated files opened/inspected")
     f.add_argument("--changed", help="Comma-separated files changed")
@@ -116,7 +118,7 @@ def build_parser():
     gb = gs.add_parser("build")
     gb.add_argument("--dry-run", action="store_true", help="Show the safe Graphify command without running it")
     gb.add_argument(
-        "--execute", action="store_true", help="Run the safe local Graphify build with output under .mimry/graphify"
+        "--execute", action="store_true", help="Run the safe local graph build with output under the MIMRY cache"
     )
     gb.set_defaults(func=cmd_graphify)
     return p

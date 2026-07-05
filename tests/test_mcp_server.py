@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mimry import mcp_server
 from mimry.indexer import write_index
-from mimry.mcp_server import mimry_find, mimry_status
+from mimry.mcp_server import mimry_context, mimry_find, mimry_status
 from mimry.paths import idx_path
 from mimry.storage import save_pointer
 
@@ -91,3 +91,36 @@ def test_mcp_status_includes_graphify_health_payload(tmp_path: Path, monkeypatch
     assert payload["graphify"]["manifest_exists"] is True
     assert payload["graphify"]["source"] in {"vendor", "installed", "missing"}
     assert payload["graphify"]["pinned_commit"]
+
+
+def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+
+    payload = mimry_context("fix auth session", str(repo))
+
+    assert payload["output"].endswith("mimry-out/context/latest.md")
+    assert payload["files"]
+    text = (repo / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    for section in (
+        "## Status Summary",
+        "## Graphify Relationships / Communities",
+        "## Likely Edit Surfaces",
+        "## Suggested Verification Commands",
+        "## Final Report Checklist",
+    ):
+        assert section in text
+    assert "After verification, run `mimry feedback ...`" in text

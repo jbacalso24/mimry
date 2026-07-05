@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import sys
@@ -36,10 +37,14 @@ def test_init_bootstraps_safe_graphify_output(tmp_path):
     res = _run(repo, env, "init")
 
     assert res.returncode == 0, res.stderr
-    graphify_dir = repo / ".mimry" / "graphify"
-    assert graphify_dir.exists()
-    assert (graphify_dir / "graph.json").exists()
-    assert (graphify_dir / "GRAPH_REPORT.md").exists()
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    internal_graph_dir = Path(ptr["indexPath"]) / "graphify"
+    visible_graph_dir = repo / "mimry-out" / "graph"
+    assert internal_graph_dir.exists()
+    assert visible_graph_dir.exists()
+    assert (visible_graph_dir / "graph.json").exists()
+    assert (visible_graph_dir / "GRAPH_REPORT.md").exists()
+    assert (repo / ".mimry" / "graphify").exists() is False
     assert (repo / "graphify-out").exists() is False
 
 
@@ -50,10 +55,14 @@ def test_refresh_runs_graphify_index_and_status(tmp_path):
     init = _run(repo, env, "init")
     assert init.returncode == 0, init.stderr
 
+    visible_graph_dir = repo / "mimry-out" / "graph"
+    shutil.rmtree(visible_graph_dir)
     res = _run(repo, env, "refresh")
 
     assert res.returncode == 0, res.stderr
     assert "Refreshing MIMRY" in res.stdout
-    assert "Graphify output:" in res.stdout
+    assert "MIMRY internal graph build complete." in res.stdout
     assert "MIMRY indexing complete" in res.stdout
     assert "Index: current" in res.stdout
+    assert (visible_graph_dir / "graph.json").exists()
+    assert (repo / ".mimry" / "graphify").exists() is False

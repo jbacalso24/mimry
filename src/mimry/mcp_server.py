@@ -6,9 +6,9 @@ from typing import Any
 from fastmcp import FastMCP
 
 from mimry.adapters import list_adapters
-from mimry.commands import require
+from mimry.commands import _write_context_pack, require
 from mimry.freshness import index_freshness
-from mimry.graphify_artifacts import graphify_health, graphify_relationship_lines, graphify_report_excerpt
+from mimry.graphify_artifacts import graphify_health
 from mimry.graphify_wrapper import graphify_source, pinned_commit_for_status
 from mimry.indexer import write_index
 from mimry.paths import context_file
@@ -131,61 +131,7 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
     """Generate a MIMRY context pack and return its path plus selected files."""
     root_path = _root(root)
     ptr = require(root_path)
-    rows = find_rows(
-        Path(ptr["indexPath"]), query, 8, True, root=root_path, root_id=ptr.get("rootId"), semantic=semantic
-    )
-    paths = [r["path"] for r in rows]
-    relationship_lines = graphify_relationship_lines(root_path, paths)
-    report_excerpt = graphify_report_excerpt(root_path)
-    lines = [
-        "# MIMRY Context Pack",
-        "",
-        "## Query",
-        query,
-        "",
-        "## Index Status",
-        "Generated from Graphify artifacts when available; MIMRY index is fallback.",
-        "",
-        "## Summary",
-        f"MIMRY found {len(rows)} relevant file(s), preferring Graphify graph nodes/edges/report when available.",
-        "",
-        "## Relevant Files",
-    ]
-    for i, r in enumerate(rows, 1):
-        lines += [f"### {i}. `{r['path']}`", f"Score: {r['score']}", f"Reason: {r['reason']}", ""]
-    lines += (
-        [
-            "## Relevant Symbols / Entities",
-            "Use `mimry_symbol` for concrete symbols.",
-            "",
-            "## Relationship Paths",
-            *(relationship_lines or ["No Graphify relationship path matched the selected files yet."]),
-            "",
-            "## Graphify Report Signals",
-            report_excerpt or "No Graphify report excerpt available.",
-            "",
-            "## Suggested Reading Order",
-        ]
-        + [f"{i}. `{r['path']}`" for i, r in enumerate(rows, 1)]
-        + [
-            "",
-            "## Risk Notes",
-            "- Open source files before editing.",
-            "- Re-run `mimry_reindex` after changes.",
-            "",
-            "## Suggested Verification",
-            "- Run project tests/typecheck/build for affected files.",
-            "",
-            "## Source of Truth Reminder",
-            "Original files, tests, builds, and human verification remain final truth.",
-            "",
-            "## Final Report Checklist",
-            "- After verification, run `mimry feedback ...` with suggested/opened/changed/missed/outcome so future agents get better rankings.",
-            "",
-        ]
-    )
-    context_file(root_path).parent.mkdir(parents=True, exist_ok=True)
-    context_file(root_path).write_text("\n".join(lines), encoding="utf-8")
+    rows = _write_context_pack(root_path, ptr, query, semantic=semantic)
     return {"query": query, "root": str(root_path), "output": str(context_file(root_path)), "files": rows}
 
 
