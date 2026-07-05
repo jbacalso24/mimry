@@ -23,6 +23,7 @@ from .commands import (
     cmd_why,
 )
 from .graphify_wrapper import cmd_graphify
+from .installer import cmd_install
 
 
 def build_parser():
@@ -106,6 +107,16 @@ def build_parser():
     s.add_argument("--limit", type=int, default=25)
     s.set_defaults(func=cmd_why)
     sub.add_parser("roots").set_defaults(func=cmd_roots)
+    i = sub.add_parser(
+        "install", help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills"
+    )
+    i.add_argument("--platform", help="Target platform: claude-code, codex, hermes, agents")
+    i.add_argument(
+        "--project", action="store_true", help="Install into the current project instead of the user profile"
+    )
+    i.add_argument("--dry-run", action="store_true", help="Show the destination without writing files")
+    i.add_argument("--list-platforms", action="store_true", help="List supported install platforms and destinations")
+    i.set_defaults(func=cmd_install)
     cache = sub.add_parser("cache")
     cs = cache.add_subparsers(required=True)
     w = cs.add_parser("wipe")
