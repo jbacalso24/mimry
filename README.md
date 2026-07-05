@@ -264,6 +264,44 @@ Available MCP-style workflows include:
 
 This lets agents ask the local project memory for focused context instead of scraping the whole repo from scratch.
 
+## Agent skill install
+
+MIMRY can also install a small MIMRY-owned skill/instruction bundle for coding agents. This is separate from Graphify's installer: MIMRY uses Graphify internally, but installs MIMRY workflow rules.
+
+List supported platforms:
+
+```bash
+mimry install --list-platforms
+```
+
+Install globally for an agent profile:
+
+```bash
+mimry install --platform claude-code
+mimry install --platform codex
+mimry install --platform hermes
+mimry install --platform agents
+```
+
+Install into the current project instead:
+
+```bash
+mimry install --project --platform codex
+```
+
+Project installs write skill files such as:
+
+```text
+.claude/skills/mimry/SKILL.md
+.codex/skills/mimry/SKILL.md
+.hermes/skills/mimry/SKILL.md
+.agents/skills/mimry/SKILL.md
+```
+
+`claude` is accepted as an alias for `claude-code`, and `skills` is accepted as an alias for `agents`. The Claude target means **Claude Code**, not the Claude web app.
+
+The installed skill tells agents to run `mimry preflight`, read `mimry-out/context/latest.md`, use focused MIMRY queries before broad search, verify against real source/tests/build output, and record `mimry feedback` after work.
+
 ## Good roots vs bad roots
 
 MIMRY works best when one root equals one meaningful working context.

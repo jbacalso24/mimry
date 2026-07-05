@@ -102,6 +102,67 @@ def test_init_defaults_to_current_working_directory(tmp_path):
     assert str(ROOT.resolve()) not in res.stdout
 
 
+def test_install_lists_supported_agent_platforms(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install", "--list-platforms")
+
+    assert res.returncode == 0, res.stderr
+    assert "claude-code" in res.stdout
+    assert "codex" in res.stdout
+    assert "hermes" in res.stdout
+    assert "agents" in res.stdout
+    assert ".claude/skills/mimry/SKILL.md" in res.stdout
+    assert ".codex/skills/mimry/SKILL.md" in res.stdout
+
+
+def test_install_project_codex_writes_mimry_skill(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex")
+
+    assert res.returncode == 0, res.stderr
+    skill = repo / ".codex" / "skills" / "mimry" / "SKILL.md"
+    version = repo / ".codex" / "skills" / "mimry" / ".mimry_version"
+    assert skill.exists()
+    assert version.read_text(encoding="utf-8").strip() == "0.1.0"
+    body = skill.read_text(encoding="utf-8")
+    assert "name: mimry" in body
+    assert "mimry preflight" in body
+    assert "mimry_context" in body
+    assert "$mimry" in body
+    assert "graphify install" not in body
+    assert "Git hint: git add .codex/skills/mimry/SKILL.md .codex/skills/mimry/.mimry_version" in res.stdout
+
+
+def test_install_project_claude_alias_writes_claude_code_skill(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "claude")
+
+    assert res.returncode == 0, res.stderr
+    skill = repo / ".claude" / "skills" / "mimry" / "SKILL.md"
+    assert skill.exists()
+    body = skill.read_text(encoding="utf-8")
+    assert "Invocation hint for this platform: MIMRY" in body
+    assert "mimry-out/context/latest.md" in body
+
+
+def test_install_dry_run_does_not_write(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "hermes", "--dry-run")
+
+    assert res.returncode == 0, res.stderr
+    assert "DRY RUN" in res.stdout
+    assert ".hermes/skills/mimry/SKILL.md" in res.stdout
+    assert not (repo / ".hermes" / "skills" / "mimry" / "SKILL.md").exists()
+
+
+def test_install_requires_platform_unless_listing(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install")
+
+    assert res.returncode != 0
+    assert "requires --platform" in res.stderr
+
+
 def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     repo = copy_fixture(tmp_path)
     ruff_cache = repo / ".ruff_cache" / "0.15.20"
