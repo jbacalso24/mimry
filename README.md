@@ -310,10 +310,24 @@ For project-scoped installs, add always-on instructions so the agent is reminded
 mimry install --project --platform codex --always-on
 ```
 
+For supported platforms, also add PreToolUse hooks that nudge the agent before broad search/file exploration:
+
+```bash
+mimry install --project --platform codex --hooks
+mimry install --project --platform claude-code --hooks
+```
+
+Check install health and repair by rerunning install with the same options:
+
+```bash
+mimry install --project --platform codex --status
+mimry install --project --platform codex --always-on --hooks
+```
+
 Remove an install:
 
 ```bash
-mimry uninstall --project --platform codex --always-on
+mimry uninstall --project --platform codex --always-on --hooks
 ```
 
 `claude` is accepted as an alias for `claude-code`, and `skills` is accepted as an alias for `agents`. The Claude target means **Claude Code**, not the Claude web app.

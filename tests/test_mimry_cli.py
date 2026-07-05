@@ -144,6 +144,7 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     assert "Git hint: git add .codex/skills/mimry/SKILL.md" in res.stdout
     assert ".codex/skills/mimry/references/" in res.stdout
     assert "AGENTS.md" in res.stdout
+    assert "Codex:" in body
 
 
 def test_install_project_claude_alias_writes_claude_code_skill(tmp_path):
@@ -174,6 +175,66 @@ def test_install_requires_platform_unless_listing(tmp_path):
 
     assert res.returncode != 0
     assert "requires --platform" in res.stderr
+
+
+def test_install_project_codex_hooks_and_status_detect_broken_references(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--hooks")
+    assert res.returncode == 0, res.stderr
+    hooks = repo / ".codex" / "hooks.json"
+    assert hooks.exists()
+    assert "mimry hook-check" in hooks.read_text(encoding="utf-8")
+
+    status = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status")
+    assert status.returncode == 0, status.stderr
+    assert "Hooks: ok" in status.stdout
+    assert "References: ok" in status.stdout
+
+    shutil.rmtree(repo / ".codex" / "skills" / "mimry" / "references")
+    broken = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status")
+    assert broken.returncode == 0, broken.stderr
+    assert "References: missing/broken" in broken.stdout
+    assert "Repair: rerun `mimry install`" in broken.stdout
+
+
+def test_uninstall_project_codex_removes_hooks_when_requested(tmp_path):
+    repo = copy_fixture(tmp_path)
+    assert run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--hooks").returncode == 0
+    assert (repo / ".codex" / "hooks.json").exists()
+
+    res = run_cli(repo, tmp_path / "cache", "uninstall", "--project", "--platform", "codex", "--hooks")
+
+    assert res.returncode == 0, res.stderr
+    assert "mimry hook-check" not in (repo / ".codex" / "hooks.json").read_text(encoding="utf-8")
+
+
+def test_claude_skill_body_is_platform_specific(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "claude-code", "--hooks")
+    assert res.returncode == 0, res.stderr
+    skill = (repo / ".claude" / "skills" / "mimry" / "SKILL.md").read_text(encoding="utf-8")
+    assert "Claude Code:" in skill
+    assert "$mimry" not in skill
+    assert "mimry hook-check" in (repo / ".claude" / "settings.json").read_text(encoding="utf-8")
+
+
+def test_hook_check_emits_nudge_when_mimry_exists(tmp_path):
+    repo = copy_fixture(tmp_path)
+    (repo / ".mimry").mkdir()
+    (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    res = subprocess.run(
+        [sys.executable, "-m", "mimry.cli", "--root", str(repo), "hook-check"],
+        cwd=repo,
+        env=env,
+        input=json.dumps({"tool_input": {"command": "rg auth"}}),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    assert "MIMRY is available" in res.stdout
 
 
 def test_uninstall_project_codex_removes_skill_references_and_always_on(tmp_path):
