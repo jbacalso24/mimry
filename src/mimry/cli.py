@@ -23,7 +23,7 @@ from .commands import (
     cmd_why,
 )
 from .graphify_wrapper import cmd_graphify
-from .installer import cmd_install, cmd_uninstall
+from .installer import cmd_hook_check, cmd_install, cmd_uninstall
 
 
 def build_parser():
@@ -118,6 +118,8 @@ def build_parser():
     i.add_argument(
         "--always-on", action="store_true", help="With --project, also install project always-on instructions"
     )
+    i.add_argument("--hooks", action="store_true", help="With --project, also install supported PreToolUse hooks")
+    i.add_argument("--status", action="store_true", help="Check install health for the target platform/scope")
     i.add_argument("--list-platforms", action="store_true", help="List supported install platforms and destinations")
     i.set_defaults(func=cmd_install)
     u = sub.add_parser("uninstall", help="Remove a MIMRY agent skill install")
@@ -126,7 +128,9 @@ def build_parser():
     u.add_argument(
         "--always-on", action="store_true", help="With --project, also remove project always-on instructions"
     )
+    u.add_argument("--hooks", action="store_true", help="With --project, also remove supported PreToolUse hooks")
     u.set_defaults(func=cmd_uninstall)
+    sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(func=cmd_hook_check)
     cache = sub.add_parser("cache")
     cs = cache.add_subparsers(required=True)
     w = cs.add_parser("wipe")
