@@ -289,13 +289,31 @@ Install into the current project instead:
 mimry install --project --platform codex
 ```
 
-Project installs write skill files such as:
+Project installs write skill files and focused references:
 
 ```text
 .claude/skills/mimry/SKILL.md
 .codex/skills/mimry/SKILL.md
 .hermes/skills/mimry/SKILL.md
 .agents/skills/mimry/SKILL.md
+
+*/skills/mimry/references/workflow.md
+*/skills/mimry/references/commands.md
+*/skills/mimry/references/mcp.md
+*/skills/mimry/references/feedback.md
+*/skills/mimry/references/safety.md
+```
+
+For project-scoped installs, add always-on instructions so the agent is reminded to use MIMRY before broad search:
+
+```bash
+mimry install --project --platform codex --always-on
+```
+
+Remove an install:
+
+```bash
+mimry uninstall --project --platform codex --always-on
 ```
 
 `claude` is accepted as an alias for `claude-code`, and `skills` is accepted as an alias for `agents`. The Claude target means **Claude Code**, not the Claude web app.

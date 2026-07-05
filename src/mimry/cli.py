@@ -23,7 +23,7 @@ from .commands import (
     cmd_why,
 )
 from .graphify_wrapper import cmd_graphify
-from .installer import cmd_install
+from .installer import cmd_install, cmd_uninstall
 
 
 def build_parser():
@@ -115,8 +115,18 @@ def build_parser():
         "--project", action="store_true", help="Install into the current project instead of the user profile"
     )
     i.add_argument("--dry-run", action="store_true", help="Show the destination without writing files")
+    i.add_argument(
+        "--always-on", action="store_true", help="With --project, also install project always-on instructions"
+    )
     i.add_argument("--list-platforms", action="store_true", help="List supported install platforms and destinations")
     i.set_defaults(func=cmd_install)
+    u = sub.add_parser("uninstall", help="Remove a MIMRY agent skill install")
+    u.add_argument("--platform", required=True, help="Target platform: claude-code, codex, hermes, agents")
+    u.add_argument("--project", action="store_true", help="Remove from the current project instead of the user profile")
+    u.add_argument(
+        "--always-on", action="store_true", help="With --project, also remove project always-on instructions"
+    )
+    u.set_defaults(func=cmd_uninstall)
     cache = sub.add_parser("cache")
     cs = cache.add_subparsers(required=True)
     w = cs.add_parser("wipe")
