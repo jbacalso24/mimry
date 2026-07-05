@@ -266,7 +266,7 @@ This lets agents ask the local project memory for focused context instead of scr
 
 ## Agent skill install
 
-MIMRY can also install a small MIMRY-owned skill/instruction bundle for coding agents. This is separate from Graphify's installer: MIMRY uses Graphify internally, but installs MIMRY workflow rules.
+MIMRY can also install a MIMRY-owned skill/instruction bundle for coding agents. This is separate from Graphify's installer: MIMRY uses Graphify internally, but installs MIMRY workflow rules.
 
 List supported platforms:
 
@@ -281,6 +281,22 @@ mimry install --platform claude-code
 mimry install --platform codex
 mimry install --platform hermes
 mimry install --platform agents
+mimry install --platform opencode
+mimry install --platform kilo
+mimry install --platform aider
+mimry install --platform copilot
+mimry install --platform claw
+mimry install --platform droid
+mimry install --platform trae
+mimry install --platform trae-cn
+mimry install --platform kiro
+mimry install --platform gemini
+mimry install --platform amp
+mimry install --platform devin
+mimry install --platform antigravity
+mimry install --platform kimi
+mimry install --platform pi
+mimry install --platform codebuddy
 ```
 
 Install into the current project instead:
@@ -289,19 +305,15 @@ Install into the current project instead:
 mimry install --project --platform codex
 ```
 
-Project installs write skill files and focused references:
+Project installs write skill files and focused references, for example:
 
 ```text
-.claude/skills/mimry/SKILL.md
 .codex/skills/mimry/SKILL.md
-.hermes/skills/mimry/SKILL.md
-.agents/skills/mimry/SKILL.md
-
-*/skills/mimry/references/workflow.md
-*/skills/mimry/references/commands.md
-*/skills/mimry/references/mcp.md
-*/skills/mimry/references/feedback.md
-*/skills/mimry/references/safety.md
+.codex/skills/mimry/references/workflow.md
+.codex/skills/mimry/references/commands.md
+.codex/skills/mimry/references/mcp.md
+.codex/skills/mimry/references/feedback.md
+.codex/skills/mimry/references/safety.md
 ```
 
 For project-scoped installs, add always-on instructions so the agent is reminded to use MIMRY before broad search:
@@ -330,7 +342,7 @@ Remove an install:
 mimry uninstall --project --platform codex --always-on --hooks
 ```
 
-`claude` is accepted as an alias for `claude-code`, and `skills` is accepted as an alias for `agents`. The Claude target means **Claude Code**, not the Claude web app.
+`claude` is accepted as an alias for `claude-code`, `skills` for `agents`, `openclaw` for `claw`, and `factory` for `droid`. The Claude target means **Claude Code**, not the Claude web app.
 
 The installed skill tells agents to run `mimry preflight`, read `mimry-out/context/latest.md`, use focused MIMRY queries before broad search, verify against real source/tests/build output, and record `mimry feedback` after work.
 

@@ -25,10 +25,30 @@ _VERSION = "0.1.0"
 _PLATFORM_ALIASES = {
     "claude": "claude-code",
     "claude-code": "claude-code",
+    "windows": "claude-code",
     "codex": "codex",
     "hermes": "hermes",
     "agents": "agents",
     "skills": "agents",
+    "opencode": "opencode",
+    "kilo": "kilo",
+    "aider": "aider",
+    "copilot": "copilot",
+    "claw": "claw",
+    "openclaw": "claw",
+    "droid": "droid",
+    "factory": "droid",
+    "trae": "trae",
+    "trae-cn": "trae-cn",
+    "kiro": "kiro",
+    "gemini": "gemini",
+    "devin": "devin",
+    "amp": "amp",
+    "antigravity": "antigravity",
+    "antigravity-windows": "antigravity",
+    "kimi": "kimi",
+    "pi": "pi",
+    "codebuddy": "codebuddy",
 }
 _REFERENCES: dict[str, str] = {
     "workflow.md": """# MIMRY workflow\n\nUse this when starting repo work, debugging, reviewing, or planning.\n\n## Fast path\n\n1. Run `mimry status`.\n2. If current, ask a focused question with `mimry context \"<task>\"`.\n3. If stale/missing, run `mimry preflight \"<task>\"`.\n4. Read `mimry-out/context/latest.md`.\n5. Inspect source files directly before editing.\n\n## Source of truth\n\nMIMRY narrows the search space. Source files, tests, build output, and user verification remain final truth.\n""",
@@ -51,40 +71,172 @@ def _hermes_global_path() -> Path:
     return _home() / ".hermes" / "skills" / "mimry" / "SKILL.md"
 
 
+def _claude_global_path() -> Path:
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir) / "skills" / "mimry" / "SKILL.md"
+    return _home() / ".claude" / "skills" / "mimry" / "SKILL.md"
+
+
+def _antigravity_global_path() -> Path:
+    return _home() / ".gemini" / "config" / "skills" / "mimry" / "SKILL.md"
+
+
 def platforms() -> dict[str, MimryPlatform]:
     home = _home()
+
+    def skill(path: str) -> Path:
+        return Path(path) / "skills" / "mimry" / "SKILL.md"
+
     return {
         "claude-code": MimryPlatform(
             key="claude-code",
             label="Claude Code",
-            project_path=Path(".claude") / "skills" / "mimry" / "SKILL.md",
-            global_path=home / ".claude" / "skills" / "mimry" / "SKILL.md",
+            project_path=skill(".claude"),
+            global_path=_claude_global_path(),
             always_on_file=Path("CLAUDE.md"),
             hook_path=Path(".claude") / "settings.json",
-            aliases=("claude",),
+            aliases=("claude", "windows"),
         ),
         "codex": MimryPlatform(
             key="codex",
             label="Codex",
-            project_path=Path(".codex") / "skills" / "mimry" / "SKILL.md",
+            project_path=skill(".codex"),
             global_path=home / ".codex" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
             hook_path=Path(".codex") / "hooks.json",
         ),
+        "opencode": MimryPlatform(
+            key="opencode",
+            label="OpenCode",
+            project_path=skill(".opencode"),
+            global_path=home / ".config" / "opencode" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "kilo": MimryPlatform(
+            key="kilo",
+            label="Kilo Code",
+            project_path=skill(".kilo"),
+            global_path=home / ".config" / "kilo" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "aider": MimryPlatform(
+            key="aider",
+            label="Aider",
+            project_path=Path(".aider") / "mimry" / "SKILL.md",
+            global_path=home / ".aider" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "copilot": MimryPlatform(
+            key="copilot",
+            label="GitHub Copilot CLI",
+            project_path=skill(".copilot"),
+            global_path=home / ".copilot" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "claw": MimryPlatform(
+            key="claw",
+            label="OpenClaw",
+            project_path=skill(".openclaw"),
+            global_path=home / ".openclaw" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+            aliases=("openclaw",),
+        ),
+        "droid": MimryPlatform(
+            key="droid",
+            label="Factory Droid",
+            project_path=skill(".factory"),
+            global_path=home / ".factory" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+            aliases=("factory",),
+        ),
+        "trae": MimryPlatform(
+            key="trae",
+            label="Trae",
+            project_path=skill(".trae"),
+            global_path=home / ".trae" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "trae-cn": MimryPlatform(
+            key="trae-cn",
+            label="Trae CN",
+            project_path=skill(".trae-cn"),
+            global_path=home / ".trae-cn" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
         "hermes": MimryPlatform(
             key="hermes",
             label="Hermes",
-            project_path=Path(".hermes") / "skills" / "mimry" / "SKILL.md",
+            project_path=skill(".hermes"),
             global_path=_hermes_global_path(),
             always_on_file=Path("AGENTS.md"),
+        ),
+        "kiro": MimryPlatform(
+            key="kiro",
+            label="Kiro",
+            project_path=skill(".kiro"),
+            global_path=home / ".kiro" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "gemini": MimryPlatform(
+            key="gemini",
+            label="Gemini CLI",
+            project_path=skill(".gemini"),
+            global_path=(home / ".agents" / "skills" / "mimry" / "SKILL.md")
+            if platform_module.system() == "Windows"
+            else home / ".gemini" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("GEMINI.md"),
         ),
         "agents": MimryPlatform(
             key="agents",
             label="Agent Skills",
-            project_path=Path(".agents") / "skills" / "mimry" / "SKILL.md",
+            project_path=skill(".agents"),
             global_path=home / ".agents" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
             aliases=("skills",),
+        ),
+        "amp": MimryPlatform(
+            key="amp",
+            label="Amp",
+            project_path=skill(".agents"),
+            global_path=home / ".config" / "agents" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "devin": MimryPlatform(
+            key="devin",
+            label="Devin",
+            project_path=skill(".devin"),
+            global_path=home / ".config" / "devin" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "antigravity": MimryPlatform(
+            key="antigravity",
+            label="Antigravity",
+            project_path=skill(".agents"),
+            global_path=_antigravity_global_path(),
+            always_on_file=Path("AGENTS.md"),
+            aliases=("antigravity-windows",),
+        ),
+        "kimi": MimryPlatform(
+            key="kimi",
+            label="Kimi",
+            project_path=skill(".kimi"),
+            global_path=home / ".kimi" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "pi": MimryPlatform(
+            key="pi",
+            label="Pi Agent",
+            project_path=Path(".pi") / "agent" / "skills" / "mimry" / "SKILL.md",
+            global_path=home / ".pi" / "agent" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "codebuddy": MimryPlatform(
+            key="codebuddy",
+            label="CodeBuddy",
+            project_path=skill(".codebuddy"),
+            global_path=home / ".codebuddy" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
         ),
     }
 
@@ -117,6 +269,10 @@ def skill_body(platform_key: str) -> str:
         "hermes": "Hermes: this skill is installed under `.hermes/skills/mimry/` or the Hermes profile skills directory. Prefer native MIMRY MCP tools when loaded.",
         "agents": "Agent Skills: generic cross-framework skill install. Use the same MIMRY-first workflow even when the host has no native hooks.",
     }
+    note = platform_notes.get(
+        platform_key,
+        f"{platforms()[platform_key].label}: platform-specific MIMRY skill install using this host's Graphify-compatible skill directory convention.",
+    )
     return f"""---
 name: mimry
 description: Use local repo memory before broad search or blind file reading. Generate context packs, query indexed files/symbols/relationships, and record feedback after verified work.
@@ -129,7 +285,7 @@ MIMRY is local repo memory for coding agents. Use it to orient inside a repo bef
 
 Invocation hint for this platform: {invocation}
 
-Platform note: {platform_notes[platform_key]}
+Platform note: {note}
 
 ## Use MIMRY first
 

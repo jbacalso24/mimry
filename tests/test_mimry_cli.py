@@ -177,6 +177,55 @@ def test_install_requires_platform_unless_listing(tmp_path):
     assert "requires --platform" in res.stderr
 
 
+def test_install_lists_expanded_platforms(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install", "--list-platforms")
+    assert res.returncode == 0, res.stderr
+    for name in (
+        "opencode",
+        "kilo",
+        "aider",
+        "copilot",
+        "claw",
+        "droid",
+        "trae",
+        "kiro",
+        "gemini",
+        "amp",
+        "devin",
+        "antigravity",
+    ):
+        assert f"- {name}:" in res.stdout
+
+
+def test_expanded_project_platform_paths(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cases = {
+        "opencode": ".opencode/skills/mimry/SKILL.md",
+        "kilo": ".kilo/skills/mimry/SKILL.md",
+        "aider": ".aider/mimry/SKILL.md",
+        "copilot": ".copilot/skills/mimry/SKILL.md",
+        "openclaw": ".openclaw/skills/mimry/SKILL.md",
+        "factory": ".factory/skills/mimry/SKILL.md",
+        "trae-cn": ".trae-cn/skills/mimry/SKILL.md",
+        "gemini": ".gemini/skills/mimry/SKILL.md",
+        "devin": ".devin/skills/mimry/SKILL.md",
+        "antigravity": ".agents/skills/mimry/SKILL.md",
+        "pi": ".pi/agent/skills/mimry/SKILL.md",
+        "codebuddy": ".codebuddy/skills/mimry/SKILL.md",
+    }
+    for platform, rel in cases.items():
+        platform_repo = repo / platform
+        shutil.copytree(repo, platform_repo, dirs_exist_ok=True)
+        res = run_cli(platform_repo, tmp_path / f"cache-{platform}", "install", "--project", "--platform", platform)
+        assert res.returncode == 0, res.stderr
+        skill = platform_repo / rel
+        assert skill.exists(), platform
+        assert "platform-specific MIMRY skill install" in skill.read_text(encoding="utf-8") or platform in {
+            "antigravity"
+        }
+
+
 def test_install_project_codex_hooks_and_status_detect_broken_references(tmp_path):
     repo = copy_fixture(tmp_path)
     res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--hooks")
