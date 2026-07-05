@@ -1,6 +1,6 @@
 # Context Packs
 
-`mimry context "<query>"` and `mimry preflight "<task>"` write an evidence-grade agent handoff to `.mimry/context/latest.md`.
+`mimry context "<query>"` and `mimry preflight "<task>"` write an evidence-grade agent handoff to `mimry-out/context/latest.md`.
 
 The pack is intentionally more than a ranked file list. It is designed to tell an agent what to read, why it matters, how files connect, what is risky, what to verify, and what not to touch unless needed.
 

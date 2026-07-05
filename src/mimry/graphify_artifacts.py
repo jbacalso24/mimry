@@ -7,7 +7,29 @@ from pathlib import Path
 from typing import Any
 
 from .intent import apply_intent_adjustment, query_terms
-from .paths import graphify_output_dir
+from .paths import graph_output_dir, graphify_output_dir, legacy_graphify_output_dir
+
+
+GRAPHIFY_ARTIFACT_FILES = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
+
+
+def graphify_artifact_dir(root: Path) -> Path:
+    """Return the active artifact directory, with read-only legacy fallback.
+
+    New builds write to MIMRY's cache-backed Graphify output directory. Existing
+    roots may still have old `.mimry/graphify` artifacts, so reads fall back to
+    that directory only when the cache has no graph artifacts yet.
+    """
+    visible = graph_output_dir(root)
+    if any((visible / name).exists() for name in GRAPHIFY_ARTIFACT_FILES):
+        return visible
+    primary = graphify_output_dir(root)
+    if any((primary / name).exists() for name in GRAPHIFY_ARTIFACT_FILES):
+        return primary
+    legacy = legacy_graphify_output_dir(root)
+    if any((legacy / name).exists() for name in GRAPHIFY_ARTIFACT_FILES):
+        return legacy
+    return visible
 
 
 def _iso_mtime(path: Path) -> str | None:
@@ -24,15 +46,15 @@ def _load_json(path: Path) -> Any:
 
 
 def graphify_graph_path(root: Path) -> Path:
-    return graphify_output_dir(root) / "graph.json"
+    return graphify_artifact_dir(root) / "graph.json"
 
 
 def graphify_report_path(root: Path) -> Path:
-    return graphify_output_dir(root) / "GRAPH_REPORT.md"
+    return graphify_artifact_dir(root) / "GRAPH_REPORT.md"
 
 
 def graphify_manifest_path(root: Path) -> Path:
-    return graphify_output_dir(root) / "manifest.json"
+    return graphify_artifact_dir(root) / "manifest.json"
 
 
 def load_graphify_graph(root: Path) -> dict:
@@ -66,7 +88,10 @@ def _report_freshness_lines(path: Path) -> dict[str, str | None]:
 
 def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, Any]:
     """Return cheap Graphify artifact health without invoking Graphify or changing ranking."""
-    out = graphify_output_dir(root)
+    out = graphify_artifact_dir(root)
+    visible_out = graph_output_dir(root)
+    primary_out = graphify_output_dir(root)
+    legacy_out = legacy_graphify_output_dir(root)
     graph_path = graphify_graph_path(root)
     report_path = graphify_report_path(root)
     manifest_path = graphify_manifest_path(root)
@@ -99,6 +124,11 @@ def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, 
     return {
         "status": status,
         "output_dir": str(out),
+        "cache_output_dir": str(primary_out),
+        "visible_output_dir": str(visible_out),
+        "legacy_output_dir": str(legacy_out),
+        "using_visible_output": out == visible_out,
+        "using_legacy_output": out == legacy_out and out != primary_out and out != visible_out,
         "graph_path": str(graph_path),
         "graph_exists": graph_exists,
         "graph_generated_at": _iso_mtime(graph_path),

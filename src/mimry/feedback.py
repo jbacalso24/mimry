@@ -12,6 +12,16 @@ from .paths import now
 
 VALID_OUTCOMES = {"passed", "failed", "blocked", "partial", "unknown"}
 FEEDBACK_SCHEMA_VERSION = "0.1.0"
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"\b(?P<key>[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|credential)[A-Za-z0-9_.-]*)"
+    r"(?P<sep>\s*(?:=|:)\s*)"
+    r"(?P<value>(?!\[REDACTED\])(?:Bearer\s+)?[\"']?[^\s,;\"'{}\]]+[\"']?)",
+    re.IGNORECASE,
+)
+BEARER_RE = re.compile(r"\b(Bearer\s+)(?!\[REDACTED\])[^\s,;\"'{}\]]+", re.IGNORECASE)
+PASSWORD_WORD_RE = re.compile(
+    r"\b(?P<key>pass(?:word|wd)?)\s+(?P<value>(?!\[REDACTED\])[^\s,;\"'{}\]]+)", re.IGNORECASE
+)
 
 
 def ensure_feedback_schema(con: sqlite3.Connection) -> None:
@@ -125,6 +135,37 @@ def _verification(value: Any) -> list[dict[str, str]]:
     return rows
 
 
+def _redact_feedback_string(value: str) -> tuple[str, bool]:
+    """Redact likely secret values in user-supplied feedback text without erasing useful labels."""
+
+    redacted = BEARER_RE.sub(r"\1[REDACTED]", value)
+    redacted = SECRET_ASSIGNMENT_RE.sub(lambda m: f"{m.group('key')}{m.group('sep')}[REDACTED]", redacted)
+    redacted = PASSWORD_WORD_RE.sub(lambda m: f"{m.group('key')} [REDACTED]", redacted)
+    return redacted, redacted != value
+
+
+def _redact_feedback_value(value: Any) -> tuple[Any, bool]:
+    if isinstance(value, str):
+        return _redact_feedback_string(value)
+    if isinstance(value, list):
+        changed = False
+        items = []
+        for item in value:
+            redacted, item_changed = _redact_feedback_value(item)
+            items.append(redacted)
+            changed = changed or item_changed
+        return items, changed
+    if isinstance(value, dict):
+        changed = False
+        items = {}
+        for key, item in value.items():
+            redacted, item_changed = _redact_feedback_value(item)
+            items[key] = redacted
+            changed = changed or item_changed
+        return items, changed
+    return value, False
+
+
 def feedback_payload_from_args(root: Path, args: Any) -> dict[str, Any]:
     if getattr(args, "json", None):
         data = json.loads(Path(args.json).read_text(encoding="utf-8"))
@@ -154,17 +195,34 @@ def feedback_payload_from_args(root: Path, args: Any) -> dict[str, Any]:
     if outcome not in VALID_OUTCOMES:
         outcome = "unknown"
 
+    query, query_redacted = _redact_feedback_string(str(data.get("query") or "").strip())
+    notes_raw = str(data.get("notes") or "")
+    notes, notes_redacted = _redact_feedback_string(notes_raw)
+    verification, verification_redacted = _redact_feedback_value(
+        _verification(data.get("verification") or data.get("verification_summary"))
+    )
+    redacted_fields = [
+        field
+        for field, redacted in (
+            ("query", query_redacted),
+            ("notes", notes_redacted),
+            ("verification", verification_redacted),
+        )
+        if redacted
+    ]
+
     return {
-        "query": str(data.get("query") or "").strip()[:2000],
+        "query": query[:2000],
         "context_path": normalize_context_path(root, context_path),
         "suggested_paths": normalize_paths(root, suggested),
         "opened_paths": normalize_paths(root, data.get("opened") or data.get("opened_paths")),
         "changed_paths": normalize_paths(root, data.get("changed") or data.get("changed_paths")),
         "missed_paths": normalize_paths(root, data.get("missed") or data.get("missed_paths")),
         "ignored_paths": normalize_paths(root, data.get("ignored") or data.get("ignored_paths")),
-        "verification": _verification(data.get("verification") or data.get("verification_summary")),
+        "verification": verification,
         "outcome": outcome,
-        "notes": (str(data.get("notes") or "")[:1000] or None),
+        "notes": (notes[:1000] or None),
+        "redacted_fields": redacted_fields,
     }
 
 

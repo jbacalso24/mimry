@@ -23,7 +23,7 @@ from .graphify_artifacts import (
 )
 from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build
 from .indexer import write_index
-from .paths import context_file, idx_path, mdir, now, roots_file
+from .paths import context_file, graph_output_dir, idx_path, mdir, now, output_dir, roots_file
 from .search import find_rows, print_rows
 from .security import safe_root
 from .semantic import build_semantic_index, semantic_health, semantic_rows
@@ -46,7 +46,7 @@ def _git_toplevel(root: Path) -> Path | None:
 
 
 def ensure_mimry_gitignore(root: Path) -> bool:
-    """Ensure repo-local MIMRY metadata is ignored in initialized Git worktrees."""
+    """Ensure repo-local MIMRY metadata/output is ignored in initialized Git worktrees."""
     git_root = _git_toplevel(root)
     if git_root is None:
         return False
@@ -55,25 +55,35 @@ def ensure_mimry_gitignore(root: Path) -> bool:
         rel = root.relative_to(git_root)
     except ValueError:
         return False
-    pattern = ".mimry/" if rel == Path(".") else f"/{rel.as_posix()}/.mimry/"
-    pointer_rel = Path(".mimry/pointer.json") if rel == Path(".") else rel / ".mimry" / "pointer.json"
-    ignored = subprocess.run(
-        ["git", "-C", str(git_root), "check-ignore", "--quiet", "--", pointer_rel.as_posix()],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if ignored.returncode == 0:
-        return False
+
+    if rel == Path("."):
+        patterns = [".mimry/", "mimry-out/"]
+        check_paths = [Path(".mimry/pointer.json"), Path("mimry-out/context/latest.md")]
+    else:
+        prefix = rel.as_posix()
+        patterns = [f"/{prefix}/.mimry/", f"/{prefix}/mimry-out/"]
+        check_paths = [rel / ".mimry" / "pointer.json", rel / "mimry-out" / "context" / "latest.md"]
 
     gitignore = git_root / ".gitignore"
     existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
     lines = {line.strip() for line in existing.splitlines()}
-    if pattern in lines:
-        return False
+    additions = []
+    for pattern, check_path in zip(patterns, check_paths, strict=True):
+        if pattern in lines:
+            continue
+        ignored = subprocess.run(
+            ["git", "-C", str(git_root), "check-ignore", "--quiet", "--", check_path.as_posix()],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if ignored.returncode != 0:
+            additions.append(pattern)
 
+    if not additions:
+        return False
     prefix = "" if not existing or existing.endswith("\n") else "\n"
-    gitignore.write_text(f"{existing}{prefix}{pattern}\n", encoding="utf-8")
+    gitignore.write_text(f"{existing}{prefix}" + "\n".join(additions) + "\n", encoding="utf-8")
     return True
 
 
@@ -85,7 +95,7 @@ def cmd_init(a):
     if load_pointer(root):
         print("MIMRY is already initialized for this root.")
         if gitignore_updated:
-            print("Added a MIMRY metadata ignore entry to the target Git worktree .gitignore.")
+            print("Added MIMRY metadata/output ignore entries to the target Git worktree .gitignore.")
         return 0
     rid = str(uuid.uuid4())
     ptr = {
@@ -98,7 +108,9 @@ def cmd_init(a):
         "schemaVersion": SCHEMA_VERSION,
     }
     mdir(root).mkdir(parents=True, exist_ok=True)
-    (mdir(root) / "context").mkdir(exist_ok=True)
+    output_dir(root).mkdir(exist_ok=True)
+    (output_dir(root) / "context").mkdir(exist_ok=True)
+    (graph_output_dir(root)).mkdir(exist_ok=True)
     (mdir(root) / "config.toml").write_text(
         'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n', encoding="utf-8"
     )
@@ -108,20 +120,21 @@ def cmd_init(a):
     save_pointer(root, ptr)
     register_root(ptr)
     if not getattr(a, "skip_graphify", False):
-        print("Bootstrapping Graphify under .mimry/graphify ...")
+        print("Building MIMRY graph artifacts in the private cache ...")
         graphify_status = run_graphify_build(root, execute=True)
         if graphify_status != 0:
             print(
-                "MIMRY initialized, but Graphify bootstrap failed. Run `mimry graphify build --execute` after fixing Graphify."
+                "MIMRY initialized, but the internal graph build failed. Run `mimry refresh` after fixing dependencies."
             )
             return graphify_status
+    sync_visible_graph_output(root, ptr)
     hygiene = (
-        "Added a MIMRY metadata ignore entry to the target Git worktree .gitignore."
+        "Added MIMRY metadata/output ignore entries to the target Git worktree .gitignore."
         if gitignore_updated
         else "No .gitignore change needed."
     )
     print(
-        "MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- .mimry/graphify/\nGit hygiene:\n- "
+        "MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- mimry-out/\nGenerated output:\n- mimry-out/context/latest.md\n- mimry-out/graph/\nCache:\n- Heavy MIMRY index/cache artifacts are stored outside the target repo.\nGit hygiene:\n- "
         + hygiene
         + '\nNext: Run `mimry refresh`, then `mimry context "<task>"`.'
     )
@@ -133,6 +146,17 @@ def require(root):
     if not ptr:
         raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
     return ptr
+
+
+def sync_visible_graph_output(root: Path, ptr: dict) -> None:
+    """Expose lightweight MIMRY-branded graph artifacts under mimry-out/."""
+    src = Path(ptr["indexPath"]) / "graphify"
+    dst = graph_output_dir(root)
+    dst.mkdir(parents=True, exist_ok=True)
+    for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json", "graph.html"):
+        source = src / name
+        if source.exists():
+            shutil.copy2(source, dst / name)
 
 
 def cmd_index(a):
@@ -147,11 +171,12 @@ def cmd_index(a):
 def cmd_refresh(a):
     root = Path(a.root).resolve()
     ptr = require(root)
-    print("Refreshing MIMRY: Graphify build -> MIMRY index -> status")
+    print("Refreshing MIMRY: internal graph build -> MIMRY index -> status")
     graphify_status = run_graphify_build(root, execute=True)
     if graphify_status != 0:
-        print("Refresh stopped: Graphify build failed.")
+        print("Refresh stopped: internal graph build failed.")
         return graphify_status
+    sync_visible_graph_output(root, ptr)
     stats = write_index(root, ptr)
     print(
         f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nSemantic: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})\nIndex saved: {stats['index']}"
@@ -179,11 +204,11 @@ def cmd_status(a):
         f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nIndex path: {idx}"
     )
     print(
-        "Graphify health"
+        "MIMRY graph artifact health"
         f"\nStatus: {graphify['status']}"
         f"\nSource: {graphify_source()}"
         f"\nPinned commit: {pinned_commit_for_status()}"
-        f"\nOutput dir: {graphify['output_dir']}"
+        f"\nArtifact output: {graphify['output_dir']}"
         f"\ngraph.json: {'yes' if graphify['graph_exists'] else 'missing'}"
         f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; generated {graphify['graph_generated_at'] or 'unknown'})"
         f"\nGRAPH_REPORT.md: {'yes' if graphify['report_exists'] else 'missing'}"
@@ -191,14 +216,16 @@ def cmd_status(a):
         f"\nmanifest.json: {'yes' if graphify['manifest_exists'] else 'missing'}"
         f" ({graphify['manifest_entries']} entries; generated {graphify['manifest_generated_at'] or 'unknown'})"
         f"\nBuilt from commit: {graphify['built_from_commit'] or 'unknown'}"
-        f"\nGraphify source changes: {len(graphify['source_changed_files'])} changed, {len(graphify['source_missing_files'])} missing"
-        f"\nGraphify output stale/missing: {'yes' if graphify['status'] != 'current' else 'no'}"
+        f"\nGraph source changes: {len(graphify['source_changed_files'])} changed, {len(graphify['source_missing_files'])} missing"
+        f"\nMIMRY graph artifacts stale/missing: {'yes' if graphify['status'] != 'current' else 'no'}"
     )
+    if graphify.get("using_legacy_output"):
+        print("Compatibility: reading existing legacy repo-local graph artifacts; next refresh writes to the cache.")
     print(f"Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})")
     if state == "stale":
         print("Recommended: Run `mimry reindex`.")
     if graphify["status"] != "current":
-        print("Graphify recommended: Run `mimry graphify build --execute` or `mimry refresh`.")
+        print("Graph recommended: Run `mimry refresh`.")
     return 0 if state == "current" else 2
 
 
@@ -217,8 +244,8 @@ def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
         f"\n- Files indexed: {len(fresh['files'])}"
         f"\n- Changed/deleted files: {len(fresh['changed'])}/{len(fresh['missing'])}"
         f"\n- Graph nodes/edges: {len(fresh['graph'].get('nodes', []))}/{len(fresh['graph'].get('edges', []))}"
-        f"\n- Graphify: {graphify['status']}"
-        f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; output {graphify['output_dir']})"
+        f"\n- MIMRY graph artifacts: {graphify['status']}"
+        f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; output: `mimry-out/graph/`; cache-backed)"
         f"\n- Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})"
     )
 
@@ -238,9 +265,9 @@ def _refresh_action(fresh: dict, graphify: dict) -> str:
     if fresh["state"] != "current":
         actions.append(f"index is {fresh['state']}")
     if graphify["status"] != "current":
-        actions.append(f"Graphify is {graphify['status']}")
+        actions.append(f"MIMRY graph artifacts are {graphify['status']}")
     if not actions:
-        return "none (index and Graphify are current)"
+        return "none (index and MIMRY graph artifacts are current)"
     return "run `mimry refresh` (" + "; ".join(actions) + ")"
 
 
@@ -423,11 +450,11 @@ def _graphify_context_lines(root: Path, rows: list[dict], graphify: dict) -> lis
     if graphify["status"] != "current":
         status = graphify["status"]
         return [
-            f"- Graphify relationship data is missing or stale (`{status}`); run `mimry refresh` before relying on graph paths.",
+            f"- MIMRY relationship data is missing or stale (`{status}`); run `mimry refresh` before relying on graph paths.",
             "- No relationship path was invented. Use source imports/callers directly if this remains empty.",
         ]
     lines = relationship_lines or [
-        "- Graphify relationship data is current, but no path connected the selected files for this query.",
+        "- MIMRY relationship data is current, but no path connected the selected files for this query.",
         "- No relationship path was invented; rerun with a narrower symbol/file query if graph navigation matters.",
     ]
     if report_excerpt:
@@ -453,9 +480,9 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
         f"- Root: `{root}`",
         f"- Index: {fresh['state']} (last indexed: {ptr.get('lastIndexedAt') or 'never'}; files: {len(fresh['files'])}; symbols: {len(fresh['symbols'])})",
         f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
-        f"- Graphify: {graphify['status']} ({graphify['graph_nodes']} nodes / {graphify['graph_edges']} edges; output: `{_relative_status_path(root, graphify['output_dir'])}`)",
+        f"- MIMRY graph artifacts: {graphify['status']} ({graphify['graph_nodes']} nodes / {graphify['graph_edges']} edges; output: `mimry-out/graph/`; cache-backed)",
         f"- Semantic: {semantic_state['status']} ({semantic_state['chunks']} chunks, backend {semantic_state['backend']}; mode: {'on' if semantic else 'off'})",
-        f"- Graphify artifacts: graph.json {'present' if graphify['graph_exists'] else 'missing'}, GRAPH_REPORT.md {'present' if graphify['report_exists'] else 'missing'}, manifest.json {'present' if graphify['manifest_exists'] else 'missing'}",
+        f"- MIMRY graph files: graph.json {'present' if graphify['graph_exists'] else 'missing'}, GRAPH_REPORT.md {'present' if graphify['report_exists'] else 'missing'}, manifest.json {'present' if graphify['manifest_exists'] else 'missing'}",
         f"- Refresh action: {_refresh_action(fresh, graphify)}",
         "",
         "## Summary",
@@ -521,7 +548,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
         "- Verification commands run with exact results.",
         "- After verification, run `mimry feedback ...` with suggested/opened/changed/missed/outcome so future agents get better rankings.",
         "- MIMRY refreshed after meaningful changes, or reason not refreshed.",
-        "- Yellow marks/blockers, especially stale Graphify/index data or risky paths.",
+        "- Yellow marks/blockers, especially stale MIMRY graph/index data or risky paths.",
         "",
     ]
     context_file(root).parent.mkdir(parents=True, exist_ok=True)
@@ -548,7 +575,7 @@ def cmd_preflight(a):
     if fresh["state"] != "current":
         reasons.append(f"index {fresh['state']}")
     if graphify["status"] != "current":
-        reasons.append(f"Graphify {graphify['status']}")
+        reasons.append(f"MIMRY graph artifacts {graphify['status']}")
     if getattr(a, "force_refresh", False):
         reasons.append("forced")
 
@@ -557,8 +584,9 @@ def cmd_preflight(a):
         print("Preflight refresh: running (" + ", ".join(reasons) + ")")
         graphify_status = run_graphify_build(root, execute=True)
         if graphify_status != 0:
-            print("Preflight stopped: Graphify build failed.")
+            print("Preflight stopped: internal graph build failed.")
             return graphify_status
+        sync_visible_graph_output(root, ptr)
         stats = write_index(root, ptr)
         print(
             f"MIMRY indexing complete. Files: {stats['files']}; Symbols: {stats['symbols']}; "
@@ -567,7 +595,7 @@ def cmd_preflight(a):
         ptr = require(root)
         fresh, graphify = _index_and_graphify_health(root, ptr)
     else:
-        print("Preflight refresh: skipped (index and Graphify are current)")
+        print("Preflight refresh: skipped (index and MIMRY graph artifacts are current)")
 
     rows = _write_context_pack(root, ptr, a.task)
 
@@ -636,6 +664,7 @@ def cmd_feedback(a):
     if not payload["query"]:
         print("Feedback requires --query or --json with a query field.")
         return 2
+    redacted_fields = payload.get("redacted_fields") or []
     row = record_feedback(idx, ptr["rootId"], payload)
     influences = []
     if row["changed_paths"]:
@@ -647,6 +676,8 @@ def cmd_feedback(a):
     if row["ignored_paths"]:
         influences.append("ignored suggestion downrank")
     print("MIMRY feedback recorded")
+    if redacted_fields:
+        print("Warning: likely secret value(s) redacted from feedback fields: " + ", ".join(redacted_fields))
     print(f"Feedback ID: {row['feedback_id']}")
     print(f"Outcome: {row['outcome']}")
     print(f"Suggested: {_format_paths(row['suggested_paths'])}")

@@ -18,7 +18,7 @@ mimry refresh
 mimry status
 mimry find "auth"
 mimry context "fix auth bug"
-mimry feedback --query "fix auth bug" --context .mimry/context/latest.md --opened src/auth/session.py --changed src/auth/session.py --verification "uv run pytest -q passed" --outcome passed
+mimry feedback --query "fix auth bug" --context mimry-out/context/latest.md --opened src/auth/session.py --changed src/auth/session.py --verification "uv run pytest -q passed" --outcome passed
 mimry explain "login route bug"
 mimry path "ui hook" "sqlite cache"
 mimry why src/auth/session.py --query "login auth bug"
@@ -33,7 +33,7 @@ MIMRY uses modern `pyproject.toml` packaging with Hatchling and exposes global C
 From a fresh machine:
 
 ```bash
-git clone https://github.com/jbacalso24/mimry.git
+git clone <mimry-repo-url>
 cd mimry
 uv sync
 uv run pytest -q
@@ -76,14 +76,41 @@ mimry v0.1.0
 
 ## Use
 
-Use MIMRY from inside any local repo. MIMRY defaults to the current working directory:
+Use MIMRY from inside any local repo or meaningful project folder. MIMRY defaults to the current working directory:
 
 ```bash
 cd /path/to/repo
 mimry preflight "understand auth flow"
 ```
 
-`mimry preflight <task>` is the recommended one-command agent discipline workflow. It initializes the root if needed, checks index freshness and Graphify artifact health, refreshes only when state is missing/stale (or when `--force-refresh` is passed), generates `.mimry/context/latest.md`, prints the top files, and reminds agents to read the context pack before opening files.
+Good roots are focused workspaces with a clear source of truth: one repo, one product folder, one docs vault, or one curated active-work folder. Avoid pointing MIMRY at an entire drive, home directory, dependency cache, browser profile, or mixed system folder. Huge broad roots produce noisy rankings, slower refreshes, and higher privacy risk.
+
+Good examples:
+
+```text
+/home/you/Documents/mimry
+/home/you/Documents/otterium-console
+/home/you/.hermes/hermes-agent
+C:\Users\you\Documents\client-project
+D:\Work\active-product
+```
+
+Bad examples:
+
+```text
+/
+/home/you
+/home/you/.config
+/home/you/.cache
+C:\
+C:\Users\you
+C:\Users\you\AppData
+node_modules
+```
+
+If you want a personal “global” memory, create a curated folder such as `~/Workspace`, `~/Documents/Active`, or `D:\Work\Active` and put only useful projects/docs there. Do not use a hidden `.mimry` directory as a fake whole-PC brain.
+
+`mimry preflight <task>` is the recommended one-command agent discipline workflow. It initializes the root if needed, checks index freshness and Graphify artifact health, refreshes only when state is missing/stale (or when `--force-refresh` is passed), generates `mimry-out/context/latest.md`, prints the top files, and reminds agents to read the context pack before opening files.
 
 The context pack is an evidence-grade agent handoff, not just a file list. It includes:
 
@@ -122,7 +149,7 @@ These commands are intentionally concise and agent-readable. Refresh first when 
 mimry refresh
 ```
 
-`mimry init` creates local generated metadata under `.mimry/`. When the target root is inside an initialized Git worktree, MIMRY safely verifies or appends the appropriate `.mimry/` ignore entry to that worktree's `.gitignore` without replacing existing content.
+`mimry init` creates local hidden control/config under `.mimry/` and visible generated output under `mimry-out/`. When the target root is inside an initialized Git worktree, MIMRY safely verifies or appends the appropriate `.mimry/` and `mimry-out/` ignore entries to that worktree's `.gitignore` without replacing existing content.
 
 ## Agent usage feedback
 
@@ -132,7 +159,7 @@ CLI example:
 
 ```bash
 mimry feedback --query "fix board card click bridge unavailable" \
-  --context .mimry/context/latest.md \
+  --context mimry-out/context/latest.md \
   --opened src/features/boards/api.ts,src/app/api/bridge/[...path]/route.ts \
   --changed src/app/api/bridge/[...path]/route.ts \
   --missed bridge/fastapi_app.py \
@@ -150,7 +177,7 @@ mimry feedback --json feedback.json
 ```json
 {
   "query": "fix board card click bridge unavailable",
-  "context_path": ".mimry/context/latest.md",
+  "context_path": "mimry-out/context/latest.md",
   "suggested": ["src/app/api/bridge/[...path]/route.ts", "bridge/fastapi_app.py"],
   "opened": ["src/features/boards/api.ts", "src/app/api/bridge/[...path]/route.ts"],
   "changed": ["src/app/api/bridge/[...path]/route.ts"],

@@ -104,6 +104,9 @@ def test_init_defaults_to_current_working_directory(tmp_path):
 
 def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     repo = copy_fixture(tmp_path)
+    ruff_cache = repo / ".ruff_cache" / "0.15.20"
+    ruff_cache.mkdir(parents=True)
+    (ruff_cache / "cached-result").write_text("generated cache noise")
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     res = run_cli(repo, cache, "index")
@@ -113,6 +116,7 @@ def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     files = (idx / "files.jsonl").read_text()
     assert "session.py" in files
     assert ".env" not in files
+    assert ".ruff_cache" not in files
     graph = json.loads((idx / "graph.json").read_text())
     assert graph["engine"] == "mimry-graphify-core"
     assert graph["nodes"]
@@ -149,7 +153,7 @@ def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_exampl
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])
     files_text = (idx / "files.jsonl").read_text()
-    context_text = (repo / ".mimry" / "context" / "latest.md").read_text()
+    context_text = (repo / "mimry-out" / "context" / "latest.md").read_text()
     with sqlite3.connect(idx / "mimry.sqlite") as con:
         sqlite_text = "\n".join(
             " ".join(str(col) for col in row if col is not None)
@@ -194,7 +198,7 @@ def test_status_find_symbol_related_context_loop(tmp_path):
     assert "Related files" in rel.stdout
     ctx = run_cli(repo, cache, "context", "fix login auth bug")
     assert ctx.returncode == 0
-    text = (repo / ".mimry" / "context" / "latest.md").read_text()
+    text = (repo / "mimry-out" / "context" / "latest.md").read_text()
     assert "# MIMRY Context Pack" in text
     assert "## Suggested Verification" in text
 
@@ -274,7 +278,8 @@ def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
 
 def write_current_graphify_artifacts(repo: Path):
     target = repo / "src" / "auth" / "session.py"
-    graphify_dir = repo / ".mimry" / "graphify"
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    graphify_dir = Path(ptr["indexPath"]) / "graphify"
     graphify_dir.mkdir(parents=True, exist_ok=True)
     (graphify_dir / "graph.json").write_text(
         json.dumps(
@@ -319,7 +324,7 @@ def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
     assert "Next: read" in res.stdout
     assert "src/auth/session.py" in res.stdout
     assert before == after
-    assert (repo / ".mimry" / "context" / "latest.md").exists()
+    assert (repo / "mimry-out" / "context" / "latest.md").exists()
 
 
 def test_preflight_writes_evidence_grade_context_pack_sections(tmp_path):
@@ -348,7 +353,7 @@ testpaths = ["tests"]
     res = run_cli(repo, cache, "preflight", "fix auth session pytest ruff verification")
 
     assert res.returncode == 0, res.stderr
-    text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
+    text = (repo / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     for section in (
         "# MIMRY Context Pack",
         "## Query",
@@ -367,7 +372,7 @@ testpaths = ["tests"]
         assert section in text
     assert "Root:" in text
     assert "Index: current" in text
-    assert "Graphify: current" in text
+    assert "MIMRY graph artifacts: current" in text
     assert "Refresh action: none" in text
     assert "src/auth/session.py" in text
     assert "Reason:" in text
@@ -387,8 +392,8 @@ def test_context_pack_degrades_when_graphify_relationships_missing(tmp_path):
     res = run_cli(repo, cache, "context", "auth session")
 
     assert res.returncode == 0, res.stderr
-    text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
-    assert "Graphify relationship data is missing or stale" in text
+    text = (repo / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    assert "MIMRY relationship data is missing or stale" in text
     assert "No relationship path was invented" in text
 
 
@@ -440,7 +445,8 @@ def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
     assert "Init ran: yes" in res.stdout
     assert "Refresh ran: yes" in res.stdout
     assert "app.py" in res.stdout
-    assert (repo / ".mimry" / "context" / "latest.md").exists()
+    assert (repo / "mimry-out" / "context" / "latest.md").exists()
+    assert (repo / ".mimry" / "graphify").exists() is False
     assert ".mimry/" in (repo / ".gitignore").read_text(encoding="utf-8")
     ignored = subprocess.run(
         ["git", "check-ignore", ".mimry/pointer.json"],
@@ -458,7 +464,8 @@ def test_status_reports_graphify_artifact_health(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
-    graphify_dir = repo / ".mimry" / "graphify"
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    graphify_dir = Path(ptr["indexPath"]) / "graphify"
     graphify_dir.mkdir(parents=True)
     (graphify_dir / "graph.json").write_text(
         '{"nodes": [{"id": "n1"}], "edges": [{"source": "n1", "target": "n1"}]}\n', encoding="utf-8"
@@ -475,13 +482,42 @@ def test_status_reports_graphify_artifact_health(tmp_path):
     status = run_cli(repo, cache, "status")
 
     assert status.returncode == 0, status.stdout
-    assert "Graphify health" in status.stdout
+    assert "MIMRY graph artifact health" in status.stdout
     assert "Status: current" in status.stdout
     assert "graph.json: yes (1 nodes/1 edges" in status.stdout
     assert "GRAPH_REPORT.md: yes" in status.stdout
     assert "manifest.json: yes (1 entries" in status.stdout
     assert "Built from commit: abc123" in status.stdout
-    assert "Graphify output stale/missing: no" in status.stdout
+    assert "MIMRY graph artifacts stale/missing: no" in status.stdout
+    assert (repo / ".mimry" / "graphify").exists() is False
+
+
+def test_status_reads_legacy_repo_local_graphify_artifacts_without_crashing(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    target = repo / "src" / "auth" / "session.py"
+    graphify_dir = repo / ".mimry" / "graphify"
+    graphify_dir.mkdir(parents=True)
+    (graphify_dir / "graph.json").write_text(
+        '{"nodes": [{"id": "n1"}], "edges": [{"source": "n1", "target": "n1"}]}\n', encoding="utf-8"
+    )
+    (graphify_dir / "GRAPH_REPORT.md").write_text(
+        "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit: `legacy123`\n",
+        encoding="utf-8",
+    )
+    (graphify_dir / "manifest.json").write_text(
+        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    status = run_cli(repo, cache, "status")
+
+    assert status.returncode == 0, status.stdout
+    assert "Status: current" in status.stdout
+    assert "Built from commit: legacy123" in status.stdout
+    assert "Compatibility: reading existing legacy repo-local graph artifacts" in status.stdout
 
 
 def test_status_reports_missing_graphify_graph_without_changing_index_exit_code(tmp_path):
@@ -489,7 +525,8 @@ def test_status_reports_missing_graphify_graph_without_changing_index_exit_code(
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    graphify_dir = repo / ".mimry" / "graphify"
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    graphify_dir = Path(ptr["indexPath"]) / "graphify"
     graphify_dir.mkdir(parents=True)
     (graphify_dir / "GRAPH_REPORT.md").write_text("# Graph Report - fixture\n", encoding="utf-8")
     (graphify_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
@@ -499,7 +536,7 @@ def test_status_reports_missing_graphify_graph_without_changing_index_exit_code(
     assert status.returncode == 0, status.stdout
     assert "graph.json: missing" in status.stdout
     assert "Status: missing" in status.stdout
-    assert "Graphify output stale/missing: yes" in status.stdout
+    assert "MIMRY graph artifacts stale/missing: yes" in status.stdout
 
 
 def test_reindex_detects_changed_file(tmp_path):
@@ -633,7 +670,7 @@ def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):
     assert run_cli(repo, cache, "index").returncode == 0
     ctx = run_cli(repo, cache, "context", "understand auth flow and where to edit login token user session")
     assert ctx.returncode == 0, ctx.stderr
-    text = (repo / ".mimry" / "context" / "latest.md").read_text()
+    text = (repo / "mimry-out" / "context" / "latest.md").read_text()
     first_section = text.split("### 2.", 1)[0]
     assert "src/auth/session.py" in first_section or "src/auth/middleware.py" in first_section
     assert "docs/auth-plan.md" not in first_section
@@ -720,7 +757,7 @@ def test_framework_adapters_index_routes_endpoints_screens_schemas_and_docs(tmp_
 
     ctx = run_cli(repo, cache, "context", "board card click route cards endpoint schema docs")
     assert ctx.returncode == 0, ctx.stderr
-    context_text = (repo / ".mimry" / "context" / "latest.md").read_text()
+    context_text = (repo / "mimry-out" / "context" / "latest.md").read_text()
     assert "nextjs app router route /board/:cardId" in context_text
     assert "fastapi endpoint GET /cards/{card_id}" in context_text
     assert "sql schema table cards" in context_text
@@ -845,6 +882,41 @@ def test_feedback_records_cli_payload_normalizes_paths_and_stats(tmp_path):
     assert "- passed: 1" in stats.stdout
 
 
+def test_feedback_redacts_likely_secrets_from_user_metadata(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(
+        repo,
+        cache,
+        "feedback",
+        "--query",
+        "token SECRET_TOKEN=abc123",
+        "--notes",
+        "password hunter2",
+        "--verification",
+        "curl -H Authorization: Bearer fakebearer123",
+        "--outcome",
+        "passed",
+    )
+
+    assert res.returncode == 0, res.stderr
+    assert "Warning: likely secret value(s) redacted" in res.stdout
+    feedback_id = next(line.split(": ", 1)[1] for line in res.stdout.splitlines() if line.startswith("Feedback ID:"))
+    shown = run_cli(repo, cache, "feedback", "show", feedback_id)
+    assert shown.returncode == 0, shown.stderr
+    data = json.loads(shown.stdout)
+    shown_text = shown.stdout
+    assert "abc123" not in shown_text
+    assert "hunter2" not in shown_text
+    assert "Bearer abc" not in shown_text
+    assert data["query"] == "token SECRET_TOKEN=[REDACTED]"
+    assert data["notes"] == "password [REDACTED]"
+    assert data["verification"][0]["command"] == "curl -H Authorization: Bearer [REDACTED]"
+
+
 def test_feedback_json_records_equivalent_data_and_show_lists_it(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
@@ -852,7 +924,7 @@ def test_feedback_json_records_equivalent_data_and_show_lists_it(tmp_path):
     assert run_cli(repo, cache, "index").returncode == 0
     payload = {
         "query": "login auth session bridge",
-        "context_path": ".mimry/context/latest.md",
+        "context_path": "mimry-out/context/latest.md",
         "suggested": ["README.md", "src/auth/session.py"],
         "opened": ["src/auth/session.py"],
         "changed": ["src/auth/session.py"],
@@ -922,7 +994,7 @@ def test_context_pack_final_checklist_includes_feedback_reminder(tmp_path):
     res = run_cli(repo, cache, "context", "fix login auth session")
 
     assert res.returncode == 0, res.stderr
-    text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
+    text = (repo / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     assert "After verification, run `mimry feedback ...`" in text
 
 
@@ -994,6 +1066,6 @@ def test_context_semantic_marks_semantic_reasons_and_keeps_source_truth(tmp_path
     res = run_cli(repo, cache, "context", "create session repository save", "--semantic")
 
     assert res.returncode == 0, res.stderr
-    text = (repo / ".mimry" / "context" / "latest.md").read_text(encoding="utf-8")
+    text = (repo / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     assert "semantic" in text
     assert "Source of Truth Reminder" in text

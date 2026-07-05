@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import sys
@@ -55,7 +56,9 @@ def test_graphify_build_dry_run_is_safe_and_points_to_mimry_output(tmp_path: Pat
     assert result.returncode == 0, result.stderr
     assert "DRY RUN" in result.stdout
     assert "GRAPHIFY_OUT" in result.stdout
-    assert str(repo / ".mimry" / "graphify") in result.stdout
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    assert str(Path(ptr["indexPath"]) / "graphify") in result.stdout
+    assert str(repo / ".mimry" / "graphify") not in result.stdout
     assert (
         "Command: graphify update <root>" in result.stdout
         or "Command: python -m graphify update <root>" in result.stdout
@@ -89,7 +92,8 @@ def test_graphify_build_subprocess_env_excludes_secret_variables(monkeypatch, tm
     assert graphify_wrapper.run_graphify_build(tmp_path, execute=True) == 0
 
     env = captured["env"]
-    assert env["GRAPHIFY_OUT"] == str(tmp_path / ".mimry" / "graphify")
+    assert env["GRAPHIFY_OUT"].endswith("/graphify")
+    assert str(tmp_path / ".mimry" / "graphify") not in env["GRAPHIFY_OUT"]
     assert "PATH" in env
     assert "HOME" in env
     assert "OPENAI_API_KEY" not in env

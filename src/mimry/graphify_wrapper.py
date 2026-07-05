@@ -95,8 +95,8 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
     """Run MIMRY's safe Graphify build wrapper for a root.
 
     This is intentionally narrower than raw `graphify .`: output stays under
-    `.mimry/graphify` and we call Graphify's code-update path instead of its
-    broad installer/provider/assistant surfaces.
+    MIMRY's private cache and we call Graphify's code-update path instead of
+    its broad installer/provider/assistant surfaces.
     """
     root = root.resolve()
     safe_root(root)
@@ -109,7 +109,7 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
     )
     env = graphify_subprocess_env(out, vendor if graphify_vendor_available() else None)
     if dry_run or not execute:
-        print("MIMRY Graphify build: DRY RUN")
+        print("MIMRY internal graph build: DRY RUN")
         print(f"Root: {root}")
         print(f"Vendor: {vendor}")
         print(f"Source: {source}")
@@ -122,16 +122,16 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         print("Graphify is missing. Run `uv sync` or `git submodule update --init --recursive`.", file=sys.stderr)
         return 2
     out.mkdir(parents=True, exist_ok=True)
-    print(f"Running safe Graphify build with GRAPHIFY_OUT={out}")
+    print("Running MIMRY internal graph build...")
     res = subprocess.run(cmd, cwd=root, env=env, text=True, capture_output=True, check=False)
-    if res.stdout.strip():
-        print(res.stdout.strip())
-    if res.stderr.strip():
-        print(res.stderr.strip(), file=sys.stderr)
     if res.returncode != 0:
-        print(f"Graphify build failed with exit {res.returncode}", file=sys.stderr)
+        if res.stdout.strip():
+            print(res.stdout.strip(), file=sys.stderr)
+        if res.stderr.strip():
+            print(res.stderr.strip(), file=sys.stderr)
+        print(f"MIMRY internal graph build failed with exit {res.returncode}", file=sys.stderr)
         return res.returncode
-    print(f"Graphify output: {out}")
+    print("MIMRY internal graph build complete.")
     return 0
 
 
