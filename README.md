@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="MIMRY — Local repo memory for coding agents" width="100%">
+</p>
+
 <h1 align="center">MIMRY</h1>
 
 <p align="center">
