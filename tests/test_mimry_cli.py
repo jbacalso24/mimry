@@ -115,22 +115,35 @@ def test_install_lists_supported_agent_platforms(tmp_path):
     assert ".codex/skills/mimry/SKILL.md" in res.stdout
 
 
-def test_install_project_codex_writes_mimry_skill(tmp_path):
+def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_path):
     repo = copy_fixture(tmp_path)
-    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex")
+    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--always-on")
 
     assert res.returncode == 0, res.stderr
-    skill = repo / ".codex" / "skills" / "mimry" / "SKILL.md"
-    version = repo / ".codex" / "skills" / "mimry" / ".mimry_version"
+    skill_dir = repo / ".codex" / "skills" / "mimry"
+    skill = skill_dir / "SKILL.md"
+    version = skill_dir / ".mimry_version"
+    refs = skill_dir / "references"
     assert skill.exists()
     assert version.read_text(encoding="utf-8").strip() == "0.1.0"
+    assert (refs / "workflow.md").exists()
+    assert (refs / "commands.md").exists()
+    assert (refs / "mcp.md").exists()
+    assert (refs / "feedback.md").exists()
+    assert (refs / "safety.md").exists()
     body = skill.read_text(encoding="utf-8")
     assert "name: mimry" in body
     assert "mimry preflight" in body
     assert "mimry_context" in body
+    assert "references/workflow.md" in body
     assert "$mimry" in body
     assert "graphify install" not in body
-    assert "Git hint: git add .codex/skills/mimry/SKILL.md .codex/skills/mimry/.mimry_version" in res.stdout
+    agents = repo / "AGENTS.md"
+    assert agents.exists()
+    assert "## MIMRY" in agents.read_text(encoding="utf-8")
+    assert "Git hint: git add .codex/skills/mimry/SKILL.md" in res.stdout
+    assert ".codex/skills/mimry/references/" in res.stdout
+    assert "AGENTS.md" in res.stdout
 
 
 def test_install_project_claude_alias_writes_claude_code_skill(tmp_path):
@@ -161,6 +174,30 @@ def test_install_requires_platform_unless_listing(tmp_path):
 
     assert res.returncode != 0
     assert "requires --platform" in res.stderr
+
+
+def test_uninstall_project_codex_removes_skill_references_and_always_on(tmp_path):
+    repo = copy_fixture(tmp_path)
+    assert (
+        run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--always-on").returncode == 0
+    )
+
+    res = run_cli(repo, tmp_path / "cache", "uninstall", "--project", "--platform", "codex", "--always-on")
+
+    assert res.returncode == 0, res.stderr
+    assert not (repo / ".codex" / "skills" / "mimry" / "SKILL.md").exists()
+    assert not (repo / ".codex" / "skills" / "mimry" / "references").exists()
+    assert not (repo / "AGENTS.md").exists()
+
+
+def test_install_global_rejects_always_on(tmp_path):
+    repo = copy_fixture(tmp_path)
+    res = run_cli(repo, tmp_path / "cache", "install", "--platform", "codex", "--always-on", "--dry-run")
+    assert res.returncode == 0, res.stderr
+
+    res = run_cli(repo, tmp_path / "cache", "install", "--platform", "codex", "--always-on")
+    assert res.returncode != 0
+    assert "--always-on is only supported with --project" in res.stderr
 
 
 def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
