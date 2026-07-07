@@ -57,12 +57,12 @@ def ensure_mimry_gitignore(root: Path) -> bool:
         return False
 
     if rel == Path("."):
-        patterns = [".mimry/", "mimry-out/"]
-        check_paths = [Path(".mimry/pointer.json"), Path("mimry-out/context/latest.md")]
+        patterns = [".mimry/"]
+        check_paths = [Path(".mimry/pointer.json")]
     else:
         prefix = rel.as_posix()
-        patterns = [f"/{prefix}/.mimry/", f"/{prefix}/mimry-out/"]
-        check_paths = [rel / ".mimry" / "pointer.json", rel / "mimry-out" / "context" / "latest.md"]
+        patterns = [f"/{prefix}/.mimry/"]
+        check_paths = [rel / ".mimry" / "pointer.json"]
 
     gitignore = git_root / ".gitignore"
     existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
@@ -108,9 +108,9 @@ def cmd_init(a):
         "schemaVersion": SCHEMA_VERSION,
     }
     mdir(root).mkdir(parents=True, exist_ok=True)
-    output_dir(root).mkdir(exist_ok=True)
-    (output_dir(root) / "context").mkdir(exist_ok=True)
-    (graph_output_dir(root)).mkdir(exist_ok=True)
+    output_dir(root).mkdir(parents=True, exist_ok=True)
+    (output_dir(root) / "context").mkdir(parents=True, exist_ok=True)
+    (graph_output_dir(root)).mkdir(parents=True, exist_ok=True)
     (mdir(root) / "config.toml").write_text(
         'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n', encoding="utf-8"
     )
@@ -134,7 +134,7 @@ def cmd_init(a):
         else "No .gitignore change needed."
     )
     print(
-        "MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- mimry-out/\nGenerated output:\n- mimry-out/context/latest.md\n- mimry-out/graph/\nCache:\n- Heavy MIMRY index/cache artifacts are stored outside the target repo.\nGit hygiene:\n- "
+        "MIMRY initialized.\nCreated:\n- .mimry/config.toml\n- .mimry/AGENT_RULES.md\n- .mimry/pointer.json\n- .mimry/mimry-out/\nGenerated output:\n- .mimry/mimry-out/context/latest.md\n- .mimry/mimry-out/graph/\nCache:\n- Heavy MIMRY index/cache artifacts are stored outside the target repo.\nGit hygiene:\n- "
         + hygiene
         + '\nNext: Run `mimry refresh`, then `mimry context "<task>"`.'
     )
@@ -149,7 +149,7 @@ def require(root):
 
 
 def sync_visible_graph_output(root: Path, ptr: dict) -> None:
-    """Expose lightweight MIMRY-branded graph artifacts under mimry-out/."""
+    """Expose lightweight MIMRY-branded graph artifacts under .mimry/mimry-out/."""
     src = Path(ptr["indexPath"]) / "graphify"
     dst = graph_output_dir(root)
     dst.mkdir(parents=True, exist_ok=True)
@@ -245,7 +245,7 @@ def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
         f"\n- Changed/deleted files: {len(fresh['changed'])}/{len(fresh['missing'])}"
         f"\n- Graph nodes/edges: {len(fresh['graph'].get('nodes', []))}/{len(fresh['graph'].get('edges', []))}"
         f"\n- MIMRY graph artifacts: {graphify['status']}"
-        f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; output: `mimry-out/graph/`; cache-backed)"
+        f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)"
         f"\n- Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})"
     )
 
@@ -480,7 +480,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
         f"- Root: `{root}`",
         f"- Index: {fresh['state']} (last indexed: {ptr.get('lastIndexedAt') or 'never'}; files: {len(fresh['files'])}; symbols: {len(fresh['symbols'])})",
         f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
-        f"- MIMRY graph artifacts: {graphify['status']} ({graphify['graph_nodes']} nodes / {graphify['graph_edges']} edges; output: `mimry-out/graph/`; cache-backed)",
+        f"- MIMRY graph artifacts: {graphify['status']} ({graphify['graph_nodes']} nodes / {graphify['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)",
         f"- Semantic: {semantic_state['status']} ({semantic_state['chunks']} chunks, backend {semantic_state['backend']}; mode: {'on' if semantic else 'off'})",
         f"- MIMRY graph files: graph.json {'present' if graphify['graph_exists'] else 'missing'}, GRAPH_REPORT.md {'present' if graphify['report_exists'] else 'missing'}, manifest.json {'present' if graphify['manifest_exists'] else 'missing'}",
         f"- Refresh action: {_refresh_action(fresh, graphify)}",

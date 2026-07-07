@@ -51,11 +51,11 @@ _PLATFORM_ALIASES = {
     "codebuddy": "codebuddy",
 }
 _REFERENCES: dict[str, str] = {
-    "workflow.md": """# MIMRY workflow\n\nUse this when starting repo work, debugging, reviewing, or planning.\n\n## Fast path\n\n1. Run `mimry status`.\n2. If current, ask a focused question with `mimry context \"<task>\"`.\n3. If stale/missing, run `mimry preflight \"<task>\"`.\n4. Read `mimry-out/context/latest.md`.\n5. Inspect source files directly before editing.\n\n## Source of truth\n\nMIMRY narrows the search space. Source files, tests, build output, and user verification remain final truth.\n""",
+    "workflow.md": """# MIMRY workflow\n\nUse this when starting repo work, debugging, reviewing, or planning.\n\n## Fast path\n\n1. Run `mimry status`.\n2. If current, ask a focused question with `mimry context \"<task>\"`.\n3. If stale/missing, run `mimry preflight \"<task>\"`.\n4. Read `.mimry/mimry-out/context/latest.md`.\n5. Inspect source files directly before editing.\n\n## Source of truth\n\nMIMRY narrows the search space. Source files, tests, build output, and user verification remain final truth.\n""",
     "commands.md": """# MIMRY commands\n\nCommon commands:\n\n```bash\nmimry preflight \"<task>\"\nmimry status\nmimry refresh\nmimry context \"<task>\"\nmimry find \"<query>\"\nmimry related \"<query>\"\nmimry symbol \"<name>\"\nmimry why <file-or-symbol> --query \"<task>\"\nmimry path \"<source>\" \"<target>\"\nmimry semantic \"<query>\"\n```\n\nPrefer precise task queries over generic ones like `frontend` or `fix bug`.\n""",
     "mcp.md": """# MIMRY MCP\n\nWhen MCP tools are available, prefer them over shell commands for lookup and context generation.\n\nUseful tools:\n\n- `mimry_status`\n- `mimry_find`\n- `mimry_related`\n- `mimry_symbol`\n- `mimry_semantic`\n- `mimry_context`\n\nUse CLI fallback when MCP is unavailable or the agent host has not loaded the server.\n""",
-    "feedback.md": """# MIMRY feedback\n\nAfter meaningful verified work, record what mattered so future rankings improve.\n\n```bash\nmimry feedback --query \"<task>\" \\\n  --context mimry-out/context/latest.md \\\n  --opened \"<files opened>\" \\\n  --changed \"<files changed>\" \\\n  --missed \"<important missed files>\" \\\n  --ignored \"<unhelpful suggestions>\" \\\n  --verification \"<command/result>\" \\\n  --outcome passed\n```\n\nDo not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.\n""",
-    "safety.md": """# MIMRY safety\n\nGood roots are focused repos, product folders, docs vaults, or curated active-work folders.\n\nBad roots:\n\n- `/`\n- a whole home directory\n- `C:\\`\n- `C:\\Users\\you`\n- system/config/cache folders\n- dependency directories such as `node_modules`\n\nGenerated paths such as `.mimry/`, `mimry-out/`, `.git/`, and dependency caches are support artifacts, not source fixes.\n""",
+    "feedback.md": """# MIMRY feedback\n\nAfter meaningful verified work, record what mattered so future rankings improve.\n\n```bash\nmimry feedback --query \"<task>\" \\\n  --context .mimry/mimry-out/context/latest.md \\\n  --opened \"<files opened>\" \\\n  --changed \"<files changed>\" \\\n  --missed \"<important missed files>\" \\\n  --ignored \"<unhelpful suggestions>\" \\\n  --verification \"<command/result>\" \\\n  --outcome passed\n```\n\nDo not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.\n""",
+    "safety.md": """# MIMRY safety\n\nGood roots are focused repos, product folders, docs vaults, or curated active-work folders.\n\nBad roots:\n\n- `/`\n- a whole home directory\n- `C:\\`\n- `C:\\Users\\you`\n- system/config/cache folders\n- dependency directories such as `node_modules`\n\nGenerated paths such as `.mimry/`, `.mimry/mimry-out/`, `.git/`, and dependency caches are support artifacts, not source fixes.\n""",
 }
 _ALWAYS_ON_MARKER = "## MIMRY"
 
@@ -300,7 +300,7 @@ mimry preflight "<user task>"
 Then read:
 
 ```text
-mimry-out/context/latest.md
+.mimry/mimry-out/context/latest.md
 ```
 
 ## Query before broad search
@@ -334,7 +334,7 @@ MIMRY rankings are navigation hints, not proof. Open source files directly and v
 
 ## Safety
 
-Do not point MIMRY at a whole drive or home directory. Do not paste raw secrets into feedback. Generated paths such as `.mimry/`, `mimry-out/`, and `.git/` are support artifacts, not source fixes.
+Do not point MIMRY at a whole drive or home directory. Do not paste raw secrets into feedback. Generated paths such as `.mimry/`, `.mimry/mimry-out/`, and `.git/` are support artifacts, not source fixes.
 """
 
 
@@ -345,7 +345,7 @@ This project can use MIMRY local repo memory.
 
 Rules:
 - Before broad grep, repeated file reads, or guessing where code lives, run `mimry preflight "<task>"` or use MIMRY MCP tools when available.
-- Read `mimry-out/context/latest.md` after preflight/context generation.
+- Read `.mimry/mimry-out/context/latest.md` after preflight/context generation.
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, or `mimry semantic` for focused navigation.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
@@ -525,7 +525,7 @@ def cmd_hook_check(a) -> int:
         low.endswith(ext) or f"{ext} " in low
         for ext in (".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".md")
     )
-    has_mimry = Path(".mimry/pointer.json").exists() or Path("mimry-out/context/latest.md").exists()
+    has_mimry = Path(".mimry/pointer.json").exists() or Path(".mimry/mimry-out/context/latest.md").exists()
     if has_mimry and (search_hit or read_hit):
         msg = 'MIMRY is available for this project. Run `mimry preflight "<task>"` or use MIMRY MCP/context/find/related before broad search or repeated file reads.'
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg}}))

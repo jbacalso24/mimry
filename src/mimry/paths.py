@@ -32,6 +32,10 @@ def pointer_file(root):
 
 
 def output_dir(root):
+    return mdir(root) / "mimry-out"
+
+
+def legacy_output_dir(root):
     return root / "mimry-out"
 
 
@@ -40,7 +44,7 @@ def context_file(root):
 
 
 def legacy_context_file(root):
-    return mdir(root) / "context" / "latest.md"
+    return legacy_output_dir(root) / "context" / "latest.md"
 
 
 def graph_output_dir(root):
