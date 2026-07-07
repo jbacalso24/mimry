@@ -39,7 +39,7 @@ def test_init_bootstraps_safe_graphify_output(tmp_path):
     assert res.returncode == 0, res.stderr
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     internal_graph_dir = Path(ptr["indexPath"]) / "graphify"
-    visible_graph_dir = repo / "mimry-out" / "graph"
+    visible_graph_dir = repo / ".mimry" / "mimry-out" / "graph"
     assert internal_graph_dir.exists()
     assert visible_graph_dir.exists()
     assert (visible_graph_dir / "graph.json").exists()
@@ -55,7 +55,7 @@ def test_refresh_runs_graphify_index_and_status(tmp_path):
     init = _run(repo, env, "init")
     assert init.returncode == 0, init.stderr
 
-    visible_graph_dir = repo / "mimry-out" / "graph"
+    visible_graph_dir = repo / ".mimry" / "mimry-out" / "graph"
     shutil.rmtree(visible_graph_dir)
     res = _run(repo, env, "refresh")
 

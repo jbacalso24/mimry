@@ -114,7 +114,7 @@ def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, mon
 
     assert payload["output"].endswith("mimry-out/context/latest.md")
     assert payload["files"]
-    text = (repo / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     for section in (
         "## Status Summary",
         "## Graphify Relationships / Communities",
