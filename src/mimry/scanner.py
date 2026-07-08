@@ -37,6 +37,12 @@ def scan(root):
         try:
             if path.stat().st_size > 1_000_000:
                 continue
+            # Windows/macOS can expose locked or ACL-protected files as regular
+            # files, then fail only when opened for hashing. Treat unreadable
+            # files like ignored/generated files; one locked DB sidecar should
+            # not abort the whole index refresh.
+            with path.open("rb"):
+                pass
         except OSError:
             continue
         yield path

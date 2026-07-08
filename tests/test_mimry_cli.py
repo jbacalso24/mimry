@@ -315,6 +315,9 @@ def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     ruff_cache = repo / ".ruff_cache" / "0.15.20"
     ruff_cache.mkdir(parents=True)
     (ruff_cache / "cached-result").write_text("generated cache noise")
+    vs_cache = repo / ".vs" / "Prompts" / "FileContentIndex"
+    vs_cache.mkdir(parents=True)
+    (vs_cache / "locked.vsidx").write_text("visual studio cache noise")
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     res = run_cli(repo, cache, "index")
@@ -325,9 +328,29 @@ def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     assert "session.py" in files
     assert ".env" not in files
     assert ".ruff_cache" not in files
+    assert ".vs" not in files
     graph = json.loads((idx / "graph.json").read_text())
     assert graph["engine"] == "mimry-graphify-core"
     assert graph["nodes"]
+
+
+def test_index_skips_unreadable_files_instead_of_crashing(tmp_path):
+    repo = copy_fixture(tmp_path)
+    locked = repo / "Prompts.Database" / "Prompts.Database.jfm"
+    locked.parent.mkdir()
+    locked.write_text("locked database payload", encoding="utf-8")
+    locked.chmod(0)
+    cache = tmp_path / "cache"
+    try:
+        assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+        res = run_cli(repo, cache, "index")
+        assert res.returncode == 0, res.stderr
+        ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
+        files = (Path(ptr["indexPath"]) / "files.jsonl").read_text()
+        assert "Prompts.Database.jfm" not in files
+        assert "session.py" in files
+    finally:
+        locked.chmod(0o600)
 
 
 def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_example_names(tmp_path):

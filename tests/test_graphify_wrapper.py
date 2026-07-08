@@ -78,6 +78,11 @@ def test_graphify_build_subprocess_env_excludes_secret_variables(monkeypatch, tm
 
     monkeypatch.setenv("PATH", os.environ.get("PATH", ""))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "Users" / "j.bacalso"))
+    monkeypatch.setenv("HOMEDRIVE", "C:")
+    monkeypatch.setenv("HOMEPATH", r"\Users\j.bacalso")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
     monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-secret")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
@@ -96,6 +101,11 @@ def test_graphify_build_subprocess_env_excludes_secret_variables(monkeypatch, tm
     assert str(tmp_path / ".mimry" / "graphify") not in env["GRAPHIFY_OUT"]
     assert "PATH" in env
     assert "HOME" in env
+    assert env["USERPROFILE"].endswith("j.bacalso")
+    assert env["HOMEDRIVE"] == "C:"
+    assert env["HOMEPATH"] == r"\Users\j.bacalso"
+    assert env["APPDATA"].endswith("AppData/Roaming")
+    assert env["LOCALAPPDATA"].endswith("AppData/Local")
     assert "OPENAI_API_KEY" not in env
     assert "ANTHROPIC_API_KEY" not in env
     assert "AWS_SECRET_ACCESS_KEY" not in env
