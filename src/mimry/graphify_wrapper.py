@@ -14,7 +14,18 @@ from .security import safe_root
 PINNED_GRAPHIFY_COMMIT = "44c0a5e33c7011813dcebf1a8850c1c6005bf500"
 GRAPHIFY_ENV_ALLOWLIST = {
     "PATH",
+    # POSIX home. Windows Python also accepts HOME, but managed/corporate shells
+    # often provide only USERPROFILE/HOMEDRIVE/HOMEPATH instead.
     "HOME",
+    # Windows home/config variables needed by pathlib.Path.home() and by
+    # Graphify's platform skill destinations. Keep these non-secret variables in
+    # the scrubbed subprocess environment; otherwise `mimry init` can fail inside
+    # the internal Graphify build with "Could not determine home directory."
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
     "LANG",
     "LC_ALL",
     "LC_CTYPE",

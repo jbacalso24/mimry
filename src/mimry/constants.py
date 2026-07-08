@@ -14,6 +14,7 @@ HEAVY_IGNORES = {
     ".mimry",
     ".cache",
     ".expo",
+    ".vs",
     "target",
     "bin",
     "obj",
