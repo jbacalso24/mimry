@@ -41,9 +41,13 @@ def build_parser():
     sub.add_parser("index").set_defaults(func=cmd_index)
     sub.add_parser("reindex").set_defaults(func=cmd_index)
     sub.add_parser("refresh", help="Run internal graph build, MIMRY index, then status").set_defaults(func=cmd_refresh)
-    s = sub.add_parser("preflight", help="Initialize if needed, refresh stale state, and generate task context")
+    s = sub.add_parser("preflight", help="Fast readiness check and task context generation")
     s.add_argument("task", help="Task description to build the context pack around")
-    s.add_argument("--force-refresh", action="store_true", help="Refresh even when index and Graphify are current")
+    s.add_argument(
+        "--force-refresh",
+        action="store_true",
+        help="Run the slow full refresh path (Graphify build + MIMRY index) before context generation",
+    )
     s.set_defaults(func=cmd_preflight)
     sub.add_parser("status").set_defaults(func=cmd_status)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
