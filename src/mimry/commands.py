@@ -565,7 +565,7 @@ def cmd_preflight(a):
     ptr = load_pointer(root)
     if not ptr:
         init_ran = True
-        init_status = cmd_init(SimpleNamespace(root=str(root), root_type="repo", skip_graphify=False))
+        init_status = cmd_init(SimpleNamespace(root=str(root), root_type="repo", skip_graphify=True))
         if init_status != 0:
             return init_status
         ptr = require(root)
@@ -576,11 +576,14 @@ def cmd_preflight(a):
         reasons.append(f"index {fresh['state']}")
     if graphify["status"] != "current":
         reasons.append(f"MIMRY graph artifacts {graphify['status']}")
-    if getattr(a, "force_refresh", False):
+    force_refresh = getattr(a, "force_refresh", False)
+    if force_refresh:
         reasons.append("forced")
 
-    refresh_ran = bool(reasons)
-    if refresh_ran:
+    refresh_ran = False
+    index_ran = False
+    if force_refresh:
+        refresh_ran = True
         print("Preflight refresh: running (" + ", ".join(reasons) + ")")
         graphify_status = run_graphify_build(root, execute=True)
         if graphify_status != 0:
@@ -588,6 +591,17 @@ def cmd_preflight(a):
             return graphify_status
         sync_visible_graph_output(root, ptr)
         stats = write_index(root, ptr)
+        index_ran = True
+        print(
+            f"MIMRY indexing complete. Files: {stats['files']}; Symbols: {stats['symbols']}; "
+            f"Graph edges: {stats['edges']}; Index: {stats['index']}"
+        )
+        ptr = require(root)
+        fresh, graphify = _index_and_graphify_health(root, ptr)
+    elif fresh["state"] == "missing":
+        print("Preflight index: running (index missing; skipping slow Graphify build)")
+        stats = write_index(root, ptr)
+        index_ran = True
         print(
             f"MIMRY indexing complete. Files: {stats['files']}; Symbols: {stats['symbols']}; "
             f"Graph edges: {stats['edges']}; Index: {stats['index']}"
@@ -595,7 +609,14 @@ def cmd_preflight(a):
         ptr = require(root)
         fresh, graphify = _index_and_graphify_health(root, ptr)
     else:
-        print("Preflight refresh: skipped (index and MIMRY graph artifacts are current)")
+        if reasons:
+            print(
+                "Preflight refresh: skipped (fast mode; "
+                + ", ".join(reasons)
+                + '; run `mimry preflight --force-refresh "<task>"` or `mimry refresh` for a full refresh)'
+            )
+        else:
+            print("Preflight refresh: skipped (index and MIMRY graph artifacts are current)")
 
     rows = _write_context_pack(root, ptr, a.task)
 
@@ -603,6 +624,7 @@ def cmd_preflight(a):
     print(f"Root: {root}")
     print(f"Init ran: {'yes' if init_ran else 'no'}")
     print(f"Refresh ran: {'yes' if refresh_ran else 'no'}")
+    print(f"Index ran: {'yes' if index_ran else 'no'}")
     _print_status_summary(ptr, fresh, graphify)
     print(f"Context: {context_file(root)}")
     print("Top files:")

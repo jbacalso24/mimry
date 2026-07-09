@@ -643,7 +643,7 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
     assert "Index: current" in res.stdout
 
 
-def test_preflight_refreshes_stale_index(tmp_path):
+def test_preflight_skips_stale_refresh_in_fast_mode(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
@@ -657,10 +657,13 @@ def test_preflight_refreshes_stale_index(tmp_path):
     res = run_cli(repo, cache, "preflight", "preflight marker auth session")
 
     assert res.returncode == 0, res.stderr
-    assert "Preflight refresh: running" in res.stdout
+    assert "Preflight refresh: skipped (fast mode" in res.stdout
     assert "index stale" in res.stdout
-    assert "Refresh ran: yes" in res.stdout
-    assert "Index: current" in res.stdout
+    assert "run `mimry preflight --force-refresh" in res.stdout
+    assert "Refresh ran: no" in res.stdout
+    assert "Index ran: no" in res.stdout
+    assert "Index: stale" in res.stdout
+    assert "MIMRY preflight complete" in res.stdout
 
 
 def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
@@ -674,7 +677,8 @@ def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
     assert res.returncode == 0, res.stderr
     assert "MIMRY preflight complete" in res.stdout
     assert "Init ran: yes" in res.stdout
-    assert "Refresh ran: yes" in res.stdout
+    assert "Refresh ran: no" in res.stdout
+    assert "Index ran: yes" in res.stdout
     assert "app.py" in res.stdout
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
     assert (repo / ".mimry" / "graphify").exists() is False
