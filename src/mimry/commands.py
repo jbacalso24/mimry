@@ -223,6 +223,18 @@ def cmd_status(a):
         print("Compatibility: reading existing legacy repo-local graph artifacts; next refresh writes to the cache.")
     print(f"Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})")
     if state == "stale":
+        if changed:
+            print(
+                "Changed paths: "
+                + ", ".join(changed[:10])
+                + ("" if len(changed) <= 10 else f", +{len(changed) - 10} more")
+            )
+        if missing:
+            print(
+                "Deleted paths: "
+                + ", ".join(missing[:10])
+                + ("" if len(missing) <= 10 else f", +{len(missing) - 10} more")
+            )
         print("Recommended: Run `mimry reindex`.")
     if graphify["status"] != "current":
         print("Graph recommended: Run `mimry refresh`.")
@@ -623,8 +635,8 @@ def cmd_preflight(a):
         )
         ptr = require(root)
         fresh, graphify = _index_and_graphify_health(root, ptr)
-    elif fresh["state"] == "missing":
-        print("Preflight index: running (index missing; skipping slow Graphify build)")
+    elif fresh["state"] in {"missing", "stale"}:
+        print(f"Preflight index: running (index {fresh['state']}; skipping slow Graphify build)")
         stats = write_index(root, ptr)
         index_ran = True
         print(

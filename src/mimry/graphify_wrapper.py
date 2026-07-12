@@ -39,6 +39,7 @@ GRAPHIFY_ENV_ALLOWLIST = {
 }
 SECRET_ENV_MARKERS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "PRIVATE_KEY", "CLIENT_SECRET", "API_KEY")
 SECRET_ENV_PREFIXES = ("OPENAI_", "ANTHROPIC_", "AWS_", "GOOGLE_", "GITHUB_", "GITLAB_", "AZURE_")
+GRAPHIFY_DEFAULT_TIMEOUT_SECONDS = 180
 
 
 def graphify_vendor_available():
@@ -134,7 +135,18 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         return 2
     out.mkdir(parents=True, exist_ok=True)
     print("Running MIMRY internal graph build...")
-    res = subprocess.run(cmd, cwd=root, env=env, text=True, capture_output=True, check=False)
+    timeout = int(os.environ.get("MIMRY_GRAPHIFY_TIMEOUT", GRAPHIFY_DEFAULT_TIMEOUT_SECONDS))
+    try:
+        res = subprocess.run(cmd, cwd=root, env=env, text=True, capture_output=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        print(f"MIMRY internal graph build timed out after {timeout}s", file=sys.stderr)
+        stdout = exc.output.decode("utf-8", errors="ignore") if isinstance(exc.output, bytes) else (exc.output or "")
+        stderr = exc.stderr.decode("utf-8", errors="ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        if stdout.strip():
+            print(stdout.strip()[-4000:], file=sys.stderr)
+        if stderr.strip():
+            print(stderr.strip()[-4000:], file=sys.stderr)
+        return 124
     if res.returncode != 0:
         if res.stdout.strip():
             print(res.stdout.strip(), file=sys.stderr)

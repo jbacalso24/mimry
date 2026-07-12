@@ -16,7 +16,10 @@ def write_index(root, ptr):
     imports = {}
     exports = {}
     for p in scan(root):
-        f, sy, ed, im, ex = adapt(p, root)
+        try:
+            f, sy, ed, im, ex = adapt(p, root)
+        except (OSError, UnicodeError, ValueError):
+            continue
         files.append(f)
         symbols += sy
         edges += ed
