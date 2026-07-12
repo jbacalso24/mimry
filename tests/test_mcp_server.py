@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -21,6 +23,23 @@ def test_mcp_server_imports_and_registers_tools():
     # functions are the minimum guard for packaging/console-script regressions.
     assert callable(mimry_status)
     assert callable(mimry_find)
+
+
+def test_mimry_mcp_help_does_not_start_server():
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    res = subprocess.run(
+        [sys.executable, "-m", "mimry.mcp_server", "--help"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    assert "Run the MIMRY MCP stdio server" in res.stdout
+    assert "Starting MCP server" not in res.stderr
 
 
 def test_mcp_status_uninitialized_root(tmp_path: Path):

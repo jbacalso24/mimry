@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -135,7 +137,9 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
     return {"query": query, "root": str(root_path), "output": str(context_file(root_path)), "files": rows}
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Run the MIMRY MCP stdio server.")
+    parser.parse_args(sys.argv[1:] if argv is None else argv)
     mcp.run()
 
 
