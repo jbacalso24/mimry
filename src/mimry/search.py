@@ -6,10 +6,38 @@ from .feedback import apply_feedback_to_rows
 from .graphify_artifacts import graphify_available, graphify_rows
 from .intent import apply_intent_adjustment, query_terms
 from .semantic import merge_semantic_rows, semantic_rows
-from .storage import load_jsonl
+from .storage import connect, load_jsonl
 
 
-def score(f, q):
+def _fts_match_query(terms: list[str]) -> str:
+    # Prefix each normalized token for identifier/path fragments; quote to keep FTS syntax safe.
+    return " OR ".join(f'"{term}"*' for term in terms if term)
+
+
+def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
+    terms = query_terms(q)
+    match = _fts_match_query(terms)
+    if not match:
+        return {}
+    try:
+        con = connect(idx)
+        rows = con.execute(
+            "select file_id, bm25(files_fts, 1.0, 1.4, 0.4, 0.8, 0.8) as rank "
+            "from files_fts where files_fts match ? order by rank limit 80",
+            (match,),
+        ).fetchall()
+        con.close()
+    except Exception:
+        return {}
+    scores: dict[str, tuple[int, str]] = {}
+    for file_id, rank in rows:
+        # SQLite FTS5 bm25 returns lower-is-better negative-ish values. Convert to a bounded boost.
+        boost = max(8, min(80, int(abs(float(rank)) * 1000) + 18))
+        scores[file_id] = (boost, "FTS/BM25 match")
+    return scores
+
+
+def score(f, q, fts_boost: tuple[int, str] | None = None):
     terms = query_terms(q)
     h = {
         "filename": f["filename"].lower(),
@@ -24,8 +52,17 @@ def score(f, q):
             if term in text:
                 s += {"filename": 30, "path": 20, "content hint": 10, "metadata": 6}[label]
                 reason = f"{label} match"
+                token_reason = f"token match: {term}"
                 if reason not in reasons:
                     reasons.append(reason)
+                if token_reason not in reasons:
+                    reasons.append(token_reason)
+
+    if fts_boost:
+        boost, reason = fts_boost
+        s += boost
+        if reason not in reasons:
+            reasons.append(reason)
 
     if s and f["adapter"] != "generic":
         s += 8
@@ -48,12 +85,13 @@ def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic):
 def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=False):
     fallback_rows = []
     files = load_jsonl(idx / "files.jsonl")
+    fts_scores = _fts_scores(idx, q)
     known_paths = {f["rel_path"] for f in files}
     clusters = {}
     if graph and (idx / "graph.json").exists():
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
     for f in files:
-        s, rs = score(f, q)
+        s, rs = score(f, q, fts_scores.get(f["file_id"]))
         if s:
             folder = f["rel_path"].rsplit("/", 1)[0] if "/" in f["rel_path"] else "."
             if graph and folder in clusters:
@@ -92,17 +130,20 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
                 for r in rows
             ]
             seen = {r["path"] for r in rows}
-            operating_context = [
-                {**r, "reason": r["reason"] + ", MIMRY config-manifest operating context"}
-                for r in fallback_rows
-                if r["path"] not in seen and "config-manifest" in r["reason"]
-            ]
-            if operating_context:
-                operating_context = operating_context[: min(2, limit)]
-                merged = rows[: max(limit - len(operating_context), 0)] + operating_context
-                ranked = apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)
-                return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic)
-            ranked = apply_feedback_to_rows(rows, idx, root_id, q, known_paths=known_paths)
+            merged = list(rows)
+            for r in fallback_rows:
+                if r["path"] in seen:
+                    continue
+                extra = {**r}
+                if "config-manifest" in r["reason"]:
+                    extra["reason"] = r["reason"] + ", MIMRY config-manifest operating context"
+                else:
+                    extra["reason"] = r["reason"] + ", MIMRY fallback index signal"
+                    extra["score"] = max(1, int(r["score"] * 0.75))
+                merged.append(extra)
+                seen.add(r["path"])
+            ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
+            ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
             return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic)

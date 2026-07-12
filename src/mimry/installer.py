@@ -318,7 +318,7 @@ mimry path "<source>" "<target>"
 mimry semantic "<query>"
 ```
 
-If MCP tools are available, prefer them for lookup/context: `mimry_status`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_semantic`, `mimry_context`.
+If MCP tools are available, prefer them for lookup/context/workflow: `mimry_status`, `mimry_init`, `mimry_refresh`, `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_semantic`, `mimry_context`, `mimry_explain`, `mimry_path`, `mimry_why`, `mimry_feedback`.
 
 ## Load deeper references when needed
 
@@ -344,9 +344,9 @@ def always_on_body() -> str:
 This project can use MIMRY local repo memory.
 
 Rules:
-- Before broad grep, repeated file reads, or guessing where code lives, run `mimry preflight "<task>"` or use MIMRY MCP tools when available.
+- Before broad grep, repeated file reads, or guessing where code lives, run `mimry preflight "<task>"` or use `mimry_preflight` when MCP tools are available.
 - Read `.mimry/mimry-out/context/latest.md` after preflight/context generation.
-- Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, or `mimry semantic` for focused navigation.
+- Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
 """

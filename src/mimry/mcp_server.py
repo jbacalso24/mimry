@@ -1,14 +1,26 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 
 from mimry.adapters import list_adapters
-from mimry.commands import _write_context_pack, require
+from mimry.commands import (
+    _write_context_pack,
+    cmd_explain,
+    cmd_init,
+    cmd_path,
+    cmd_preflight,
+    cmd_refresh,
+    cmd_why,
+    require,
+)
 from mimry.freshness import index_freshness
 from mimry.graphify_artifacts import graphify_health
 from mimry.graphify_wrapper import graphify_source, pinned_commit_for_status
@@ -16,9 +28,18 @@ from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
+from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import load_jsonl, load_pointer
 
 mcp = FastMCP("MIMRY")
+
+
+def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        code = func(args)
+    return {"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()}
 
 
 def _root(root: str | None) -> Path:
@@ -72,6 +93,47 @@ def mimry_reindex(root: str | None = None) -> dict[str, Any]:
     root_path = _root(root)
     stats = write_index(root_path, require(root_path))
     return {"root": str(root_path), **stats}
+
+
+@mcp.tool
+def mimry_init(root: str | None = None, root_type: str = "repo", skip_graphify: bool = False) -> dict[str, Any]:
+    """Initialize MIMRY metadata for a root."""
+    root_path = _root(root)
+    payload = _capture_command(
+        cmd_init, SimpleNamespace(root=str(root_path), root_type=root_type, skip_graphify=skip_graphify)
+    )
+    payload["status"] = _status_payload(root_path)
+    return payload
+
+
+@mcp.tool
+def mimry_refresh(root: str | None = None) -> dict[str, Any]:
+    """Run internal graph build, MIMRY index, semantic index, then status."""
+    root_path = _root(root)
+    payload = _capture_command(cmd_refresh, SimpleNamespace(root=str(root_path)))
+    payload["status"] = _status_payload(root_path)
+    return payload
+
+
+@mcp.tool
+def mimry_preflight(query: str, root: str | None = None, force_refresh: bool = False) -> dict[str, Any]:
+    """Fast readiness check and task context generation, matching CLI preflight."""
+    root_path = _root(root)
+    payload = _capture_command(
+        cmd_preflight, SimpleNamespace(root=str(root_path), task=query, force_refresh=force_refresh)
+    )
+    status = _status_payload(root_path)
+    payload.update(
+        {
+            "query": query,
+            "root": str(root_path),
+            "context_path": str(context_file(root_path)),
+            "initialized": status.get("initialized"),
+            "index_state": status.get("index_state"),
+            "status": status,
+        }
+    )
+    return payload
 
 
 @mcp.tool
@@ -135,6 +197,65 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
     ptr = require(root_path)
     rows = _write_context_pack(root_path, ptr, query, semantic=semantic)
     return {"query": query, "root": str(root_path), "output": str(context_file(root_path)), "files": rows}
+
+
+@mcp.tool
+def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[str, Any]:
+    """Explain top files, symbols, graph evidence, and verification hints for a task."""
+    root_path = _root(root)
+    return _capture_command(cmd_explain, SimpleNamespace(root=str(root_path), query=query, limit=limit))
+
+
+@mcp.tool
+def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, Any]:
+    """Find a Graphify relationship path between two files/symbols/queries."""
+    root_path = _root(root)
+    return _capture_command(cmd_path, SimpleNamespace(root=str(root_path), source=source, target=target))
+
+
+@mcp.tool
+def mimry_why(surface: str, query: str, root: str | None = None, limit: int = 25) -> dict[str, Any]:
+    """Explain why a file or symbol ranked for a task query."""
+    root_path = _root(root)
+    return _capture_command(cmd_why, SimpleNamespace(root=str(root_path), surface=surface, query=query, limit=limit))
+
+
+@mcp.tool
+def mimry_feedback(
+    query: str,
+    root: str | None = None,
+    context: str | None = None,
+    suggested: list[str] | None = None,
+    opened: list[str] | None = None,
+    changed: list[str] | None = None,
+    missed: list[str] | None = None,
+    ignored: list[str] | None = None,
+    verification: str | list[dict[str, str]] | None = None,
+    outcome: str = "unknown",
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Record local agent usage feedback for future ranking."""
+    root_path = _root(root)
+    ptr = require(root_path)
+    idx = Path(ptr["indexPath"])
+    args = SimpleNamespace(
+        query=query,
+        context=context,
+        suggested=suggested,
+        opened=opened,
+        changed=changed,
+        missed=missed,
+        ignored=ignored,
+        verification=verification,
+        outcome=outcome,
+        notes=notes,
+        json=None,
+    )
+    payload = feedback_payload_from_args(root_path, args)
+    if not payload["query"]:
+        return {"returncode": 2, "error": "Feedback requires query."}
+    row = record_feedback(idx, ptr["rootId"], payload)
+    return {"returncode": 0, "root": str(root_path), "feedback": row}
 
 
 def main(argv: list[str] | None = None) -> None:
