@@ -12,6 +12,7 @@ HEAVY_IGNORES = {
     "coverage",
     ".git",
     ".mimry",
+    "mimry-out",
     ".cache",
     ".expo",
     ".vs",

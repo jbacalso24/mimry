@@ -85,7 +85,9 @@ def build_parser():
     f.add_argument("feedback_action", nargs="?", choices=("list", "show", "stats"))
     f.add_argument("feedback_id", nargs="?", help="Feedback ID for `mimry feedback show <id>`")
     f.add_argument("--query", help="Task query the agent worked on")
-    f.add_argument("--context", help="Context pack path used for suggestions, usually mimry-out/context/latest.md")
+    f.add_argument(
+        "--context", help="Context pack path used for suggestions, usually .mimry/mimry-out/context/latest.md"
+    )
     f.add_argument("--suggested", help="Comma-separated suggested files; defaults to parsing --context when available")
     f.add_argument("--opened", help="Comma-separated files opened/inspected")
     f.add_argument("--changed", help="Comma-separated files changed")

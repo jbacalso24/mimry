@@ -70,6 +70,7 @@ def test_init_adds_mimry_to_gitignore_without_clobbering_existing_content(tmp_pa
     gitignore = (repo / ".gitignore").read_text(encoding="utf-8")
     assert "dist/\n# keep me\n" in gitignore
     assert gitignore.count(".mimry/") == 1
+    assert gitignore.count("mimry-out/") == 1
     ignored = subprocess.run(
         ["git", "check-ignore", ".mimry/pointer.json"],
         cwd=repo,
@@ -78,6 +79,14 @@ def test_init_adds_mimry_to_gitignore_without_clobbering_existing_content(tmp_pa
         check=False,
     )
     assert ignored.returncode == 0, ignored.stderr
+    legacy_ignored = subprocess.run(
+        ["git", "check-ignore", "mimry-out/context/latest.md"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert legacy_ignored.returncode == 0, legacy_ignored.stderr
 
 
 def test_init_gitignore_is_idempotent_for_existing_mimry_root(tmp_path):
@@ -87,7 +96,9 @@ def test_init_gitignore_is_idempotent_for_existing_mimry_root(tmp_path):
     assert run_cli(repo, tmp_path / "cache", "init", "--skip-graphify").returncode == 0
     assert run_cli(repo, tmp_path / "cache", "init", "--skip-graphify").returncode == 0
 
-    assert (repo / ".gitignore").read_text(encoding="utf-8").count(".mimry/") == 1
+    gitignore = (repo / ".gitignore").read_text(encoding="utf-8")
+    assert gitignore.count(".mimry/") == 1
+    assert gitignore.count("mimry-out/") == 1
 
 
 def test_init_defaults_to_current_working_directory(tmp_path):
@@ -156,7 +167,7 @@ def test_install_project_claude_alias_writes_claude_code_skill(tmp_path):
     assert skill.exists()
     body = skill.read_text(encoding="utf-8")
     assert "Invocation hint for this platform: MIMRY" in body
-    assert "mimry-out/context/latest.md" in body
+    assert ".mimry/mimry-out/context/latest.md" in body
 
 
 def test_install_dry_run_does_not_write(tmp_path):
@@ -412,6 +423,21 @@ def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_exampl
     assert "env variables API_URL SECRET_TOKEN" in files_text
 
 
+def test_index_ignores_legacy_mimry_out_generated_context(tmp_path):
+    repo = copy_fixture(tmp_path)
+    legacy = repo / "mimry-out" / "context" / "latest.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("# generated context should not be indexed\n", encoding="utf-8")
+    cache = tmp_path / "cache"
+
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
+    files_text = (Path(ptr["indexPath"]) / "files.jsonl").read_text()
+    assert "mimry-out/context/latest.md" not in files_text
+
+
 def test_status_find_symbol_related_context_loop(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
@@ -556,6 +582,26 @@ def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
     assert "src/auth/session.py" in res.stdout
     assert before == after
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
+
+
+def test_context_generation_overwrites_legacy_context_with_redirect_warning(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    legacy = repo / "mimry-out" / "context" / "latest.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("# Old stale context\n\nThis should not be trusted.\n", encoding="utf-8")
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "context", "fix auth session")
+
+    assert res.returncode == 0, res.stderr
+    current = repo / ".mimry" / "mimry-out" / "context" / "latest.md"
+    assert current.exists()
+    legacy_text = legacy.read_text(encoding="utf-8")
+    assert "# MIMRY context moved" in legacy_text
+    assert ".mimry/mimry-out/context/latest.md" in legacy_text
+    assert "Old stale context" not in legacy_text
 
 
 def test_preflight_writes_evidence_grade_context_pack_sections(tmp_path):

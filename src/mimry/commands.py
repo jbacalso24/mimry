@@ -23,7 +23,7 @@ from .graphify_artifacts import (
 )
 from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build
 from .indexer import write_index
-from .paths import context_file, graph_output_dir, idx_path, mdir, now, output_dir, roots_file
+from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir, roots_file
 from .search import find_rows, print_rows
 from .security import safe_root
 from .semantic import build_semantic_index, semantic_health, semantic_rows
@@ -57,12 +57,12 @@ def ensure_mimry_gitignore(root: Path) -> bool:
         return False
 
     if rel == Path("."):
-        patterns = [".mimry/"]
-        check_paths = [Path(".mimry/pointer.json")]
+        patterns = [".mimry/", "mimry-out/"]
+        check_paths = [Path(".mimry/pointer.json"), Path("mimry-out/context/latest.md")]
     else:
         prefix = rel.as_posix()
-        patterns = [f"/{prefix}/.mimry/"]
-        check_paths = [rel / ".mimry" / "pointer.json"]
+        patterns = [f"/{prefix}/.mimry/", f"/{prefix}/mimry-out/"]
+        check_paths = [rel / ".mimry" / "pointer.json", rel / "mimry-out" / "context" / "latest.md"]
 
     gitignore = git_root / ".gitignore"
     existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
@@ -553,7 +553,32 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
     ]
     context_file(root).parent.mkdir(parents=True, exist_ok=True)
     context_file(root).write_text("\n".join(lines), encoding="utf-8")
+    _write_legacy_context_redirect(root)
     return rows
+
+
+def _write_legacy_context_redirect(root: Path) -> None:
+    """Prevent stale pre-migration context packs from misleading agents.
+
+    MIMRY now keeps generated output under `.mimry/mimry-out/` so ordinary
+    project roots do not accumulate visible generated folders. Older checkouts
+    may still have `mimry-out/context/latest.md`; overwrite that file with a
+    small redirect if it already exists instead of leaving stale task context.
+    """
+    legacy = legacy_context_file(root)
+    current = context_file(root)
+    if not legacy.exists():
+        return
+    try:
+        current_rel = current.relative_to(root).as_posix()
+    except ValueError:
+        current_rel = str(current)
+    legacy.write_text(
+        "# MIMRY context moved\n\n"
+        "This legacy context path is no longer the source of truth.\n\n"
+        f"Read `{current_rel}` instead.\n",
+        encoding="utf-8",
+    )
 
 
 def cmd_preflight(a):
