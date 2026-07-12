@@ -689,7 +689,7 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
     assert "Index: current" in res.stdout
 
 
-def test_preflight_skips_stale_refresh_in_fast_mode(tmp_path):
+def test_preflight_reindexes_stale_index_in_fast_mode_without_slow_graphify(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
@@ -703,12 +703,10 @@ def test_preflight_skips_stale_refresh_in_fast_mode(tmp_path):
     res = run_cli(repo, cache, "preflight", "preflight marker auth session")
 
     assert res.returncode == 0, res.stderr
-    assert "Preflight refresh: skipped (fast mode" in res.stdout
-    assert "index stale" in res.stdout
-    assert "run `mimry preflight --force-refresh" in res.stdout
+    assert "Preflight index: running (index stale; skipping slow Graphify build)" in res.stdout
     assert "Refresh ran: no" in res.stdout
-    assert "Index ran: no" in res.stdout
-    assert "Index: stale" in res.stdout
+    assert "Index ran: yes" in res.stdout
+    assert "Index: current" in res.stdout
     assert "MIMRY preflight complete" in res.stdout
 
 
@@ -852,6 +850,22 @@ def test_status_detects_same_size_rewrite_with_restored_mtime(tmp_path):
     assert stale.returncode == 2
     assert "Index: stale" in stale.stdout
     assert "Changed files: 1" in stale.stdout
+
+
+def test_status_detects_new_indexable_file(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    (repo / "src" / "auth" / "new_flow.py").write_text("def new_login_flow():\n    return True\n", encoding="utf-8")
+
+    stale = run_cli(repo, cache, "status")
+
+    assert stale.returncode == 2
+    assert "Index: stale" in stale.stdout
+    assert "Changed files: 1" in stale.stdout
+    assert "src/auth/new_flow.py" in stale.stdout
 
 
 def test_index_normalizes_stale_pointer_index_path(tmp_path):

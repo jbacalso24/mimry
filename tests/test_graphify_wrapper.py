@@ -70,10 +70,11 @@ def test_graphify_build_dry_run_is_safe_and_points_to_mimry_output(tmp_path: Pat
 def test_graphify_build_subprocess_env_excludes_secret_variables(monkeypatch, tmp_path: Path):
     captured = {}
 
-    def fake_run(cmd, cwd, env, text, capture_output, check):
+    def fake_run(cmd, cwd, env, text, capture_output, check, timeout):
         captured["cmd"] = cmd
         captured["cwd"] = cwd
         captured["env"] = env
+        captured["timeout"] = timeout
         return subprocess.CompletedProcess(cmd, 0, stdout="ok\n", stderr="")
 
     monkeypatch.setenv("PATH", os.environ.get("PATH", ""))
@@ -113,3 +114,20 @@ def test_graphify_build_subprocess_env_excludes_secret_variables(monkeypatch, tm
     assert "GITHUB_TOKEN" not in env
     assert "CUSTOM_PASSWORD" not in env
     assert "openai-secret" not in "\n".join(env.values())
+    assert captured["timeout"] == 180
+
+
+def test_graphify_build_timeout_returns_nonzero(monkeypatch, tmp_path: Path, capsys):
+    def fake_run(cmd, cwd, env, text, capture_output, check, timeout):
+        raise subprocess.TimeoutExpired(cmd, timeout, output="partial stdout", stderr="partial stderr")
+
+    monkeypatch.setattr(graphify_wrapper, "graphify_source", lambda: "installed")
+    monkeypatch.setattr(graphify_wrapper, "graphify_vendor_available", lambda: False)
+    monkeypatch.setattr(graphify_wrapper.shutil, "which", lambda name: "/usr/bin/graphify")
+    monkeypatch.setattr(graphify_wrapper.subprocess, "run", fake_run)
+
+    assert graphify_wrapper.run_graphify_build(tmp_path, execute=True) == 124
+    err = capsys.readouterr().err
+    assert "timed out after 180s" in err
+    assert "partial stdout" in err
+    assert "partial stderr" in err

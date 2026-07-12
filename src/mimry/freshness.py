@@ -5,14 +5,18 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .scanner import scan
 from .storage import load_jsonl
 
 
-def file_sha256(path: Path) -> str:
+def file_sha256(path: Path) -> str | None:
     h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(65536), b""):
-            h.update(chunk)
+    try:
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+    except OSError:
+        return None
     return h.hexdigest()
 
 
@@ -35,6 +39,7 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     stored_hashes = _stored_hashes(idx)
     changed: list[str] = []
     missing: list[str] = []
+    indexed_paths = {f.get("rel_path") for f in files if f.get("rel_path")}
 
     for f in files:
         rel_path = f["rel_path"]
@@ -44,13 +49,26 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
             continue
         expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
         if expected_hash:
-            if file_sha256(p) != expected_hash:
+            actual_hash = file_sha256(p)
+            if actual_hash is None or actual_hash != expected_hash:
                 changed.append(rel_path)
             continue
-        st = p.stat()
+        try:
+            st = p.stat()
+        except OSError:
+            changed.append(rel_path)
+            continue
         if st.st_size != f.get("size") or st.st_mtime != f.get("mtime"):
             changed.append(rel_path)
 
+    if files_path.exists():
+        for p in scan(root):
+            rel = p.relative_to(root).as_posix()
+            if rel not in indexed_paths:
+                changed.append(rel)
+
+    changed = sorted(set(changed))
+    missing = sorted(set(missing))
     state = "missing" if not files_path.exists() else ("stale" if changed or missing else "current")
     graph_path = idx / "graph.json"
     graph = json.loads(graph_path.read_text(encoding="utf-8")) if graph_path.exists() else {"nodes": [], "edges": []}
