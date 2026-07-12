@@ -44,7 +44,7 @@ mimry preflight "fix auth bug"
 MIMRY checks freshness, refreshes when needed, ranks likely files, and writes a context pack for the agent:
 
 ```text
-Context: mimry-out/context/latest.md
+Context: .mimry/mimry-out/context/latest.md
 Top files:
 1. src/auth/session.py
 2. src/app/login/page.tsx
@@ -132,7 +132,7 @@ For agents, prefer the one-command preflight workflow:
 mimry preflight "fix auth bug"
 ```
 
-`preflight` initializes the root if needed, checks index freshness, refreshes only when state is missing or stale, generates `mimry-out/context/latest.md`, prints top files, and reminds the agent to read the context pack before opening source files.
+`preflight` initializes the root if needed, checks index freshness, refreshes only when state is missing or stale, generates `.mimry/mimry-out/context/latest.md`, prints top files, and reminds the agent to read the context pack before opening source files.
 
 ## What it builds
 
@@ -140,10 +140,10 @@ After `mimry init` and `mimry refresh`, a project gets this shape:
 
 ```text
 project-root/
-├─ .mimry/              # hidden local control/config
-├─ mimry-out/           # visible generated output for agents/humans
-│  ├─ context/latest.md # latest context pack
-│  └─ graph/            # Graphify-derived relationship artifacts
+├─ .mimry/                  # hidden local control/config
+│  └─ mimry-out/            # generated MIMRY output for agents/humans
+│     ├─ context/latest.md  # latest context pack
+│     └─ graph/             # Graphify-derived relationship artifacts
 └─ source files...
 ```
 
@@ -218,7 +218,7 @@ Example:
 
 ```bash
 mimry feedback --query "fix board card click bridge unavailable" \
-  --context mimry-out/context/latest.md \
+  --context .mimry/mimry-out/context/latest.md \
   --opened src/features/boards/api.ts,src/app/api/bridge/[...path]/route.ts \
   --changed src/app/api/bridge/[...path]/route.ts \
   --missed bridge/fastapi_app.py \
@@ -344,7 +344,7 @@ mimry uninstall --project --platform codex --always-on --hooks
 
 `claude` is accepted as an alias for `claude-code`, `skills` for `agents`, `openclaw` for `claw`, and `factory` for `droid`. The Claude target means **Claude Code**, not the Claude web app.
 
-The installed skill tells agents to run `mimry preflight`, read `mimry-out/context/latest.md`, use focused MIMRY queries before broad search, verify against real source/tests/build output, and record `mimry feedback` after work.
+The installed skill tells agents to run `mimry preflight`, read `.mimry/mimry-out/context/latest.md`, use focused MIMRY queries before broad search, verify against real source/tests/build output, and record `mimry feedback` after work.
 
 ## Good roots vs bad roots
 
