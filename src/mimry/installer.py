@@ -53,7 +53,7 @@ _PLATFORM_ALIASES = {
 _REFERENCES: dict[str, str] = {
     "workflow.md": """# MIMRY workflow\n\nUse this when starting repo work, debugging, reviewing, or planning.\n\n## Fast path\n\n1. Run `mimry status`.\n2. If current, ask a focused question with `mimry context \"<task>\"`.\n3. If stale/missing, run `mimry preflight \"<task>\"`.\n4. Read `.mimry/mimry-out/context/latest.md`.\n5. Inspect source files directly before editing.\n\n## Source of truth\n\nMIMRY narrows the search space. Source files, tests, build output, and user verification remain final truth.\n""",
     "commands.md": """# MIMRY commands\n\nCommon commands:\n\n```bash\nmimry preflight \"<task>\"\nmimry status\nmimry refresh\nmimry context \"<task>\"\nmimry find \"<query>\"\nmimry related \"<query>\"\nmimry symbol \"<name>\"\nmimry why <file-or-symbol> --query \"<task>\"\nmimry path \"<source>\" \"<target>\"\nmimry semantic \"<query>\"\n```\n\nPrefer precise task queries over generic ones like `frontend` or `fix bug`.\n""",
-    "mcp.md": """# MIMRY MCP\n\nWhen MCP tools are available, prefer them over shell commands for lookup and context generation.\n\nUseful tools:\n\n- `mimry_status`\n- `mimry_find`\n- `mimry_related`\n- `mimry_symbol`\n- `mimry_semantic`\n- `mimry_context`\n\nUse CLI fallback when MCP is unavailable or the agent host has not loaded the server.\n""",
+    "mcp.md": """# MIMRY MCP\n\nWhen MCP tools are available, prefer them over shell commands for lookup, preflight, context generation, and feedback.\n\nPrimary workflow tools:\n\n- `mimry_status(root?)`\n- `mimry_init(root?, root_type?, skip_graphify?)`\n- `mimry_refresh(root?)`\n- `mimry_preflight(query, root?, force_refresh?)`\n- `mimry_context(query, root?, semantic?)`\n\nNavigation and explanation tools:\n\n- `mimry_find(query, root?, limit?, semantic?)`\n- `mimry_related(query, root?, limit?)`\n- `mimry_symbol(name, root?)`\n- `mimry_semantic(query, root?, limit?)`\n- `mimry_explain(query, root?, limit?)`\n- `mimry_path(source, target, root?)`\n- `mimry_why(surface, query, root?, limit?)`\n\nFeedback/tooling tools:\n\n- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, ignored?, verification?, outcome?, notes?)`\n- `mimry_list_adapters(active_only?)`\n\nRules:\n\n- Prefer `mimry_preflight` before broad search or repeated file reads.\n- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n- Use CLI fallback when MCP is unavailable or the agent host has not loaded the server.\n""",
     "feedback.md": """# MIMRY feedback\n\nAfter meaningful verified work, record what mattered so future rankings improve.\n\n```bash\nmimry feedback --query \"<task>\" \\\n  --context .mimry/mimry-out/context/latest.md \\\n  --opened \"<files opened>\" \\\n  --changed \"<files changed>\" \\\n  --missed \"<important missed files>\" \\\n  --ignored \"<unhelpful suggestions>\" \\\n  --verification \"<command/result>\" \\\n  --outcome passed\n```\n\nDo not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.\n""",
     "safety.md": """# MIMRY safety\n\nGood roots are focused repos, product folders, docs vaults, or curated active-work folders.\n\nBad roots:\n\n- `/`\n- a whole home directory\n- `C:\\`\n- `C:\\Users\\you`\n- system/config/cache folders\n- dependency directories such as `node_modules`\n\nGenerated paths such as `.mimry/`, `.mimry/mimry-out/`, `.git/`, and dependency caches are support artifacts, not source fixes.\n""",
 }
@@ -275,50 +275,108 @@ def skill_body(platform_key: str) -> str:
     )
     return f"""---
 name: mimry
-description: Use local repo memory before broad search or blind file reading. Generate context packs, query indexed files/symbols/relationships, and record feedback after verified work.
+description: Use local repo memory before broad search or blind file reading. Run preflight, read context packs, query indexed files/symbols/relationships, explain rankings, and record feedback after verified work.
 version: {_VERSION}
 ---
 
 # MIMRY
 
-MIMRY is local repo memory for coding agents. Use it to orient inside a repo before editing. Source files, tests, and real build output remain the final truth.
+MIMRY is local repo intelligence for coding agents. It exists to stop blind grep/read loops and give agents a repo map before edits. It is not proof: source files, tests, build output, and user-visible behavior remain final truth.
 
 Invocation hint for this platform: {invocation}
 
 Platform note: {note}
 
-## Use MIMRY first
+## Non-negotiable workflow
 
-Use this skill for repo/project work: understanding architecture, finding files, debugging, implementation, refactors, audits, reviews, and handoffs.
+Use this skill for repo/project work: architecture discovery, debugging, implementation, refactors, audits, reviews, migrations, handoffs, and "where is X?" questions.
 
-Fast path:
+1. Start with status/preflight, not broad search:
 
 ```bash
+mimry status
 mimry preflight "<user task>"
 ```
 
-Then read:
+2. Read the generated context pack before editing:
 
 ```text
 .mimry/mimry-out/context/latest.md
 ```
 
-## Query before broad search
+3. Open the suggested source/test files directly and verify against real code.
 
-Before broad grep, repeated file reads, or guessing where logic lives, use focused MIMRY commands:
+4. After meaningful verified work, record feedback so future rankings improve:
 
 ```bash
-mimry status
+mimry feedback --query "<task>" --context .mimry/mimry-out/context/latest.md --opened "<files opened>" --changed "<files changed>" --verification "<command/result>" --outcome passed
+```
+
+## Stale/missing state rules
+
+- If MIMRY is not initialized for an owned repo, run `mimry preflight "<task>"`; it initializes and builds useful local context.
+- Default preflight is fast: it refreshes cheap index data when needed but does not run slow full Graphify unless requested.
+- Use `mimry refresh` or `mimry preflight --force-refresh "<task>"` when graph freshness matters more than speed.
+- If Graphify is stale/missing, say so. Do not invent relationship paths.
+
+## Focused navigation commands
+
+Use focused MIMRY queries before broad grep/repeated file reads:
+
+```bash
 mimry context "<task>"
 mimry find "<query>"
+mimry find "<query>" --semantic
 mimry related "<query>"
 mimry symbol "<name>"
+mimry explain "<task>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
 mimry semantic "<query>"
+mimry adapters --active-only
 ```
 
-If MCP tools are available, prefer them for lookup/context/workflow: `mimry_status`, `mimry_init`, `mimry_refresh`, `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_semantic`, `mimry_context`, `mimry_explain`, `mimry_path`, `mimry_why`, `mimry_feedback`.
+Prefer precise queries: `auth session refresh expiry` beats `bug`; `Next.js app router loading state` beats `frontend`.
+
+## MCP-first when available
+
+If MCP tools are loaded, prefer them over shell for lookup/context/workflow:
+
+- `mimry_status`
+- `mimry_init`
+- `mimry_refresh`
+- `mimry_preflight`
+- `mimry_context`
+- `mimry_find`
+- `mimry_related`
+- `mimry_symbol`
+- `mimry_semantic`
+- `mimry_explain`
+- `mimry_path`
+- `mimry_why`
+- `mimry_feedback`
+- `mimry_list_adapters`
+
+CLI fallback is fine when MCP is unavailable.
+
+## How to read MIMRY results
+
+Ranking reasons matter. Strong signals include:
+
+- filename/path/symbol match
+- FTS/BM25 match
+- token match, including camelCase/PascalCase fragments
+- framework adapter facts
+- Graphify community/proximity/path evidence
+- feedback boosts from previously opened/changed/missed files
+
+Weak/limited signals include generic content hints, semantic-only matches, stale Graphify artifacts, and broad docs/plans for code-edit queries. Use `mimry explain`, `mimry why`, or `mimry path` when the ranking is surprising.
+
+## Adapter expectations
+
+Use `mimry adapters --active-only` or `mimry_list_adapters(active_only=True)` to know what MIMRY can currently understand structurally. Current strengths are code/docs/project metadata, not arbitrary binary media. If an adapter is missing, use MIMRY for path/context narrowing, then inspect source manually.
+
+Known limitation: image pixels are not understood by default yet. Image/media support should be treated as future adapter work unless this install reports an active image adapter.
 
 ## Load deeper references when needed
 
@@ -328,13 +386,14 @@ If MCP tools are available, prefer them for lookup/context/workflow: `mimry_stat
 - `references/feedback.md` — feedback recording
 - `references/safety.md` — root/privacy safety
 
-## Verification and feedback
+Load references when the task involves MCP, feedback, safety/root choice, stale indexes, or command details.
 
-MIMRY rankings are navigation hints, not proof. Open source files directly and verify with real tests/build commands. After meaningful verified work, record `mimry feedback` so future rankings improve.
+## Safety and source-truth rules
 
-## Safety
-
-Do not point MIMRY at a whole drive or home directory. Do not paste raw secrets into feedback. Generated paths such as `.mimry/`, `.mimry/mimry-out/`, and `.git/` are support artifacts, not source fixes.
+- Do not point MIMRY at `/`, `C:/`, `C:\\\\`, a whole home directory, dependency caches, or system folders.
+- Do not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.
+- Generated paths such as `.mimry/`, `.mimry/mimry-out/`, and `.git/` are support artifacts, not source fixes.
+- Never report success from MIMRY output alone. Verify with real source reads and the nearest tests/build/user-visible checks.
 """
 
 
