@@ -9,7 +9,18 @@ from pathlib import Path
 
 from mimry import mcp_server
 from mimry.indexer import write_index
-from mimry.mcp_server import mimry_context, mimry_find, mimry_status
+from mimry.mcp_server import (
+    mimry_context,
+    mimry_explain,
+    mimry_feedback,
+    mimry_find,
+    mimry_init,
+    mimry_path,
+    mimry_preflight,
+    mimry_refresh,
+    mimry_status,
+    mimry_why,
+)
 from mimry.paths import idx_path
 from mimry.storage import save_pointer
 
@@ -23,6 +34,13 @@ def test_mcp_server_imports_and_registers_tools():
     # functions are the minimum guard for packaging/console-script regressions.
     assert callable(mimry_status)
     assert callable(mimry_find)
+    assert callable(mimry_init)
+    assert callable(mimry_refresh)
+    assert callable(mimry_preflight)
+    assert callable(mimry_explain)
+    assert callable(mimry_path)
+    assert callable(mimry_why)
+    assert callable(mimry_feedback)
 
 
 def test_mimry_mcp_help_does_not_start_server():
@@ -143,3 +161,59 @@ def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, mon
     ):
         assert section in text
     assert "After verification, run `mimry feedback ...`" in text
+
+
+def test_mcp_preflight_initializes_and_writes_context(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+
+    payload = mimry_preflight("fix auth session", str(repo))
+
+    assert payload["returncode"] == 0
+    assert payload["initialized"] is True
+    assert payload["index_state"] == "current"
+    assert payload["context_path"].endswith(".mimry/mimry-out/context/latest.md")
+    assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
+    assert "MIMRY preflight complete" in payload["stdout"]
+
+
+def test_mcp_refresh_rebuilds_index_and_reports_status(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    assert mimry_init(str(repo), skip_graphify=True)["returncode"] == 0
+
+    payload = mimry_refresh(str(repo))
+
+    assert payload["returncode"] == 0
+    assert payload["status"]["index_state"] == "current"
+    assert payload["status"]["files_indexed"] > 0
+    assert "MIMRY indexing complete" in payload["stdout"]
+
+
+def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    assert mimry_preflight("fix auth session", str(repo))["returncode"] == 0
+
+    explain = mimry_explain("fix auth session", str(repo), limit=3)
+    why = mimry_why("src/auth/session.py", "fix auth session", str(repo))
+    path = mimry_path("src/auth/session.py", "tests/test_session.py", str(repo))
+    feedback = mimry_feedback(
+        query="fix auth session",
+        root=str(repo),
+        opened=["src/auth/session.py"],
+        changed=["src/auth/session.py"],
+        outcome="passed",
+        verification="pytest passed",
+    )
+
+    assert explain["returncode"] == 0 and "MIMRY explain" in explain["stdout"]
+    assert why["returncode"] == 0 and "MIMRY why" in why["stdout"]
+    assert path["returncode"] == 0
+    assert "No path was invented" in path["stdout"] or "Path found" in path["stdout"]
+    assert feedback["returncode"] == 0
+    assert feedback["feedback"]["outcome"] == "passed"
+    assert "src/auth/session.py" in feedback["feedback"]["changed_paths"]

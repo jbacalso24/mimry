@@ -1364,3 +1364,33 @@ def test_context_semantic_marks_semantic_reasons_and_keeps_source_truth(tmp_path
     text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     assert "semantic" in text
     assert "Source of Truth Reminder" in text
+
+
+def test_find_splits_camelcase_query_terms_and_reports_token_match(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    target = repo / "src" / "auth" / "magic_flow.py"
+    target.write_text("def createSessionToken():\n    return 'ok'\n", encoding="utf-8")
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "find", "createSessionToken", "--limit", "3")
+
+    assert res.returncode == 0, res.stderr
+    assert "src/auth/magic_flow.py" in res.stdout
+    assert "token match" in res.stdout
+
+
+def test_find_uses_fts_bm25_for_content_hint_phrase(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    target = repo / "src" / "auth" / "phrase_flow.py"
+    target.write_text("def session_refresh_flow():\n    return True\n", encoding="utf-8")
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "find", "session refresh flow", "--limit", "3")
+
+    assert res.returncode == 0, res.stderr
+    assert "src/auth/phrase_flow.py" in res.stdout
+    assert "FTS/BM25 match" in res.stdout

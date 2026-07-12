@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
 
 CONCEPT_INTENT_TERMS = {"overview", "explain", "spec", "design", "plan", "docs", "doc", "research", "concept"}
@@ -31,8 +32,49 @@ TEST_TERMS = {"test", "tests", "testing", "pytest", "vitest", "jest", "spec"}
 MIGRATION_TERMS = {"migration", "migrations", "alembic", "schema"}
 
 
+STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+}
+TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
 def query_terms(q: str) -> list[str]:
-    return [t.lower() for t in q.replace("_", " ").replace("-", " ").split() if t]
+    """Return normalized query tokens for paths, symbols, FTS, and intent.
+
+    Handles snake/kebab/path punctuation plus camelCase/PascalCase identifiers,
+    while keeping quoted phrases useful by tokenizing their inner words.
+    """
+    seen: set[str] = set()
+    terms: list[str] = []
+    for raw in TOKEN_RE.findall(q.replace("_", " ").replace("-", " ").replace("/", " ")):
+        pieces = CAMEL_BOUNDARY_RE.split(raw)
+        for piece in [raw, *pieces]:
+            term = piece.lower()
+            if len(term) < 2 or term in STOPWORDS or term in seen:
+                continue
+            seen.add(term)
+            terms.append(term)
+    return terms
 
 
 def path_parts(rel_path: str) -> tuple[str, ...]:
