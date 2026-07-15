@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from .commands import (
+    cmd_brief,
     cmd_cache_wipe,
     cmd_context,
     cmd_explain,
@@ -16,6 +17,7 @@ from .commands import (
     cmd_preflight,
     cmd_related,
     cmd_refresh,
+    cmd_route,
     cmd_roots,
     cmd_semantic,
     cmd_status,
@@ -72,6 +74,17 @@ def build_parser():
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=10)
     s.set_defaults(func=cmd_related)
+    s = sub.add_parser(
+        "route", help="Recommend an agent role, context packs, risks, files, and verification for a task"
+    )
+    s.add_argument("query")
+    s.add_argument("--limit", type=int, default=8)
+    s.set_defaults(func=cmd_route)
+    s = sub.add_parser("brief", help="Write a role-aware markdown agent brief for a task")
+    s.add_argument("query")
+    s.add_argument("--agent", required=True, help="Agent role: backend/frontend/mobile/reviewer/qa/docs/tooly/general")
+    s.add_argument("--limit", type=int, default=8)
+    s.set_defaults(func=cmd_brief)
     s = sub.add_parser("symbol")
     s.add_argument("name")
     s.set_defaults(func=cmd_symbol)

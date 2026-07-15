@@ -26,6 +26,7 @@ from mimry.graphify_artifacts import graphify_health
 from mimry.graphify_wrapper import graphify_source, pinned_commit_for_status
 from mimry.indexer import write_index
 from mimry.paths import context_file
+from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
 from mimry.feedback import feedback_payload_from_args, record_feedback
@@ -165,6 +166,23 @@ def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[
     ptr = require(root_path)
     rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root_path, root_id=ptr.get("rootId"))
     return {"query": query, "root": str(root_path), "results": rows}
+
+
+@mcp.tool
+def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
+    """Recommend an agent/role, context packs, files, risk gates, and verification for a task."""
+    root_path = _root(root)
+    ptr = require(root_path)
+    return route_payload(root_path, ptr, query, limit=limit)
+
+
+@mcp.tool
+def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
+    """Write a role-aware MIMRY agent brief and return its path plus route payload."""
+    root_path = _root(root)
+    ptr = require(root_path)
+    path, payload = write_brief(root_path, ptr, query, agent, limit=limit)
+    return {"query": query, "root": str(root_path), "agent": payload["agent"], "output": str(path), "payload": payload}
 
 
 @mcp.tool
