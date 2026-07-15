@@ -79,6 +79,7 @@ def build_parser():
     )
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=8)
+    s.add_argument("--json", action="store_true", help="Print the structured route payload as JSON")
     s.set_defaults(func=cmd_route)
     s = sub.add_parser("brief", help="Write a role-aware markdown agent brief for a task")
     s.add_argument("query")

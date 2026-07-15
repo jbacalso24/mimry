@@ -788,6 +788,9 @@ def cmd_route(a):
     root = Path(a.root).resolve()
     ptr = require(root)
     payload = route_payload(root, ptr, a.query, limit=getattr(a, "limit", 8))
+    if getattr(a, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
     print("MIMRY route")
     print(f"Recommended agent: {payload['recommended_agent']}")
     print(f"Confidence: {payload['confidence']}")
@@ -803,6 +806,7 @@ def cmd_route(a):
             print(f"{i}. {row['path']} (score {row['score']}) — {row['reason']}")
     else:
         print("- none")
+    print(f"Risk level: {payload['risk_level']}")
     print("Risk/approval gates:")
     if payload["risk_approval_gates"]:
         for gate in payload["risk_approval_gates"]:
