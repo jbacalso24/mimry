@@ -145,7 +145,10 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     body = skill.read_text(encoding="utf-8")
     assert "name: mimry" in body
     assert "mimry preflight" in body
+    assert "mimry route" in body
+    assert "mimry brief" in body
     assert "mimry_context" in body
+    assert "mimry_route" in body
     assert "references/workflow.md" in body
     assert "$mimry" in body
     assert "graphify install" not in body
@@ -471,8 +474,26 @@ def test_route_recommends_backend_for_fastapi_auth_not_tooly(tmp_path):
     assert res.returncode == 0, res.stderr
     assert "MIMRY route" in res.stdout
     assert "Recommended agent: backend" in res.stdout
+    assert "Risk level:" in res.stdout
     assert "Recommended agent: tooly" not in res.stdout
     assert "Next: mimry brief" in res.stdout
+
+
+def test_route_json_outputs_structured_payload_with_risk_severity(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "route", "deploy billing migration", "--json")
+
+    assert res.returncode == 0, res.stderr
+    payload = json.loads(res.stdout)
+    assert payload["recommended_agent"] in {"backend", "general"}
+    assert payload["risk_level"] == "high"
+    assert "billing" in payload["risk_gate_severity"]["high"]
+    assert "migration" in payload["risk_gate_severity"]["medium"]
+    assert payload["next"].startswith('mimry brief "deploy billing migration"')
 
 
 def test_route_recommends_mobile_for_expo_share_extension(tmp_path):
@@ -513,6 +534,37 @@ def test_route_detects_risk_gates_for_sensitive_terms(tmp_path):
     assert res.returncode == 0, res.stderr
     for gate in ("auth", "database", "migration", "billing", "deployment", "secrets", "scraping/legal/content rights"):
         assert gate in res.stdout
+
+
+def test_route_prefers_explicit_specialist_intent_over_index_noise(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    cases = [
+        ("write README docs", "docs"),
+        ("fix Next.js checkout page", "frontend"),
+        ("test regression auth flow", "qa"),
+        ("review billing delete prod secrets", "reviewer"),
+    ]
+    for query, role in cases:
+        res = run_cli(repo, cache, "route", query)
+        assert res.returncode == 0, res.stderr
+        assert f"Recommended agent: {role}" in res.stdout
+
+
+def test_route_does_not_create_secret_gate_from_token_match_reason(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "route", "fix Next.js checkout page")
+
+    assert res.returncode == 0, res.stderr
+    assert "- billing" in res.stdout
+    assert "- secrets" not in res.stdout
 
 
 def test_brief_writes_role_aware_markdown_sections(tmp_path):

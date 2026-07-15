@@ -183,10 +183,11 @@ Route a task to an agent role and write a focused brief:
 
 ```bash
 mimry route "fix FastAPI auth migration bug"
+mimry route "fix FastAPI auth migration bug" --json
 mimry brief "fix FastAPI auth migration bug" --agent backend
 ```
 
-`route` recommends one of `backend`, `frontend`, `mobile`, `reviewer`, `qa`, `docs`, `tooly`, or `general`, with confidence, why, suggested context-pack labels, likely files, risk/approval gates, verification hints, and a pasteable next command. `brief` writes `.mimry/mimry-out/context/brief-<agent>.md` without dumping source contents.
+`route` recommends one of `backend`, `frontend`, `mobile`, `reviewer`, `qa`, `docs`, `tooly`, or `general`, with confidence, why, suggested context-pack labels, likely files, risk level/severity, risk/approval gates, verification hints, and a pasteable next command. `--json` prints the same structured payload for agents/tools. `brief` writes `.mimry/mimry-out/context/brief-<agent>.md` without dumping source contents.
 
 Explain why something ranked:
 
