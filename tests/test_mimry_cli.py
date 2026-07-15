@@ -460,6 +460,90 @@ def test_status_find_symbol_related_context_loop(tmp_path):
     assert "## Suggested Verification" in text
 
 
+def test_route_recommends_backend_for_fastapi_auth_not_tooly(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "route", "fix FastAPI auth bug")
+
+    assert res.returncode == 0, res.stderr
+    assert "MIMRY route" in res.stdout
+    assert "Recommended agent: backend" in res.stdout
+    assert "Recommended agent: tooly" not in res.stdout
+    assert "Next: mimry brief" in res.stdout
+
+
+def test_route_recommends_mobile_for_expo_share_extension(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "route", "update Expo share extension")
+
+    assert res.returncode == 0, res.stderr
+    assert "Recommended agent: mobile" in res.stdout
+    assert "native/mobile" in res.stdout
+
+
+def test_route_recommends_tooly_for_mimry_mcp_route_tool(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "route", "implement mimry MCP route tool")
+
+    assert res.returncode == 0, res.stderr
+    assert "Recommended agent: tooly" in res.stdout
+    assert "mimry-tooling-pack" in res.stdout
+
+
+def test_route_detects_risk_gates_for_sensitive_terms(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    query = "auth DB migration billing deploy scraping legal secrets"
+    res = run_cli(repo, cache, "route", query)
+
+    assert res.returncode == 0, res.stderr
+    for gate in ("auth", "database", "migration", "billing", "deployment", "secrets", "scraping/legal/content rights"):
+        assert gate in res.stdout
+
+
+def test_brief_writes_role_aware_markdown_sections(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "brief", "fix auth", "--agent", "backend")
+
+    assert res.returncode == 0, res.stderr
+    assert "MIMRY brief generated" in res.stdout
+    path = repo / ".mimry" / "mimry-out" / "context" / "brief-backend.md"
+    assert path.exists()
+    text = path.read_text(encoding="utf-8")
+    for section in (
+        "# MIMRY Agent Brief",
+        "## Query",
+        "## Agent",
+        "## Scope / Owns",
+        "## Required context packs / skills",
+        "## Likely files",
+        "## Risk / approval gates",
+        "## Verification commands",
+        "## Source of truth reminder",
+        "## Final report checklist",
+    ):
+        assert section in text
+    assert "backend" in text
+
+
 def test_explain_summarizes_ranked_files_paths_and_verification_hints(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

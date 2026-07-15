@@ -60,6 +60,7 @@ Coding agents usually start cold. They need to discover project structure, find 
 MIMRY turns a local repo into a small intelligence layer:
 
 - **Context packs** for agent handoffs
+- **Task routing and role-aware briefs** for agent orchestration
 - **File and symbol indexes** for quick navigation
 - **Graphify relationship maps** for code/document relationships
 - **Local semantic recall** for fuzzy “I remember something like…” queries
@@ -178,6 +179,15 @@ Generate an agent handoff:
 mimry context "debug checkout redirect"
 ```
 
+Route a task to an agent role and write a focused brief:
+
+```bash
+mimry route "fix FastAPI auth migration bug"
+mimry brief "fix FastAPI auth migration bug" --agent backend
+```
+
+`route` recommends one of `backend`, `frontend`, `mobile`, `reviewer`, `qa`, `docs`, `tooly`, or `general`, with confidence, why, suggested context-pack labels, likely files, risk/approval gates, verification hints, and a pasteable next command. `brief` writes `.mimry/mimry-out/context/brief-<agent>.md` without dumping source contents.
+
 Explain why something ranked:
 
 ```bash
@@ -261,6 +271,8 @@ Available MCP-style workflows include:
 - symbol search
 - context-pack generation
 - adapter listing
+- task routing (`mimry_route`)
+- role-aware brief generation (`mimry_brief`)
 
 This lets agents ask the local project memory for focused context instead of scraping the whole repo from scratch.
 
