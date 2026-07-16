@@ -52,7 +52,7 @@ RISK_PATTERNS = {
     "migration": ("migration", "migrate", "alembic", "prisma", "schema change"),
     "billing": ("billing", "payment", "checkout", "stripe", "invoice", "subscription"),
     "deployment": ("deploy", "deployment", "release", "production", "prod", "ci", "docker", "kubernetes"),
-    "secrets": ("secret", "token", "api key", "apikey", "credential", "password", ".env"),
+    "secrets": ("secret", "secrets", "token", "api key", "apikey", "credential", "credentials", "password", ".env"),
     "scraping/legal/content rights": (
         "scrape",
         "scraping",
@@ -66,6 +66,11 @@ RISK_PATTERNS = {
     "generated/cache": ("generated", "cache", ".mimry", "node_modules", "dist", "build"),
     "destructive": ("delete", "wipe", "drop", "truncate", "remove all", "destroy", "reset"),
     "public-risk": ("public", "publish", "customer", "external", "security", "privacy"),
+}
+RISK_SEVERITY = {
+    "high": ("billing", "secrets", "destructive", "deployment", "public-risk"),
+    "medium": ("auth", "database", "migration", "scraping/legal/content rights", "native/mobile"),
+    "low": ("generated/cache",),
 }
 
 BACKEND_TERMS = {
@@ -116,10 +121,10 @@ def _record_text(fresh: dict[str, Any], rows: list[dict[str, Any]]) -> str:
 
 
 def _score_roles(
-    query: str, fresh: dict[str, Any], rows: list[dict[str, Any]]
+    query: str, fresh: dict[str, Any], rows: list[dict[str, Any]], root: Path | None = None
 ) -> tuple[dict[str, int], dict[str, list[str]]]:
     q = query.lower()
-    evidence = q + " " + _record_text(fresh, rows)
+    evidence = _record_text(fresh, rows)
     scores = {role: 0 for role in ROLES}
     reasons: dict[str, list[str]] = {role: [] for role in ROLES}
 
@@ -133,15 +138,28 @@ def _score_roles(
         "tooly": TOOLY_TERMS,
     }
     for role, terms in role_terms.items():
-        matches = _contains(evidence, terms)
-        if matches:
-            scores[role] += len(matches) * 8
-            reasons[role].append("query/index terms: " + ", ".join(matches[:6]))
+        query_matches = _contains(q, terms)
+        evidence_matches = [term for term in _contains(evidence, terms) if term not in query_matches]
+        if query_matches:
+            scores[role] += len(query_matches) * 14
+            reasons[role].append("query terms: " + ", ".join(query_matches[:6]))
+        if evidence_matches:
+            scores[role] += min(len(evidence_matches), 4) * 3
+            reasons[role].append("indexed file terms: " + ", ".join(evidence_matches[:4]))
 
     # Intent verbs keep implementation tasks out of reviewer/qa/docs unless those are explicit.
     if re.search(r"\b(fix|implement|add|update|debug|refactor|build)\b", q):
         for role in ("backend", "frontend", "mobile", "tooly", "general"):
             scores[role] += 2
+    if _contains(q, REVIEWER_TERMS):
+        scores["reviewer"] += 35
+        reasons["reviewer"].append("explicit review/audit intent")
+    if re.search(r"\b(test|qa|regression|repro|verify)\b", q):
+        scores["qa"] += 30
+        reasons["qa"].append("explicit QA/test intent")
+    if _contains(q, DOCS_TERMS):
+        scores["docs"] += 30
+        reasons["docs"].append("explicit docs/readme intent")
     if "mimry" in q or "tooly" in q:
         scores["tooly"] += 30
         reasons["tooly"].append("explicit MIMRY/Tooly ownership")
@@ -152,9 +170,17 @@ def _score_roles(
     if "fastapi" in q:
         scores["backend"] += 18
         reasons["backend"].append("FastAPI framework signal")
+    if "next" in q or "next.js" in q or "nextjs" in q:
+        scores["frontend"] += 20
+        reasons["frontend"].append("Next.js/web frontend signal")
     if "expo" in q or "share extension" in q:
         scores["mobile"] += 20
         reasons["mobile"].append("Expo/native mobile signal")
+    if (root and root.name.lower() == "mimry") and any(
+        term in q for term in ("mcp", "cli", "graphify", "routing", "route", "context pack")
+    ):
+        scores["tooly"] += 22
+        reasons["tooly"].append("MIMRY repo tooling surface")
     if not any(scores.values()):
         scores["general"] = 1
         reasons["general"].append("no specialist signal dominated")
@@ -164,14 +190,37 @@ def _score_roles(
 def detect_risk_gates(query: str, rows: list[dict[str, Any]] | None = None) -> list[str]:
     text = query.lower()
     if rows:
-        text += " " + " ".join(row.get("path", "").lower() + " " + row.get("reason", "").lower() for row in rows)
+        # Use paths as weak file evidence, but avoid reason labels such as
+        # "token match" creating false secret gates for ordinary lexical hits.
+        text += " " + " ".join(row.get("path", "").lower() for row in rows)
     gates = []
     for gate, patterns in RISK_PATTERNS.items():
-        if any(pattern in text for pattern in patterns):
+        if any(_risk_pattern_matches(text, pattern) for pattern in patterns):
             gates.append(gate)
     if "migration" in gates and "database" not in gates:
         gates.insert(gates.index("migration"), "database")
     return gates
+
+
+def _risk_pattern_matches(text: str, pattern: str) -> bool:
+    if pattern.startswith(".") or " " in pattern:
+        return pattern in text
+    return re.search(rf"(?<![a-z0-9_]){re.escape(pattern)}(?![a-z0-9_])", text) is not None
+
+
+def risk_severity(gates: list[str]) -> dict[str, Any]:
+    grouped: dict[str, list[str]] = {"high": [], "medium": [], "low": []}
+    for gate in gates:
+        for level, level_gates in RISK_SEVERITY.items():
+            if gate in level_gates:
+                grouped[level].append(gate)
+                break
+    level = "none"
+    for candidate in ("high", "medium", "low"):
+        if grouped[candidate]:
+            level = candidate
+            break
+    return {"level": level, "high": grouped["high"], "medium": grouped["medium"], "low": grouped["low"]}
 
 
 def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[str]:
@@ -220,13 +269,14 @@ def route_payload(root: Path, ptr: dict[str, Any], query: str, limit: int = 8) -
     idx = Path(ptr["indexPath"])
     rows = find_rows(idx, query, limit, True, root=root, root_id=ptr.get("rootId"))
     fresh = index_freshness(root, ptr)
-    scores, reasons_by_role = _score_roles(query, fresh, rows)
+    scores, reasons_by_role = _score_roles(query, fresh, rows, root=root)
     ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
     role, score = ranked[0]
     runner_up = ranked[1][1] if len(ranked) > 1 else 0
     confidence = "high" if score >= 28 and score - runner_up >= 8 else "medium" if score >= 10 else "low"
     reasons = reasons_by_role.get(role) or ["best available match from query terms and indexed file evidence"]
     gates = detect_risk_gates(query, rows)
+    risk = risk_severity(gates)
     return {
         "query": query,
         "root": str(root),
@@ -236,6 +286,8 @@ def route_payload(root: Path, ptr: dict[str, Any], query: str, limit: int = 8) -
         "skill_context_packs": ROLE_PACKS[role],
         "likely_files": rows,
         "risk_approval_gates": gates,
+        "risk_level": risk["level"],
+        "risk_gate_severity": risk,
         "suggested_verification": verification_commands(fresh, role),
         "next": f'mimry brief "{query}" --agent {role}',
         "role_scores": scores,
@@ -281,6 +333,7 @@ def write_brief(root: Path, ptr: dict[str, Any], query: str, agent: str, limit: 
     lines += [
         "",
         "## Risk / approval gates",
+        f"Risk level: {payload['risk_level']}",
         *([f"- {gate}" for gate in gates] if gates else ["- none detected"]),
         "",
         "## Verification commands",
