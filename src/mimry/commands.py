@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import subprocess
 import uuid
@@ -24,6 +23,7 @@ from .graphify_artifacts import (
 from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build
 from .indexer import write_index
 from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir, roots_file
+from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
 from .security import safe_root
 from .semantic import build_semantic_index, semantic_health, semantic_rows
@@ -390,30 +390,7 @@ def _framework_detail_lines(record: dict, limit: int = 8) -> list[str]:
 
 
 def _verification_commands(fresh: dict) -> list[str]:
-    commands: list[str] = []
-    command_re = re.compile(r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) command (?P<cmd>[^|]+)")
-    doc_commands_re = re.compile(r"(?:^|\| )commands (?P<cmds>[^|]+)")
-    for f in fresh["files"]:
-        if "config-manifest" not in f.get("adapter", ""):
-            continue
-        metadata = f.get("metadata_text", "")
-        for match in command_re.finditer(metadata):
-            for cmd in match.group("cmd").split(";"):
-                cmd = cmd.strip()
-                if cmd and cmd not in commands:
-                    commands.append(cmd)
-        for match in doc_commands_re.finditer(metadata):
-            for cmd in match.group("cmds").split(";"):
-                cmd = cmd.strip()
-                if cmd and any(
-                    cmd.startswith(prefix)
-                    for prefix in ("uv ", "npm ", "pnpm ", "yarn ", "bun ", "pytest", "ruff", "make ", "just ")
-                ):
-                    if cmd not in commands:
-                        commands.append(cmd)
-    preferred = [cmd for cmd in ("uv run ruff format .", "uv run ruff check .", "uv run pytest") if cmd in commands]
-    rest = [cmd for cmd in commands if cmd not in preferred]
-    return (preferred + rest)[:10]
+    return verification_commands(fresh)
 
 
 def _detected_supporting_file_lines(fresh: dict, rows: list[dict], limit: int = 8) -> list[str]:
@@ -804,6 +781,53 @@ def cmd_related(a):
         f"Related files for: {a.query}",
         find_rows(Path(ptr["indexPath"]), a.query, a.limit, True, root=root, root_id=ptr.get("rootId")),
     )
+    return 0
+
+
+def cmd_route(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    payload = route_payload(root, ptr, a.query, limit=getattr(a, "limit", 8))
+    print("MIMRY route")
+    print(f"Recommended agent: {payload['recommended_agent']}")
+    print(f"Confidence: {payload['confidence']}")
+    print("Why:")
+    for reason in payload["why"]:
+        print(f"- {reason}")
+    print("Skill/context packs:")
+    for pack in payload["skill_context_packs"]:
+        print(f"- {pack}")
+    print("Likely files:")
+    if payload["likely_files"]:
+        for i, row in enumerate(payload["likely_files"], 1):
+            print(f"{i}. {row['path']} (score {row['score']}) — {row['reason']}")
+    else:
+        print("- none")
+    print("Risk/approval gates:")
+    if payload["risk_approval_gates"]:
+        for gate in payload["risk_approval_gates"]:
+            print(f"- {gate}")
+    else:
+        print("- none detected")
+    print("Suggested verification:")
+    for cmd in payload["suggested_verification"]:
+        print(f"- {cmd}")
+    print(f"Next: {payload['next']}")
+    return 0
+
+
+def cmd_brief(a):
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    try:
+        path, payload = write_brief(root, ptr, a.query, a.agent, limit=getattr(a, "limit", 8))
+    except ValueError as exc:
+        print(str(exc))
+        return 2
+    print("MIMRY brief generated")
+    print(f"Output: {path}")
+    print(f"Agent: {payload['agent']}")
+    print(f"Recommended route: {payload['recommended_agent']} ({payload['confidence']})")
     return 0
 
 
