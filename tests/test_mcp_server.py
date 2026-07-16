@@ -189,6 +189,8 @@ def test_mcp_route_and_brief_return_structured_payloads(tmp_path: Path, monkeypa
 
     assert route["recommended_agent"] == "backend"
     assert route["risk_approval_gates"]
+    assert route["risk_level"] in {"medium", "high"}
+    assert "risk_gate_severity" in route
     assert route["likely_files"]
     assert brief["agent"] == "backend"
     assert brief["output"].endswith("brief-backend.md")
