@@ -11,12 +11,14 @@ from mimry import mcp_server
 from mimry.indexer import write_index
 from mimry.mcp_server import (
     mimry_context,
+    mimry_brief,
     mimry_explain,
     mimry_feedback,
     mimry_find,
     mimry_init,
     mimry_path,
     mimry_preflight,
+    mimry_route,
     mimry_refresh,
     mimry_status,
     mimry_why,
@@ -41,6 +43,8 @@ def test_mcp_server_imports_and_registers_tools():
     assert callable(mimry_path)
     assert callable(mimry_why)
     assert callable(mimry_feedback)
+    assert callable(mimry_route)
+    assert callable(mimry_brief)
 
 
 def test_mimry_mcp_help_does_not_start_server():
@@ -161,6 +165,34 @@ def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, mon
     ):
         assert section in text
     assert "After verification, run `mimry feedback ...`" in text
+
+
+def test_mcp_route_and_brief_return_structured_payloads(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+
+    route = mimry_route("fix FastAPI auth bug", str(repo))
+    brief = mimry_brief("fix auth", "backend", str(repo))
+
+    assert route["recommended_agent"] == "backend"
+    assert route["risk_approval_gates"]
+    assert route["likely_files"]
+    assert brief["agent"] == "backend"
+    assert brief["output"].endswith("brief-backend.md")
+    assert (repo / ".mimry" / "mimry-out" / "context" / "brief-backend.md").exists()
 
 
 def test_mcp_preflight_initializes_and_writes_context(tmp_path: Path, monkeypatch):
