@@ -33,6 +33,21 @@ def copy_fixture(tmp_path: Path) -> Path:
     return dest
 
 
+def test_safe_graphify_handoff_preserves_source_mtime(tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "src" / "app.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("print('safe')\n", encoding="utf-8")
+    source_mtime_ns = 1_700_000_000_123_456_789
+    os.utime(source, ns=(source_mtime_ns, source_mtime_ns))
+    handoff = tmp_path / "handoff"
+    handoff.mkdir()
+
+    graphify_wrapper._copy_safe_graphify_input(repo, handoff)
+
+    assert (handoff / "src" / "app.py").stat().st_mtime_ns == source.stat().st_mtime_ns
+
+
 def test_graphify_status_reports_pinned_submodule():
     result = subprocess.run(
         [sys.executable, "-m", "mimry.cli", "graphify", "status"],

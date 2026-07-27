@@ -152,6 +152,16 @@ def _copy_verified_regular_file(source: Path, target: Path) -> bool:
                 target_handle.flush()
                 target_handle.seek(0)
                 sensitive = opened_file_has_sensitive_content(target, target_handle)
+                # Graphify records this handoff tree's mtimes in its manifest.
+                # Preserve the descriptor-verified source snapshot so freshness
+                # checks compare the manifest with the real source provenance,
+                # not with the temporary copy time. The identity checks below
+                # fail closed if the path is swapped while setting the mtime.
+                os.utime(
+                    target,
+                    ns=(os.fstat(target_handle.fileno()).st_atime_ns, opened.st_mtime_ns),
+                    follow_symlinks=False,
+                )
                 target_after = os.fstat(target_handle.fileno())
                 target_current = target.lstat()
                 if not stat.S_ISREG(target_after.st_mode) or (
