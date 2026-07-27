@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .scanner import scan
+from .security import should_ignore
 from .state import StateCorruptionError, load_json_state, validate_generation
 from .storage import load_jsonl
 
@@ -45,6 +46,11 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         rel_path = f["rel_path"]
         p = root / rel_path
         if not p.exists():
+            missing.append(rel_path)
+            continue
+        # Policy changes must invalidate old generations. Otherwise a file that
+        # became ignored after it was indexed remains searchable indefinitely.
+        if should_ignore(p, root):
             missing.append(rel_path)
             continue
         expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")

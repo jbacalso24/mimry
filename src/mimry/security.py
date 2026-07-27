@@ -348,6 +348,13 @@ def should_ignore(path, root):
     return any(p in HEAVY_IGNORES for p in parts) or is_sensitive(path) or has_sensitive_content(path)
 
 
+def path_has_ignored_part(path: str | Path) -> bool:
+    """Classify artifact/index paths without opening the referenced source."""
+
+    normalized = str(path).replace("\\", "/")
+    return any(re.search(rf"(?:^|[/\s`'\"(\[{{:=]){re.escape(part)}(?=$|/)", normalized) for part in HEAVY_IGNORES)
+
+
 def is_text(path):
     return path.suffix.lower() in TEXT_EXTS
 

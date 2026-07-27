@@ -116,7 +116,10 @@ def cmd_init(a):
     atomic_write_text(mdir(root) / "config.toml", 'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n')
     atomic_write_text(
         mdir(root) / "AGENT_RULES.md",
-        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file reading.\n",
+        "# MIMRY Agent Rules\n\n"
+        "Use MIMRY before repeated grep or blind file reading.\n"
+        "Tester-owned `acceptance_tests/` is excluded from ordinary MIMRY indexing and Graphify handoff by default. "
+        "This is cooperative workflow isolation, not secrecy: repository users can still open those files directly.\n",
     )
     save_pointer(root, ptr)
     register_root(ptr)
