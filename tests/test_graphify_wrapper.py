@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import json
 import shutil
@@ -31,6 +32,113 @@ def copy_fixture(tmp_path: Path) -> Path:
     dest = tmp_path / "repo"
     shutil.copytree(FIXTURE, dest)
     return dest
+
+
+def test_safe_graphify_handoff_preserves_source_mtime(tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "src" / "app.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("print('safe')\n", encoding="utf-8")
+    source_mtime_ns = 1_700_000_000_123_456_789
+    os.utime(source, ns=(source_mtime_ns, source_mtime_ns))
+    handoff = tmp_path / "handoff"
+    handoff.mkdir()
+
+    graphify_wrapper._copy_safe_graphify_input(repo, handoff)
+
+    assert (handoff / "src" / "app.py").stat().st_mtime_ns == source.stat().st_mtime_ns
+
+
+def test_graphify_build_rejects_same_size_restored_mtime_source_mutation(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "src" / "app.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("value = 'A'\n", encoding="utf-8")
+    original = source.stat()
+    private = tmp_path / "cache" / "graphify"
+
+    monkeypatch.setattr(graphify_wrapper, "graphify_output_dir", lambda root: private)
+    monkeypatch.setattr(graphify_wrapper, "graph_output_dir", lambda root: tmp_path / "visible")
+    monkeypatch.setattr(graphify_wrapper, "graphify_source", lambda: "installed")
+    monkeypatch.setattr(graphify_wrapper, "graphify_vendor_available", lambda: False)
+    monkeypatch.setattr(graphify_wrapper.shutil, "which", lambda name: "/usr/bin/graphify")
+
+    def fake_run(cmd, **kwargs):
+        handoff = Path(cmd[-1])
+        private.mkdir(parents=True)
+        (private / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+        (private / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
+        (private / "manifest.json").write_text(
+            json.dumps({"src/app.py": {"mtime": (handoff / "src" / "app.py").stat().st_mtime}}),
+            encoding="utf-8",
+        )
+        source.write_text("value = 'B'\n", encoding="utf-8")
+        os.utime(source, ns=(original.st_atime_ns, original.st_mtime_ns))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(graphify_wrapper.subprocess, "run", fake_run)
+
+    assert graphify_wrapper.run_graphify_build(repo, execute=True) == 3
+    assert not private.exists()
+    assert not (tmp_path / "visible").exists()
+
+
+def test_graphify_build_rejects_source_added_during_build(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "src" / "app.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("value = 'A'\n", encoding="utf-8")
+    private = tmp_path / "cache" / "graphify"
+
+    monkeypatch.setattr(graphify_wrapper, "graphify_output_dir", lambda root: private)
+    monkeypatch.setattr(graphify_wrapper, "graph_output_dir", lambda root: tmp_path / "visible")
+    monkeypatch.setattr(graphify_wrapper, "graphify_source", lambda: "installed")
+    monkeypatch.setattr(graphify_wrapper, "graphify_vendor_available", lambda: False)
+    monkeypatch.setattr(graphify_wrapper.shutil, "which", lambda name: "/usr/bin/graphify")
+
+    def fake_run(cmd, **kwargs):
+        private.mkdir(parents=True)
+        (private / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+        (private / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
+        (private / "manifest.json").write_text("{}\n", encoding="utf-8")
+        (repo / "src" / "new.py").write_text("new = True\n", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(graphify_wrapper.subprocess, "run", fake_run)
+
+    assert graphify_wrapper.run_graphify_build(repo, execute=True) == 3
+    assert not private.exists()
+
+
+def test_graphify_build_rewrites_manifest_with_source_hash_provenance(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "src" / "app.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("value = 'safe'\n", encoding="utf-8")
+    private = tmp_path / "cache" / "graphify"
+
+    monkeypatch.setattr(graphify_wrapper, "graphify_output_dir", lambda root: private)
+    monkeypatch.setattr(graphify_wrapper, "graph_output_dir", lambda root: tmp_path / "visible")
+    monkeypatch.setattr(graphify_wrapper, "graphify_source", lambda: "installed")
+    monkeypatch.setattr(graphify_wrapper, "graphify_vendor_available", lambda: False)
+    monkeypatch.setattr(graphify_wrapper.shutil, "which", lambda name: "/usr/bin/graphify")
+
+    def fake_run(cmd, **kwargs):
+        private.mkdir(parents=True)
+        (private / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+        (private / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
+        (private / "manifest.json").write_text(
+            json.dumps({"src/app.py": {"mtime": int(source.stat().st_mtime), "ast_hash": "graphify"}}),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(graphify_wrapper.subprocess, "run", fake_run)
+
+    assert graphify_wrapper.run_graphify_build(repo, execute=True) == 0
+    manifest = json.loads((private / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["src/app.py"]["mtime"] == source.stat().st_mtime
+    assert manifest["src/app.py"]["mimry_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
 
 
 def test_graphify_status_reports_pinned_submodule():
