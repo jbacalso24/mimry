@@ -8,8 +8,8 @@ import sys
 
 from pathlib import Path
 
-from .paths import graphify_output_dir, graphify_vendor_path, repo_root
-from .security import safe_root
+from .paths import graph_output_dir, graphify_output_dir, graphify_vendor_path, repo_root
+from .security import redact_sensitive_text, root_contains_sensitive_content, safe_root, tree_contains_sensitive_content
 
 PINNED_GRAPHIFY_COMMIT = "44c0a5e33c7011813dcebf1a8850c1c6005bf500"
 GRAPHIFY_ENV_ALLOWLIST = {
@@ -130,6 +130,16 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         print("Command: graphify update <root>" if graphify_cli else "Command: python -m graphify update <root>")
         print("To execute: mimry --root <root> graphify build --execute")
         return 0
+    if root_contains_sensitive_content(root):
+        # Graphify scans independently of MIMRY's per-file adapter. Do not hand it
+        # a root containing an ordinary secret-bearing file, and remove any prior
+        # generated graph that could retain stale sensitive content.
+        shutil.rmtree(out, ignore_errors=True)
+        shutil.rmtree(graph_output_dir(root), ignore_errors=True)
+        print(
+            "MIMRY internal graph build skipped: secret-bearing source content detected and prior graph artifacts purged."
+        )
+        return 0
     if source == "missing":
         print("Graphify is missing. Run `uv sync` or `git submodule update --init --recursive`.", file=sys.stderr)
         return 2
@@ -143,17 +153,24 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         stdout = exc.output.decode("utf-8", errors="ignore") if isinstance(exc.output, bytes) else (exc.output or "")
         stderr = exc.stderr.decode("utf-8", errors="ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
         if stdout.strip():
-            print(stdout.strip()[-4000:], file=sys.stderr)
+            print(redact_sensitive_text(stdout.strip()[-4000:]), file=sys.stderr)
         if stderr.strip():
-            print(stderr.strip()[-4000:], file=sys.stderr)
+            print(redact_sensitive_text(stderr.strip()[-4000:]), file=sys.stderr)
         return 124
     if res.returncode != 0:
         if res.stdout.strip():
-            print(res.stdout.strip(), file=sys.stderr)
+            print(redact_sensitive_text(res.stdout.strip()), file=sys.stderr)
         if res.stderr.strip():
-            print(res.stderr.strip(), file=sys.stderr)
+            print(redact_sensitive_text(res.stderr.strip()), file=sys.stderr)
         print(f"MIMRY internal graph build failed with exit {res.returncode}", file=sys.stderr)
         return res.returncode
+    if tree_contains_sensitive_content(out):
+        shutil.rmtree(out, ignore_errors=True)
+        shutil.rmtree(graph_output_dir(root), ignore_errors=True)
+        print(
+            "MIMRY internal graph build rejected sensitive generated content; graph artifacts purged.", file=sys.stderr
+        )
+        return 3
     print("MIMRY internal graph build complete.")
     return 0
 

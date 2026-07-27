@@ -10,6 +10,7 @@ from typing import Any
 
 from .intent import query_terms
 from .paths import now, stable_id
+from .security import contains_sensitive_text, redact_sensitive_text
 
 SEMANTIC_BACKEND = "local-hash-v1"
 SEMANTIC_SCHEMA_VERSION = "0.1.0"
@@ -97,6 +98,9 @@ def _chunk_text_hash(text: str) -> str:
 
 
 def _chunk(root_id: str, file_id: str, rel_path: str, kind: str, text: str, created_at: str) -> dict[str, Any] | None:
+    if contains_sensitive_text(text) or contains_sensitive_text(rel_path):
+        return None
+    text = redact_sensitive_text(text)
     preview = _bounded_preview(text)
     vector = vectorize(text)
     if not preview or not vector:

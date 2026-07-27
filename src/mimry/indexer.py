@@ -5,6 +5,7 @@ import json
 from .graphify_core import GraphifyCore
 from .paths import idx_path, now
 from .scanner import adapt, scan
+from .security import contains_sensitive_data
 from .semantic import build_semantic_index
 from .storage import connect, register_root, save_pointer, write_jsonl
 
@@ -19,6 +20,8 @@ def write_index(root, ptr):
         try:
             f, sy, ed, im, ex = adapt(p, root)
         except (OSError, UnicodeError, ValueError):
+            continue
+        if contains_sensitive_data((f, sy, ed, im, ex)):
             continue
         files.append(f)
         symbols += sy
