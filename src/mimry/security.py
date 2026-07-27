@@ -4,7 +4,7 @@ import fnmatch
 import codecs
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from .constants import HEAVY_IGNORES, SENSITIVE_PATTERNS, TEXT_EXTS
 
@@ -50,13 +50,41 @@ def safe_root(root: Path):
 
 
 ENV_EXAMPLE_NAMES = {".env.example", ".env.sample", ".env.template", "env.example"}
-SECRET_ASSIGNMENT_RE = re.compile(
-    r"(?im)^(?P<prefix>\s*(?:[{,]\s*)?(?:export\s+)?['\"]?"
-    r"(?:[A-Za-z_][A-Za-z0-9_-]*)?"
-    r"(?:TOKEN|SECRET|PASSWORD|PASS(?:WORD)?|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET|API[_-]?KEY|AUTH|"
-    r"AWS[_-](?:ACCESS[_-]KEY[_-]ID|SECRET[_-]ACCESS[_-]KEY))"
-    r"[A-Za-z0-9_-]*['\"]?\s*(?:=|:)\s*)"
-    r"(?P<quote>['\"]?)(?P<value>[^\r\n'\"]{6,}?)(?P=quote)(?=\s*(?:[#;,}]|$))"
+# Keep label classification separate from assignment syntax. Substring matching
+# (for example, ``AUTH`` in ``AUTHOR``) overblocks ordinary metadata and prose.
+# Token/camel-case matching catches credential-like configuration labels while
+# requiring an explicit assignment boundary before any value is classified.
+SENSITIVE_LABEL_TOKENS = {
+    "api_key",
+    "apikey",
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "auth",
+    "authentication",
+    "authorization",
+    "client_secret",
+    "clientsecret",
+    "confidential",
+    "credential",
+    "credentials",
+    "passphrase",
+    "passwd",
+    "password",
+    "private_key",
+    "privatekey",
+    "secret",
+    "secrets",
+    "token",
+}
+ASSIGNMENT_RE = re.compile(
+    r"(?im)^(?P<prefix>\s*(?:[{,]\s*)?(?:export\s+)?(?P<label_quote>['\"]?)"
+    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?:=|:)\s*)"
+    r"(?P<value>[^\r\n]*)(?P<newline>\r?\n|$)"
+)
+YAML_BLOCK_ASSIGNMENT_RE = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)"
+    r"(?P<header>\s*:\s*[|>][+-]?[^\r\n]*\r?\n)"
+    r"(?P<body>(?:(?P=indent)[ \t]+[^\r\n]*(?:\r?\n|$)|[ \t]*\r?\n)*)"
 )
 PRIVATE_KEY_BLOCK_RE = re.compile(
     r"(?is)-----BEGIN (?P<label>(?:RSA |EC |OPENSSH |DSA |ENCRYPTED |)PRIVATE KEY)-----"
@@ -95,9 +123,11 @@ def contains_sensitive_text(text: str) -> bool:
         return False
     if PRIVATE_KEY_BLOCK_RE.search(text) or STANDALONE_SECRET_RE.search(text) or SENSITIVE_VALUE_RE.search(text):
         return True
+    if any(_is_sensitive_label(match.group("label")) for match in YAML_BLOCK_ASSIGNMENT_RE.finditer(text)):
+        return True
     return any(
-        not match.group("value").startswith(("process.env.", "os.getenv(", "Deno.env.get(", "import.meta.env."))
-        for match in SECRET_ASSIGNMENT_RE.finditer(text)
+        _is_sensitive_label(match.group("label")) and _assignment_value_is_sensitive(match.group("value"))
+        for match in ASSIGNMENT_RE.finditer(text)
     )
 
 
@@ -107,10 +137,51 @@ def redact_sensitive_text(text: str) -> str:
     redacted = PRIVATE_KEY_BLOCK_RE.sub(REDACTED, text)
     redacted = STANDALONE_SECRET_RE.sub(REDACTED, redacted)
     redacted = SENSITIVE_VALUE_RE.sub(REDACTED, redacted)
-    redacted = SECRET_ASSIGNMENT_RE.sub(
-        lambda match: f"{match.group('prefix')}{match.group('quote')}{REDACTED}{match.group('quote')}", redacted
-    )
+    redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
+    redacted = ASSIGNMENT_RE.sub(_redact_assignment, redacted)
     return redacted
+
+
+def _label_tokens(label: str) -> set[str]:
+    snake = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", label).lower()
+    ordered = [piece for piece in re.split(r"[^a-z0-9]+", snake) if piece]
+    pieces = set(ordered)
+    pieces.update("_".join(pair) for pair in zip(ordered, ordered[1:]))
+    pieces.add("_".join(ordered))
+    pieces.add(re.sub(r"[^a-z0-9]", "", snake))
+    return pieces
+
+
+def _is_sensitive_label(label: str) -> bool:
+    return bool(_label_tokens(label) & SENSITIVE_LABEL_TOKENS)
+
+
+def _assignment_value_is_sensitive(value: str) -> bool:
+    candidate = value.strip().rstrip(",;}").strip()
+    if candidate.startswith(("|", ">")):
+        # YAML block bodies are classified and redacted as a unit above.
+        return False
+    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}:
+        candidate = candidate[1:-1].strip()
+    if not candidate:
+        return False
+    return not candidate.startswith(("process.env.", "os.getenv(", "Deno.env.get(", "import.meta.env."))
+
+
+def _redact_assignment(match: re.Match[str]) -> str:
+    if not _is_sensitive_label(match.group("label")) or not _assignment_value_is_sensitive(match.group("value")):
+        return match.group(0)
+    value = match.group("value")
+    stripped = value.strip()
+    quote = stripped[0] if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"} else ""
+    return f"{match.group('prefix')}{quote}{REDACTED}{quote}{match.group('newline')}"
+
+
+def _redact_yaml_block(match: re.Match[str]) -> str:
+    if not _is_sensitive_label(match.group("label")):
+        return match.group(0)
+    newline = "\r\n" if "\r\n" in match.group("header") else "\n"
+    return f"{match.group('indent')}{match.group('label')}{match.group('header')}{match.group('indent')}  {REDACTED}{newline}"
 
 
 def sanitize_query(value: str) -> str:
@@ -143,27 +214,40 @@ def contains_sensitive_data(value) -> bool:
     return False
 
 
+def stream_contains_sensitive_content(handle: BinaryIO) -> bool:
+    """Scan an opened file with bounded memory, preserving cross-chunk matches."""
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+    overlap = ""
+    for raw in iter(lambda: handle.read(STREAM_CHUNK_BYTES), b""):
+        # Sparse files and binary-ish generated artifacts can contain long NUL
+        # runs before ordinary UTF-8 text. Drop NULs so line-anchored checks also
+        # catch UTF-16-style ASCII without loading the whole file.
+        text = overlap + decoder.decode(raw.replace(b"\x00", b""))
+        if contains_sensitive_text(text):
+            return True
+        overlap = text[-STREAM_OVERLAP_CHARS:]
+    tail = overlap + decoder.decode(b"", final=True)
+    return contains_sensitive_text(tail)
+
+
 def _stream_contains_sensitive_content(path: Path) -> bool:
     """Scan an entire file with bounded memory, preserving cross-chunk matches."""
 
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
-    overlap = ""
     try:
         with path.open("rb") as handle:
-            for raw in iter(lambda: handle.read(STREAM_CHUNK_BYTES), b""):
-                # Sparse files and binary-ish generated artifacts can contain
-                # long NUL runs before otherwise ordinary UTF-8 JSON/text. Drop
-                # NUL bytes before decoding so line-anchored assignment checks
-                # still see the payload. This also catches UTF-16-style ASCII
-                # credential material without loading the whole file.
-                text = overlap + decoder.decode(raw.replace(b"\x00", b""))
-                if contains_sensitive_text(text):
-                    return True
-                overlap = text[-STREAM_OVERLAP_CHARS:]
-            tail = overlap + decoder.decode(b"", final=True)
+            return stream_contains_sensitive_content(handle)
     except OSError:
         return True
-    return contains_sensitive_text(tail)
+
+
+def opened_file_has_sensitive_content(path: Path, handle: BinaryIO) -> bool:
+    """Classify the exact already-opened file used by a no-follow handoff copy."""
+
+    if _is_env_example(path):
+        return False
+    if path.suffix.lower() not in TEXT_EXTS and path.name not in {"config", "credentials"}:
+        return False
+    return stream_contains_sensitive_content(handle)
 
 
 def has_sensitive_content(path: Path) -> bool:

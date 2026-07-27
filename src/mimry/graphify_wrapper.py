@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -11,7 +12,14 @@ from pathlib import Path
 
 from .paths import graph_output_dir, graphify_output_dir, graphify_vendor_path, repo_root
 from .constants import HEAVY_IGNORES
-from .security import redact_sensitive_text, safe_root, should_ignore, tree_contains_sensitive_content
+from .security import (
+    is_sensitive,
+    opened_file_has_sensitive_content,
+    redact_sensitive_text,
+    safe_root,
+    should_ignore,
+    tree_contains_sensitive_content,
+)
 
 PINNED_GRAPHIFY_COMMIT = "44c0a5e33c7011813dcebf1a8850c1c6005bf500"
 GRAPHIFY_ENV_ALLOWLIST = {
@@ -65,11 +73,33 @@ def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
             rel = source.relative_to(root)
             if any(part in HEAVY_IGNORES for part in rel.parts):
                 continue
-            if source.is_symlink() or not source.is_file() or should_ignore(source, root):
+            before = source.lstat()
+            if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode) or is_sensitive(source):
                 continue
             target = handoff / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            target.parent.chmod(0o700)
+
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            source_fd = os.open(source, flags)
+            try:
+                opened = os.fstat(source_fd)
+                if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                    raise ValueError("Graphify source changed during verified handoff")
+                with os.fdopen(source_fd, "rb", closefd=False) as source_handle:
+                    if opened_file_has_sensitive_content(source, source_handle):
+                        continue
+                    source_handle.seek(0)
+                    target_fd = os.open(
+                        target,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                        0o600,
+                    )
+                    with os.fdopen(target_fd, "wb") as target_handle:
+                        shutil.copyfileobj(source_handle, target_handle)
+                target.chmod(0o600)
+            finally:
+                os.close(source_fd)
         except OSError as exc:
             raise ValueError("Could not create a verified Graphify source handoff") from exc
 
@@ -181,7 +211,8 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
     try:
         with tempfile.TemporaryDirectory(prefix="mimry-graphify-input-") as temporary:
             handoff = Path(temporary) / root.name
-            handoff.mkdir()
+            handoff.mkdir(mode=0o700)
+            handoff.chmod(0o700)
             _copy_safe_graphify_input(root, handoff)
             safe_cmd = [*cmd[:-1], str(handoff)]
             res = subprocess.run(
