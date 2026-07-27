@@ -26,7 +26,7 @@ from .indexer import write_index
 from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
-from .security import redact_sensitive_text, safe_root, sanitize_query
+from .security import filter_index_records, redact_sensitive_text, safe_root, sanitize_query
 from .semantic import semantic_health, semantic_rows
 from .state import atomic_write_text
 from .storage import active_index_pointer, load_jsonl, load_pointer, load_root_registry, register_root, save_pointer
@@ -209,7 +209,7 @@ def cmd_status(a):
     graphify = graphify_health(root, index_state=state)
     semantic = semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files))
     print(
-        f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nIndex path: {idx}"
+        f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nPolicy-excluded stale records: {fresh['policy_excluded_count']}\nIndex path: {idx}"
     )
     print(
         "MIMRY graph artifact health"
@@ -267,6 +267,7 @@ def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
         f"\n- Last indexed: {ptr.get('lastIndexedAt') or 'never'}"
         f"\n- Files indexed: {len(fresh['files'])}"
         f"\n- Changed/deleted files: {len(fresh['changed'])}/{len(fresh['missing'])}"
+        f"\n- Policy-excluded stale records: {fresh['policy_excluded_count']}"
         f"\n- Graph nodes/edges: {len(fresh['graph'].get('nodes', []))}/{len(fresh['graph'].get('edges', []))}"
         f"\n- MIMRY graph artifacts: {graphify['status']}"
         f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)"
@@ -440,6 +441,11 @@ def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
         changed = ", ".join(f"`{p}`" for p in (fresh["changed"] + fresh["missing"])[:8])
         lines.append(
             f"- Index detected changed/deleted files ({changed}); avoid broad dirty work until refreshed/verified."
+        )
+    if fresh.get("policy_excluded_count"):
+        lines.append(
+            f"- Index contains {fresh['policy_excluded_count']} record(s) newly excluded by policy; "
+            "readers hide them, but refresh before relying on index completeness."
         )
     return lines
 
@@ -988,8 +994,11 @@ def cmd_why(a):
             exact = row
             break
     if exact is None:
-        files = {f["file_id"]: f for f in load_jsonl(idx / "files.jsonl")}
-        for sym in load_jsonl(idx / "symbols.jsonl"):
+        visible_files, visible_symbols = filter_index_records(
+            load_jsonl(idx / "files.jsonl"), load_jsonl(idx / "symbols.jsonl")
+        )
+        files = {f["file_id"]: f for f in visible_files}
+        for sym in visible_symbols:
             if surface_lower in sym.get("name", "").lower():
                 path = files.get(sym["file_id"], {}).get("rel_path", "")
                 exact = next((row for row in rows if row["path"] == path), None)
@@ -1029,10 +1038,12 @@ def cmd_symbol(a):
     ptr = require(Path(a.root).resolve())
     name = sanitize_query(a.name)
     print(f"Symbol search: {name}")
-    files = {f["file_id"]: f for f in load_jsonl(Path(ptr["indexPath"]) / "files.jsonl")}
-    for i, s in enumerate(
-        [s for s in load_jsonl(Path(ptr["indexPath"]) / "symbols.jsonl") if name.lower() in s["name"].lower()], 1
-    ):
+    idx = Path(ptr["indexPath"])
+    visible_files, visible_symbols = filter_index_records(
+        load_jsonl(idx / "files.jsonl"), load_jsonl(idx / "symbols.jsonl")
+    )
+    files = {f["file_id"]: f for f in visible_files}
+    for i, s in enumerate([s for s in visible_symbols if name.lower() in s["name"].lower()], 1):
         print(
             f"{i}. {s['name']} ({s['kind']}, {s['language']}) — {files.get(s['file_id'], {}).get('rel_path', s['file_id'])}:{s.get('line_start') or ''}"
         )

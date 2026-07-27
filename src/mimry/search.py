@@ -6,7 +6,7 @@ from .feedback import apply_feedback_to_rows
 from .graphify_artifacts import graphify_available, graphify_rows
 from .intent import apply_intent_adjustment, query_terms
 from .semantic import merge_semantic_rows, semantic_rows
-from .security import redact_sensitive_text
+from .security import filter_index_records, redact_sensitive_text
 from .storage import connect, load_jsonl
 
 
@@ -85,7 +85,7 @@ def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic):
 
 def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=False):
     fallback_rows = []
-    files = load_jsonl(idx / "files.jsonl")
+    files, _ = filter_index_records(load_jsonl(idx / "files.jsonl"))
     fts_scores = _fts_scores(idx, q)
     known_paths = {f["rel_path"] for f in files}
     clusters = {}
