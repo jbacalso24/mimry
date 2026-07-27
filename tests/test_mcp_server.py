@@ -132,6 +132,9 @@ def test_mcp_status_includes_graphify_health_payload(tmp_path: Path, monkeypatch
     assert payload["graphify"]["manifest_exists"] is True
     assert payload["graphify"]["source"] in {"vendor", "installed", "missing"}
     assert payload["graphify"]["pinned_commit"]
+    provenance = payload["graphify"]["runtime_provenance"]
+    assert provenance["source"] == payload["graphify"]["source"]
+    assert {"version", "commit", "url", "matches_policy"} <= provenance.keys()
 
 
 def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, monkeypatch):

@@ -23,7 +23,7 @@ from mimry.commands import (
 )
 from mimry.freshness import index_freshness
 from mimry.graphify_artifacts import graphify_health
-from mimry.graphify_wrapper import graphify_source, pinned_commit_for_status
+from mimry.graphify_wrapper import graphify_runtime_provenance, pinned_commit_for_status
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
@@ -59,8 +59,10 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
     missing = fresh["missing"]
     state = fresh["state"]
     graphify = graphify_health(root_path, index_state=state)
-    graphify["source"] = graphify_source()
+    provenance = graphify_runtime_provenance()
+    graphify["source"] = provenance["source"]
     graphify["pinned_commit"] = pinned_commit_for_status()
+    graphify["runtime_provenance"] = provenance
     return {
         "initialized": True,
         "root": str(root_path),

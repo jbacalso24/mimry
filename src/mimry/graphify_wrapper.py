@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
 import sys
-
+import tomllib
 from pathlib import Path
 
 from .paths import graphify_output_dir, graphify_vendor_path, repo_root
 from .security import safe_root
 
 PINNED_GRAPHIFY_COMMIT = "44c0a5e33c7011813dcebf1a8850c1c6005bf500"
+GRAPHIFY_DISTRIBUTION = "graphifyy"
 GRAPHIFY_ENV_ALLOWLIST = {
     "PATH",
     # POSIX home. Windows Python also accepts HOME, but managed/corporate shells
@@ -68,8 +71,63 @@ def graphify_source():
 
 
 def pinned_commit_for_status():
-    commit = graphify_commit()
-    return commit if commit not in {"missing", "unknown"} else PINNED_GRAPHIFY_COMMIT
+    """Return the dependency-policy commit, not a claim about runtime code."""
+    return PINNED_GRAPHIFY_COMMIT
+
+
+def _vendor_version(vendor: Path) -> str:
+    try:
+        project = tomllib.loads((vendor / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+        return str(project.get("version", "unknown"))
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        return "unknown"
+
+
+def _installed_provenance() -> dict[str, str | bool | None]:
+    try:
+        distribution = importlib.metadata.distribution(GRAPHIFY_DISTRIBUTION)
+    except importlib.metadata.PackageNotFoundError:
+        return {
+            "source": "missing",
+            "version": "missing",
+            "commit": "missing",
+            "url": None,
+            "matches_policy": False,
+        }
+
+    commit = "unknown"
+    url = None
+    direct_url = distribution.read_text("direct_url.json")
+    if direct_url:
+        try:
+            payload = json.loads(direct_url)
+            url = payload.get("url")
+            vcs_info = payload.get("vcs_info") or {}
+            commit = vcs_info.get("commit_id") or "unknown"
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    return {
+        "source": "installed",
+        "version": distribution.version,
+        "commit": commit,
+        "url": url,
+        "matches_policy": commit == PINNED_GRAPHIFY_COMMIT if commit != "unknown" else None,
+    }
+
+
+def graphify_runtime_provenance() -> dict[str, str | bool | None]:
+    """Report the Graphify code that the wrapper will actually execute."""
+    vendor = graphify_vendor_path()
+    if graphify_vendor_available():
+        commit = graphify_commit()
+        return {
+            "source": "vendor",
+            "version": _vendor_version(vendor),
+            "commit": commit,
+            "url": str(vendor),
+            "matches_policy": commit == PINNED_GRAPHIFY_COMMIT if commit != "unknown" else None,
+        }
+    return _installed_provenance()
 
 
 def graphify_subprocess_env(out: Path, vendor: Path | None = None) -> dict[str, str]:
@@ -92,12 +150,19 @@ def graphify_subprocess_env(out: Path, vendor: Path | None = None) -> dict[str, 
 
 def cmd_graphify_status(a):
     vendor = graphify_vendor_path()
-    source = graphify_source()
+    provenance = graphify_runtime_provenance()
+    source = provenance["source"]
     print("Graphify status")
     print(f"Vendor path: {vendor.relative_to(repo_root()) if vendor.exists() else vendor}")
     print(f"Vendor exists: {graphify_vendor_available()}")
-    print(f"Source: {source}")
-    print(f"Pinned commit: {pinned_commit_for_status()}")
+    print(f"Runtime source: {source}")
+    print(f"Runtime version: {provenance['version']}")
+    print(f"Runtime commit: {provenance['commit']}")
+    if provenance["url"]:
+        print(f"Runtime URL: {provenance['url']}")
+    print(f"Dependency policy commit: {pinned_commit_for_status()}")
+    match = provenance["matches_policy"]
+    print(f"Runtime matches dependency policy: {'unknown' if match is None else str(match).lower()}")
     print("Allowed MIMRY wrapper commands: status, build")
     print("Blocked by design: graphify install, graphify hook, provider config, assistant integrations")
     return 0 if source != "missing" else 2
@@ -115,6 +180,7 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
     out = graphify_output_dir(root)
     vendor = graphify_vendor_path()
     source = graphify_source()
+    provenance = graphify_runtime_provenance()
     graphify_cli = shutil.which("graphify")
     cmd = (
         [graphify_cli, "update", str(root)] if graphify_cli else [sys.executable, "-m", "graphify", "update", str(root)]
@@ -125,7 +191,8 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         print(f"Root: {root}")
         print(f"Vendor: {vendor}")
         print(f"Source: {source}")
-        print(f"Pinned commit: {pinned_commit_for_status()}")
+        print(f"Runtime commit: {provenance['commit']}")
+        print(f"Dependency policy commit: {pinned_commit_for_status()}")
         print(f"GRAPHIFY_OUT={out}")
         print("Command: graphify update <root>" if graphify_cli else "Command: python -m graphify update <root>")
         print("To execute: mimry --root <root> graphify build --execute")

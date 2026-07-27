@@ -44,8 +44,40 @@ def test_graphify_status_reports_pinned_submodule():
     )
     assert result.returncode == 0, result.stderr
     assert "Graphify status" in result.stdout
-    assert "Source:" in result.stdout
-    assert "44c0a5e33c7011813dcebf1a8850c1c6005bf500" in result.stdout
+    assert "Runtime source:" in result.stdout
+    assert "Runtime commit:" in result.stdout
+    assert "Dependency policy commit: 44c0a5e33c7011813dcebf1a8850c1c6005bf500" in result.stdout
+
+
+def test_installed_graphify_provenance_reads_direct_url(monkeypatch):
+    class Distribution:
+        version = "0.9.4"
+
+        @staticmethod
+        def read_text(name):
+            assert name == "direct_url.json"
+            return json.dumps(
+                {
+                    "url": "https://github.com/safishamsi/graphify",
+                    "vcs_info": {
+                        "vcs": "git",
+                        "commit_id": graphify_wrapper.PINNED_GRAPHIFY_COMMIT,
+                    },
+                }
+            )
+
+    monkeypatch.setattr(graphify_wrapper, "graphify_vendor_available", lambda: False)
+    monkeypatch.setattr(graphify_wrapper.importlib.metadata, "distribution", lambda name: Distribution())
+
+    provenance = graphify_wrapper.graphify_runtime_provenance()
+
+    assert provenance == {
+        "source": "installed",
+        "version": "0.9.4",
+        "commit": graphify_wrapper.PINNED_GRAPHIFY_COMMIT,
+        "url": "https://github.com/safishamsi/graphify",
+        "matches_policy": True,
+    }
 
 
 def test_graphify_build_dry_run_is_safe_and_points_to_mimry_output(tmp_path: Path):

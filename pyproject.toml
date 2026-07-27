@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
     "fastmcp>=3.4.2",
-    "graphifyy",
+    "graphifyy @ git+https://github.com/safishamsi/graphify.git@44c0a5e33c7011813dcebf1a8850c1c6005bf500",
     "tree-sitter>=0.25.2",
     "tree-sitter-language-pack>=1.12.2",
 ]
@@ -27,11 +27,31 @@ dev = [
     "ruff>=0.8",
 ]
 
-[tool.uv.sources]
-graphifyy = { git = "https://github.com/safishamsi/graphify.git", rev = "44c0a5e33c7011813dcebf1a8850c1c6005bf500" }
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mimry"]
+
+# Keep source releases reviewable. Generated state, local work products, and
+# the optional Graphify submodule are intentionally omitted.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/mimry",
+    "/tests",
+    "/docs",
+    "/assets/banner.svg",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/RELEASING.md",
+    "/THIRD_PARTY.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+exclude = ["/tests/fixtures/**/.env"]
 
 [tool.ruff]
 line-length = 120

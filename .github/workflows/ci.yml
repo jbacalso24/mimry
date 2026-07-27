@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  release-floor:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment
+        run: uv sync --locked --python "${{ matrix.python-version }}"
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run pytest -q
+
+      - name: Build release artifacts
+        run: uv build
+
+      - name: Install and smoke-test the wheel
+        shell: bash
+        run: |
+          uv venv .wheel-venv --python "${{ matrix.python-version }}"
+          uv pip install --python .wheel-venv/bin/python dist/*.whl
+          .wheel-venv/bin/mimry --help >/dev/null
+          .wheel-venv/bin/mimry graphify status | tee /tmp/mimry-graphify-status.txt
+          grep -F "Runtime matches dependency policy: true" /tmp/mimry-graphify-status.txt
