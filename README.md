@@ -416,6 +416,16 @@ MIMRY is designed around local project memory:
 
 MIMRY narrows context. It does not replace reading source files, running tests, or checking real build output.
 
+### Cache generation and lock safety
+
+Index publication, feedback writes, readers, generation cleanup, and `mimry cache wipe --current` use one stable per-root operation lock. POSIX readers share it; Windows readers intentionally take it exclusively because `msvcrt.locking` has no shared mode. Lock waits are bounded to 10 seconds by default; set `MIMRY_LOCK_TIMEOUT_SECONDS` to a positive number when a slower operation needs a larger bound. Timeout errors include the lock path and available holder metadata so a stuck process can be diagnosed without deleting lock files blindly.
+
+After `mimry cache wipe --current`, status truthfully reports a missing index and the normal `mimry index` / `mimry refresh` path rebuilds it. `mimry cache wipe --all` is disabled until MIMRY has a proven cache-global writer coordination protocol; use the per-root wipe instead.
+
+Published indexes are immutable generations. Startup and successful publication remove abandoned staging/orphan trees while retaining only the pointer-current and last-known-good generations. Generation manifests checksum immutable sidecars, and SQLite semantic rows carry the same generation identity plus a deterministic content checksum.
+
+Locking uses advisory `flock` on POSIX systems, including macOS. Windows uses `msvcrt.locking` over one byte as a best-effort advisory equivalent; Windows does not provide POSIX inode/`flock` semantics, so native Windows crash/rename behavior remains a platform-specific verification boundary.
+
 ## Structured adapters
 
 MIMRY includes structured adapters for common project surfaces. Check active adapters with:

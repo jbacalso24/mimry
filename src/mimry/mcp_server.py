@@ -4,6 +4,8 @@ import argparse
 import contextlib
 import io
 import sys
+from functools import wraps
+from inspect import signature
 from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
@@ -29,17 +31,68 @@ from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
+from mimry.state import StateCorruptionError, StateLockTimeoutError
 from mimry.feedback import feedback_payload_from_args, record_feedback
-from mimry.storage import load_jsonl, load_pointer
+from mimry.storage import active_index_pointer, load_jsonl, load_pointer
 
 mcp = FastMCP("MIMRY")
+
+
+def _state_error_payload(exc: StateCorruptionError, *, root: Path | None = None) -> dict[str, Any]:
+    message = str(exc)
+    return {
+        "returncode": 2,
+        "initialized": False,
+        **({"root": str(root)} if root is not None else {}),
+        "state_error": message,
+        "error": {
+            "code": "state_corruption",
+            "message": message,
+            "path": str(exc.path),
+            "backup": str(exc.backup) if exc.backup else None,
+            "detail": exc.detail,
+        },
+        "recommended": "Preserve the corrupt state file and follow the recovery action in state_error.",
+    }
+
+
+def _state_guard(func):
+    """Give direct and protocol MCP calls one structured corruption envelope."""
+
+    @wraps(func)
+    def guarded(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except StateCorruptionError as exc:
+            root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
+            return _state_error_payload(exc, root=_root(root) if isinstance(root, str) else None)
+        except StateLockTimeoutError as exc:
+            return {
+                "returncode": 2,
+                "error": {
+                    "code": "lock_timeout",
+                    "message": str(exc),
+                    "path": str(exc.path),
+                    "timeout": exc.timeout,
+                    "holder": exc.holder or None,
+                },
+                "recommended": "Check for another running MIMRY process, then retry.",
+            }
+
+    return guarded
 
 
 def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
     stdout = io.StringIO()
     stderr = io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        code = func(args)
+        try:
+            code = func(args)
+        except StateCorruptionError as exc:
+            print(f"MIMRY state error: {exc}", file=sys.stderr)
+            payload = _state_error_payload(exc, root=_root(getattr(args, "root", None)))
+            payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
+            return payload
     return {"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()}
 
 
@@ -47,7 +100,23 @@ def _root(root: str | None) -> Path:
     return Path(root or ".").resolve()
 
 
-def _status_payload(root_path: Path) -> dict[str, Any]:
+def _index_operation(*, exclusive: bool = False):
+    def decorate(func):
+        func_signature = signature(func)
+
+        @wraps(func)
+        def guarded(*args, **kwargs):
+            bound = func_signature.bind_partial(*args, **kwargs)
+            root_path = _root(bound.arguments.get("root"))
+            with active_index_pointer(root_path, exclusive=exclusive):
+                return func(*args, **kwargs)
+
+        return guarded
+
+    return decorate
+
+
+def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
     ptr = load_pointer(root_path)
     if not ptr:
         return {"initialized": False, "root": str(root_path), "recommended": "Run `mimry init`."}
@@ -78,27 +147,39 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
     }
 
 
+def _status_payload(root_path: Path) -> dict[str, Any]:
+    try:
+        with active_index_pointer(root_path):
+            return _status_payload_unchecked(root_path)
+    except StateCorruptionError as exc:
+        return _state_error_payload(exc, root=root_path)
+
+
 @mcp.tool
+@_state_guard
 def mimry_list_adapters(active_only: bool = False) -> dict[str, Any]:
     """List active and planned MIMRY adapter plugins for coding-agent routing."""
     return {"adapters": list_adapters(include_planned=not active_only)}
 
 
 @mcp.tool
+@_state_guard
 def mimry_status(root: str | None = None) -> dict[str, Any]:
     """Return MIMRY initialization and index freshness for a root."""
     return _status_payload(_root(root))
 
 
 @mcp.tool
+@_state_guard
 def mimry_reindex(root: str | None = None) -> dict[str, Any]:
     """Rebuild the local MIMRY index for a root."""
     root_path = _root(root)
-    stats = write_index(root_path, require(root_path))
+    stats = write_index(root_path, require(root_path, validate=False))
     return {"root": str(root_path), **stats}
 
 
 @mcp.tool
+@_state_guard
 def mimry_init(root: str | None = None, root_type: str = "repo", skip_graphify: bool = False) -> dict[str, Any]:
     """Initialize MIMRY metadata for a root."""
     root_path = _root(root)
@@ -110,6 +191,7 @@ def mimry_init(root: str | None = None, root_type: str = "repo", skip_graphify: 
 
 
 @mcp.tool
+@_state_guard
 def mimry_refresh(root: str | None = None) -> dict[str, Any]:
     """Run internal graph build, MIMRY index, semantic index, then status."""
     root_path = _root(root)
@@ -119,6 +201,7 @@ def mimry_refresh(root: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool
+@_state_guard
 def mimry_preflight(query: str, root: str | None = None, force_refresh: bool = False) -> dict[str, Any]:
     """Fast readiness check and task context generation, matching CLI preflight."""
     root_path = _root(root)
@@ -140,6 +223,8 @@ def mimry_preflight(query: str, root: str | None = None, force_refresh: bool = F
 
 
 @mcp.tool
+@_state_guard
+@_index_operation()
 def mimry_find(query: str, root: str | None = None, limit: int = 10, semantic: bool = False) -> dict[str, Any]:
     """Search indexed files with ranking reasons."""
     root_path = _root(root)
@@ -152,6 +237,8 @@ def mimry_find(query: str, root: str | None = None, limit: int = 10, semantic: b
 
 
 @mcp.tool
+@_state_guard
+@_index_operation()
 def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Local-only semantic search over bounded MIMRY chunks."""
     root_path = _root(root)
@@ -162,6 +249,8 @@ def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict
 
 
 @mcp.tool
+@_state_guard
+@_index_operation()
 def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Return files related to a query using graph-aware ranking signals."""
     root_path = _root(root)
@@ -171,6 +260,8 @@ def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[
 
 
 @mcp.tool
+@_state_guard
+@_index_operation()
 def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
     """Recommend an agent/role, context packs, files, risk gates, and verification for a task."""
     root_path = _root(root)
@@ -179,6 +270,8 @@ def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str
 
 
 @mcp.tool
+@_state_guard
+@_index_operation()
 def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
     """Write a role-aware MIMRY agent brief and return its path plus route payload."""
     root_path = _root(root)
@@ -188,6 +281,8 @@ def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8)
 
 
 @mcp.tool
+@_state_guard
+@_index_operation()
 def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
     """Search indexed symbols by name."""
     root_path = _root(root)
@@ -211,6 +306,8 @@ def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool
+@_state_guard
+@_index_operation()
 def mimry_context(query: str, root: str | None = None, semantic: bool = False) -> dict[str, Any]:
     """Generate a MIMRY context pack and return its path plus selected files."""
     root_path = _root(root)
@@ -220,6 +317,7 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
 
 
 @mcp.tool
+@_state_guard
 def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[str, Any]:
     """Explain top files, symbols, graph evidence, and verification hints for a task."""
     root_path = _root(root)
@@ -227,6 +325,7 @@ def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[s
 
 
 @mcp.tool
+@_state_guard
 def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, Any]:
     """Find a Graphify relationship path between two files/symbols/queries."""
     root_path = _root(root)
@@ -234,6 +333,7 @@ def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, A
 
 
 @mcp.tool
+@_state_guard
 def mimry_why(surface: str, query: str, root: str | None = None, limit: int = 25) -> dict[str, Any]:
     """Explain why a file or symbol ranked for a task query."""
     root_path = _root(root)
@@ -241,6 +341,8 @@ def mimry_why(surface: str, query: str, root: str | None = None, limit: int = 25
 
 
 @mcp.tool
+@_state_guard
+@_index_operation(exclusive=True)
 def mimry_feedback(
     query: str,
     root: str | None = None,
@@ -274,7 +376,7 @@ def mimry_feedback(
     payload = feedback_payload_from_args(root_path, args)
     if not payload["query"]:
         return {"returncode": 2, "error": "Feedback requires query."}
-    row = record_feedback(idx, ptr["rootId"], payload)
+    row = record_feedback(idx, ptr["rootId"], payload, lock=False)
     return {"returncode": 0, "root": str(root_path), "feedback": row}
 
 

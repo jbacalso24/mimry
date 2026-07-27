@@ -908,6 +908,27 @@ def test_status_reports_graphify_artifact_health(tmp_path):
     assert (repo / ".mimry" / "graphify").exists() is False
 
 
+def test_graphify_reads_base_index_artifacts_after_generation_migration(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    generation_graphify = Path(ptr["indexPath"]) / "graphify"
+    base_graphify = cache / "indexes" / ptr["rootId"] / "graphify"
+    generation_graphify.rename(base_graphify)
+
+    status = run_cli(repo, cache, "status")
+    path = run_cli(repo, cache, "path", "middleware", "session")
+
+    assert status.returncode == 0, status.stderr
+    assert "Status: current" in status.stdout
+    assert f"Artifact output: {base_graphify}" in status.stdout
+    assert path.returncode == 0, path.stderr
+    assert "Path found" in path.stdout
+
+
 def test_status_reads_legacy_repo_local_graphify_artifacts_without_crashing(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
@@ -1011,13 +1032,18 @@ def test_index_normalizes_stale_pointer_index_path(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     ptr_path = repo / ".mimry" / "pointer.json"
     ptr = json.loads(ptr_path.read_text(encoding="utf-8"))
-    ptr["indexPath"] = str(tmp_path / "old-profile-cache" / ptr["rootId"])
+    stale_index = tmp_path / "old-profile-cache" / ptr["rootId"]
+    stale_index.mkdir(parents=True)
+    sentinel = stale_index / "do-not-touch.txt"
+    sentinel.write_text("old profile data", encoding="utf-8")
+    ptr["indexPath"] = str(stale_index)
     ptr_path.write_text(json.dumps(ptr, indent=2) + "\n", encoding="utf-8")
 
     assert run_cli(repo, cache, "index").returncode == 0
 
     updated = json.loads(ptr_path.read_text(encoding="utf-8"))
     assert updated["indexPath"].startswith(str(cache))
+    assert sentinel.read_text(encoding="utf-8") == "old profile data"
     assert "Index: current" in run_cli(repo, cache, "status").stdout
 
 
@@ -1056,7 +1082,7 @@ def test_cache_wipe_all_rejects_relative_and_empty_cache_home(tmp_path):
         assert "Refusing cache wipe" in res.stdout
 
 
-def test_cache_wipe_all_succeeds_for_mimry_looking_temp_cache(tmp_path):
+def test_cache_wipe_all_refuses_until_global_writer_coordination_exists(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
@@ -1065,8 +1091,10 @@ def test_cache_wipe_all_succeeds_for_mimry_looking_temp_cache(tmp_path):
 
     res = run_cli(repo, cache, "cache", "wipe", "--all")
 
-    assert res.returncode == 0
-    assert not cache.exists()
+    assert res.returncode == 2
+    assert "disabled" in res.stdout.lower()
+    assert cache.exists()
+    assert (cache / "roots.json").exists()
 
 
 def test_cache_wipe_current_rejects_index_path_outside_safe_cache(tmp_path):
