@@ -7,6 +7,7 @@ from pathlib import Path
 from .feedback import ensure_feedback_schema
 from .semantic import ensure_semantic_schema
 from .paths import idx_path, pointer_file, roots_file
+from .security import sanitize_data
 
 
 def load_pointer(root):
@@ -41,7 +42,7 @@ def connect(idx):
 
 
 def write_jsonl(path, rows):
-    path.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows), encoding="utf-8")
+    path.write_text("".join(json.dumps(sanitize_data(r), sort_keys=True) + "\n" for r in rows), encoding="utf-8")
 
 
 def load_jsonl(path):

@@ -29,6 +29,7 @@ from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
+from mimry.security import redact_sensitive_text, safe_root, sanitize_data
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import load_jsonl, load_pointer
 
@@ -40,11 +41,11 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
     stderr = io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         code = func(args)
-    return {"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()}
+    return sanitize_data({"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
 
 
 def _root(root: str | None) -> Path:
-    return Path(root or ".").resolve()
+    return safe_root(Path(root or "."))
 
 
 def _status_payload(root_path: Path) -> dict[str, Any]:
@@ -126,7 +127,7 @@ def mimry_preflight(query: str, root: str | None = None, force_refresh: bool = F
     status = _status_payload(root_path)
     payload.update(
         {
-            "query": query,
+            "query": redact_sensitive_text(query),
             "root": str(root_path),
             "context_path": str(context_file(root_path)),
             "initialized": status.get("initialized"),
@@ -143,7 +144,7 @@ def mimry_find(query: str, root: str | None = None, limit: int = 10, semantic: b
     root_path = _root(root)
     ptr = require(root_path)
     rows = find_rows(Path(ptr["indexPath"]), query, limit, root=root_path, root_id=ptr.get("rootId"), semantic=semantic)
-    payload = {"query": query, "root": str(root_path), "results": rows}
+    payload = {"query": redact_sensitive_text(query), "root": str(root_path), "results": sanitize_data(rows)}
     if semantic:
         payload["semantic"] = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))
     return payload
@@ -156,7 +157,12 @@ def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict
     ptr = require(root_path)
     idx = Path(ptr["indexPath"])
     rows, health = semantic_rows(idx, ptr.get("rootId"), query, limit)
-    return {"query": query, "root": str(root_path), "semantic": health, "results": rows}
+    return {
+        "query": redact_sensitive_text(query),
+        "root": str(root_path),
+        "semantic": health,
+        "results": sanitize_data(rows),
+    }
 
 
 @mcp.tool
@@ -165,7 +171,7 @@ def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[
     root_path = _root(root)
     ptr = require(root_path)
     rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root_path, root_id=ptr.get("rootId"))
-    return {"query": query, "root": str(root_path), "results": rows}
+    return {"query": redact_sensitive_text(query), "root": str(root_path), "results": sanitize_data(rows)}
 
 
 @mcp.tool
@@ -173,7 +179,7 @@ def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str
     """Recommend an agent/role, context packs, files, risk gates, and verification for a task."""
     root_path = _root(root)
     ptr = require(root_path)
-    return route_payload(root_path, ptr, query, limit=limit)
+    return sanitize_data(route_payload(root_path, ptr, query, limit=limit))
 
 
 @mcp.tool
@@ -182,7 +188,15 @@ def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8)
     root_path = _root(root)
     ptr = require(root_path)
     path, payload = write_brief(root_path, ptr, query, agent, limit=limit)
-    return {"query": query, "root": str(root_path), "agent": payload["agent"], "output": str(path), "payload": payload}
+    return sanitize_data(
+        {
+            "query": redact_sensitive_text(query),
+            "root": str(root_path),
+            "agent": payload["agent"],
+            "output": str(path),
+            "payload": payload,
+        }
+    )
 
 
 @mcp.tool
@@ -214,7 +228,14 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
     root_path = _root(root)
     ptr = require(root_path)
     rows = _write_context_pack(root_path, ptr, query, semantic=semantic)
-    return {"query": query, "root": str(root_path), "output": str(context_file(root_path)), "files": rows}
+    return sanitize_data(
+        {
+            "query": redact_sensitive_text(query),
+            "root": str(root_path),
+            "output": str(context_file(root_path)),
+            "files": rows,
+        }
+    )
 
 
 @mcp.tool

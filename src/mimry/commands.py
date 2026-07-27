@@ -25,7 +25,7 @@ from .indexer import write_index
 from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir, roots_file
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
-from .security import safe_root
+from .security import redact_sensitive_text, safe_root
 from .semantic import build_semantic_index, semantic_health, semantic_rows
 from .storage import load_jsonl, load_pointer, register_root, save_pointer
 
@@ -142,6 +142,7 @@ def cmd_init(a):
 
 
 def require(root):
+    safe_root(root)
     ptr = load_pointer(root)
     if not ptr:
         raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
@@ -186,6 +187,7 @@ def cmd_refresh(a):
 
 def cmd_status(a):
     root = Path(a.root).resolve()
+    safe_root(root)
     ptr = load_pointer(root)
     if not ptr:
         print("MIMRY status\nInitialized: no\nRecommended: Run `mimry init`.")
@@ -463,7 +465,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
         "# MIMRY Context Pack",
         "",
         "## Query",
-        query,
+        redact_sensitive_text(query),
         "",
         "## Status Summary",
         f"- Root: `{root}`",
