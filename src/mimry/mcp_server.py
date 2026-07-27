@@ -34,7 +34,7 @@ from mimry.semantic import semantic_health, semantic_rows
 from mimry.security import filter_index_records, redact_sensitive_text, safe_root, sanitize_data, sanitize_query
 from mimry.state import StateCorruptionError, StateLockTimeoutError
 from mimry.feedback import feedback_payload_from_args, record_feedback
-from mimry.storage import active_index_pointer, load_jsonl, load_pointer
+from mimry.storage import RootIdentityError, active_index_pointer, load_jsonl, load_pointer
 
 mcp = FastMCP("MIMRY")
 
@@ -81,6 +81,19 @@ def _state_guard(func):
                     "recommended": "Check for another running MIMRY process, then retry.",
                 }
             )
+        except RootIdentityError as exc:
+            return sanitize_data(
+                {
+                    "returncode": 2,
+                    "error": {
+                        "code": "root_identity_mismatch",
+                        "message": str(exc),
+                        "recorded_root": str(exc.recorded_root),
+                        "current_root": str(exc.current_root),
+                    },
+                    "recommended": "Do not share one root ID/cache across copied roots; initialize a distinct root.",
+                }
+            )
 
     return guarded
 
@@ -96,6 +109,21 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
             payload = _state_error_payload(exc, root=_root(getattr(args, "root", None)))
             payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
             return sanitize_data(payload)
+        except RootIdentityError as exc:
+            print(f"MIMRY root identity error: {exc}", file=sys.stderr)
+            return sanitize_data(
+                {
+                    "returncode": 2,
+                    "stdout": stdout.getvalue(),
+                    "stderr": stderr.getvalue(),
+                    "error": {
+                        "code": "root_identity_mismatch",
+                        "message": str(exc),
+                        "recorded_root": str(exc.recorded_root),
+                        "current_root": str(exc.current_root),
+                    },
+                }
+            )
     return sanitize_data({"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
 
 
