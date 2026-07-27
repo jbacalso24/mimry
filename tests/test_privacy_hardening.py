@@ -117,6 +117,7 @@ def test_sensitive_label_policy_covers_exact_variants_and_yaml_blocks_without_pr
 def test_inline_and_multiline_assignments_are_fully_redacted_without_matching_prose():
     samples = (
         f'const cfg={{ auth: "{DEFENSIVE_MARKER}" }};\n',
+        f"call(auth={DEFENSIVE_MARKER})\n",
         f'const cfg={{public: "ok", "client_secret": "{DEFENSIVE_MARKER}", retries: 2}};\n',
         f'{{"nested": {{"api_key": "{DEFENSIVE_MARKER}"}}}}\n',
         f'auth = """first line\n{DEFENSIVE_MARKER}\nlast line"""\npublic = "retained"\n',
@@ -130,6 +131,8 @@ def test_inline_and_multiline_assignments_are_fully_redacted_without_matching_pr
         if "first line" in sample:
             assert "first line" not in redacted
             assert "last line" not in redacted
+
+    assert redact_sensitive_text(f"call(auth={DEFENSIVE_MARKER})\n") == "call(auth=[REDACTED])\n"
 
     ordinary = (
         "auth: flow is explained in ordinary prose with several words.\n"
@@ -171,6 +174,7 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
     (repo / ".env").unlink()
     labeled_files = {
         "confidential.txt": f"CONFIDENTIAL={DEFENSIVE_MARKER}\n",
+        "call.py": f"call(auth={DEFENSIVE_MARKER})\n",
         "credentials.yaml": f"service_credentials: {DEFENSIVE_MARKER}\n",
         "auth.toml": f'authToken = "{DEFENSIVE_MARKER}"\n',
         "multiline.yaml": f"confidential: |\n  line one\n  {DEFENSIVE_MARKER}\n",
