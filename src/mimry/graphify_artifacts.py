@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import stat
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,6 +55,36 @@ def _load_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _safe_regular_sha256(path: Path) -> str | None:
+    """Hash a stable regular-file descriptor and reject pathname races."""
+
+    try:
+        before = path.lstat()
+        if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+            return None
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+        try:
+            opened = os.fstat(fd)
+            if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                return None
+            digest = hashlib.sha256()
+            while chunk := os.read(fd, 65536):
+                digest.update(chunk)
+            after = os.fstat(fd)
+            current = path.lstat()
+            opened_id = (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns)
+            after_id = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+            current_id = (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns)
+            if after_id != opened_id or current_id != opened_id:
+                return None
+            return digest.hexdigest()
+        finally:
+            os.close(fd)
+    except OSError:
         return None
 
 
@@ -150,9 +183,23 @@ def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, 
         if not source.exists():
             missing_sources.append(rel_path)
             continue
-        if isinstance(info, dict) and isinstance(info.get("mtime"), int | float):
-            if abs(source.stat().st_mtime - float(info["mtime"])) > 1e-6:
-                stale_sources.append(rel_path)
+        if isinstance(info, dict):
+            expected_hash = info.get("mimry_sha256")
+            if isinstance(expected_hash, str) and expected_hash:
+                if _safe_regular_sha256(source) != expected_hash:
+                    stale_sources.append(rel_path)
+                continue
+            if isinstance(info.get("mtime"), int | float):
+                try:
+                    source_mtime = source.stat().st_mtime
+                except OSError:
+                    stale_sources.append(rel_path)
+                    continue
+                # Compatibility fallback for manifests generated before MIMRY
+                # added content hashes. New manifests never depend on timestamp
+                # precision for freshness.
+                if abs(source_mtime - float(info["mtime"])) > 1e-6:
+                    stale_sources.append(rel_path)
 
     graph_exists = graph_path.exists()
     report_exists = report_path.exists()
@@ -385,12 +432,25 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
             score += 5
         row = by_file.setdefault(
             src,
-            {"path": src, "score": 0, "reasons": set(), "nodes": [], "max_degree": 0, "communities": set()},
+            {
+                "path": src,
+                "score": 0,
+                "reasons": set(),
+                "nodes": [],
+                "max_degree": 0,
+                "communities": set(),
+                "topology_boost": 0,
+                "topology_nodes": 0,
+            },
         )
         row["score"] += score
         row["reasons"].update(reasons)
         row["nodes"].append(str(n.get("label") or n.get("id")))
         row["max_degree"] = max(row["max_degree"], deg)
+        topology_boost = min(25, deg * 5) + (5 if n.get("community") is not None else 0)
+        if topology_boost:
+            row["topology_boost"] += topology_boost
+            row["topology_nodes"] += 1
         if n.get("community") is not None:
             row["communities"].add(str(n["community"]))
 
@@ -400,16 +460,16 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         if row["score"] <= 0:
             continue
         row["reasons"].update(intent_reasons)
+        topology_details = []
         if row["max_degree"]:
-            row["reasons"].add(f"Graphify max degree {row['max_degree']}")
-        communities = sorted(
-            row["communities"],
-            key=lambda value: (0, int(value)) if value.lstrip("-").isdigit() else (1, value),
-        )
-        if len(communities) == 1:
-            row["reasons"].add(f"Graphify community {communities[0]}")
-        elif communities:
-            row["reasons"].add(f"Graphify communities {', '.join(communities)}")
+            topology_details.append(f"max degree {row['max_degree']}")
+        if row["communities"]:
+            topology_details.append(f"{len(row['communities'])} communities")
+        if row["topology_boost"]:
+            detail = f" ({'; '.join(topology_details)})" if topology_details else ""
+            row["reasons"].add(
+                f"Graphify topology boost {row['topology_boost']} across {row['topology_nodes']} matched nodes{detail}"
+            )
         node_preview = ", ".join(row["nodes"][:4])
         reason = ", ".join(sorted(row["reasons"]))
         if node_preview:
