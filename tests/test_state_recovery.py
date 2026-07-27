@@ -16,12 +16,12 @@ from types import SimpleNamespace
 import pytest
 
 from mimry import state
-from mimry.commands import cmd_cache_wipe
+from mimry.commands import cmd_cache_wipe, cmd_feedback
 from mimry.freshness import index_freshness
 from mimry.indexer import _cleanup_generations, write_index
 from mimry.mcp_server import mimry_find
 from mimry.paths import idx_path
-from mimry.storage import load_pointer, load_root_registry, register_root, save_pointer
+from mimry.storage import active_index_pointer, load_pointer, load_root_registry, register_root, save_pointer
 
 from test_mimry_cli import copy_fixture, run_cli
 
@@ -385,6 +385,113 @@ def test_wipe_and_publication_share_lock_and_publication_never_dangles(tmp_path:
     assert index_freshness(repo, published)["state"] == "current"
 
 
+def test_cache_wipe_current_leaves_truthful_missing_state_and_normal_index_rebuilds(tmp_path: Path):
+    repo, cache = _initialized_repo(tmp_path)
+    before = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+
+    wiped = run_cli(repo, cache, "cache", "wipe", "--current")
+    assert wiped.returncode == 0, wiped.stderr
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    assert "generationId" not in pointer
+    assert pointer["lastIndexedAt"] is None
+    assert Path(pointer["indexPath"]) == cache / "indexes" / before["rootId"]
+    status = run_cli(repo, cache, "status")
+    assert status.returncode == 2, status.stderr
+    assert "Index: missing" in status.stdout
+
+    rebuilt = run_cli(repo, cache, "index")
+    assert rebuilt.returncode == 0, rebuilt.stderr
+    published = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    assert published.get("generationId")
+    assert Path(published["indexPath"]).is_dir()
+
+
+def test_feedback_waiting_for_publication_resolves_and_persists_to_new_generation(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    old = load_pointer(repo)
+    publishing = threading.Event()
+    release = threading.Event()
+    original_save = save_pointer
+
+    def pause_before_publish(root, pointer):
+        if pointer.get("generationId") != old.get("generationId"):
+            publishing.set()
+            assert release.wait(5)
+        return original_save(root, pointer)
+
+    monkeypatch.setattr("mimry.indexer.save_pointer", pause_before_publish)
+    publisher = threading.Thread(target=lambda: write_index(repo, old))
+    publisher.start()
+    assert publishing.wait(5)
+
+    feedback_result: list[int] = []
+    args = SimpleNamespace(
+        root=str(repo),
+        feedback_action=None,
+        query="publication race",
+        context=None,
+        suggested=None,
+        opened="src/app.py",
+        changed=None,
+        missed=None,
+        ignored=None,
+        verification=None,
+        outcome="passed",
+        notes=None,
+        json=None,
+    )
+    feedback = threading.Thread(target=lambda: feedback_result.append(cmd_feedback(args)))
+    feedback.start()
+    time.sleep(0.05)
+    assert feedback.is_alive(), "feedback must wait for the publication operation lock"
+    release.set()
+    publisher.join(30)
+    feedback.join(10)
+
+    assert feedback_result == [0]
+    current = load_pointer(repo)
+    assert current["generationId"] != old["generationId"]
+    with sqlite3.connect(Path(current["indexPath"]) / "mimry.sqlite") as con:
+        assert con.execute("select query from feedback where query = ?", ("publication race",)).fetchone()
+
+
+def test_reader_holds_generation_lifetime_across_two_publications_and_gc(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    original = load_pointer(repo)
+    reader_entered = threading.Event()
+    release_reader = threading.Event()
+    observed: list[str] = []
+
+    def reader():
+        with active_index_pointer(repo) as pointer:
+            reader_entered.set()
+            observed.append((Path(pointer["indexPath"]) / "files.jsonl").read_text(encoding="utf-8"))
+            assert release_reader.wait(5)
+            observed.append((Path(pointer["indexPath"]) / "files.jsonl").read_text(encoding="utf-8"))
+
+    reader_thread = threading.Thread(target=reader)
+    reader_thread.start()
+    assert reader_entered.wait(5)
+    publishers = [threading.Thread(target=lambda: write_index(repo, original)) for _ in range(2)]
+    for publisher in publishers:
+        publisher.start()
+    time.sleep(0.05)
+    assert all(publisher.is_alive() for publisher in publishers)
+    assert Path(original["indexPath"]).is_dir()
+
+    release_reader.set()
+    reader_thread.join(10)
+    for publisher in publishers:
+        publisher.join(30)
+
+    assert observed[0] == observed[1]
+    current = load_pointer(repo)
+    state.validate_generation(current)
+    assert len(list((idx_path(current["rootId"]) / "generations").iterdir())) <= 2
+
+
 def test_hard_crash_staging_and_orphan_growth_is_collected_on_restart(tmp_path: Path, monkeypatch):
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
@@ -477,6 +584,37 @@ def test_lock_timeout_is_bounded_and_actionable(tmp_path: Path):
     assert str(lock) in str(raised.value)
     assert "another running `mimry` process" in str(raised.value)
     assert f'"pid": {os.getpid()}' in raised.value.holder
+
+
+def test_windows_shared_operation_requests_fall_back_to_exclusive_locking():
+    assert state._effective_shared_lock(True, platform="posix") is True
+    assert state._effective_shared_lock(True, platform="nt") is False
+    assert state._effective_shared_lock(False, platform="nt") is False
+
+
+def test_cache_wipe_all_refuses_without_touching_cache_while_root_writer_is_active(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    pointer = load_pointer(repo)
+    base = idx_path(pointer["rootId"])
+    entered = threading.Event()
+    release = threading.Event()
+
+    def writer():
+        with state.exclusive_file_lock(base / "operation.lock"):
+            entered.set()
+            assert release.wait(5)
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    assert entered.wait(5)
+    result = cmd_cache_wipe(SimpleNamespace(root=str(repo), all=True))
+    release.set()
+    thread.join(5)
+
+    assert result == 2
+    assert Path(pointer["indexPath"]).is_dir()
+    assert (cache / "roots.json").is_file()
 
 
 def test_generation_cleanup_unlinks_staging_symlink_and_preserves_pointer_generations(tmp_path: Path, monkeypatch):

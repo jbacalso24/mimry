@@ -4,11 +4,13 @@ import json
 import os
 import sqlite3
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from .feedback import ensure_feedback_schema
-from .paths import pointer_file, roots_file
+from .cache_safety import UnsafeCachePathError, validated_current_root_cache_path
+from .paths import idx_path, pointer_file, roots_file
 from .semantic import ensure_semantic_schema
 from .state import (
     StateCorruptionError,
@@ -16,6 +18,7 @@ from .state import (
     atomic_write_text,
     exclusive_file_lock,
     load_json_state,
+    shared_file_lock,
     validate_generation,
 )
 
@@ -60,6 +63,63 @@ def save_pointer(root, ptr):
     p = pointer_file(root)
     with exclusive_file_lock(_pointer_lock(Path(root))):
         atomic_write_json(p, ptr, keep_backup=True)
+
+
+@contextmanager
+def active_index_pointer(
+    root: Path,
+    *,
+    exclusive: bool = False,
+    validate: bool = True,
+    normalize_stale_index_path: bool = False,
+):
+    """Resolve and retain the active generation for one complete operation.
+
+    The pointer is sampled once to locate the stable per-root lock, then loaded
+    again under that lock. Publications, GC, feedback writes, and current-cache
+    wipes take the exclusive side; readers retain the shared side until every
+    generation artifact they use has been consumed.
+    """
+    if normalize_stale_index_path and not exclusive:
+        raise ValueError("stale index paths may only be normalized under an exclusive operation lock")
+
+    root = Path(root).resolve()
+    initial = load_pointer(root, validate_active_generation=False)
+    if not initial:
+        yield None
+        return
+    if normalize_stale_index_path:
+        # Index/rebuild is the migration boundary for pointers copied from an
+        # old profile/cache home. Lock only the root's cache in the *current*
+        # MIMRY_CACHE_HOME; never lock, read, or delete through the stale path.
+        base = validated_current_root_cache_path(idx_path(initial["rootId"]), initial["rootId"], None, root)
+    else:
+        base = validated_current_root_cache_path(
+            Path(initial["indexPath"]), initial["rootId"], initial.get("generationId"), root
+        )
+    lock = exclusive_file_lock if exclusive else shared_file_lock
+    with lock(base / "operation.lock"):
+        current = load_pointer(root, validate_active_generation=validate)
+        if not current:
+            raise UnsafeCachePathError("MIMRY root pointer disappeared while waiting for the operation lock")
+        if current.get("rootId") != initial.get("rootId"):
+            raise UnsafeCachePathError("MIMRY root index scope changed while waiting for the operation lock; retry")
+        if normalize_stale_index_path:
+            try:
+                current_base = validated_current_root_cache_path(
+                    Path(current["indexPath"]), current["rootId"], current.get("generationId"), root
+                )
+            except UnsafeCachePathError:
+                current = {**current, "indexPath": str(base), "lastIndexedAt": None}
+                current.pop("generationId", None)
+                current_base = base
+        else:
+            current_base = validated_current_root_cache_path(
+                Path(current["indexPath"]), current["rootId"], current.get("generationId"), root
+            )
+        if current_base != base:
+            raise UnsafeCachePathError("MIMRY root index scope changed while waiting for the operation lock; retry")
+        yield current
 
 
 def _canonical_root_path(value: Any) -> str:

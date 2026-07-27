@@ -1031,13 +1031,18 @@ def test_index_normalizes_stale_pointer_index_path(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
     ptr_path = repo / ".mimry" / "pointer.json"
     ptr = json.loads(ptr_path.read_text(encoding="utf-8"))
-    ptr["indexPath"] = str(tmp_path / "old-profile-cache" / ptr["rootId"])
+    stale_index = tmp_path / "old-profile-cache" / ptr["rootId"]
+    stale_index.mkdir(parents=True)
+    sentinel = stale_index / "do-not-touch.txt"
+    sentinel.write_text("old profile data", encoding="utf-8")
+    ptr["indexPath"] = str(stale_index)
     ptr_path.write_text(json.dumps(ptr, indent=2) + "\n", encoding="utf-8")
 
     assert run_cli(repo, cache, "index").returncode == 0
 
     updated = json.loads(ptr_path.read_text(encoding="utf-8"))
     assert updated["indexPath"].startswith(str(cache))
+    assert sentinel.read_text(encoding="utf-8") == "old profile data"
     assert "Index: current" in run_cli(repo, cache, "status").stdout
 
 
@@ -1076,7 +1081,7 @@ def test_cache_wipe_all_rejects_relative_and_empty_cache_home(tmp_path):
         assert "Refusing cache wipe" in res.stdout
 
 
-def test_cache_wipe_all_succeeds_for_mimry_looking_temp_cache(tmp_path):
+def test_cache_wipe_all_refuses_until_global_writer_coordination_exists(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
@@ -1085,8 +1090,10 @@ def test_cache_wipe_all_succeeds_for_mimry_looking_temp_cache(tmp_path):
 
     res = run_cli(repo, cache, "cache", "wipe", "--all")
 
-    assert res.returncode == 0
-    assert not cache.exists()
+    assert res.returncode == 2
+    assert "disabled" in res.stdout.lower()
+    assert cache.exists()
+    assert (cache / "roots.json").exists()
 
 
 def test_cache_wipe_current_rejects_index_path_outside_safe_cache(tmp_path):

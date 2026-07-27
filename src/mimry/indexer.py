@@ -15,12 +15,11 @@ from .state import (
     GENERATION_MANIFEST,
     backup_path,
     atomic_write_json,
-    exclusive_file_lock,
     fsync_tree,
     generation_manifest,
     _fsync_directory,
 )
-from .storage import connect, load_pointer, register_root, save_pointer, write_jsonl
+from .storage import active_index_pointer, connect, register_root, save_pointer, write_jsonl
 
 
 def _fault(point: str) -> None:
@@ -95,7 +94,7 @@ def _pointer_generation(pointer: object, base: Path) -> str | None:
 def _cleanup_generations(root: Path, base: Path, current: dict | None = None) -> None:
     """Retain only pointer-current + readable LKG and remove crash leftovers.
 
-    The caller must hold ``base/index.lock`` so staging and final generation
+    The caller must hold ``base/operation.lock`` exclusively so staging and final generation
     cleanup cannot race publication or a current-root cache wipe.
     """
     generations = base / "generations"
@@ -130,12 +129,16 @@ def write_index(root, ptr):
     generations = base / "generations"
     base.mkdir(parents=True, exist_ok=True)
 
-    # One stable per-root lock serializes generation publication and feedback
-    # snapshots. Readers need only follow the atomically replaced pointer.
-    with exclusive_file_lock(base / "index.lock"):
-        active = load_pointer(root, validate_active_generation=False)
+    # The exclusive operation lock serializes publication/legacy migration and
+    # prevents GC from deleting generations retained by shared readers.
+    with active_index_pointer(
+        root,
+        exclusive=True,
+        validate=False,
+        normalize_stale_index_path=True,
+    ) as active:
         if not active or active.get("rootId") != ptr.get("rootId"):
-            raise RuntimeError("MIMRY root pointer changed while waiting for the index lock; retry indexing")
+            raise RuntimeError("MIMRY root pointer changed while waiting for the operation lock; retry indexing")
         ptr = active
         _cleanup_generations(root, base, ptr)
         files, symbols, edges, imports, exports = _collect(root)
