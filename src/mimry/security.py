@@ -76,10 +76,27 @@ SENSITIVE_LABEL_TOKENS = {
     "secrets",
     "token",
 }
+# Assignment boundaries are deliberately structural rather than line-only. This
+# catches object/JSON/code members after ``{``, ``,`` or ``;`` without treating a
+# credential word embedded in ordinary prose as an assignment. Values stop at
+# the matching config delimiter; quoted values may contain delimiters, and TOML
+# / Python-style triple-quoted values may span lines.
 ASSIGNMENT_RE = re.compile(
-    r"(?im)^(?P<prefix>\s*(?:[{,]\s*)?(?:export\s+)?(?P<label_quote>['\"]?)"
+    r"(?ims)(?P<boundary>^|(?<=[{,;]))"
+    r"(?P<prefix>[ \t]*(?:export\s+)?(?P<label_quote>['\"]?)"
+    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?P<operator>=|:)\s*)"
+    r"(?P<value>\"\"\".*?\"\"\"|'''.*?'''|\"(?:\\.|[^\"\\\r\n])*\"|"
+    r"'(?:\\.|[^'\\\r\n])*'|[^,{;}\r\n]*)(?P<newline>\r?\n|$)?"
+)
+MULTILINE_QUOTED_ASSIGNMENT_START_RE = re.compile(
+    r"(?im)(?:^|(?<=[{,;]))[ \t]*(?:export\s+)?(?P<label_quote>['\"]?)"
+    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?:=|:)\s*(?P<quote>\"\"\"|''')"
+)
+UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE = re.compile(
+    r"(?ims)(?P<boundary>^|(?<=[{,;]))"
+    r"(?P<prefix>[ \t]*(?:export\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?:=|:)\s*)"
-    r"(?P<value>[^\r\n]*)(?P<newline>\r?\n|$)"
+    r"(?P<quote>\"\"\"|''')(?P<body>.*)$"
 )
 YAML_BLOCK_ASSIGNMENT_RE = re.compile(
     r"(?m)^(?P<indent>[ \t]*)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)"
@@ -125,10 +142,9 @@ def contains_sensitive_text(text: str) -> bool:
         return True
     if any(_is_sensitive_label(match.group("label")) for match in YAML_BLOCK_ASSIGNMENT_RE.finditer(text)):
         return True
-    return any(
-        _is_sensitive_label(match.group("label")) and _assignment_value_is_sensitive(match.group("value"))
-        for match in ASSIGNMENT_RE.finditer(text)
-    )
+    if any(_is_sensitive_label(match.group("label")) for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)):
+        return True
+    return any(_assignment_match_is_sensitive(match) for match in ASSIGNMENT_RE.finditer(text))
 
 
 def redact_sensitive_text(text: str) -> str:
@@ -139,6 +155,7 @@ def redact_sensitive_text(text: str) -> str:
     redacted = SENSITIVE_VALUE_RE.sub(REDACTED, redacted)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
     redacted = ASSIGNMENT_RE.sub(_redact_assignment, redacted)
+    redacted = UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE.sub(_redact_unclosed_multiline_assignment, redacted)
     return redacted
 
 
@@ -156,25 +173,42 @@ def _is_sensitive_label(label: str) -> bool:
     return bool(_label_tokens(label) & SENSITIVE_LABEL_TOKENS)
 
 
-def _assignment_value_is_sensitive(value: str) -> bool:
+def _assignment_value_is_sensitive(value: str, operator: str = "=") -> bool:
     candidate = value.strip().rstrip(",;}").strip()
     if candidate.startswith(("|", ">")):
         # YAML block bodies are classified and redacted as a unit above.
         return False
-    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}:
+    quoted = len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}
+    if quoted:
         candidate = candidate[1:-1].strip()
     if not candidate:
         return False
+    if operator == ":" and not quoted and any(char.isspace() for char in candidate):
+        # Bare colon phrases are common in prose and Markdown. Retain explicit
+        # authorization schemes and recognisable standalone token formats.
+        lowered = candidate.lower()
+        if not lowered.startswith(("bearer ", "basic ")) and not STANDALONE_SECRET_RE.search(candidate):
+            return False
     return not candidate.startswith(("process.env.", "os.getenv(", "Deno.env.get(", "import.meta.env."))
 
 
+def _assignment_match_is_sensitive(match: re.Match[str]) -> bool:
+    return _is_sensitive_label(match.group("label")) and _assignment_value_is_sensitive(
+        match.group("value"), match.group("operator")
+    )
+
+
 def _redact_assignment(match: re.Match[str]) -> str:
-    if not _is_sensitive_label(match.group("label")) or not _assignment_value_is_sensitive(match.group("value")):
+    if not _assignment_match_is_sensitive(match):
         return match.group(0)
     value = match.group("value")
     stripped = value.strip()
-    quote = stripped[0] if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"} else ""
-    return f"{match.group('prefix')}{quote}{REDACTED}{quote}{match.group('newline')}"
+    quote = ""
+    if len(stripped) >= 6 and stripped[:3] == stripped[-3:] and stripped[:3] in {'"""', "'''"}:
+        quote = stripped[:3]
+    elif len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
+        quote = stripped[0]
+    return f"{match.group('prefix')}{quote}{REDACTED}{quote}{match.group('newline') or ''}"
 
 
 def _redact_yaml_block(match: re.Match[str]) -> str:
@@ -182,6 +216,12 @@ def _redact_yaml_block(match: re.Match[str]) -> str:
         return match.group(0)
     newline = "\r\n" if "\r\n" in match.group("header") else "\n"
     return f"{match.group('indent')}{match.group('label')}{match.group('header')}{match.group('indent')}  {REDACTED}{newline}"
+
+
+def _redact_unclosed_multiline_assignment(match: re.Match[str]) -> str:
+    if not _is_sensitive_label(match.group("label")) or match.group("quote") in match.group("body"):
+        return match.group(0)
+    return f"{match.group('prefix')}{match.group('quote')}{REDACTED}"
 
 
 def sanitize_query(value: str) -> str:
@@ -214,19 +254,34 @@ def contains_sensitive_data(value) -> bool:
     return False
 
 
-def stream_contains_sensitive_content(handle: BinaryIO) -> bool:
-    """Scan an opened file with bounded memory, preserving cross-chunk matches."""
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+def stream_contains_sensitive_content(handle: BinaryIO, *, strict_text: bool = False) -> bool:
+    """Scan an opened file with bounded memory, preserving cross-chunk matches.
+
+    ``strict_text`` is used at the Graphify trust boundary. Invalid UTF-8 and
+    NUL-bearing/binary-ambiguous input are rejected there rather than silently
+    decoded or trusted based on a filename extension.
+    """
+
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="strict" if strict_text else "ignore")
     overlap = ""
     for raw in iter(lambda: handle.read(STREAM_CHUNK_BYTES), b""):
+        if strict_text and any(byte < 32 and byte not in (9, 10, 13) for byte in raw):
+            raise ValueError("Graphify source is binary or has an unknown text encoding")
         # Sparse files and binary-ish generated artifacts can contain long NUL
         # runs before ordinary UTF-8 text. Drop NULs so line-anchored checks also
         # catch UTF-16-style ASCII without loading the whole file.
-        text = overlap + decoder.decode(raw.replace(b"\x00", b""))
+        try:
+            decoded = decoder.decode(raw.replace(b"\x00", b""))
+        except UnicodeDecodeError as exc:
+            raise ValueError("Graphify source is binary or has an unknown text encoding") from exc
+        text = overlap + decoded
         if contains_sensitive_text(text):
             return True
         overlap = text[-STREAM_OVERLAP_CHARS:]
-    tail = overlap + decoder.decode(b"", final=True)
+    try:
+        tail = overlap + decoder.decode(b"", final=True)
+    except UnicodeDecodeError as exc:
+        raise ValueError("Graphify source is binary or has an unknown text encoding") from exc
     return contains_sensitive_text(tail)
 
 
@@ -243,11 +298,12 @@ def _stream_contains_sensitive_content(path: Path) -> bool:
 def opened_file_has_sensitive_content(path: Path, handle: BinaryIO) -> bool:
     """Classify the exact already-opened file used by a no-follow handoff copy."""
 
-    if _is_env_example(path):
-        return False
-    if path.suffix.lower() not in TEXT_EXTS and path.name not in {"config", "credentials"}:
-        return False
-    return stream_contains_sensitive_content(handle)
+    # Extension is not a security boundary: an unlisted text format such as
+    # ``.properties`` must receive the same byte-level classification and secret
+    # scan as Python/JSON/TOML. Env examples retain their indexing exemption, but
+    # are still required to be unambiguous UTF-8 before Graphify sees them.
+    sensitive = stream_contains_sensitive_content(handle, strict_text=True)
+    return False if _is_env_example(path) else sensitive
 
 
 def has_sensitive_content(path: Path) -> bool:

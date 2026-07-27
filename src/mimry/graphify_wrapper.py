@@ -87,16 +87,36 @@ def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
                 if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
                     raise ValueError("Graphify source changed during verified handoff")
                 with os.fdopen(source_fd, "rb", closefd=False) as source_handle:
-                    if opened_file_has_sensitive_content(source, source_handle):
-                        continue
-                    source_handle.seek(0)
                     target_fd = os.open(
                         target,
-                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                        os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
                         0o600,
                     )
-                    with os.fdopen(target_fd, "wb") as target_handle:
+                    with os.fdopen(target_fd, "w+b") as target_handle:
+                        # Copy only from the no-follow descriptor whose identity was
+                        # inspected above. Then scan the exact copied bytes before
+                        # Graphify can observe the handoff path.
                         shutil.copyfileobj(source_handle, target_handle)
+                        target_handle.flush()
+                        target_handle.seek(0)
+                        sensitive = opened_file_has_sensitive_content(target, target_handle)
+
+                after = os.fstat(source_fd)
+                current = source.lstat()
+                identity_before = (
+                    opened.st_dev,
+                    opened.st_ino,
+                    opened.st_size,
+                    opened.st_mtime_ns,
+                    opened.st_ctime_ns,
+                )
+                identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                path_after = (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns)
+                if identity_after != identity_before or path_after != identity_before:
+                    raise ValueError("Graphify source changed during verified handoff")
+                if sensitive:
+                    target.unlink(missing_ok=True)
+                    continue
                 target.chmod(0o600)
             finally:
                 os.close(source_fd)
