@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -227,11 +228,12 @@ def feedback_payload_from_args(root: Path, args: Any) -> dict[str, Any]:
     }
 
 
-def record_feedback(idx: Path, root_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def record_feedback(idx: Path, root_id: str, payload: dict[str, Any], *, lock: bool = True) -> dict[str, Any]:
     feedback_id = str(uuid.uuid4())
     created_at = now()
     base = idx.parent.parent if idx.parent.name == "generations" else idx
-    with exclusive_file_lock(base / "index.lock"):
+    operation = exclusive_file_lock(base / "operation.lock") if lock else nullcontext()
+    with operation:
         con = sqlite3.connect(idx / "mimry.sqlite")
         try:
             ensure_feedback_schema(con)

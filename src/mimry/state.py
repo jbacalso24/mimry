@@ -290,17 +290,27 @@ def _lock_timeout(timeout: float | None) -> float:
     return timeout
 
 
-@contextmanager
-def exclusive_file_lock(path: Path, *, timeout: float | None = None, poll_interval: float = 0.05) -> Iterator[None]:
-    """Serialize state cycles with a bounded advisory lock wait.
+def _effective_shared_lock(shared: bool, *, platform: str | None = None) -> bool:
+    """Return whether this platform can honor a requested shared lock."""
+    return shared and (os.name if platform is None else platform) != "nt"
 
-    POSIX/macOS use ``flock``. Windows uses the best available one-byte
-    ``msvcrt.locking`` advisory lock; it does not provide POSIX inode semantics.
+
+@contextmanager
+def file_lock(
+    path: Path, *, shared: bool = False, timeout: float | None = None, poll_interval: float = 0.05
+) -> Iterator[None]:
+    """Acquire a bounded advisory lock.
+
+    POSIX/macOS readers use ``flock(LOCK_SH)`` and writers use ``LOCK_EX``.
+    Windows has no shared ``msvcrt.locking`` mode, so readers deliberately use
+    the same exclusive one-byte lock as writers. This is less concurrent but
+    preserves generation lifetime and permits Windows-safe directory cleanup.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open("a+b")
     acquired = False
+    effective_shared = _effective_shared_lock(shared)
     timeout = _lock_timeout(timeout)
     deadline = time.monotonic() + timeout
     try:
@@ -317,7 +327,8 @@ def exclusive_file_lock(path: Path, *, timeout: float | None = None, poll_interv
                 else:
                     import fcntl
 
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    mode = fcntl.LOCK_SH if effective_shared else fcntl.LOCK_EX
+                    fcntl.flock(handle.fileno(), mode | fcntl.LOCK_NB)
                 acquired = True
             except (BlockingIOError, OSError) as exc:
                 busy = isinstance(exc, BlockingIOError) or exc.errno in {errno.EACCES, errno.EAGAIN}
@@ -328,10 +339,11 @@ def exclusive_file_lock(path: Path, *, timeout: float | None = None, poll_interv
                     holder = handle.read(2048).decode("utf-8", errors="replace")
                     raise StateLockTimeoutError(path, timeout, holder) from exc
                 time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
-        handle.seek(0)
-        handle.truncate()
-        handle.write(json.dumps({"pid": os.getpid(), "acquiredAt": time.time()}, sort_keys=True).encode("utf-8"))
-        handle.flush()
+        if not effective_shared:
+            handle.seek(0)
+            handle.truncate()
+            handle.write(json.dumps({"pid": os.getpid(), "acquiredAt": time.time()}, sort_keys=True).encode("utf-8"))
+            handle.flush()
         yield
     finally:
         if acquired and os.name == "nt":
@@ -344,3 +356,15 @@ def exclusive_file_lock(path: Path, *, timeout: float | None = None, poll_interv
 
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         handle.close()
+
+
+@contextmanager
+def exclusive_file_lock(path: Path, *, timeout: float | None = None, poll_interval: float = 0.05) -> Iterator[None]:
+    with file_lock(path, shared=False, timeout=timeout, poll_interval=poll_interval):
+        yield
+
+
+@contextmanager
+def shared_file_lock(path: Path, *, timeout: float | None = None, poll_interval: float = 0.05) -> Iterator[None]:
+    with file_lock(path, shared=True, timeout=timeout, poll_interval=poll_interval):
+        yield
