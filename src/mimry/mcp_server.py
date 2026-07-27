@@ -31,7 +31,7 @@ from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
-from mimry.security import redact_sensitive_text, safe_root, sanitize_data, sanitize_query
+from mimry.security import filter_index_records, redact_sensitive_text, safe_root, sanitize_data, sanitize_query
 from mimry.state import StateCorruptionError, StateLockTimeoutError
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import active_index_pointer, load_jsonl, load_pointer
@@ -144,6 +144,7 @@ def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
         "symbols_indexed": len(symbols),
         "changed_files": changed,
         "deleted_files": missing,
+        "policy_excluded_stale_records": fresh["policy_excluded_count"],
         "index_path": str(idx),
         "graphify": graphify,
         "semantic": semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files)),
@@ -310,9 +311,12 @@ def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
     name = sanitize_query(name)
     ptr = require(root_path)
     idx = Path(ptr["indexPath"])
-    files = {f["file_id"]: f for f in load_jsonl(idx / "files.jsonl")}
+    visible_files, visible_symbols = filter_index_records(
+        load_jsonl(idx / "files.jsonl"), load_jsonl(idx / "symbols.jsonl")
+    )
+    files = {f["file_id"]: f for f in visible_files}
     matches = []
-    for s in load_jsonl(idx / "symbols.jsonl"):
+    for s in visible_symbols:
         if name.lower() in s["name"].lower():
             f = files.get(s["file_id"], {})
             matches.append(

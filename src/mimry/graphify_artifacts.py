@@ -13,7 +13,7 @@ from .paths import (
     graphify_output_dir,
     legacy_graphify_output_dir,
 )
-from .security import path_has_ignored_part
+from .security import path_has_ignored_part, text_mentions_ignored_path
 
 
 GRAPHIFY_ARTIFACT_FILES = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
@@ -106,6 +106,10 @@ def _report_freshness_lines(path: Path) -> dict[str, str | None]:
         if line.startswith("- Built from commit:"):
             built_from_commit = line.split(":", 1)[1].strip().strip("`")
             break
+    if title and text_mentions_ignored_path(title):
+        title = None
+    if built_from_commit and text_mentions_ignored_path(built_from_commit):
+        built_from_commit = None
     return {"report_title": title, "built_from_commit": built_from_commit}
 
 
@@ -187,7 +191,9 @@ def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, 
         "source_stale": source_stale,
         "source_changed_files": stale_sources,
         "source_missing_files": missing_sources,
-        "policy_filtered_sources": sorted(set(ignored_artifact_sources + ignored_manifest_sources)),
+        # Report only a count. Status is an agent-facing output and must not
+        # disclose paths that policy intentionally excludes from agent context.
+        "policy_filtered_source_count": len(set(ignored_artifact_sources + ignored_manifest_sources)),
         "index_state": index_state,
         "possibly_stale": possibly_stale,
     }
@@ -434,7 +440,7 @@ def graphify_report_excerpt(root: Path, max_chars: int = 1200) -> str:
     if not path.exists():
         return ""
     text = path.read_text(encoding="utf-8", errors="replace")
-    if path_has_ignored_part(text):
+    if text_mentions_ignored_path(text):
         # Reports can quote source snippets. If a legacy report references a
         # newly ignored tree, suppress it as a unit instead of guessing which
         # adjacent lines came from that source.

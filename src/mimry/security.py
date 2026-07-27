@@ -352,7 +352,23 @@ def path_has_ignored_part(path: str | Path) -> bool:
     """Classify artifact/index paths without opening the referenced source."""
 
     normalized = str(path).replace("\\", "/")
-    return any(re.search(rf"(?:^|[/\s`'\"(\[{{:=]){re.escape(part)}(?=$|/)", normalized) for part in HEAVY_IGNORES)
+    return any(part in HEAVY_IGNORES for part in normalized.split("/") if part not in {"", "."})
+
+
+def text_mentions_ignored_path(text: str) -> bool:
+    """Detect ignored path components in prose without matching ordinary words."""
+
+    normalized = text.replace("\\", "/")
+    return any(re.search(rf"(?:^|[/\s`'\"(\[{{:=]){re.escape(part)}/", normalized) for part in HEAVY_IGNORES)
+
+
+def filter_index_records(files: list[dict], symbols: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
+    """Hide records newly excluded by policy even before a stale index is rebuilt."""
+
+    visible_files = [record for record in files if not path_has_ignored_part(record.get("rel_path", ""))]
+    visible_ids = {record.get("file_id") for record in visible_files}
+    visible_symbols = [record for record in (symbols or []) if record.get("file_id") in visible_ids]
+    return visible_files, visible_symbols
 
 
 def is_text(path):
