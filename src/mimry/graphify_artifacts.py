@@ -381,14 +381,18 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         deg = degree.get(str(n.get("id")), 0)
         if deg:
             score += min(25, deg * 5)
-            reasons.append(f"Graphify degree {deg}")
         if n.get("community") is not None:
             score += 5
-            reasons.append(f"Graphify community {n['community']}")
-        row = by_file.setdefault(src, {"path": src, "score": 0, "reasons": set(), "nodes": []})
+        row = by_file.setdefault(
+            src,
+            {"path": src, "score": 0, "reasons": set(), "nodes": [], "max_degree": 0, "communities": set()},
+        )
         row["score"] += score
         row["reasons"].update(reasons)
         row["nodes"].append(str(n.get("label") or n.get("id")))
+        row["max_degree"] = max(row["max_degree"], deg)
+        if n.get("community") is not None:
+            row["communities"].add(str(n["community"]))
 
     rows = []
     for row in by_file.values():
@@ -396,6 +400,16 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         if row["score"] <= 0:
             continue
         row["reasons"].update(intent_reasons)
+        if row["max_degree"]:
+            row["reasons"].add(f"Graphify max degree {row['max_degree']}")
+        communities = sorted(
+            row["communities"],
+            key=lambda value: (0, int(value)) if value.lstrip("-").isdigit() else (1, value),
+        )
+        if len(communities) == 1:
+            row["reasons"].add(f"Graphify community {communities[0]}")
+        elif communities:
+            row["reasons"].add(f"Graphify communities {', '.join(communities)}")
         node_preview = ", ".join(row["nodes"][:4])
         reason = ", ".join(sorted(row["reasons"]))
         if node_preview:
