@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import uuid
 from functools import wraps
 from pathlib import Path
@@ -93,12 +94,27 @@ def cmd_init(a):
     root = Path(a.root).resolve()
     safe_root(root)
     root.mkdir(parents=True, exist_ok=True)
-    gitignore_updated = ensure_mimry_gitignore(root)
-    if load_pointer(root):
+    existing = load_pointer(root, validate_active_generation=False, validate_root_identity=False)
+    if existing:
+        recorded_root = Path(existing["rootPath"]).expanduser().resolve(strict=False)
+        if recorded_root != root:
+            print(
+                "Refusing MIMRY root identity mismatch: this pointer belongs to another path.\n"
+                f"Recorded root: {recorded_root}\nCurrent root: {root}\n"
+                "Remove copied .mimry metadata before initializing a distinct root. "
+                "Moved-root rebinding requires an explicit recovery workflow.",
+                file=sys.stderr,
+            )
+            return 2
+        # Reconcile stale path/root-ID aliases in the global registry from the
+        # authoritative root-local pointer.
+        register_root(existing)
+        gitignore_updated = ensure_mimry_gitignore(root)
         print("MIMRY is already initialized for this root.")
         if gitignore_updated:
             print("Added MIMRY metadata/output ignore entries to the target Git worktree .gitignore.")
         return 0
+    gitignore_updated = ensure_mimry_gitignore(root)
     rid = str(uuid.uuid4())
     ptr = {
         "rootId": rid,
@@ -1074,9 +1090,21 @@ def cmd_adapters(a):
 
 
 def cmd_roots(a):
-    reg = load_root_registry()
+    reg = load_root_registry(repair=False)
+    roots = reg.get("roots", [])
+    id_counts = {}
+    for root in roots:
+        root_id = str(root["rootId"])
+        id_counts[root_id] = id_counts.get(root_id, 0) + 1
     print("MIMRY roots")
-    [print(f"- {r['rootId']} {r['rootType']} {r['rootPath']} -> {r['indexPath']}") for r in reg.get("roots", [])]
+    for root in roots:
+        marks = []
+        if not Path(root["rootPath"]).expanduser().exists():
+            marks.append("missing root")
+        if id_counts[str(root["rootId"])] > 1:
+            marks.append("duplicate root ID")
+        suffix = f" [{'; '.join(marks)}]" if marks else ""
+        print(f"- {root['rootId']} {root['rootType']} {root['rootPath']} -> {root['indexPath']}{suffix}")
     return 0
 
 
