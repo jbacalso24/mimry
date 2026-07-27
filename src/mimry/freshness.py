@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .scanner import scan
+from .security import filter_index_records, path_has_ignored_part, should_ignore
 from .state import StateCorruptionError, load_json_state, validate_generation
 from .storage import load_jsonl
 
@@ -39,13 +40,24 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     stored_hashes = _stored_hashes(idx)
     changed: list[str] = []
     missing: list[str] = []
+    policy_excluded: list[str] = []
     indexed_paths = {f.get("rel_path") for f in files if f.get("rel_path")}
 
     for f in files:
         rel_path = f["rel_path"]
         p = root / rel_path
+        # Path policy must be applied before filesystem existence. Otherwise a
+        # deleted record from a newly excluded tree leaks through `missing`.
+        if path_has_ignored_part(rel_path):
+            policy_excluded.append(rel_path)
+            continue
         if not p.exists():
             missing.append(rel_path)
+            continue
+        # Policy changes must invalidate old generations. Otherwise a file that
+        # became ignored after it was indexed remains searchable indefinitely.
+        if should_ignore(p, root):
+            policy_excluded.append(rel_path)
             continue
         expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
         if expected_hash:
@@ -69,19 +81,39 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
 
     changed = sorted(set(changed))
     missing = sorted(set(missing))
-    state = "missing" if not files_path.exists() else ("stale" if changed or missing else "current")
+    state = "missing" if not files_path.exists() else ("stale" if changed or missing or policy_excluded else "current")
     graph_path = idx / "graph.json"
     graph, _ = load_json_state(graph_path, default={"nodes": [], "edges": []})
     if not isinstance(graph, dict):
         raise StateCorruptionError(graph_path, "expected a JSON object")
+    visible_files, visible_symbols = filter_index_records(files, symbols)
+    allowed_node_ids = {
+        *(f"file:{record['file_id']}" for record in visible_files),
+        *(f"symbol:{record['symbol_id']}" for record in visible_symbols),
+    }
+    visible_graph = {
+        **graph,
+        "nodes": [node for node in graph.get("nodes", []) if node.get("id") in allowed_node_ids],
+        "edges": [
+            edge
+            for edge in graph.get("edges", [])
+            if edge.get("from") in allowed_node_ids and edge.get("to") in allowed_node_ids
+        ],
+        "clusters": {
+            folder: [path for path in paths if not should_ignore(root / path, root)]
+            for folder, paths in graph.get("clusters", {}).items()
+            if not should_ignore(root / folder, root)
+        },
+    }
     return {
         "index_path": idx,
-        "files": files,
-        "symbols": symbols,
+        "files": visible_files,
+        "symbols": visible_symbols,
         "changed": changed,
         "missing": missing,
+        "policy_excluded_count": len(policy_excluded),
         "state": state,
-        "graph": graph,
+        "graph": visible_graph,
         "generation_id": ptr.get("generationId"),
         "layout": "generation" if ptr.get("generationId") else "legacy",
     }

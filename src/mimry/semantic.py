@@ -10,7 +10,7 @@ from typing import Any
 
 from .intent import query_terms
 from .paths import now, stable_id
-from .security import contains_sensitive_text, redact_sensitive_text
+from .security import contains_sensitive_text, path_has_ignored_part, redact_sensitive_text
 from .state import semantic_rows_checksum
 
 SEMANTIC_BACKEND = "local-hash-v1"
@@ -265,10 +265,21 @@ def semantic_health(idx: Path, root_id: str | None, expected_files: int | None =
         if not row:
             return {"status": "missing", "backend": SEMANTIC_BACKEND, "chunks": 0, "indexed_at": None}
         chunks = int(row["chunk_count"] or 0)
+        policy_excluded_chunks = sum(
+            1
+            for chunk in con.execute("select rel_path from semantic_chunks where root_id = ?", (root_id,))
+            if path_has_ignored_part(chunk["rel_path"])
+        )
         status = "current" if chunks > 0 else "missing"
-        if expected_files is not None and expected_files > 0 and chunks < expected_files:
+        if policy_excluded_chunks or (expected_files is not None and expected_files > 0 and chunks < expected_files):
             status = "stale"
-        return {"status": status, "backend": row["backend_name"], "chunks": chunks, "indexed_at": row["indexed_at"]}
+        return {
+            "status": status,
+            "backend": row["backend_name"],
+            "chunks": chunks - policy_excluded_chunks,
+            "indexed_at": row["indexed_at"],
+            "policy_excluded_chunks": policy_excluded_chunks,
+        }
     finally:
         con.close()
 
@@ -296,6 +307,8 @@ def semantic_rows(
 
     by_file: dict[str, dict[str, Any]] = {}
     for row in rows:
+        if path_has_ignored_part(row["rel_path"]):
+            continue
         try:
             vec = json.loads(row["vector_json"] or "{}")
         except json.JSONDecodeError:

@@ -4,6 +4,10 @@ import re
 
 SCHEMA_VERSION = "0.1.0"
 HEAVY_IGNORES = {
+    # Tester-owned acceptance suites are intentionally outside ordinary agent
+    # indexing. This is cooperative workflow isolation, not a secrecy boundary:
+    # a user with repository access can still open the source directly.
+    "acceptance_tests",
     "node_modules",
     "dist",
     "build",
