@@ -7,6 +7,7 @@ from typing import Any
 from .freshness import index_freshness
 from .paths import output_dir
 from .search import find_rows
+from .security import redact_sensitive_text, sanitize_data, sanitize_query
 from .state import atomic_write_text
 
 ROLES = ("backend", "frontend", "mobile", "reviewer", "qa", "docs", "tooly", "general")
@@ -267,6 +268,7 @@ def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[
 
 
 def route_payload(root: Path, ptr: dict[str, Any], query: str, limit: int = 8) -> dict[str, Any]:
+    query = sanitize_query(query)
     idx = Path(ptr["indexPath"])
     rows = find_rows(idx, query, limit, True, root=root, root_id=ptr.get("rootId"))
     fresh = index_freshness(root, ptr)
@@ -278,21 +280,24 @@ def route_payload(root: Path, ptr: dict[str, Any], query: str, limit: int = 8) -
     reasons = reasons_by_role.get(role) or ["best available match from query terms and indexed file evidence"]
     gates = detect_risk_gates(query, rows)
     risk = risk_severity(gates)
-    return {
-        "query": query,
-        "root": str(root),
-        "recommended_agent": role,
-        "confidence": confidence,
-        "why": reasons,
-        "skill_context_packs": ROLE_PACKS[role],
-        "likely_files": rows,
-        "risk_approval_gates": gates,
-        "risk_level": risk["level"],
-        "risk_gate_severity": risk,
-        "suggested_verification": verification_commands(fresh, role),
-        "next": f'mimry brief "{query}" --agent {role}',
-        "role_scores": scores,
-    }
+    safe_query = redact_sensitive_text(query)
+    return sanitize_data(
+        {
+            "query": safe_query,
+            "root": str(root),
+            "recommended_agent": role,
+            "confidence": confidence,
+            "why": reasons,
+            "skill_context_packs": ROLE_PACKS[role],
+            "likely_files": rows,
+            "risk_approval_gates": gates,
+            "risk_level": risk["level"],
+            "risk_gate_severity": risk,
+            "suggested_verification": verification_commands(fresh, role),
+            "next": f'mimry brief "{safe_query}" --agent {role}',
+            "role_scores": scores,
+        }
+    )
 
 
 def brief_path(root: Path, agent: str) -> Path:
@@ -313,7 +318,7 @@ def write_brief(root: Path, ptr: dict[str, Any], query: str, agent: str, limit: 
         "# MIMRY Agent Brief",
         "",
         "## Query",
-        query,
+        redact_sensitive_text(query),
         "",
         "## Agent",
         role,

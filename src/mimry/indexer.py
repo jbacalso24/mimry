@@ -10,6 +10,7 @@ from pathlib import Path
 from .graphify_core import GraphifyCore
 from .paths import idx_path, now, pointer_file
 from .scanner import adapt, scan
+from .security import contains_sensitive_data
 from .semantic import build_semantic_index
 from .state import (
     GENERATION_MANIFEST,
@@ -57,6 +58,8 @@ def _collect(root: Path):
         try:
             file_rec, file_symbols, file_edges, file_imports, file_exports = adapt(path, root)
         except (OSError, UnicodeError, ValueError):
+            continue
+        if contains_sensitive_data((file_rec, file_symbols, file_edges, file_imports, file_exports)):
             continue
         files.append(file_rec)
         symbols += file_symbols
