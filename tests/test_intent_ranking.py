@@ -93,7 +93,8 @@ def test_graphify_rows_consolidate_file_topology_reasons_without_changing_score(
     # (45 label + 35 source + 5 degree + 5 community)
     # + (45 label + 35 source + 10 degree + 5 community).
     assert row["score"] == 185
-    assert "Graphify max degree 2" in row["reason"]
-    assert "Graphify communities 2, 10" in row["reason"]
+    assert "Graphify topology boost 25 across 2 matched nodes" in row["reason"]
+    assert "max degree 2" in row["reason"]
+    assert "2 communities" in row["reason"]
     assert "Graphify degree 1" not in row["reason"]
     assert "Graphify degree 2" not in row["reason"]

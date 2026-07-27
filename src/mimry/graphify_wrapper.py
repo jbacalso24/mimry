@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import hashlib
 import json
 import os
 import shutil
@@ -108,6 +109,14 @@ def _stat_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
+def _sha256_handle(handle) -> str:
+    digest = hashlib.sha256()
+    handle.seek(0)
+    for chunk in iter(lambda: handle.read(65536), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
 @contextmanager
 def _fdopen_owned(fd: int, mode: str):
     """Transfer an fd to a file object without leaking it when fdopen fails."""
@@ -121,7 +130,7 @@ def _fdopen_owned(fd: int, mode: str):
         yield handle
 
 
-def _copy_verified_regular_file(source: Path, target: Path) -> bool:
+def _copy_verified_regular_file(source: Path, target: Path, *, provenance: dict | None = None) -> bool:
     """Inspect, copy, scan, and re-verify one regular file by descriptor.
 
     Returns ``False`` after securely dropping a sensitive copy. Any source or
@@ -152,6 +161,7 @@ def _copy_verified_regular_file(source: Path, target: Path) -> bool:
                 target_handle.flush()
                 target_handle.seek(0)
                 sensitive = opened_file_has_sensitive_content(target, target_handle)
+                copied_sha256 = _sha256_handle(target_handle)
                 # Graphify records this handoff tree's mtimes in its manifest.
                 # Preserve the descriptor-verified source snapshot so freshness
                 # checks compare the manifest with the real source provenance,
@@ -176,6 +186,18 @@ def _copy_verified_regular_file(source: Path, target: Path) -> bool:
         current = source.lstat()
         if _stat_identity(after) != _stat_identity(opened) or _stat_identity(current) != _stat_identity(opened):
             raise ValueError("Graphify source changed during verified handoff or artifact copy")
+        if provenance is not None:
+            provenance.update(
+                {
+                    "sha256": copied_sha256,
+                    "size": opened.st_size,
+                    "mtime": opened.st_mtime,
+                    "mtime_ns": opened.st_mtime_ns,
+                    "device": opened.st_dev,
+                    "inode": opened.st_ino,
+                    "included": not sensitive,
+                }
+            )
         if sensitive:
             target.unlink()
             if _path_exists(target):
@@ -187,7 +209,7 @@ def _copy_verified_regular_file(source: Path, target: Path) -> bool:
         os.close(source_fd)
 
 
-def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
+def _copy_safe_graphify_input(root: Path, handoff: Path) -> tuple[dict[str, dict], set[str]]:
     """Create and verify a source-only tree that is safe to hand to Graphify.
 
     Graphify has its own crawler and cannot be trusted to implement MIMRY's
@@ -196,6 +218,8 @@ def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
     completed copy. Graphify never receives the original repository path.
     """
 
+    snapshot: dict[str, dict] = {}
+    observed_paths: set[str] = set()
     for source in root.rglob("*"):
         try:
             rel = source.relative_to(root)
@@ -204,10 +228,13 @@ def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
             before = source.lstat()
             if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode) or is_sensitive(source):
                 continue
+            observed_paths.add(rel.as_posix())
             target = handoff / rel
             target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             target.parent.chmod(0o700)
-            _copy_verified_regular_file(source, target)
+            provenance: dict = {}
+            _copy_verified_regular_file(source, target, provenance=provenance)
+            snapshot[rel.as_posix()] = provenance
         except OSError as exc:
             raise ValueError("Could not create a verified Graphify source handoff") from exc
 
@@ -219,6 +246,91 @@ def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
                 raise ValueError("Graphify source handoff failed MIMRY ignore verification")
         except OSError as exc:
             raise ValueError("Could not verify Graphify source handoff") from exc
+    return snapshot, observed_paths
+
+
+def _snapshot_regular_source(path: Path) -> dict:
+    """Hash one unchanged regular file without following pathname swaps."""
+
+    before = path.lstat()
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        raise ValueError("Graphify source is no longer a regular file")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            raise ValueError("Graphify source changed during hash revalidation")
+        with os.fdopen(fd, "rb", closefd=False) as handle:
+            sha256 = _sha256_handle(handle)
+        after = os.fstat(fd)
+        current = path.lstat()
+        if _stat_identity(after) != _stat_identity(opened) or _stat_identity(current) != _stat_identity(opened):
+            raise ValueError("Graphify source changed during hash revalidation")
+        return {"sha256": sha256, "device": opened.st_dev, "inode": opened.st_ino}
+    finally:
+        os.close(fd)
+
+
+def _eligible_source_paths(root: Path) -> set[str]:
+    paths: set[str] = set()
+    for source in root.rglob("*"):
+        rel = source.relative_to(root)
+        if any(part in HEAVY_IGNORES for part in rel.parts):
+            continue
+        before = source.lstat()
+        if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode) or is_sensitive(source):
+            continue
+        paths.add(rel.as_posix())
+    return paths
+
+
+def _revalidate_source_snapshot(root: Path, snapshot: dict[str, dict], observed_paths: set[str]) -> None:
+    for rel_path, expected in snapshot.items():
+        try:
+            current = _snapshot_regular_source(root / rel_path)
+        except (OSError, ValueError) as exc:
+            raise ValueError("Graphify source changed after verified handoff") from exc
+        if any(current[key] != expected[key] for key in ("sha256", "device", "inode")):
+            raise ValueError("Graphify source changed after verified handoff")
+    try:
+        current_paths = _eligible_source_paths(root)
+    except OSError as exc:
+        raise ValueError("Graphify source tree changed after verified handoff") from exc
+    if current_paths != observed_paths:
+        raise ValueError("Graphify source tree changed after verified handoff")
+
+
+def _rewrite_manifest_provenance(out: Path, snapshot: dict[str, dict]) -> None:
+    manifest_path = out / "manifest.json"
+    if not manifest_path.exists():
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("Graphify generated an invalid manifest") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError("Graphify generated an invalid manifest")
+    for rel_path, info in manifest.items():
+        source = snapshot.get(rel_path)
+        if source is None or not source["included"]:
+            raise ValueError("Graphify manifest source lacks verified provenance")
+        if not isinstance(info, dict):
+            raise ValueError("Graphify generated an invalid manifest entry")
+        info["mtime"] = source["mtime"]
+        info["mimry_sha256"] = source["sha256"]
+    temporary = manifest_path.with_name(f".{manifest_path.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.chmod(0o600)
+        os.replace(temporary, manifest_path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def sync_visible_graph_output(root: Path, ptr: dict) -> None:
@@ -420,7 +532,7 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
             handoff = Path(temporary) / root.name
             handoff.mkdir(mode=0o700)
             handoff.chmod(0o700)
-            _copy_safe_graphify_input(root, handoff)
+            snapshot, observed_paths = _copy_safe_graphify_input(root, handoff)
             safe_cmd = [*cmd[:-1], str(handoff)]
             res = subprocess.run(
                 safe_cmd,
@@ -453,6 +565,18 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
             print(redact_sensitive_text(res.stderr.strip()), file=sys.stderr)
         print(f"MIMRY internal graph build failed with exit {res.returncode}", file=sys.stderr)
         return res.returncode if cleanup_ok else 3
+    try:
+        _revalidate_source_snapshot(root, snapshot, observed_paths)
+        _rewrite_manifest_provenance(out, snapshot)
+    except (OSError, ValueError):
+        cleanup_ok = _purge_graphify_outputs_or_report(root, out)
+        print(
+            "MIMRY internal graph build rejected a concurrent source change; graph artifacts purged."
+            if cleanup_ok
+            else "MIMRY internal graph build rejected a concurrent source change; cleanup failed closed.",
+            file=sys.stderr,
+        )
+        return 3
     if tree_contains_sensitive_content(out):
         cleanup_ok = _purge_graphify_outputs_or_report(root, out)
         print(
