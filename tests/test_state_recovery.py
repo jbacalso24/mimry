@@ -129,6 +129,102 @@ def test_registry_deduplicates_canonical_paths_and_prefers_current_pointer(tmp_p
     assert json.loads(registry_path.read_text(encoding="utf-8")) == registry
 
 
+def test_register_root_rebinds_root_id_to_authoritative_pointer(tmp_path: Path, monkeypatch):
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    old_root = tmp_path / "old" / "repo"
+    current_root = tmp_path / "current" / "repo"
+    old_root.mkdir(parents=True)
+    current_root.mkdir(parents=True)
+    register_root(_pointer(old_root, "shared-id"))
+
+    current = _pointer(current_root, "shared-id")
+    register_root(current)
+
+    registry = load_root_registry()
+    assert [(entry["rootId"], entry["rootPath"]) for entry in registry["roots"]] == [
+        ("shared-id", str(current_root.resolve()))
+    ]
+
+
+def test_moved_root_fails_closed_when_recorded_path_is_missing(tmp_path: Path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    initialized = run_cli(repo, cache, "init", "--skip-graphify")
+    assert initialized.returncode == 0, initialized.stderr
+    moved = tmp_path / "moved-repo"
+    shutil.move(repo, moved)
+    before_pointer = (moved / ".mimry" / "pointer.json").read_bytes()
+    before_registry = (cache / "roots.json").read_bytes()
+
+    refused = run_cli(moved, cache, "init", "--skip-graphify")
+
+    assert refused.returncode == 2
+    assert "Moved-root rebinding requires an explicit recovery workflow" in refused.stderr
+    assert (moved / ".mimry" / "pointer.json").read_bytes() == before_pointer
+    assert (cache / "roots.json").read_bytes() == before_registry
+
+
+def test_init_refuses_copied_pointer_while_recorded_root_exists(tmp_path: Path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    initialized = run_cli(repo, cache, "init", "--skip-graphify")
+    assert initialized.returncode == 0, initialized.stderr
+    copied = tmp_path / "copied-repo"
+    shutil.copytree(repo, copied)
+    before_pointer = (copied / ".mimry" / "pointer.json").read_bytes()
+    before_registry = (cache / "roots.json").read_bytes()
+
+    refused = run_cli(copied, cache, "init", "--skip-graphify")
+
+    assert refused.returncode == 2
+    assert "Refusing MIMRY root identity mismatch" in refused.stderr
+    assert (copied / ".mimry" / "pointer.json").read_bytes() == before_pointer
+    assert (cache / "roots.json").read_bytes() == before_registry
+
+
+def test_copied_pointer_blocks_index_preflight_and_mcp_without_mutating_original(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    copied = tmp_path / "copied-repo"
+    shutil.copytree(repo, copied)
+    original_pointer = (repo / ".mimry" / "pointer.json").read_bytes()
+    original_status = run_cli(repo, cache, "status")
+    assert original_status.returncode == 0, original_status.stderr
+
+    for command in (("index",), ("preflight", "copied root must fail closed"), ("status",)):
+        refused = run_cli(copied, cache, *command)
+        assert refused.returncode == 2
+        assert "MIMRY root identity error" in refused.stderr
+        assert "Traceback" not in refused.stderr
+
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    payload = mimry_find("auth", str(copied))
+    assert payload["returncode"] == 2
+    assert payload["error"]["code"] == "root_identity_mismatch"
+    assert (repo / ".mimry" / "pointer.json").read_bytes() == original_pointer
+    after_status = run_cli(repo, cache, "status")
+    assert after_status.returncode == 0, after_status.stderr
+
+
+def test_roots_labels_missing_and_duplicate_root_ids_without_repairing_registry(tmp_path: Path):
+    cache = tmp_path / "cache"
+    registry_path = cache / "roots.json"
+    registry_path.parent.mkdir(parents=True)
+    roots = [
+        _pointer(tmp_path / "missing-a", "shared-id"),
+        _pointer(tmp_path / "missing-b", "shared-id"),
+    ]
+    registry_path.write_text(json.dumps({"roots": roots}), encoding="utf-8")
+    before = registry_path.read_bytes()
+
+    result = run_cli(tmp_path / "command-root", cache, "roots")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.count("missing root") == 2
+    assert result.stdout.count("duplicate root ID") == 2
+    assert registry_path.read_bytes() == before
+
+
 def test_concurrent_registry_updates_do_not_drop_roots(tmp_path: Path, monkeypatch):
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))

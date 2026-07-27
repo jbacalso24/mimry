@@ -24,6 +24,18 @@ from .state import (
 )
 
 
+class RootIdentityError(RuntimeError):
+    """A root-local pointer was opened from a different filesystem root."""
+
+    def __init__(self, recorded_root: Path, current_root: Path):
+        self.recorded_root = recorded_root
+        self.current_root = current_root
+        super().__init__(
+            "MIMRY pointer belongs to a different root; refusing shared-cache access. "
+            f"Recorded root: {recorded_root}. Current root: {current_root}."
+        )
+
+
 def _recovery_notice(path: Path) -> None:
     print(
         f"Recovered corrupt MIMRY state at {path} from last-known-good backup {path.name}.bak.",
@@ -36,7 +48,12 @@ def _pointer_lock(root: Path) -> Path:
     return p.with_name(f"{p.name}.lock")
 
 
-def _load_pointer_unlocked(root, *, validate_active_generation: bool = True):
+def _load_pointer_unlocked(
+    root,
+    *,
+    validate_active_generation: bool = True,
+    validate_root_identity: bool = True,
+):
     p = pointer_file(root)
     payload, recovered = load_json_state(
         p,
@@ -50,14 +67,28 @@ def _load_pointer_unlocked(root, *, validate_active_generation: bool = True):
     )
     if recovered:
         _recovery_notice(p)
+    if payload and validate_root_identity:
+        current_root = Path(root).expanduser().resolve(strict=False)
+        recorded_root = Path(payload["rootPath"]).expanduser().resolve(strict=False)
+        if recorded_root != current_root:
+            raise RootIdentityError(recorded_root, current_root)
     if payload and validate_active_generation:
         validate_generation(payload)
     return payload
 
 
-def load_pointer(root, *, validate_active_generation: bool = True):
+def load_pointer(
+    root,
+    *,
+    validate_active_generation: bool = True,
+    validate_root_identity: bool = True,
+):
     with exclusive_file_lock(_pointer_lock(Path(root))):
-        return _load_pointer_unlocked(root, validate_active_generation=validate_active_generation)
+        return _load_pointer_unlocked(
+            root,
+            validate_active_generation=validate_active_generation,
+            validate_root_identity=validate_root_identity,
+        )
 
 
 def save_pointer(root, ptr):
@@ -139,11 +170,17 @@ def _entry_recency(entry: dict[str, Any]) -> tuple[str, str, str]:
 def _dedupe_roots(roots: Any, *, preferred: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     by_path: dict[str, dict[str, Any]] = {}
     preferred_key = _canonical_root_path(preferred["rootPath"]) if preferred else ""
+    preferred_id = str(preferred["rootId"]) if preferred else ""
     for raw in roots if isinstance(roots, list) else []:
         if not isinstance(raw, dict) or not raw.get("rootPath") or not raw.get("rootId"):
             continue
         entry = dict(raw)
         key = _canonical_root_path(entry["rootPath"])
+        if preferred is not None and (key == preferred_key or str(entry["rootId"]) == preferred_id):
+            # The root-local pointer is authoritative when a root is
+            # registered. Remove both stale path aliases and stale locations
+            # for its root ID before inserting the preferred record below.
+            continue
         entry["rootPath"] = str(Path(entry["rootPath"]).expanduser().resolve(strict=False))
         current = by_path.get(key)
         if current is None or _entry_recency(entry) > _entry_recency(current):
