@@ -12,14 +12,33 @@ from types import SimpleNamespace
 import pytest
 
 from mimry.graphify_wrapper import graphify_subprocess_env, run_graphify_build
-from mimry.mcp_server import mimry_brief, mimry_context, mimry_find, mimry_preflight, mimry_route, mimry_semantic
+from mimry.mcp_server import (
+    mimry_brief,
+    mimry_context,
+    mimry_explain,
+    mimry_find,
+    mimry_path,
+    mimry_preflight,
+    mimry_route,
+    mimry_semantic,
+    mimry_symbol,
+    mimry_why,
+)
 from mimry.paths import graph_output_dir, graphify_output_dir
-from mimry.security import safe_root
+from mimry.security import (
+    STREAM_CHUNK_BYTES,
+    redact_sensitive_text,
+    root_contains_sensitive_content,
+    safe_root,
+    tree_contains_sensitive_content,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
 # Structurally credential-like but deliberately inert and used only as a test canary.
-CANARY = "sk-proj-FAKECANARY000000000000000000000000"
+CANARY = "sk-" + "proj-" + "FAKECANARY" + ("0" * 24)
+VALUE_CANARY = "privacy-canary-value-123456789"
+QUERY_CANARY = f"TOKEN={VALUE_CANARY}"
 
 
 def run_cli(repo: Path, cache: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -131,7 +150,7 @@ def test_sensitive_home_roots_and_descendants_are_rejected(tmp_path: Path, monke
         assert not (root / ".mimry").exists()
 
 
-def test_graphify_fail_closed_purges_prior_artifacts_without_leaking_canary(tmp_path: Path, monkeypatch, capsys):
+def test_graphify_safe_handoff_excludes_ignored_and_secret_content(tmp_path: Path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     (repo / "notes.md").write_text(f"standalone {CANARY}\n", encoding="utf-8")
@@ -145,17 +164,38 @@ def test_graphify_fail_closed_purges_prior_artifacts_without_leaking_canary(tmp_
         output.mkdir(parents=True, exist_ok=True)
         (output / "graph.json").write_text(json.dumps({"canary": CANARY}), encoding="utf-8")
 
+    observed = {}
+
+    def fake_run(cmd, cwd, **kwargs):
+        handoff = Path(cmd[-1])
+        observed["root"] = cmd[-1]
+        observed["cwd"] = str(cwd)
+        observed["files"] = sorted(
+            path.relative_to(handoff).as_posix() for path in handoff.rglob("*") if path.is_file()
+        )
+        observed["text"] = all_text_files(handoff)
+        private.mkdir(parents=True, exist_ok=True)
+        (private / "graph.json").write_text('{"nodes": [], "edges": []}', encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
+    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", fake_run)
     assert run_graphify_build(repo, execute=True) == 0
     captured = capsys.readouterr()
-    assert "secret-bearing source content detected" in captured.out
     assert CANARY not in captured.out + captured.err
-    assert not private.exists()
+    assert observed["root"] == observed["cwd"]
+    assert Path(observed["root"]).resolve() != repo.resolve()
+    assert ".env" not in observed["files"]
+    assert "notes.md" not in observed["files"]
+    assert CANARY not in observed["text"]
+    assert private.exists()
     assert not visible.exists()
 
 
 def test_graphify_rejects_sensitive_generated_artifacts(tmp_path: Path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
+    (repo / ".env").unlink()
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
@@ -187,3 +227,123 @@ def test_graphify_environment_remains_minimal_and_secret_scrubbed(tmp_path: Path
     assert "OPENAI_API_KEY" not in env
     assert "GITHUB_TOKEN" not in env
     assert CANARY not in json.dumps(env)
+
+
+def test_bare_secret_assignments_never_reach_index_or_graphify(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    (repo / ".env").unlink()
+    assignments = {
+        "token.py": f"TOKEN={VALUE_CANARY}\n",
+        "password.py": f'PASSWORD="{VALUE_CANARY}"\n',
+        "api_key.py": f"API_KEY: {VALUE_CANARY}\n",
+    }
+    for name, content in assignments.items():
+        (repo / name).write_text(content, encoding="utf-8")
+    (repo / ".env.example").write_text(
+        f"TOKEN={VALUE_CANARY}\nPASSWORD={VALUE_CANARY}\nAPI_KEY={VALUE_CANARY}\n", encoding="utf-8"
+    )
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    assert root_contains_sensitive_content(repo)
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    idx = Path(pointer["indexPath"])
+    owned_text = all_text_files(idx) + all_text_files(repo / ".mimry" / "mimry-out")
+    assert VALUE_CANARY not in owned_text
+    assert VALUE_CANARY not in sqlite_dump(idx / "mimry.sqlite")
+    indexed = (idx / "files.jsonl").read_text(encoding="utf-8")
+    assert all(name not in indexed for name in assignments)
+
+
+def test_whole_file_streaming_detects_late_source_and_generated_canaries(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    source = repo / "large.py"
+    with source.open("wb") as handle:
+        handle.seek(1_250_000)
+        handle.write(f"\nTOKEN={VALUE_CANARY}\n".encode())
+    assert root_contains_sensitive_content(repo)
+
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    artifact = generated / "graph.json"
+    payload = f'{{"API_KEY":"{VALUE_CANARY}"}}\n'.encode()
+    with artifact.open("wb") as handle:
+        # Put the key across a stream-chunk boundary after 5.5 MB of sparse
+        # NUL content, proving both binary normalization and overlap handling.
+        handle.seek((STREAM_CHUNK_BYTES * 84) - 4)
+        handle.write(payload)
+    assert tree_contains_sensitive_content(generated)
+
+
+def test_failed_graphify_build_purges_partial_unvalidated_outputs(tmp_path: Path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    (repo / ".env").unlink()
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    private = graphify_output_dir(repo)
+    visible = graph_output_dir(repo)
+    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
+
+    def fake_run(*args, **kwargs):
+        for output in (private, visible):
+            output.mkdir(parents=True, exist_ok=True)
+            (output / "partial.json").write_text(f'{{"TOKEN":"{VALUE_CANARY}"}}', encoding="utf-8")
+        return SimpleNamespace(returncode=9, stdout=f"TOKEN={VALUE_CANARY}", stderr="")
+
+    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", fake_run)
+    assert run_graphify_build(repo, execute=True) == 9
+    captured = capsys.readouterr()
+    assert VALUE_CANARY not in captured.out + captured.err
+    assert not private.exists()
+    assert not visible.exists()
+
+
+def test_private_key_and_aws_redaction_removes_secret_bodies():
+    private_body = "PRIVATE-KEY-BODY-CANARY-123456789"
+    aws_body = "AWS-SECRET-BODY-CANARY-123456789"
+    text = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        f"{private_body}\n"
+        "-----END PRIVATE KEY-----\n"
+        f"aws_secret_access_key = {aws_body}\n"
+        f'"aws_access_key_id": "{VALUE_CANARY}"\n'
+    )
+    redacted = redact_sensitive_text(text)
+    assert private_body not in redacted
+    assert aws_body not in redacted
+    assert VALUE_CANARY not in redacted
+    assert redacted.count("[REDACTED]") == 3
+
+
+def test_cli_and_mcp_lookup_boundaries_never_echo_credential_inputs(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    cli_results = (
+        run_cli(repo, cache, "symbol", QUERY_CANARY),
+        run_cli(repo, cache, "explain", QUERY_CANARY),
+        run_cli(repo, cache, "path", QUERY_CANARY, QUERY_CANARY),
+        run_cli(repo, cache, "why", QUERY_CANARY, "--query", QUERY_CANARY),
+    )
+    for result in cli_results:
+        assert result.returncode == 0, result.stderr
+        assert VALUE_CANARY not in result.stdout + result.stderr
+
+    mcp_payloads = (
+        mimry_symbol(QUERY_CANARY, str(repo)),
+        mimry_explain(QUERY_CANARY, str(repo)),
+        mimry_path(QUERY_CANARY, QUERY_CANARY, str(repo)),
+        mimry_why(QUERY_CANARY, QUERY_CANARY, str(repo)),
+    )
+    for payload in mcp_payloads:
+        assert VALUE_CANARY not in json.dumps(payload, sort_keys=True)

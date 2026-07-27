@@ -98,6 +98,8 @@ def test_graphify_build_subprocess_env_excludes_secret_variables(monkeypatch, tm
     assert graphify_wrapper.run_graphify_build(tmp_path, execute=True) == 0
 
     env = captured["env"]
+    assert captured["cmd"][-1] == str(captured["cwd"])
+    assert Path(captured["cmd"][-1]).resolve() != tmp_path.resolve()
     assert env["GRAPHIFY_OUT"].endswith("/graphify")
     assert str(tmp_path / ".mimry" / "graphify") not in env["GRAPHIFY_OUT"]
     assert "PATH" in env

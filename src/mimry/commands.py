@@ -25,7 +25,7 @@ from .indexer import write_index
 from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir, roots_file
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
-from .security import redact_sensitive_text, safe_root
+from .security import redact_sensitive_text, safe_root, sanitize_query, tree_contains_sensitive_content
 from .semantic import build_semantic_index, semantic_health, semantic_rows
 from .storage import load_jsonl, load_pointer, register_root, save_pointer
 
@@ -153,6 +153,10 @@ def sync_visible_graph_output(root: Path, ptr: dict) -> None:
     """Expose lightweight MIMRY-branded graph artifacts under .mimry/mimry-out/."""
     src = Path(ptr["indexPath"]) / "graphify"
     dst = graph_output_dir(root)
+    if tree_contains_sensitive_content(src):
+        shutil.rmtree(src, ignore_errors=True)
+        shutil.rmtree(dst, ignore_errors=True)
+        raise ValueError("Refusing to expose unvalidated sensitive graph artifacts")
     dst.mkdir(parents=True, exist_ok=True)
     for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json", "graph.html"):
         source = src / name
@@ -454,6 +458,7 @@ def _graphify_context_lines(root: Path, rows: list[dict], graphify: dict) -> lis
 
 
 def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, semantic: bool = False) -> list[dict]:
+    query = sanitize_query(query)
     rows = find_rows(
         Path(ptr["indexPath"]), query, limit, True, root=root, root_id=ptr.get("rootId"), semantic=semantic
     )
@@ -742,7 +747,7 @@ def cmd_semantic(a):
     root = Path(a.root).resolve()
     ptr = require(root)
     idx = Path(ptr["indexPath"])
-    query = getattr(a, "query", None)
+    query = sanitize_query(getattr(a, "query", None) or "")
     if query == "status":
         health = semantic_health(idx, ptr.get("rootId"))
         print(f"Semantic: {health['status']} ({health['chunks']} chunks, backend {health['backend']})")
@@ -769,9 +774,10 @@ def cmd_find(a):
     semantic = getattr(a, "semantic", False)
     if semantic:
         _print_semantic_degrade(idx, ptr.get("rootId"))
+    query = sanitize_query(a.query)
     print_rows(
-        f"Search results for: {a.query}",
-        find_rows(idx, a.query, a.limit, root=root, root_id=ptr.get("rootId"), semantic=semantic),
+        f"Search results for: {query}",
+        find_rows(idx, query, a.limit, root=root, root_id=ptr.get("rootId"), semantic=semantic),
     )
     return 0
 
@@ -779,9 +785,10 @@ def cmd_find(a):
 def cmd_related(a):
     root = Path(a.root).resolve()
     ptr = require(root)
+    query = sanitize_query(a.query)
     print_rows(
-        f"Related files for: {a.query}",
-        find_rows(Path(ptr["indexPath"]), a.query, a.limit, True, root=root, root_id=ptr.get("rootId")),
+        f"Related files for: {query}",
+        find_rows(Path(ptr["indexPath"]), query, a.limit, True, root=root, root_id=ptr.get("rootId")),
     )
     return 0
 
@@ -872,10 +879,9 @@ def cmd_explain(a):
     root = Path(a.root).resolve()
     ptr = require(root)
     fresh, graphify = _index_and_graphify_health(root, ptr)
-    rows = find_rows(
-        Path(ptr["indexPath"]), a.query, getattr(a, "limit", 5), True, root=root, root_id=ptr.get("rootId")
-    )
-    print(f"MIMRY explain: {a.query}")
+    query = sanitize_query(a.query)
+    rows = find_rows(Path(ptr["indexPath"]), query, getattr(a, "limit", 5), True, root=root, root_id=ptr.get("rootId"))
+    print(f"MIMRY explain: {query}")
     _print_status_summary(ptr, fresh, graphify)
     print("Top relevant files:")
     if rows:
@@ -915,12 +921,14 @@ def cmd_path(a):
     root = Path(a.root).resolve()
     ptr = require(root)
     fresh, graphify = _index_and_graphify_health(root, ptr)
-    print(f"MIMRY path: {a.source} -> {a.target}")
+    source = sanitize_query(a.source)
+    target = sanitize_query(a.target)
+    print(f"MIMRY path: {source} -> {target}")
     if graphify["status"] != "current":
         print(f"No Graphify relationship path found: Graphify artifacts are {graphify['status']}.")
         print("No path was invented. Run `mimry refresh`, then retry with file paths or symbol names.")
         return 0
-    result = graphify_shortest_path(root, a.source, a.target)
+    result = graphify_shortest_path(root, source, target)
     if result["found"] and result["steps"]:
         print("Path found:")
         for step in result["steps"]:
@@ -932,9 +940,9 @@ def cmd_path(a):
     _print_candidate_matches("Source candidates:", result["source_matches"])
     _print_candidate_matches("Target candidates:", result["target_matches"])
     print("Fallback queries:")
-    print(f'- mimry related "{a.source}"')
-    print(f'- mimry related "{a.target}"')
-    print(f'- mimry explain "{a.source} {a.target}"')
+    print(f'- mimry related "{source}"')
+    print(f'- mimry related "{target}"')
+    print(f'- mimry explain "{source} {target}"')
     _print_verification_hints(fresh)
     return 0
 
@@ -944,8 +952,9 @@ def cmd_why(a):
     ptr = require(root)
     fresh, graphify = _index_and_graphify_health(root, ptr)
     idx = Path(ptr["indexPath"])
-    rows = find_rows(idx, a.query, max(getattr(a, "limit", 25), 25), True, root=root, root_id=ptr.get("rootId"))
-    surface = a.surface
+    query = sanitize_query(a.query)
+    rows = find_rows(idx, query, max(getattr(a, "limit", 25), 25), True, root=root, root_id=ptr.get("rootId"))
+    surface = sanitize_query(a.surface)
     surface_lower = surface.lower()
     exact = None
     for row in rows:
@@ -961,7 +970,7 @@ def cmd_why(a):
                 if exact:
                     break
     print(f"MIMRY why: {surface}")
-    print(f"Ranked for query: {a.query}")
+    print(f"Ranked for query: {query}")
     if exact:
         print(f"File: {exact['path']}")
         print(f"Score: {exact['score']}")
@@ -991,10 +1000,11 @@ def cmd_why(a):
 
 def cmd_symbol(a):
     ptr = require(Path(a.root).resolve())
-    print(f"Symbol search: {a.name}")
+    name = sanitize_query(a.name)
+    print(f"Symbol search: {name}")
     files = {f["file_id"]: f for f in load_jsonl(Path(ptr["indexPath"]) / "files.jsonl")}
     for i, s in enumerate(
-        [s for s in load_jsonl(Path(ptr["indexPath"]) / "symbols.jsonl") if a.name.lower() in s["name"].lower()], 1
+        [s for s in load_jsonl(Path(ptr["indexPath"]) / "symbols.jsonl") if name.lower() in s["name"].lower()], 1
     ):
         print(
             f"{i}. {s['name']} ({s['kind']}, {s['language']}) — {files.get(s['file_id'], {}).get('rel_path', s['file_id'])}:{s.get('line_start') or ''}"

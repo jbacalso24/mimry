@@ -7,7 +7,7 @@ from typing import Any
 from .freshness import index_freshness
 from .paths import output_dir
 from .search import find_rows
-from .security import redact_sensitive_text, sanitize_data
+from .security import redact_sensitive_text, sanitize_data, sanitize_query
 
 ROLES = ("backend", "frontend", "mobile", "reviewer", "qa", "docs", "tooly", "general")
 ALIASES = {
@@ -267,6 +267,7 @@ def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[
 
 
 def route_payload(root: Path, ptr: dict[str, Any], query: str, limit: int = 8) -> dict[str, Any]:
+    query = sanitize_query(query)
     idx = Path(ptr["indexPath"])
     rows = find_rows(idx, query, limit, True, root=root, root_id=ptr.get("rootId"))
     fresh = index_freshness(root, ptr)
