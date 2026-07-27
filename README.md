@@ -67,6 +67,7 @@ MIMRY turns a local repo into a small intelligence layer:
 - **Feedback ranking** from what agents actually opened, changed, missed, or ignored
 - **MCP tools** so coding agents can query MIMRY directly
 - **Privacy-first behavior**: no remote embeddings by default, no source dumps in context packs, and secret-looking feedback values are redacted before persistence
+- **Cooperative test isolation**: tester-owned `acceptance_tests/` trees stay outside ordinary index/Graphify handoff surfaces by default; this is not secrecy, because repository users can still open those files directly
 
 Use it when you want agents to answer:
 

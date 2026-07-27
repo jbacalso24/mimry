@@ -13,6 +13,7 @@ from .paths import (
     graphify_output_dir,
     legacy_graphify_output_dir,
 )
+from .security import path_has_ignored_part, text_mentions_ignored_path
 
 
 GRAPHIFY_ARTIFACT_FILES = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
@@ -66,12 +67,25 @@ def graphify_manifest_path(root: Path) -> Path:
     return graphify_artifact_dir(root) / "manifest.json"
 
 
+def _filtered_graphify_graph(graph: dict) -> dict:
+    nodes = graph.get("nodes") or []
+    retained_nodes = [node for node in nodes if not path_has_ignored_part(node_source_file(node) or "")]
+    retained_ids = {str(node.get("id")) for node in retained_nodes if node.get("id") is not None}
+    edge_key = "links" if "links" in graph else "edges"
+    retained_edges = []
+    for edge in graph.get(edge_key) or []:
+        source, target = _edge_endpoints(edge)
+        if source in retained_ids and target in retained_ids:
+            retained_edges.append(edge)
+    return {**graph, "nodes": retained_nodes, edge_key: retained_edges}
+
+
 def load_graphify_graph(root: Path) -> dict:
     path = graphify_graph_path(root)
     if not path.exists():
         return {}
     graph = _load_json(path)
-    return graph if isinstance(graph, dict) else {}
+    return _filtered_graphify_graph(graph) if isinstance(graph, dict) else {}
 
 
 def graphify_available(root: Path) -> bool:
@@ -92,6 +106,10 @@ def _report_freshness_lines(path: Path) -> dict[str, str | None]:
         if line.startswith("- Built from commit:"):
             built_from_commit = line.split(":", 1)[1].strip().strip("`")
             break
+    if title and text_mentions_ignored_path(title):
+        title = None
+    if built_from_commit and text_mentions_ignored_path(built_from_commit):
+        built_from_commit = None
     return {"report_title": title, "built_from_commit": built_from_commit}
 
 
@@ -105,14 +123,28 @@ def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, 
     graph_path = graphify_graph_path(root)
     report_path = graphify_report_path(root)
     manifest_path = graphify_manifest_path(root)
-    graph = load_graphify_graph(root)
+    raw_graph = _load_json(graph_path) if graph_path.exists() else None
+    raw_graph = raw_graph if isinstance(raw_graph, dict) else {}
+    ignored_artifact_sources = sorted(
+        {
+            source
+            for node in raw_graph.get("nodes") or []
+            if (source := node_source_file(node)) and path_has_ignored_part(source)
+        }
+    )
+    graph = _filtered_graphify_graph(raw_graph)
     manifest = _load_json(manifest_path) if manifest_path.exists() else None
     manifest_entries = manifest if isinstance(manifest, dict) else {}
 
+    ignored_manifest_sources = sorted(
+        rel_path for rel_path in manifest_entries if isinstance(rel_path, str) and path_has_ignored_part(rel_path)
+    )
     missing_sources: list[str] = []
     stale_sources: list[str] = []
     for rel_path, info in manifest_entries.items():
         if not isinstance(rel_path, str) or rel_path.startswith(".mimry/"):
+            continue
+        if path_has_ignored_part(rel_path):
             continue
         source = root / rel_path
         if not source.exists():
@@ -127,7 +159,8 @@ def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, 
     manifest_exists = manifest_path.exists()
     artifact_missing = not graph_exists or not report_exists or not manifest_exists
     source_stale = bool(missing_sources or stale_sources)
-    possibly_stale = source_stale or index_state not in (None, "current")
+    policy_stale = bool(ignored_artifact_sources or ignored_manifest_sources)
+    possibly_stale = source_stale or policy_stale or index_state not in (None, "current")
     status = "missing" if artifact_missing else ("stale" if possibly_stale else "current")
 
     report_info = _report_freshness_lines(report_path)
@@ -158,6 +191,9 @@ def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, 
         "source_stale": source_stale,
         "source_changed_files": stale_sources,
         "source_missing_files": missing_sources,
+        # Report only a count. Status is an agent-facing output and must not
+        # disclose paths that policy intentionally excludes from agent context.
+        "policy_filtered_source_count": len(set(ignored_artifact_sources + ignored_manifest_sources)),
         "index_state": index_state,
         "possibly_stale": possibly_stale,
     }
@@ -404,6 +440,11 @@ def graphify_report_excerpt(root: Path, max_chars: int = 1200) -> str:
     if not path.exists():
         return ""
     text = path.read_text(encoding="utf-8", errors="replace")
+    if text_mentions_ignored_path(text):
+        # Reports can quote source snippets. If a legacy report references a
+        # newly ignored tree, suppress it as a unit instead of guessing which
+        # adjacent lines came from that source.
+        return ""
     keep = []
     capture = False
     for line in text.splitlines():
