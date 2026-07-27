@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json, os, shutil, sqlite3, subprocess, sys
 from importlib.metadata import version
 from pathlib import Path
@@ -906,6 +907,58 @@ def test_status_reports_graphify_artifact_health(tmp_path):
     assert "Built from commit: abc123" in status.stdout
     assert "MIMRY graph artifacts stale/missing: no" in status.stdout
     assert (repo / ".mimry" / "graphify").exists() is False
+
+
+def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    target = repo / "src" / "auth" / "session.py"
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    graphify_dir = Path(ptr["indexPath"]) / "graphify"
+    graphify_dir.mkdir(parents=True)
+    (graphify_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+    (graphify_dir / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    (graphify_dir / "manifest.json").write_text(
+        json.dumps({"src/auth/session.py": {"mtime": int(target.stat().st_mtime), "mimry_sha256": digest}}),
+        encoding="utf-8",
+    )
+
+    current = run_cli(repo, cache, "status")
+    assert current.returncode == 0, current.stdout
+    assert "Status: current" in current.stdout
+
+    original = target.stat()
+    content = target.read_bytes()
+    target.write_bytes(bytes([content[0] ^ 1]) + content[1:])
+    os.utime(target, ns=(original.st_atime_ns, original.st_mtime_ns))
+
+    stale = run_cli(repo, cache, "status")
+    assert stale.returncode == 2, stale.stdout
+    assert "Status: stale" in stale.stdout
+    assert "Graph source changes: 1 changed, 0 missing" in stale.stdout
+
+
+def test_status_keeps_legacy_mtime_only_manifest_compatible(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    target = repo / "src" / "auth" / "session.py"
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    graphify_dir = Path(ptr["indexPath"]) / "graphify"
+    graphify_dir.mkdir(parents=True)
+    (graphify_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+    (graphify_dir / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
+    (graphify_dir / "manifest.json").write_text(
+        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime}}), encoding="utf-8"
+    )
+
+    status = run_cli(repo, cache, "status")
+    assert status.returncode == 0, status.stdout
+    assert "Status: current" in status.stdout
 
 
 def test_graphify_reads_base_index_artifacts_after_generation_migration(tmp_path):

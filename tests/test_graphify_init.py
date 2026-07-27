@@ -66,3 +66,19 @@ def test_refresh_runs_graphify_index_and_status(tmp_path):
     assert "Index: current" in res.stdout
     assert (visible_graph_dir / "graph.json").exists()
     assert (repo / ".mimry" / "graphify").exists() is False
+
+    status = _run(repo, env, "status")
+
+    assert status.returncode == 0, status.stderr
+    assert "Status: current" in status.stdout
+    assert "Graph source changes: 0 changed, 0 missing" in status.stdout
+    assert "MIMRY graph artifacts stale/missing: no" in status.stdout
+
+    changed_source = repo / "src" / "auth" / "session.py"
+    changed_source.write_text(changed_source.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
+    stale_status = _run(repo, env, "status")
+
+    assert stale_status.returncode == 2, stale_status.stderr
+    assert "Status: stale" in stale_status.stdout
+    assert "Graph source changes: 1 changed, 0 missing" in stale_status.stdout
+    assert "MIMRY graph artifacts stale/missing: yes" in stale_status.stdout
