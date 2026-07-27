@@ -4,11 +4,13 @@ import json
 import re
 import sqlite3
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
 from .intent import query_terms
 from .paths import now
+from .state import exclusive_file_lock
 
 VALID_OUTCOMES = {"passed", "failed", "blocked", "partial", "unknown"}
 FEEDBACK_SCHEMA_VERSION = "0.1.0"
@@ -226,40 +228,43 @@ def feedback_payload_from_args(root: Path, args: Any) -> dict[str, Any]:
     }
 
 
-def record_feedback(idx: Path, root_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def record_feedback(idx: Path, root_id: str, payload: dict[str, Any], *, lock: bool = True) -> dict[str, Any]:
     feedback_id = str(uuid.uuid4())
     created_at = now()
-    con = sqlite3.connect(idx / "mimry.sqlite")
-    try:
-        ensure_feedback_schema(con)
-        with con:
-            con.execute(
-                """
+    base = idx.parent.parent if idx.parent.name == "generations" else idx
+    operation = exclusive_file_lock(base / "operation.lock") if lock else nullcontext()
+    with operation:
+        con = sqlite3.connect(idx / "mimry.sqlite")
+        try:
+            ensure_feedback_schema(con)
+            with con:
+                con.execute(
+                    """
                 insert into feedback(
                     feedback_id, root_id, created_at, query, context_path, suggested_paths,
                     opened_paths, changed_paths, missed_paths, ignored_paths, verification_json,
                     outcome, notes, schema_version
                 ) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
-                (
-                    feedback_id,
-                    root_id,
-                    created_at,
-                    payload["query"],
-                    payload.get("context_path"),
-                    json.dumps(payload["suggested_paths"]),
-                    json.dumps(payload["opened_paths"]),
-                    json.dumps(payload["changed_paths"]),
-                    json.dumps(payload["missed_paths"]),
-                    json.dumps(payload["ignored_paths"]),
-                    json.dumps(payload["verification"]),
-                    payload["outcome"],
-                    payload.get("notes"),
-                    FEEDBACK_SCHEMA_VERSION,
-                ),
-            )
-    finally:
-        con.close()
+                    (
+                        feedback_id,
+                        root_id,
+                        created_at,
+                        payload["query"],
+                        payload.get("context_path"),
+                        json.dumps(payload["suggested_paths"]),
+                        json.dumps(payload["opened_paths"]),
+                        json.dumps(payload["changed_paths"]),
+                        json.dumps(payload["missed_paths"]),
+                        json.dumps(payload["ignored_paths"]),
+                        json.dumps(payload["verification"]),
+                        payload["outcome"],
+                        payload.get("notes"),
+                        FEEDBACK_SCHEMA_VERSION,
+                    ),
+                )
+        finally:
+            con.close()
     return {"feedback_id": feedback_id, "created_at": created_at, **payload, "schema_version": FEEDBACK_SCHEMA_VERSION}
 
 

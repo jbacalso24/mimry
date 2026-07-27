@@ -85,5 +85,28 @@ def graphify_output_dir(root: Path):
     return cache_home() / "indexes" / stable_id("root", root.resolve()) / "graphify"
 
 
+def generation_graphify_output_dir(root: Path) -> Path | None:
+    """Return the old generation-local Graphify directory when safely identifiable.
+
+    Generation-local Graphify artifacts were briefly written beside an active
+    generation's index files. Graphify now uses the stable per-root cache path,
+    but readers retain this bounded fallback for already-created roots.
+    """
+    try:
+        payload = json.loads(pointer_file(root).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    root_id = payload.get("rootId")
+    generation_id = payload.get("generationId")
+    index_path = payload.get("indexPath")
+    if not all(isinstance(value, str) and value for value in (root_id, generation_id, index_path)):
+        return None
+    base = idx_path(root_id).resolve(strict=False)
+    expected = (base / "generations" / generation_id).resolve(strict=False)
+    if Path(index_path).expanduser().resolve(strict=False) != expected:
+        return None
+    return expected / "graphify"
+
+
 def legacy_graphify_output_dir(root: Path):
     return mdir(root) / "graphify"

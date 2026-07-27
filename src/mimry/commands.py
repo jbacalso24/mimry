@@ -4,11 +4,12 @@ import json
 import shutil
 import subprocess
 import uuid
+from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace
 
 from .adapters import list_adapters
-from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_index_path
+from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_root_cache_path
 from .constants import SCHEMA_VERSION
 from .feedback import feedback_payload_from_args, feedback_stats, list_feedback, record_feedback, show_feedback
 from .freshness import index_freshness
@@ -22,12 +23,13 @@ from .graphify_artifacts import (
 )
 from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build
 from .indexer import write_index
-from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir, roots_file
+from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
 from .security import safe_root
-from .semantic import build_semantic_index, semantic_health, semantic_rows
-from .storage import load_jsonl, load_pointer, register_root, save_pointer
+from .semantic import semantic_health, semantic_rows
+from .state import atomic_write_bytes, atomic_write_text
+from .storage import active_index_pointer, load_jsonl, load_pointer, load_root_registry, register_root, save_pointer
 
 
 def _git_toplevel(root: Path) -> Path | None:
@@ -111,11 +113,10 @@ def cmd_init(a):
     output_dir(root).mkdir(parents=True, exist_ok=True)
     (output_dir(root) / "context").mkdir(parents=True, exist_ok=True)
     (graph_output_dir(root)).mkdir(parents=True, exist_ok=True)
-    (mdir(root) / "config.toml").write_text(
-        'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n', encoding="utf-8"
-    )
-    (mdir(root) / "AGENT_RULES.md").write_text(
-        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file reading.\n", encoding="utf-8"
+    atomic_write_text(mdir(root) / "config.toml", 'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n')
+    atomic_write_text(
+        mdir(root) / "AGENT_RULES.md",
+        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file reading.\n",
     )
     save_pointer(root, ptr)
     register_root(ptr)
@@ -141,27 +142,39 @@ def cmd_init(a):
     return 0
 
 
-def require(root):
-    ptr = load_pointer(root)
+def require(root, *, validate: bool = True):
+    ptr = load_pointer(root, validate_active_generation=validate)
     if not ptr:
         raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
     return ptr
 
 
+def _index_reader(command):
+    """Keep the resolved generation alive for the full command invocation."""
+
+    @wraps(command)
+    def guarded(a):
+        root = Path(a.root).resolve()
+        with active_index_pointer(root):
+            return command(a)
+
+    return guarded
+
+
 def sync_visible_graph_output(root: Path, ptr: dict) -> None:
     """Expose lightweight MIMRY-branded graph artifacts under .mimry/mimry-out/."""
-    src = Path(ptr["indexPath"]) / "graphify"
+    src = idx_path(ptr["rootId"]) / "graphify"
     dst = graph_output_dir(root)
     dst.mkdir(parents=True, exist_ok=True)
     for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json", "graph.html"):
         source = src / name
         if source.exists():
-            shutil.copy2(source, dst / name)
+            atomic_write_bytes(dst / name, source.read_bytes())
 
 
 def cmd_index(a):
     root = Path(a.root).resolve()
-    stats = write_index(root, require(root))
+    stats = write_index(root, require(root, validate=False))
     print(
         f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nSemantic: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})\nIndex saved: {stats['index']}"
     )
@@ -170,7 +183,7 @@ def cmd_index(a):
 
 def cmd_refresh(a):
     root = Path(a.root).resolve()
-    ptr = require(root)
+    ptr = require(root, validate=False)
     print("Refreshing MIMRY: internal graph build -> MIMRY index -> status")
     graphify_status = run_graphify_build(root, execute=True)
     if graphify_status != 0:
@@ -184,6 +197,7 @@ def cmd_refresh(a):
     return cmd_status(a)
 
 
+@_index_reader
 def cmd_status(a):
     root = Path(a.root).resolve()
     ptr = load_pointer(root)
@@ -221,6 +235,10 @@ def cmd_status(a):
     )
     if graphify.get("using_legacy_output"):
         print("Compatibility: reading existing legacy repo-local graph artifacts; next refresh writes to the cache.")
+    elif graphify.get("using_generation_output"):
+        print(
+            "Compatibility: reading generation-local graph artifacts; next refresh migrates them to the stable cache."
+        )
     print(f"Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})")
     if state == "stale":
         if changed:
@@ -541,7 +559,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
         "",
     ]
     context_file(root).parent.mkdir(parents=True, exist_ok=True)
-    context_file(root).write_text("\n".join(lines), encoding="utf-8")
+    atomic_write_text(context_file(root), "\n".join(lines))
     _write_legacy_context_redirect(root)
     return rows
 
@@ -562,11 +580,11 @@ def _write_legacy_context_redirect(root: Path) -> None:
         current_rel = current.relative_to(root).as_posix()
     except ValueError:
         current_rel = str(current)
-    legacy.write_text(
+    atomic_write_text(
+        legacy,
         "# MIMRY context moved\n\n"
         "This legacy context path is no longer the source of truth.\n\n"
         f"Read `{current_rel}` instead.\n",
-        encoding="utf-8",
     )
 
 
@@ -576,15 +594,17 @@ def cmd_preflight(a):
     root.mkdir(parents=True, exist_ok=True)
 
     init_ran = False
-    ptr = load_pointer(root)
+    ptr = load_pointer(root, validate_active_generation=False)
     if not ptr:
         init_ran = True
         init_status = cmd_init(SimpleNamespace(root=str(root), root_type="repo", skip_graphify=True))
         if init_status != 0:
             return init_status
-        ptr = require(root)
 
-    fresh, graphify = _index_and_graphify_health(root, ptr)
+    with active_index_pointer(root) as active:
+        assert active is not None
+        ptr = active
+        fresh, graphify = _index_and_graphify_health(root, ptr)
     reasons = []
     if fresh["state"] != "current":
         reasons.append(f"index {fresh['state']}")
@@ -598,7 +618,7 @@ def cmd_preflight(a):
     index_ran = False
     if force_refresh:
         refresh_ran = True
-        print("Preflight refresh: running (" + ", ".join(reasons) + ")")
+        print("Preflight refresh: running (forced)")
         graphify_status = run_graphify_build(root, execute=True)
         if graphify_status != 0:
             print("Preflight stopped: internal graph build failed.")
@@ -610,8 +630,6 @@ def cmd_preflight(a):
             f"MIMRY indexing complete. Files: {stats['files']}; Symbols: {stats['symbols']}; "
             f"Graph edges: {stats['edges']}; Index: {stats['index']}"
         )
-        ptr = require(root)
-        fresh, graphify = _index_and_graphify_health(root, ptr)
     elif fresh["state"] in {"missing", "stale"}:
         print(f"Preflight index: running (index {fresh['state']}; skipping slow Graphify build)")
         stats = write_index(root, ptr)
@@ -620,8 +638,7 @@ def cmd_preflight(a):
             f"MIMRY indexing complete. Files: {stats['files']}; Symbols: {stats['symbols']}; "
             f"Graph edges: {stats['edges']}; Index: {stats['index']}"
         )
-        ptr = require(root)
-        fresh, graphify = _index_and_graphify_health(root, ptr)
+
     else:
         if reasons:
             print(
@@ -632,7 +649,11 @@ def cmd_preflight(a):
         else:
             print("Preflight refresh: skipped (index and MIMRY graph artifacts are current)")
 
-    rows = _write_context_pack(root, ptr, a.task)
+    with active_index_pointer(root) as active:
+        assert active is not None
+        ptr = active
+        fresh, graphify = _index_and_graphify_health(root, ptr)
+        rows = _write_context_pack(root, ptr, a.task)
 
     print("MIMRY preflight complete")
     print(f"Root: {root}")
@@ -660,9 +681,15 @@ def _format_paths(paths: list[str], limit: int = 6) -> str:
 
 def cmd_feedback(a):
     root = Path(a.root).resolve()
-    ptr = require(root)
-    idx = Path(ptr["indexPath"])
     action = getattr(a, "feedback_action", None)
+    with active_index_pointer(root, exclusive=action not in {"stats", "list", "show"}) as ptr:
+        if not ptr:
+            raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
+        return _cmd_feedback_active(a, root, ptr, action)
+
+
+def _cmd_feedback_active(a, root: Path, ptr: dict, action: str | None):
+    idx = Path(ptr["indexPath"])
 
     if action == "stats":
         stats = feedback_stats(idx, ptr["rootId"])
@@ -701,7 +728,7 @@ def cmd_feedback(a):
         print("Feedback requires --query or --json with a query field.")
         return 2
     redacted_fields = payload.get("redacted_fields") or []
-    row = record_feedback(idx, ptr["rootId"], payload)
+    row = record_feedback(idx, ptr["rootId"], payload, lock=False)
     influences = []
     if row["changed_paths"]:
         influences.append("changed-file boost")
@@ -738,28 +765,33 @@ def _print_semantic_degrade(idx: Path, root_id: str | None) -> None:
 
 def cmd_semantic(a):
     root = Path(a.root).resolve()
-    ptr = require(root)
-    idx = Path(ptr["indexPath"])
     query = getattr(a, "query", None)
-    if query == "status":
-        health = semantic_health(idx, ptr.get("rootId"))
-        print(f"Semantic: {health['status']} ({health['chunks']} chunks, backend {health['backend']})")
-        return 0
     if query == "index":
-        stats = build_semantic_index(idx, ptr["rootId"])
-        print(f"Semantic indexed: current ({stats['chunks']} chunks, backend {stats['backend']})")
+        # Semantic state is generation-bound; rebuild through normal atomic
+        # publication instead of mutating the active SQLite generation in place.
+        stats = write_index(root, require(root, validate=False))
+        print(f"Semantic indexed: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})")
         return 0
-    if not query:
-        print('Semantic search requires a query, e.g. `mimry semantic "vague phrase"`.')
-        return 2
-    rows, health = semantic_rows(idx, ptr.get("rootId"), query, getattr(a, "limit", 10))
-    if health["status"] != "current":
-        _print_semantic_degrade(idx, ptr.get("rootId"))
+    with active_index_pointer(root) as ptr:
+        if not ptr:
+            raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
+        idx = Path(ptr["indexPath"])
+        if query == "status":
+            health = semantic_health(idx, ptr.get("rootId"))
+            print(f"Semantic: {health['status']} ({health['chunks']} chunks, backend {health['backend']})")
+            return 0
+        if not query:
+            print('Semantic search requires a query, e.g. `mimry semantic "vague phrase"`.')
+            return 2
+        rows, health = semantic_rows(idx, ptr.get("rootId"), query, getattr(a, "limit", 10))
+        if health["status"] != "current":
+            _print_semantic_degrade(idx, ptr.get("rootId"))
+            return 0
+        print_rows(f"Semantic results for: {query}", rows)
         return 0
-    print_rows(f"Semantic results for: {query}", rows)
-    return 0
 
 
+@_index_reader
 def cmd_find(a):
     root = Path(a.root).resolve()
     ptr = require(root)
@@ -774,6 +806,7 @@ def cmd_find(a):
     return 0
 
 
+@_index_reader
 def cmd_related(a):
     root = Path(a.root).resolve()
     ptr = require(root)
@@ -784,6 +817,7 @@ def cmd_related(a):
     return 0
 
 
+@_index_reader
 def cmd_route(a):
     root = Path(a.root).resolve()
     ptr = require(root)
@@ -820,6 +854,7 @@ def cmd_route(a):
     return 0
 
 
+@_index_reader
 def cmd_brief(a):
     root = Path(a.root).resolve()
     ptr = require(root)
@@ -866,6 +901,7 @@ def _format_path_step(step: dict) -> str:
     return f"- `{source_label}` (`{source_file}`) --{relation}--> `{target_label}` (`{target_file}`)"
 
 
+@_index_reader
 def cmd_explain(a):
     root = Path(a.root).resolve()
     ptr = require(root)
@@ -909,6 +945,7 @@ def cmd_explain(a):
     return 0
 
 
+@_index_reader
 def cmd_path(a):
     root = Path(a.root).resolve()
     ptr = require(root)
@@ -937,6 +974,7 @@ def cmd_path(a):
     return 0
 
 
+@_index_reader
 def cmd_why(a):
     root = Path(a.root).resolve()
     ptr = require(root)
@@ -987,6 +1025,7 @@ def cmd_why(a):
     return 0
 
 
+@_index_reader
 def cmd_symbol(a):
     ptr = require(Path(a.root).resolve())
     print(f"Symbol search: {a.name}")
@@ -1000,6 +1039,7 @@ def cmd_symbol(a):
     return 0
 
 
+@_index_reader
 def cmd_context(a):
     root = Path(a.root).resolve()
     ptr = require(root)
@@ -1023,7 +1063,7 @@ def cmd_adapters(a):
 
 
 def cmd_roots(a):
-    reg = json.loads(roots_file().read_text(encoding="utf-8")) if roots_file().exists() else {"roots": []}
+    reg = load_root_registry()
     print("MIMRY roots")
     [print(f"- {r['rootId']} {r['rootType']} {r['rootPath']} -> {r['indexPath']}") for r in reg.get("roots", [])]
     return 0
@@ -1034,14 +1074,47 @@ def cmd_cache_wipe(a):
     try:
         if a.all:
             cache = validated_cache_home(root)
-            shutil.rmtree(cache, ignore_errors=True)
-            print(f"Wiped all MIMRY cache: {cache}")
-            return 0
-        ptr = require(root)
-        idx = validated_current_index_path(Path(ptr["indexPath"]), root)
-        shutil.rmtree(idx, ignore_errors=True)
-        print(f"Wiped current root cache: {idx}")
+            print(
+                "Refusing cache wipe: `cache wipe --all` is disabled because this version has no proven "
+                f"global writer-coordination protocol for {cache}. Use `cache wipe --current` per root."
+            )
+            return 2
+        initial = load_pointer(root, validate_active_generation=False)
+        if not initial:
+            raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
+        if Path(initial["rootPath"]).expanduser().resolve(strict=False) != root:
+            raise UnsafeCachePathError(
+                f"Refusing to wipe cache: pointer root {initial['rootPath']} does not match current root {root}"
+            )
+        base = validated_current_root_cache_path(
+            Path(initial["indexPath"]), initial["rootId"], initial.get("generationId"), root
+        )
+        base.mkdir(parents=True, exist_ok=True)
+        operation_lock = base / "operation.lock"
+        with active_index_pointer(root, exclusive=True, validate=False) as ptr:
+            if not ptr or ptr.get("rootId") != initial.get("rootId"):
+                raise UnsafeCachePathError(
+                    "Refusing to wipe cache: current root pointer changed while waiting for lock"
+                )
+            reset = {**ptr, "indexPath": str(base), "lastIndexedAt": None}
+            reset.pop("generationId", None)
+            save_pointer(root, reset)
+            register_root(reset)
+            for child in list(base.iterdir()):
+                if child == operation_lock:
+                    continue
+                if child.is_symlink() or child.is_file():
+                    child.unlink()
+                else:
+                    shutil.rmtree(child)
+            leftovers = [child for child in base.iterdir() if child != operation_lock]
+            if leftovers:
+                raise OSError(f"cache wipe left entries behind: {', '.join(map(str, leftovers))}")
+        print(f"Wiped current root cache: {base}")
         return 0
     except UnsafeCachePathError as e:
         print(f"Refusing cache wipe: {e}")
+        return 2
+    except OSError as e:
+        print(f"Cache wipe incomplete: {e}")
         return 2

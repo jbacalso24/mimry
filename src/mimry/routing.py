@@ -7,6 +7,7 @@ from typing import Any
 from .freshness import index_freshness
 from .paths import output_dir
 from .search import find_rows
+from .state import atomic_write_text
 
 ROLES = ("backend", "frontend", "mobile", "reviewer", "qa", "docs", "tooly", "general")
 ALIASES = {
@@ -351,5 +352,5 @@ def write_brief(root: Path, ptr: dict[str, Any], query: str, agent: str, limit: 
         "- MIMRY feedback/refresh recommendation for the next agent.",
         "",
     ]
-    path.write_text("\n".join(lines), encoding="utf-8")
+    atomic_write_text(path, "\n".join(lines))
     return path, payload

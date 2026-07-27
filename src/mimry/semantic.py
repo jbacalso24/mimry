@@ -10,6 +10,7 @@ from typing import Any
 
 from .intent import query_terms
 from .paths import now, stable_id
+from .state import semantic_rows_checksum
 
 SEMANTIC_BACKEND = "local-hash-v1"
 SEMANTIC_SCHEMA_VERSION = "0.1.0"
@@ -34,10 +35,14 @@ def ensure_semantic_schema(con: sqlite3.Connection) -> None:
             model_name text not null,
             backend_name text not null,
             created_at text not null,
-            schema_version text not null
+            schema_version text not null,
+            generation_id text
         )
         """
     )
+    chunk_columns = {row[1] for row in con.execute("pragma table_info(semantic_chunks)")}
+    if "generation_id" not in chunk_columns:
+        con.execute("alter table semantic_chunks add column generation_id text")
     con.execute("create index if not exists semantic_chunks_root_path_idx on semantic_chunks(root_id, rel_path)")
     con.execute(
         """
@@ -46,10 +51,17 @@ def ensure_semantic_schema(con: sqlite3.Connection) -> None:
             backend_name text not null,
             indexed_at text not null,
             chunk_count integer not null,
-            schema_version text not null
+            schema_version text not null,
+            generation_id text,
+            content_checksum text
         )
         """
     )
+    metadata_columns = {row[1] for row in con.execute("pragma table_info(semantic_metadata)")}
+    if "generation_id" not in metadata_columns:
+        con.execute("alter table semantic_metadata add column generation_id text")
+    if "content_checksum" not in metadata_columns:
+        con.execute("alter table semantic_metadata add column content_checksum text")
 
 
 def _tokens(text: str) -> list[str]:
@@ -158,7 +170,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def build_semantic_index(idx: Path, root_id: str) -> dict[str, Any]:
+def build_semantic_index(idx: Path, root_id: str, generation_id: str | None = None) -> dict[str, Any]:
     files = _load_jsonl(idx / "files.jsonl")
     symbols = _load_jsonl(idx / "symbols.jsonl")
     created_at = now()
@@ -169,38 +181,73 @@ def build_semantic_index(idx: Path, root_id: str) -> dict[str, Any]:
     con = sqlite3.connect(idx / "mimry.sqlite")
     try:
         ensure_semantic_schema(con)
+        generation_columns = {row[1] for row in con.execute("pragma table_info(index_generation)")}
+        if "semantic_checksum" not in generation_columns:
+            con.execute("alter table index_generation add column semantic_checksum text")
+        if generation_id is None:
+            generation_row = con.execute("select generation_id from index_generation limit 1").fetchone()
+            generation_id = generation_row[0] if generation_row else None
+        checksum_rows = [
+            (
+                chunk["chunk_id"],
+                chunk["root_id"],
+                chunk["file_id"],
+                chunk["rel_path"],
+                chunk["chunk_kind"],
+                chunk["chunk_text_hash"],
+                chunk["chunk_text_preview"],
+                json.dumps(chunk["vector"], sort_keys=True),
+                chunk["model_name"],
+                chunk["backend_name"],
+                chunk["created_at"],
+                chunk["schema_version"],
+                generation_id,
+            )
+            for chunk in chunks
+        ]
+        content_checksum = semantic_rows_checksum(checksum_rows)
         with con:
             con.execute("delete from semantic_chunks where root_id = ?", (root_id,))
-            for chunk in chunks:
+            for chunk, checksum_row in zip(chunks, checksum_rows, strict=True):
                 con.execute(
                     """
                     insert or replace into semantic_chunks(
                         chunk_id, root_id, file_id, rel_path, chunk_kind, chunk_text_hash,
-                        chunk_text_preview, vector_json, model_name, backend_name, created_at, schema_version
-                    ) values(?,?,?,?,?,?,?,?,?,?,?,?)
+                        chunk_text_preview, vector_json, model_name, backend_name, created_at,
+                        schema_version, generation_id
+                    ) values(?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
-                    (
-                        chunk["chunk_id"],
-                        chunk["root_id"],
-                        chunk["file_id"],
-                        chunk["rel_path"],
-                        chunk["chunk_kind"],
-                        chunk["chunk_text_hash"],
-                        chunk["chunk_text_preview"],
-                        json.dumps(chunk["vector"], sort_keys=True),
-                        chunk["model_name"],
-                        chunk["backend_name"],
-                        chunk["created_at"],
-                        chunk["schema_version"],
-                    ),
+                    checksum_row,
                 )
             con.execute(
-                "insert or replace into semantic_metadata(root_id, backend_name, indexed_at, chunk_count, schema_version) values(?,?,?,?,?)",
-                (root_id, SEMANTIC_BACKEND, created_at, len(chunks), SEMANTIC_SCHEMA_VERSION),
+                """insert or replace into semantic_metadata(
+                       root_id, backend_name, indexed_at, chunk_count, schema_version,
+                       generation_id, content_checksum
+                   ) values(?,?,?,?,?,?,?)""",
+                (
+                    root_id,
+                    SEMANTIC_BACKEND,
+                    created_at,
+                    len(chunks),
+                    SEMANTIC_SCHEMA_VERSION,
+                    generation_id,
+                    content_checksum,
+                ),
             )
+            if generation_id is not None:
+                con.execute(
+                    "update index_generation set semantic_checksum = ? where generation_id = ?",
+                    (content_checksum, generation_id),
+                )
     finally:
         con.close()
-    return {"backend": SEMANTIC_BACKEND, "chunks": len(chunks), "indexed_at": created_at}
+    return {
+        "backend": SEMANTIC_BACKEND,
+        "chunks": len(chunks),
+        "indexed_at": created_at,
+        "generation": generation_id,
+        "checksum": content_checksum,
+    }
 
 
 def semantic_health(idx: Path, root_id: str | None, expected_files: int | None = None) -> dict[str, Any]:
