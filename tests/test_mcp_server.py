@@ -70,6 +70,20 @@ def test_mcp_status_uninitialized_root(tmp_path: Path):
     assert payload["root"] == str(tmp_path.resolve())
 
 
+def test_mcp_status_reports_corrupt_pointer_without_raising(tmp_path: Path):
+    repo = tmp_path / "repo"
+    pointer = repo / ".mimry" / "pointer.json"
+    pointer.parent.mkdir(parents=True)
+    pointer.write_text("{truncated", encoding="utf-8")
+
+    payload = mimry_status(str(repo))
+
+    assert payload["initialized"] is False
+    assert "Corrupt MIMRY state" in payload["state_error"]
+    assert str(pointer) in payload["state_error"]
+    assert "Preserve the corrupt state file" in payload["recommended"]
+
+
 def test_mcp_status_uses_hash_freshness_for_same_size_rewrite(tmp_path: Path, monkeypatch):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)

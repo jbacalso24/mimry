@@ -29,6 +29,7 @@ from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
+from mimry.state import StateCorruptionError
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import load_jsonl, load_pointer
 
@@ -39,7 +40,11 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
     stdout = io.StringIO()
     stderr = io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        code = func(args)
+        try:
+            code = func(args)
+        except StateCorruptionError as exc:
+            print(f"MIMRY state error: {exc}", file=sys.stderr)
+            code = 2
     return {"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()}
 
 
@@ -47,7 +52,7 @@ def _root(root: str | None) -> Path:
     return Path(root or ".").resolve()
 
 
-def _status_payload(root_path: Path) -> dict[str, Any]:
+def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
     ptr = load_pointer(root_path)
     if not ptr:
         return {"initialized": False, "root": str(root_path), "recommended": "Run `mimry init`."}
@@ -74,6 +79,18 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
         "graphify": graphify,
         "semantic": semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files)),
     }
+
+
+def _status_payload(root_path: Path) -> dict[str, Any]:
+    try:
+        return _status_payload_unchecked(root_path)
+    except StateCorruptionError as exc:
+        return {
+            "initialized": False,
+            "root": str(root_path),
+            "state_error": str(exc),
+            "recommended": "Preserve the corrupt state file and follow the recovery action in state_error.",
+        }
 
 
 @mcp.tool

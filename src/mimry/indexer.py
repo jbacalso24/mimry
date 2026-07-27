@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
-
 from .graphify_core import GraphifyCore
 from .paths import idx_path, now
 from .scanner import adapt, scan
 from .semantic import build_semantic_index
+from .state import atomic_write_json
 from .storage import connect, register_root, save_pointer, write_jsonl
 
 
@@ -64,14 +63,11 @@ def write_index(root, ptr):
     write_jsonl(idx / "symbols.jsonl", symbols)
     write_jsonl(idx / "imports.jsonl", [{"file": k, "imports": v} for k, v in imports.items()])
     write_jsonl(idx / "exports.jsonl", [{"file": k, "exports": v} for k, v in exports.items()])
-    (idx / "dependencies.json").write_text(json.dumps(imports, indent=2) + "\n", encoding="utf-8")
-    (idx / "graph.json").write_text(json.dumps(graph, indent=2) + "\n", encoding="utf-8")
-    (idx / "file-hashes.json").write_text(
-        json.dumps(
-            {f["rel_path"]: {"hash": f["hash"], "mtime": f["mtime"], "size": f["size"]} for f in files}, indent=2
-        )
-        + "\n",
-        encoding="utf-8",
+    atomic_write_json(idx / "dependencies.json", imports)
+    atomic_write_json(idx / "graph.json", graph)
+    atomic_write_json(
+        idx / "file-hashes.json",
+        {f["rel_path"]: {"hash": f["hash"], "mtime": f["mtime"], "size": f["size"]} for f in files},
     )
     semantic = build_semantic_index(idx, ptr["rootId"])
     save_pointer(root, ptr)

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from typing import Any
 
 from .scanner import scan
+from .state import StateCorruptionError, load_json_state
 from .storage import load_jsonl
 
 
@@ -24,11 +24,10 @@ def _stored_hashes(idx: Path) -> dict[str, dict[str, Any]]:
     hashes_path = idx / "file-hashes.json"
     if not hashes_path.exists():
         return {}
-    try:
-        payload = json.loads(hashes_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    payload, _ = load_json_state(hashes_path)
+    if not isinstance(payload, dict):
+        raise StateCorruptionError(hashes_path, "expected a JSON object")
+    return payload
 
 
 def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
@@ -71,7 +70,9 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     missing = sorted(set(missing))
     state = "missing" if not files_path.exists() else ("stale" if changed or missing else "current")
     graph_path = idx / "graph.json"
-    graph = json.loads(graph_path.read_text(encoding="utf-8")) if graph_path.exists() else {"nodes": [], "edges": []}
+    graph, _ = load_json_state(graph_path, default={"nodes": [], "edges": []})
+    if not isinstance(graph, dict):
+        raise StateCorruptionError(graph_path, "expected a JSON object")
     return {
         "index_path": idx,
         "files": files,

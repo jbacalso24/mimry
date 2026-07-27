@@ -22,12 +22,13 @@ from .graphify_artifacts import (
 )
 from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build
 from .indexer import write_index
-from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir, roots_file
+from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
 from .security import safe_root
 from .semantic import build_semantic_index, semantic_health, semantic_rows
-from .storage import load_jsonl, load_pointer, register_root, save_pointer
+from .state import atomic_write_bytes, atomic_write_text
+from .storage import load_jsonl, load_pointer, load_root_registry, register_root, save_pointer
 
 
 def _git_toplevel(root: Path) -> Path | None:
@@ -111,11 +112,10 @@ def cmd_init(a):
     output_dir(root).mkdir(parents=True, exist_ok=True)
     (output_dir(root) / "context").mkdir(parents=True, exist_ok=True)
     (graph_output_dir(root)).mkdir(parents=True, exist_ok=True)
-    (mdir(root) / "config.toml").write_text(
-        'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n', encoding="utf-8"
-    )
-    (mdir(root) / "AGENT_RULES.md").write_text(
-        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file reading.\n", encoding="utf-8"
+    atomic_write_text(mdir(root) / "config.toml", 'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n')
+    atomic_write_text(
+        mdir(root) / "AGENT_RULES.md",
+        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file reading.\n",
     )
     save_pointer(root, ptr)
     register_root(ptr)
@@ -156,7 +156,7 @@ def sync_visible_graph_output(root: Path, ptr: dict) -> None:
     for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json", "graph.html"):
         source = src / name
         if source.exists():
-            shutil.copy2(source, dst / name)
+            atomic_write_bytes(dst / name, source.read_bytes())
 
 
 def cmd_index(a):
@@ -541,7 +541,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
         "",
     ]
     context_file(root).parent.mkdir(parents=True, exist_ok=True)
-    context_file(root).write_text("\n".join(lines), encoding="utf-8")
+    atomic_write_text(context_file(root), "\n".join(lines))
     _write_legacy_context_redirect(root)
     return rows
 
@@ -562,11 +562,11 @@ def _write_legacy_context_redirect(root: Path) -> None:
         current_rel = current.relative_to(root).as_posix()
     except ValueError:
         current_rel = str(current)
-    legacy.write_text(
+    atomic_write_text(
+        legacy,
         "# MIMRY context moved\n\n"
         "This legacy context path is no longer the source of truth.\n\n"
         f"Read `{current_rel}` instead.\n",
-        encoding="utf-8",
     )
 
 
@@ -1023,7 +1023,7 @@ def cmd_adapters(a):
 
 
 def cmd_roots(a):
-    reg = json.loads(roots_file().read_text(encoding="utf-8")) if roots_file().exists() else {"roots": []}
+    reg = load_root_registry()
     print("MIMRY roots")
     [print(f"- {r['rootId']} {r['rootType']} {r['rootPath']} -> {r['indexPath']}") for r in reg.get("roots", [])]
     return 0
