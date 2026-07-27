@@ -77,23 +77,23 @@ SENSITIVE_LABEL_TOKENS = {
     "token",
 }
 # Assignment boundaries are deliberately structural rather than line-only. This
-# catches object/JSON/code members after ``{``, ``,`` or ``;`` without treating a
+# catches object/JSON/code members after ``{``, `(`, `,` or `;` without treating a
 # credential word embedded in ordinary prose as an assignment. Values stop at
 # the matching config delimiter; quoted values may contain delimiters, and TOML
 # / Python-style triple-quoted values may span lines.
 ASSIGNMENT_RE = re.compile(
-    r"(?ims)(?P<boundary>^|(?<=[{,;]))"
+    r"(?ims)(?P<boundary>^|(?<=[{(,;]))"
     r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?P<operator>=|:)\s*)"
     r"(?P<value>\"\"\".*?\"\"\"|'''.*?'''|\"(?:\\.|[^\"\\\r\n])*\"|"
-    r"'(?:\\.|[^'\\\r\n])*'|[^,{;}\r\n]*)(?P<newline>\r?\n|$)?"
+    r"'(?:\\.|[^'\\\r\n])*'|[^,{;})\r\n]*)(?P<newline>\r?\n|$)?"
 )
 MULTILINE_QUOTED_ASSIGNMENT_START_RE = re.compile(
-    r"(?im)(?:^|(?<=[{,;]))[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
+    r"(?im)(?:^|(?<=[{(,;]))[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?:=|:)\s*(?P<quote>\"\"\"|''')"
 )
 UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE = re.compile(
-    r"(?ims)(?P<boundary>^|(?<=[{,;]))"
+    r"(?ims)(?P<boundary>^|(?<=[{(,;]))"
     r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?:=|:)\s*)"
     r"(?P<quote>\"\"\"|''')(?P<body>.*)$"
