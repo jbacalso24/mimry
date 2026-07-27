@@ -85,9 +85,9 @@ MIMRY is a Python package with two CLI entrypoints:
 
 Requirements:
 
-- Python `>=3.11`
+- Python `>=3.11` (required CI currently covers 3.11, 3.12, and 3.13)
 - [`uv`](https://docs.astral.sh/uv/)
-- Git
+- Git and network access for the pinned Graphify dependency
 
 Install from a checkout:
 
@@ -438,7 +438,7 @@ generic-text
 
 ## Graphify integration
 
-MIMRY uses Graphify-derived relationship artifacts for graph navigation and context evidence. Graphify is pinned in `pyproject.toml`/`uv.lock` and installed by `uv sync`.
+MIMRY uses Graphify-derived relationship artifacts for graph navigation and context evidence. Graphify's Git commit is pinned directly in MIMRY's published dependency metadata and `uv.lock`, so installs from a checkout, sdist, or wheel use the same policy. `mimry graphify status` reports the runtime source/version/commit separately and says whether it matches that policy.
 
 Submodules are optional for normal CLI/test usage. If you specifically want the vendored Graphify checkout under `vendor/graphify`:
 
@@ -447,6 +447,12 @@ git submodule update --init --recursive
 ```
 
 See [`THIRD_PARTY.md`](THIRD_PARTY.md) for Graphify attribution and integration boundaries.
+
+## Support and releases
+
+Required CI covers Python 3.11–3.13 on current GitHub-hosted Ubuntu and macOS runners. Windows remains best-effort until it joins the required matrix. Releases are manual: CI builds and clean-installs artifacts but has no publishing credentials or publish step.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the exact artifact and clean-wheel checks.
 
 ## Development
 
