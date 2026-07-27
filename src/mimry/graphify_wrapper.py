@@ -5,11 +5,13 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from pathlib import Path
 
 from .paths import graph_output_dir, graphify_output_dir, graphify_vendor_path, repo_root
-from .security import redact_sensitive_text, root_contains_sensitive_content, safe_root, tree_contains_sensitive_content
+from .constants import HEAVY_IGNORES
+from .security import redact_sensitive_text, safe_root, should_ignore, tree_contains_sensitive_content
 
 PINNED_GRAPHIFY_COMMIT = "44c0a5e33c7011813dcebf1a8850c1c6005bf500"
 GRAPHIFY_ENV_ALLOWLIST = {
@@ -40,6 +42,45 @@ GRAPHIFY_ENV_ALLOWLIST = {
 SECRET_ENV_MARKERS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "PRIVATE_KEY", "CLIENT_SECRET", "API_KEY")
 SECRET_ENV_PREFIXES = ("OPENAI_", "ANTHROPIC_", "AWS_", "GOOGLE_", "GITHUB_", "GITLAB_", "AZURE_")
 GRAPHIFY_DEFAULT_TIMEOUT_SECONDS = 180
+
+
+def purge_graphify_outputs(root: Path, out: Path | None = None) -> None:
+    """Remove private and visible graph output after any unvalidated build."""
+
+    shutil.rmtree(out or graphify_output_dir(root), ignore_errors=True)
+    shutil.rmtree(graph_output_dir(root), ignore_errors=True)
+
+
+def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
+    """Create and verify a source-only tree that is safe to hand to Graphify.
+
+    Graphify has its own crawler and cannot be trusted to implement MIMRY's
+    ignore policy. MIMRY therefore copies only policy-approved regular files
+    into a private cache directory, then applies the same policy again to the
+    completed copy. Graphify never receives the original repository path.
+    """
+
+    for source in root.rglob("*"):
+        try:
+            rel = source.relative_to(root)
+            if any(part in HEAVY_IGNORES for part in rel.parts):
+                continue
+            if source.is_symlink() or not source.is_file() or should_ignore(source, root):
+                continue
+            target = handoff / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        except OSError as exc:
+            raise ValueError("Could not create a verified Graphify source handoff") from exc
+
+    for copied in handoff.rglob("*"):
+        try:
+            if copied.is_symlink():
+                raise ValueError("Graphify source handoff contains a symlink")
+            if copied.is_file() and should_ignore(copied, handoff):
+                raise ValueError("Graphify source handoff failed MIMRY ignore verification")
+        except OSError as exc:
+            raise ValueError("Could not verify Graphify source handoff") from exc
 
 
 def graphify_vendor_available():
@@ -130,25 +171,30 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         print("Command: graphify update <root>" if graphify_cli else "Command: python -m graphify update <root>")
         print("To execute: mimry --root <root> graphify build --execute")
         return 0
-    if root_contains_sensitive_content(root):
-        # Graphify scans independently of MIMRY's per-file adapter. Do not hand it
-        # a root containing an ordinary secret-bearing file, and remove any prior
-        # generated graph that could retain stale sensitive content.
-        shutil.rmtree(out, ignore_errors=True)
-        shutil.rmtree(graph_output_dir(root), ignore_errors=True)
-        print(
-            "MIMRY internal graph build skipped: secret-bearing source content detected and prior graph artifacts purged."
-        )
-        return 0
     if source == "missing":
         print("Graphify is missing. Run `uv sync` or `git submodule update --init --recursive`.", file=sys.stderr)
         return 2
-    out.mkdir(parents=True, exist_ok=True)
+    purge_graphify_outputs(root, out)
+    out.parent.mkdir(parents=True, exist_ok=True)
     print("Running MIMRY internal graph build...")
     timeout = int(os.environ.get("MIMRY_GRAPHIFY_TIMEOUT", GRAPHIFY_DEFAULT_TIMEOUT_SECONDS))
     try:
-        res = subprocess.run(cmd, cwd=root, env=env, text=True, capture_output=True, check=False, timeout=timeout)
+        with tempfile.TemporaryDirectory(prefix="mimry-graphify-input-") as temporary:
+            handoff = Path(temporary) / root.name
+            handoff.mkdir()
+            _copy_safe_graphify_input(root, handoff)
+            safe_cmd = [*cmd[:-1], str(handoff)]
+            res = subprocess.run(
+                safe_cmd,
+                cwd=handoff,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=timeout,
+            )
     except subprocess.TimeoutExpired as exc:
+        purge_graphify_outputs(root, out)
         print(f"MIMRY internal graph build timed out after {timeout}s", file=sys.stderr)
         stdout = exc.output.decode("utf-8", errors="ignore") if isinstance(exc.output, bytes) else (exc.output or "")
         stderr = exc.stderr.decode("utf-8", errors="ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
@@ -157,7 +203,12 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         if stderr.strip():
             print(redact_sensitive_text(stderr.strip()[-4000:]), file=sys.stderr)
         return 124
+    except (OSError, ValueError) as exc:
+        purge_graphify_outputs(root, out)
+        print(f"MIMRY internal graph build could not start: {redact_sensitive_text(str(exc))}", file=sys.stderr)
+        return 2
     if res.returncode != 0:
+        purge_graphify_outputs(root, out)
         if res.stdout.strip():
             print(redact_sensitive_text(res.stdout.strip()), file=sys.stderr)
         if res.stderr.strip():
@@ -165,8 +216,7 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
         print(f"MIMRY internal graph build failed with exit {res.returncode}", file=sys.stderr)
         return res.returncode
     if tree_contains_sensitive_content(out):
-        shutil.rmtree(out, ignore_errors=True)
-        shutil.rmtree(graph_output_dir(root), ignore_errors=True)
+        purge_graphify_outputs(root, out)
         print(
             "MIMRY internal graph build rejected sensitive generated content; graph artifacts purged.", file=sys.stderr
         )
