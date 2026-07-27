@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sqlite3
@@ -7,18 +8,19 @@ import uuid
 from pathlib import Path
 
 from .graphify_core import GraphifyCore
-from .paths import idx_path, now
+from .paths import idx_path, now, pointer_file
 from .scanner import adapt, scan
 from .semantic import build_semantic_index
 from .state import (
     GENERATION_MANIFEST,
+    backup_path,
     atomic_write_json,
     exclusive_file_lock,
     fsync_tree,
     generation_manifest,
     _fsync_directory,
 )
-from .storage import connect, register_root, save_pointer, write_jsonl
+from .storage import connect, load_pointer, register_root, save_pointer, write_jsonl
 
 
 def _fault(point: str) -> None:
@@ -67,6 +69,61 @@ def _collect(root: Path):
     return files, symbols, edges, imports, exports
 
 
+def _remove_tree(path: Path) -> None:
+    """Remove a cache tree completely or fail instead of reporting false success."""
+    if path.is_symlink():
+        path.unlink()
+    else:
+        shutil.rmtree(path)
+    if path.exists() or path.is_symlink():
+        raise OSError(f"generation cleanup did not completely remove {path}")
+
+
+def _pointer_generation(pointer: object, base: Path) -> str | None:
+    if not isinstance(pointer, dict):
+        return None
+    generation_id = pointer.get("generationId")
+    index_path = pointer.get("indexPath")
+    if not isinstance(generation_id, str) or not generation_id or not isinstance(index_path, str):
+        return None
+    expected = (base / "generations" / generation_id).resolve(strict=False)
+    if Path(index_path).expanduser().resolve(strict=False) != expected:
+        return None
+    return generation_id
+
+
+def _cleanup_generations(root: Path, base: Path, current: dict | None = None) -> None:
+    """Retain only pointer-current + readable LKG and remove crash leftovers.
+
+    The caller must hold ``base/index.lock`` so staging and final generation
+    cleanup cannot race publication or a current-root cache wipe.
+    """
+    generations = base / "generations"
+    generations.mkdir(parents=True, exist_ok=True)
+    protected: set[str] = set()
+    current_id = _pointer_generation(current, base)
+    if current_id:
+        protected.add(current_id)
+    pointer = pointer_file(root)
+    for candidate in (pointer, backup_path(pointer)):
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        generation_id = _pointer_generation(payload, base)
+        if generation_id:
+            protected.add(generation_id)
+
+    for child in list(generations.iterdir()):
+        if child.name.startswith(".") and child.name.endswith(".staging"):
+            _remove_tree(child)
+        elif child.name not in protected:
+            if child.is_dir() or child.is_symlink():
+                _remove_tree(child)
+            else:
+                child.unlink()
+
+
 def write_index(root, ptr):
     root = Path(root)
     base = idx_path(ptr["rootId"])
@@ -76,6 +133,11 @@ def write_index(root, ptr):
     # One stable per-root lock serializes generation publication and feedback
     # snapshots. Readers need only follow the atomically replaced pointer.
     with exclusive_file_lock(base / "index.lock"):
+        active = load_pointer(root, validate_active_generation=False)
+        if not active or active.get("rootId") != ptr.get("rootId"):
+            raise RuntimeError("MIMRY root pointer changed while waiting for the index lock; retry indexing")
+        ptr = active
+        _cleanup_generations(root, base, ptr)
         files, symbols, edges, imports, exports = _collect(root)
         graph = GraphifyCore().build_graph(files, symbols, edges)
         generation_id = uuid.uuid4().hex
@@ -95,7 +157,10 @@ def write_index(root, ptr):
                 con.execute("delete from semantic_chunks where root_id = ?", (ptr["rootId"],))
                 con.execute("delete from semantic_metadata where root_id = ?", (ptr["rootId"],))
                 con.execute("delete from index_generation")
-                con.execute("insert into index_generation values(?,?)", (generation_id, indexed_at))
+                con.execute(
+                    "insert into index_generation(generation_id, created_at) values(?,?)",
+                    (generation_id, indexed_at),
+                )
                 for file_rec in files:
                     con.execute(
                         "insert or replace into files values(?,?,?,?,?,?,?,?)",
@@ -153,7 +218,7 @@ def write_index(root, ptr):
                     for file_rec in files
                 },
             )
-            semantic = build_semantic_index(staging, ptr["rootId"])
+            semantic = build_semantic_index(staging, ptr["rootId"], generation_id)
             _fault("after-sidecars")
 
             manifest = generation_manifest(staging, generation_id, indexed_at)
@@ -171,8 +236,10 @@ def write_index(root, ptr):
             }
             save_pointer(root, published)
             register_root(published)
+            _cleanup_generations(root, base, published)
         except BaseException:
-            shutil.rmtree(staging, ignore_errors=True)
+            if staging.exists() or staging.is_symlink():
+                _remove_tree(staging)
             raise
 
     return {

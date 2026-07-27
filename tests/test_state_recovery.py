@@ -3,18 +3,22 @@ from __future__ import annotations
 import json
 import os
 import errno
+import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from mimry import state
+from mimry.commands import cmd_cache_wipe
 from mimry.freshness import index_freshness
-from mimry.indexer import write_index
+from mimry.indexer import _cleanup_generations, write_index
 from mimry.mcp_server import mimry_find
 from mimry.paths import idx_path
 from mimry.storage import load_pointer, load_root_registry, register_root, save_pointer
@@ -341,3 +345,180 @@ def test_directory_fsync_only_suppresses_explicitly_unsupported_errors(tmp_path:
     with pytest.raises(OSError) as raised:
         state._fsync_directory(tmp_path)
     assert raised.value.errno == errno.EIO
+
+
+def test_wipe_and_publication_share_lock_and_publication_never_dangles(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    pointer = load_pointer(repo)
+    original_rmtree = shutil.rmtree
+    wipe_entered = threading.Event()
+    allow_wipe = threading.Event()
+
+    def paused_rmtree(path, *args, **kwargs):
+        if Path(path).name == "generations" and not wipe_entered.is_set():
+            wipe_entered.set()
+            assert allow_wipe.wait(5)
+        return original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr("mimry.commands.shutil.rmtree", paused_rmtree)
+    wipe_result: list[int] = []
+    wipe = threading.Thread(
+        target=lambda: wipe_result.append(cmd_cache_wipe(SimpleNamespace(root=str(repo), all=False)))
+    )
+    wipe.start()
+    assert wipe_entered.wait(5)
+
+    publish_result: list[dict] = []
+    publisher = threading.Thread(target=lambda: publish_result.append(write_index(repo, pointer)))
+    publisher.start()
+    time.sleep(0.05)
+    assert publisher.is_alive(), "publisher must wait for the cache wipe's per-root index lock"
+    allow_wipe.set()
+    wipe.join(10)
+    publisher.join(30)
+
+    assert wipe_result == [0]
+    assert publish_result
+    published = load_pointer(repo)
+    assert Path(published["indexPath"]).is_dir()
+    assert index_freshness(repo, published)["state"] == "current"
+
+
+def test_hard_crash_staging_and_orphan_growth_is_collected_on_restart(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    env = os.environ.copy()
+    env.update(
+        {
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+            "MIMRY_CACHE_HOME": str(cache),
+        }
+    )
+    command = [sys.executable, "-m", "mimry.cli", "--root", str(repo), "index"]
+    pointer = load_pointer(repo)
+    generations = idx_path(pointer["rootId"]) / "generations"
+
+    orphaned = subprocess.run(command, env={**env, "MIMRY_FAULT_POINT": "after-generation"}, check=False)
+    assert orphaned.returncode == 91
+    assert len(list(generations.iterdir())) == 2
+    rebuilt = subprocess.run(command, env=env, text=True, capture_output=True, check=False)
+    assert rebuilt.returncode == 0, rebuilt.stderr
+    assert len(list(generations.iterdir())) <= 2
+
+    staged = subprocess.run(command, env={**env, "MIMRY_FAULT_POINT": "after-sidecars"}, check=False)
+    assert staged.returncode == 91
+    assert any(path.name.endswith(".staging") for path in generations.iterdir())
+    rebuilt = subprocess.run(command, env=env, text=True, capture_output=True, check=False)
+    assert rebuilt.returncode == 0, rebuilt.stderr
+    assert not any(path.name.endswith(".staging") for path in generations.iterdir())
+    assert len(list(generations.iterdir())) <= 2
+
+
+def test_repeated_successful_publications_retain_current_and_last_known_good(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    for _ in range(5):
+        write_index(repo, load_pointer(repo))
+
+    current = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    previous = json.loads((repo / ".mimry" / "pointer.json.bak").read_text(encoding="utf-8"))
+    generations = idx_path(current["rootId"]) / "generations"
+    retained = {path.name for path in generations.iterdir()}
+    assert retained == {current["generationId"], previous["generationId"]}
+    state.validate_generation(current)
+    state.validate_generation(previous)
+
+
+def test_semantic_generation_swap_is_detected_as_corrupt(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    first = load_pointer(repo)
+    write_index(repo, first)
+    second = load_pointer(repo)
+    target = sqlite3.connect(Path(second["indexPath"]) / "mimry.sqlite")
+    try:
+        target.execute("attach database ? as swapped", (str(Path(first["indexPath"]) / "mimry.sqlite"),))
+        with target:
+            target.execute("delete from semantic_chunks")
+            target.execute("insert into semantic_chunks select * from swapped.semantic_chunks")
+            target.execute("delete from semantic_metadata")
+            target.execute("insert into semantic_metadata select * from swapped.semantic_metadata")
+        target.execute("detach database swapped")
+    finally:
+        target.close()
+
+    with pytest.raises(state.StateCorruptionError, match="semantic metadata does not match"):
+        state.validate_generation(second)
+
+
+def test_lock_timeout_is_bounded_and_actionable(tmp_path: Path):
+    lock = tmp_path / "index.lock"
+    entered = threading.Event()
+    release = threading.Event()
+
+    def holder():
+        with state.exclusive_file_lock(lock):
+            entered.set()
+            assert release.wait(5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    assert entered.wait(5)
+    started = time.monotonic()
+    with pytest.raises(state.StateLockTimeoutError) as raised:
+        with state.exclusive_file_lock(lock, timeout=0.08, poll_interval=0.01):
+            pass
+    elapsed = time.monotonic() - started
+    release.set()
+    thread.join(5)
+
+    assert elapsed < 0.5
+    assert str(lock) in str(raised.value)
+    assert "another running `mimry` process" in str(raised.value)
+    assert f'"pid": {os.getpid()}' in raised.value.holder
+
+
+def test_generation_cleanup_unlinks_staging_symlink_and_preserves_pointer_generations(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    write_index(repo, load_pointer(repo))
+    current = load_pointer(repo)
+    previous = json.loads((repo / ".mimry" / "pointer.json.bak").read_text(encoding="utf-8"))
+    base = idx_path(current["rootId"])
+    generations = base / "generations"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    (generations / ".hostile.staging").symlink_to(outside, target_is_directory=True)
+    orphan = generations / "orphan"
+    orphan.mkdir()
+    (orphan / "junk").write_text("junk", encoding="utf-8")
+
+    with state.exclusive_file_lock(base / "index.lock"):
+        _cleanup_generations(repo, base, current)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert not (generations / ".hostile.staging").exists()
+    assert not orphan.exists()
+    assert Path(current["indexPath"]).is_dir()
+    assert Path(previous["indexPath"]).is_dir()
+
+
+def test_cache_wipe_reports_incomplete_removal_nonzero(tmp_path: Path, monkeypatch, capsys):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    original = shutil.rmtree
+
+    def fail_generation(path, *args, **kwargs):
+        if Path(path).name == "generations":
+            raise OSError("injected removal failure")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr("mimry.commands.shutil.rmtree", fail_generation)
+    result = cmd_cache_wipe(SimpleNamespace(root=str(repo), all=False))
+    output = capsys.readouterr().out
+    assert result == 2
+    assert "Cache wipe incomplete" in output
+    assert "injected removal failure" in output

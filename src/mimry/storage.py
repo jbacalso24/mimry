@@ -132,8 +132,11 @@ def connect(idx):
     idx.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(idx / "mimry.sqlite")
     con.executescript(
-        """create table if not exists files(file_id text primary key, rel_path text, filename text, extension text, adapter text, parse_status text, content_hint text, metadata_text text); create table if not exists symbols(symbol_id text primary key, file_id text, name text, kind text, language text, line_start integer); create virtual table if not exists files_fts using fts5(file_id unindexed, rel_path, filename, extension, content_hint, metadata_text); create table if not exists index_generation(generation_id text primary key, created_at text not null);"""
+        """create table if not exists files(file_id text primary key, rel_path text, filename text, extension text, adapter text, parse_status text, content_hint text, metadata_text text); create table if not exists symbols(symbol_id text primary key, file_id text, name text, kind text, language text, line_start integer); create virtual table if not exists files_fts using fts5(file_id unindexed, rel_path, filename, extension, content_hint, metadata_text); create table if not exists index_generation(generation_id text primary key, created_at text not null, semantic_checksum text);"""
     )
+    generation_columns = {row[1] for row in con.execute("pragma table_info(index_generation)")}
+    if "semantic_checksum" not in generation_columns:
+        con.execute("alter table index_generation add column semantic_checksum text")
     ensure_feedback_schema(con)
     ensure_semantic_schema(con)
     return con

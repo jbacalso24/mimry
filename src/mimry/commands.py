@@ -26,8 +26,8 @@ from .paths import context_file, graph_output_dir, idx_path, legacy_context_file
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
 from .security import safe_root
-from .semantic import build_semantic_index, semantic_health, semantic_rows
-from .state import atomic_write_bytes, atomic_write_text
+from .semantic import semantic_health, semantic_rows
+from .state import atomic_write_bytes, atomic_write_text, exclusive_file_lock
 from .storage import load_jsonl, load_pointer, load_root_registry, register_root, save_pointer
 
 
@@ -750,8 +750,10 @@ def cmd_semantic(a):
         print(f"Semantic: {health['status']} ({health['chunks']} chunks, backend {health['backend']})")
         return 0
     if query == "index":
-        stats = build_semantic_index(idx, ptr["rootId"])
-        print(f"Semantic indexed: current ({stats['chunks']} chunks, backend {stats['backend']})")
+        # Semantic state is generation-bound; rebuild through normal atomic
+        # publication instead of mutating the active SQLite generation in place.
+        stats = write_index(root, ptr)
+        print(f"Semantic indexed: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})")
         return 0
     if not query:
         print('Semantic search requires a query, e.g. `mimry semantic "vague phrase"`.')
@@ -1038,20 +1040,50 @@ def cmd_cache_wipe(a):
     try:
         if a.all:
             cache = validated_cache_home(root)
-            shutil.rmtree(cache, ignore_errors=True)
+            if cache.exists():
+                shutil.rmtree(cache)
+            if cache.exists():
+                raise OSError(f"cache path still exists after removal: {cache}")
             print(f"Wiped all MIMRY cache: {cache}")
             return 0
-        ptr = load_pointer(root, validate_active_generation=False)
-        if not ptr:
+        initial = load_pointer(root, validate_active_generation=False)
+        if not initial:
             raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
-        if Path(ptr["rootPath"]).expanduser().resolve(strict=False) != root:
+        if Path(initial["rootPath"]).expanduser().resolve(strict=False) != root:
             raise UnsafeCachePathError(
-                f"Refusing to wipe cache: pointer root {ptr['rootPath']} does not match current root {root}"
+                f"Refusing to wipe cache: pointer root {initial['rootPath']} does not match current root {root}"
             )
-        idx = validated_current_root_cache_path(Path(ptr["indexPath"]), ptr["rootId"], ptr.get("generationId"), root)
-        shutil.rmtree(idx, ignore_errors=True)
-        print(f"Wiped current root cache: {idx}")
+        base = validated_current_root_cache_path(
+            Path(initial["indexPath"]), initial["rootId"], initial.get("generationId"), root
+        )
+        base.mkdir(parents=True, exist_ok=True)
+        lock = base / "index.lock"
+        with exclusive_file_lock(lock):
+            ptr = load_pointer(root, validate_active_generation=False)
+            if not ptr or ptr.get("rootId") != initial.get("rootId"):
+                raise UnsafeCachePathError(
+                    "Refusing to wipe cache: current root pointer changed while waiting for lock"
+                )
+            validated = validated_current_root_cache_path(
+                Path(ptr["indexPath"]), ptr["rootId"], ptr.get("generationId"), root
+            )
+            if validated != base:
+                raise UnsafeCachePathError("Refusing to wipe cache: index scope changed while waiting for lock")
+            for child in list(base.iterdir()):
+                if child == lock:
+                    continue
+                if child.is_symlink() or child.is_file():
+                    child.unlink()
+                else:
+                    shutil.rmtree(child)
+            leftovers = [child for child in base.iterdir() if child != lock]
+            if leftovers:
+                raise OSError(f"cache wipe left entries behind: {', '.join(map(str, leftovers))}")
+        print(f"Wiped current root cache: {base}")
         return 0
     except UnsafeCachePathError as e:
         print(f"Refusing cache wipe: {e}")
+        return 2
+    except OSError as e:
+        print(f"Cache wipe incomplete: {e}")
         return 2

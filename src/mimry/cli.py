@@ -26,7 +26,7 @@ from .commands import (
 )
 from .graphify_wrapper import cmd_graphify
 from .installer import cmd_hook_check, cmd_install, cmd_uninstall
-from .state import StateCorruptionError
+from .state import StateCorruptionError, StateLockTimeoutError
 
 
 def build_parser():
@@ -176,6 +176,9 @@ def main(argv=None):
         return a.func(a)
     except StateCorruptionError as exc:
         print(f"MIMRY state error: {exc}", file=sys.stderr)
+        return 2
+    except StateLockTimeoutError as exc:
+        print(f"MIMRY lock error: {exc}", file=sys.stderr)
         return 2
 
 

@@ -31,7 +31,7 @@ from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
-from mimry.state import StateCorruptionError
+from mimry.state import StateCorruptionError, StateLockTimeoutError
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import load_jsonl, load_pointer
 
@@ -66,6 +66,18 @@ def _state_guard(func):
         except StateCorruptionError as exc:
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
             return _state_error_payload(exc, root=_root(root) if isinstance(root, str) else None)
+        except StateLockTimeoutError as exc:
+            return {
+                "returncode": 2,
+                "error": {
+                    "code": "lock_timeout",
+                    "message": str(exc),
+                    "path": str(exc.path),
+                    "timeout": exc.timeout,
+                    "holder": exc.holder or None,
+                },
+                "recommended": "Check for another running MIMRY process, then retry.",
+            }
 
     return guarded
 

@@ -6,11 +6,12 @@ import json
 import os
 import sqlite3
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-GENERATION_SCHEMA_VERSION = "1"
+GENERATION_SCHEMA_VERSION = "2"
 GENERATION_MANIFEST = "generation.json"
 GENERATION_ARTIFACTS = (
     "mimry.sqlite",
@@ -36,6 +37,21 @@ class StateCorruptionError(RuntimeError):
             f"Corrupt MIMRY state at {self.path}: {detail}.{recovery} "
             "Preserve the corrupt file before moving it aside. Then rerun `mimry init --skip-graphify` "
             "for pointer state, or rerun `mimry index` to rebuild index sidecars."
+        )
+
+
+class StateLockTimeoutError(RuntimeError):
+    """Raised when a MIMRY state lock cannot be acquired in bounded time."""
+
+    def __init__(self, path: Path, timeout: float, holder: str = ""):
+        self.path = Path(path)
+        self.timeout = timeout
+        self.holder = holder.strip()
+        detail = f" Current lock metadata: {self.holder}." if self.holder else ""
+        super().__init__(
+            f"Timed out after {timeout:.3f}s waiting for MIMRY state lock {self.path}."
+            f"{detail} Check for another running `mimry` process; if none exists, preserve the lock file "
+            "for diagnosis and retry."
         )
 
 
@@ -177,6 +193,12 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def semantic_rows_checksum(rows: list[tuple[Any, ...]]) -> str:
+    """Hash semantic rows in a stable order for generation-coherence checks."""
+    encoded = json.dumps(sorted(rows), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def generation_manifest(generation_dir: Path, generation_id: str, created_at: str) -> dict[str, Any]:
     checksums = {}
     for name in GENERATION_ARTIFACTS:
@@ -215,37 +237,101 @@ def validate_generation(pointer: dict[str, Any]) -> None:
         if name != "mimry.sqlite" and sha256_file(artifact) != expected:
             raise StateCorruptionError(artifact, f"checksum does not match generation {generation_id}")
     db = idx / "mimry.sqlite"
+    con: sqlite3.Connection | None = None
+    metadata: tuple[Any, ...] | None = None
+    semantic_rows: list[tuple[Any, ...]] = []
+    schema_version = str(manifest.get("schemaVersion") or "1")
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        row = con.execute("select generation_id from index_generation limit 1").fetchone()
-        con.close()
+        if schema_version == "1":
+            row = con.execute("select generation_id from index_generation limit 1").fetchone()
+            semantic_checksum = None
+        else:
+            row = con.execute("select generation_id, semantic_checksum from index_generation limit 1").fetchone()
+            semantic_checksum = row[1] if row else None
+            metadata = con.execute(
+                "select generation_id, content_checksum from semantic_metadata where root_id = ?",
+                (pointer.get("rootId"),),
+            ).fetchone()
+            semantic_rows = con.execute(
+                """select chunk_id, root_id, file_id, rel_path, chunk_kind, chunk_text_hash,
+                          chunk_text_preview, vector_json, model_name, backend_name, created_at,
+                          schema_version, generation_id
+                   from semantic_chunks where root_id = ? order by chunk_id""",
+                (pointer.get("rootId"),),
+            ).fetchall()
     except sqlite3.Error as exc:
         raise StateCorruptionError(db, f"cannot validate SQLite generation ({exc})") from exc
+    finally:
+        if con is not None:
+            con.close()
     if not row or row[0] != generation_id:
         raise StateCorruptionError(db, f"SQLite generation does not match active pointer ({generation_id})")
+    if schema_version != "1":
+        if not semantic_checksum:
+            raise StateCorruptionError(db, f"SQLite generation {generation_id} has no semantic checksum")
+        if not metadata or metadata[0] != generation_id or metadata[1] != semantic_checksum:
+            raise StateCorruptionError(db, f"semantic metadata does not match SQLite generation {generation_id}")
+        if any(semantic_row[-1] != generation_id for semantic_row in semantic_rows):
+            raise StateCorruptionError(db, f"semantic chunks do not match SQLite generation {generation_id}")
+        if semantic_rows_checksum(semantic_rows) != semantic_checksum:
+            raise StateCorruptionError(db, f"semantic checksum does not match SQLite generation {generation_id}")
+
+
+def _lock_timeout(timeout: float | None) -> float:
+    if timeout is None:
+        raw = os.environ.get("MIMRY_LOCK_TIMEOUT_SECONDS", "10")
+        try:
+            timeout = float(raw)
+        except ValueError as exc:
+            raise ValueError(f"MIMRY_LOCK_TIMEOUT_SECONDS must be a positive number, got {raw!r}") from exc
+    if timeout <= 0:
+        raise ValueError("MIMRY lock timeout must be greater than zero")
+    return timeout
 
 
 @contextmanager
-def exclusive_file_lock(path: Path) -> Iterator[None]:
-    """Serialize state read/recovery/write cycles across processes."""
+def exclusive_file_lock(path: Path, *, timeout: float | None = None, poll_interval: float = 0.05) -> Iterator[None]:
+    """Serialize state cycles with a bounded advisory lock wait.
+
+    POSIX/macOS use ``flock``. Windows uses the best available one-byte
+    ``msvcrt.locking`` advisory lock; it does not provide POSIX inode semantics.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open("a+b")
     acquired = False
+    timeout = _lock_timeout(timeout)
+    deadline = time.monotonic() + timeout
     try:
-        if os.name == "nt":
-            import msvcrt
+        while not acquired:
+            try:
+                if os.name == "nt":
+                    import msvcrt
 
-            if handle.seek(0, os.SEEK_END) == 0:
-                handle.write(b"\0")
-                handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
+                    if handle.seek(0, os.SEEK_END) == 0:
+                        handle.write(b"\0")
+                        handle.flush()
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        acquired = True
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except (BlockingIOError, OSError) as exc:
+                busy = isinstance(exc, BlockingIOError) or exc.errno in {errno.EACCES, errno.EAGAIN}
+                if not busy:
+                    raise
+                if time.monotonic() >= deadline:
+                    handle.seek(0)
+                    holder = handle.read(2048).decode("utf-8", errors="replace")
+                    raise StateLockTimeoutError(path, timeout, holder) from exc
+                time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
+        handle.seek(0)
+        handle.truncate()
+        handle.write(json.dumps({"pid": os.getpid(), "acquiredAt": time.time()}, sort_keys=True).encode("utf-8"))
+        handle.flush()
         yield
     finally:
         if acquired and os.name == "nt":
