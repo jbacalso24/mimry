@@ -83,18 +83,18 @@ SENSITIVE_LABEL_TOKENS = {
 # / Python-style triple-quoted values may span lines.
 ASSIGNMENT_RE = re.compile(
     r"(?ims)(?P<boundary>^|(?<=[{,;]))"
-    r"(?P<prefix>[ \t]*(?:export\s+)?(?P<label_quote>['\"]?)"
+    r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?P<operator>=|:)\s*)"
     r"(?P<value>\"\"\".*?\"\"\"|'''.*?'''|\"(?:\\.|[^\"\\\r\n])*\"|"
     r"'(?:\\.|[^'\\\r\n])*'|[^,{;}\r\n]*)(?P<newline>\r?\n|$)?"
 )
 MULTILINE_QUOTED_ASSIGNMENT_START_RE = re.compile(
-    r"(?im)(?:^|(?<=[{,;]))[ \t]*(?:export\s+)?(?P<label_quote>['\"]?)"
+    r"(?im)(?:^|(?<=[{,;]))[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?:=|:)\s*(?P<quote>\"\"\"|''')"
 )
 UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE = re.compile(
     r"(?ims)(?P<boundary>^|(?<=[{,;]))"
-    r"(?P<prefix>[ \t]*(?:export\s+)?(?P<label_quote>['\"]?)"
+    r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?:=|:)\s*)"
     r"(?P<quote>\"\"\"|''')(?P<body>.*)$"
 )
@@ -102,6 +102,13 @@ YAML_BLOCK_ASSIGNMENT_RE = re.compile(
     r"(?m)^(?P<indent>[ \t]*)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)"
     r"(?P<header>\s*:\s*[|>][+-]?[^\r\n]*\r?\n)"
     r"(?P<body>(?:(?P=indent)[ \t]+[^\r\n]*(?:\r?\n|$)|[ \t]*\r?\n)*)"
+)
+YAML_QUOTED_MULTILINE_ASSIGNMENT_RE = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)"
+    r"(?P<header>[ \t]*:[ \t]*)(?P<quote>['\"])"
+    r"(?P<first>[^\r\n]*\r?\n)"
+    r"(?P<continuation>(?:(?P=indent)[ \t]+[^\r\n]*\r?\n)*?(?P=indent)[ \t]+[^\r\n]*?)"
+    r"(?P=quote)(?P<trailer>[ \t]*(?:#[^\r\n]*)?)(?P<newline>\r?\n|$)"
 )
 PRIVATE_KEY_BLOCK_RE = re.compile(
     r"(?is)-----BEGIN (?P<label>(?:RSA |EC |OPENSSH |DSA |ENCRYPTED |)PRIVATE KEY)-----"
@@ -142,6 +149,8 @@ def contains_sensitive_text(text: str) -> bool:
         return True
     if any(_is_sensitive_label(match.group("label")) for match in YAML_BLOCK_ASSIGNMENT_RE.finditer(text)):
         return True
+    if any(_is_sensitive_label(match.group("label")) for match in YAML_QUOTED_MULTILINE_ASSIGNMENT_RE.finditer(text)):
+        return True
     if any(_is_sensitive_label(match.group("label")) for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)):
         return True
     return any(_assignment_match_is_sensitive(match) for match in ASSIGNMENT_RE.finditer(text))
@@ -154,6 +163,7 @@ def redact_sensitive_text(text: str) -> str:
     redacted = STANDALONE_SECRET_RE.sub(REDACTED, redacted)
     redacted = SENSITIVE_VALUE_RE.sub(REDACTED, redacted)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
+    redacted = YAML_QUOTED_MULTILINE_ASSIGNMENT_RE.sub(_redact_yaml_quoted_multiline, redacted)
     redacted = ASSIGNMENT_RE.sub(_redact_assignment, redacted)
     redacted = UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE.sub(_redact_unclosed_multiline_assignment, redacted)
     return redacted
@@ -216,6 +226,16 @@ def _redact_yaml_block(match: re.Match[str]) -> str:
         return match.group(0)
     newline = "\r\n" if "\r\n" in match.group("header") else "\n"
     return f"{match.group('indent')}{match.group('label')}{match.group('header')}{match.group('indent')}  {REDACTED}{newline}"
+
+
+def _redact_yaml_quoted_multiline(match: re.Match[str]) -> str:
+    if not _is_sensitive_label(match.group("label")):
+        return match.group(0)
+    return (
+        f"{match.group('indent')}{match.group('label')}{match.group('header')}"
+        f"{match.group('quote')}{REDACTED}{match.group('quote')}"
+        f"{match.group('trailer')}{match.group('newline')}"
+    )
 
 
 def _redact_unclosed_multiline_assignment(match: re.Match[str]) -> str:
