@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .adapters import list_adapters
-from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_index_path
+from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_root_cache_path
 from .constants import SCHEMA_VERSION
 from .feedback import feedback_payload_from_args, feedback_stats, list_feedback, record_feedback, show_feedback
 from .freshness import index_freshness
@@ -150,7 +150,7 @@ def require(root):
 
 def sync_visible_graph_output(root: Path, ptr: dict) -> None:
     """Expose lightweight MIMRY-branded graph artifacts under .mimry/mimry-out/."""
-    src = Path(ptr["indexPath"]) / "graphify"
+    src = idx_path(ptr["rootId"]) / "graphify"
     dst = graph_output_dir(root)
     dst.mkdir(parents=True, exist_ok=True)
     for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json", "graph.html"):
@@ -221,6 +221,10 @@ def cmd_status(a):
     )
     if graphify.get("using_legacy_output"):
         print("Compatibility: reading existing legacy repo-local graph artifacts; next refresh writes to the cache.")
+    elif graphify.get("using_generation_output"):
+        print(
+            "Compatibility: reading generation-local graph artifacts; next refresh migrates them to the stable cache."
+        )
     print(f"Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})")
     if state == "stale":
         if changed:
@@ -598,7 +602,7 @@ def cmd_preflight(a):
     index_ran = False
     if force_refresh:
         refresh_ran = True
-        print("Preflight refresh: running (" + ", ".join(reasons) + ")")
+        print("Preflight refresh: running (forced)")
         graphify_status = run_graphify_build(root, execute=True)
         if graphify_status != 0:
             print("Preflight stopped: internal graph build failed.")
@@ -1037,8 +1041,14 @@ def cmd_cache_wipe(a):
             shutil.rmtree(cache, ignore_errors=True)
             print(f"Wiped all MIMRY cache: {cache}")
             return 0
-        ptr = require(root)
-        idx = validated_current_index_path(Path(ptr["indexPath"]), root)
+        ptr = load_pointer(root, validate_active_generation=False)
+        if not ptr:
+            raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
+        if Path(ptr["rootPath"]).expanduser().resolve(strict=False) != root:
+            raise UnsafeCachePathError(
+                f"Refusing to wipe cache: pointer root {ptr['rootPath']} does not match current root {root}"
+            )
+        idx = validated_current_root_cache_path(Path(ptr["indexPath"]), ptr["rootId"], ptr.get("generationId"), root)
         shutil.rmtree(idx, ignore_errors=True)
         print(f"Wiped current root cache: {idx}")
         return 0
