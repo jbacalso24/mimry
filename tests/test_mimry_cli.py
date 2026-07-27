@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json, os, shutil, sqlite3, subprocess, sys
+from importlib.metadata import version
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1109,6 +1110,7 @@ def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):
 
 
 def test_typescript_ast_extracts_tsx_symbols(tmp_path):
+    assert version("tree-sitter-language-pack") == "1.12.2"
     repo = copy_fixture(tmp_path)
     src = repo / "src"
     (src / "LoginScreen.tsx").write_text(

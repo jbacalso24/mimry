@@ -13,7 +13,9 @@ dependencies = [
     "fastmcp>=3.4.2",
     "graphifyy @ git+https://github.com/safishamsi/graphify.git@44c0a5e33c7011813dcebf1a8850c1c6005bf500",
     "tree-sitter>=0.25.2",
-    "tree-sitter-language-pack>=1.12.2",
+    # 1.13.x changes the TSX grammar shape and breaks exported function/component
+    # extraction. Keep the version proved by the locked and unlocked artifact tests.
+    "tree-sitter-language-pack==1.12.2",
 ]
 
 [project.scripts]

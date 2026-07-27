@@ -45,6 +45,23 @@ jobs:
       - name: Build release artifacts
         run: uv build
 
+      - name: Test unlocked extracted artifact with an empty cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .artifact-src .artifact-venv .artifact-uv-cache
+          mkdir .artifact-src .artifact-uv-cache
+          tar -xzf dist/*.tar.gz -C .artifact-src
+          artifact_root="$(find .artifact-src -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          UV_CACHE_DIR="$PWD/.artifact-uv-cache" uv venv .artifact-venv --python "${{ matrix.python-version }}"
+          UV_CACHE_DIR="$PWD/.artifact-uv-cache" uv --no-cache pip install \
+            --python .artifact-venv/bin/python "$artifact_root" pytest
+          (
+            cd /tmp
+            "$GITHUB_WORKSPACE/.artifact-venv/bin/python" -m pytest -q \
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_mimry_cli.py::test_typescript_ast_extracts_tsx_symbols"
+          )
+
       - name: Install and smoke-test the wheel
         shell: bash
         run: |
