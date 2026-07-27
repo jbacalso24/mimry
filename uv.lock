@@ -747,7 +747,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=3.4.2" },
     { name = "graphifyy", git = "https://github.com/safishamsi/graphify.git?rev=44c0a5e33c7011813dcebf1a8850c1c6005bf500" },
     { name = "tree-sitter", specifier = ">=0.25.2" },
-    { name = "tree-sitter-language-pack", specifier = ">=1.12.2" },
+    { name = "tree-sitter-language-pack", specifier = "==1.12.2" },
 ]
 
 [package.metadata.requires-dev]
