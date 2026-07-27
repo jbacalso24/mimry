@@ -27,6 +27,7 @@ from mimry.mcp_server import (
 from mimry.paths import graph_output_dir, graphify_output_dir
 from mimry.security import (
     STREAM_CHUNK_BYTES,
+    contains_sensitive_text,
     redact_sensitive_text,
     root_contains_sensitive_content,
     safe_root,
@@ -39,6 +40,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
 CANARY = "sk-" + "proj-" + "FAKECANARY" + ("0" * 24)
 VALUE_CANARY = "privacy-canary-value-123456789"
 QUERY_CANARY = f"TOKEN={VALUE_CANARY}"
+DEFENSIVE_MARKER = "MIMRY_TEST_" + "VALUE_123"
 
 
 def run_cli(repo: Path, cache: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -79,6 +81,80 @@ def all_text_files(path: Path) -> str:
         except (OSError, UnicodeError):
             continue
     return "\n".join(rendered)
+
+
+def test_sensitive_label_policy_covers_exact_variants_and_yaml_blocks_without_prose_false_positives():
+    sensitive_samples = (
+        f"CONFIDENTIAL={DEFENSIVE_MARKER}\n",
+        f"credentials: {DEFENSIVE_MARKER}\n",
+        f'clientCredential="{DEFENSIVE_MARKER}"\n',
+        f"auth_token={DEFENSIVE_MARKER}\n",
+        f"authorization: {DEFENSIVE_MARKER}\n",
+        f"confidential: |\n  first line\n  {DEFENSIVE_MARKER}\npublic: retained\n",
+    )
+    for sample in sensitive_samples:
+        assert contains_sensitive_text(sample)
+        redacted = redact_sensitive_text(sample)
+        assert DEFENSIVE_MARKER not in redacted
+        assert "[REDACTED]" in redacted
+
+    ordinary = (
+        "The authentication flow is explained in ordinary prose.\n"
+        "author: Jane Example\n"
+        "authority = local committee\n"
+        "authentication_docs: process.env.AUTH_DOCS\n"
+    )
+    assert not contains_sensitive_text(ordinary)
+    assert redact_sensitive_text(ordinary) == ordinary
+
+
+def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_generated_outputs(
+    tmp_path: Path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    (repo / ".env").unlink()
+    labeled_files = {
+        "confidential.txt": f"CONFIDENTIAL={DEFENSIVE_MARKER}\n",
+        "credentials.yaml": f"service_credentials: {DEFENSIVE_MARKER}\n",
+        "auth.toml": f'authToken = "{DEFENSIVE_MARKER}"\n',
+        "multiline.yaml": f"confidential: |\n  line one\n  {DEFENSIVE_MARKER}\n",
+    }
+    for name, content in labeled_files.items():
+        (repo / name).write_text(content, encoding="utf-8")
+    (repo / "ordinary.md").write_text("The authentication flow is ordinary prose.\nauthor: Jane Example\n")
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    cli_results = (
+        run_cli(repo, cache, "init", "--skip-graphify"),
+        run_cli(repo, cache, "index"),
+        run_cli(repo, cache, "find", f"CONFIDENTIAL={DEFENSIVE_MARKER}"),
+        run_cli(repo, cache, "context", f"credentials: {DEFENSIVE_MARKER}"),
+        run_cli(repo, cache, "brief", f"auth={DEFENSIVE_MARKER}", "--agent", "tooly"),
+        run_cli(repo, cache, "preflight", f"confidential: {DEFENSIVE_MARKER}"),
+    )
+    for result in cli_results:
+        assert result.returncode == 0, result.stderr
+        assert DEFENSIVE_MARKER not in result.stdout + result.stderr
+
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    index = Path(pointer["indexPath"])
+    owned = all_text_files(index) + all_text_files(repo / ".mimry" / "mimry-out") + sqlite_dump(index / "mimry.sqlite")
+    assert DEFENSIVE_MARKER not in owned
+    indexed = (index / "files.jsonl").read_text(encoding="utf-8")
+    assert all(name not in indexed for name in labeled_files)
+    assert "ordinary.md" in indexed
+
+    payloads = (
+        mimry_find(f"CONFIDENTIAL={DEFENSIVE_MARKER}", str(repo)),
+        mimry_context(f"credentials: {DEFENSIVE_MARKER}", str(repo)),
+        mimry_route(f"authorization={DEFENSIVE_MARKER}", str(repo)),
+        mimry_brief(f"confidential: |\n  {DEFENSIVE_MARKER}", "tooly", str(repo)),
+        mimry_preflight(f"auth={DEFENSIVE_MARKER}", str(repo)),
+    )
+    assert all(DEFENSIVE_MARKER not in json.dumps(payload, sort_keys=True) for payload in payloads)
+    assert DEFENSIVE_MARKER not in all_text_files(repo / ".mimry" / "mimry-out")
 
 
 def test_fake_standalone_token_has_zero_matches_across_owned_surfaces(tmp_path: Path, monkeypatch):
@@ -154,6 +230,9 @@ def test_graphify_safe_handoff_excludes_ignored_and_secret_content(tmp_path: Pat
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     (repo / "notes.md").write_text(f"standalone {CANARY}\n", encoding="utf-8")
+    (repo / "classified.yaml").write_text(
+        f"confidential: |\n  harmless-looking line\n  {DEFENSIVE_MARKER}\n", encoding="utf-8"
+    )
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
@@ -174,6 +253,8 @@ def test_graphify_safe_handoff_excludes_ignored_and_secret_content(tmp_path: Pat
             path.relative_to(handoff).as_posix() for path in handoff.rglob("*") if path.is_file()
         )
         observed["text"] = all_text_files(handoff)
+        observed["directory_modes"] = [path.stat().st_mode & 0o777 for path in (handoff, handoff / "src")]
+        observed["file_modes"] = [path.stat().st_mode & 0o777 for path in handoff.rglob("*") if path.is_file()]
         private.mkdir(parents=True, exist_ok=True)
         (private / "graph.json").write_text('{"nodes": [], "edges": []}', encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -187,7 +268,11 @@ def test_graphify_safe_handoff_excludes_ignored_and_secret_content(tmp_path: Pat
     assert Path(observed["root"]).resolve() != repo.resolve()
     assert ".env" not in observed["files"]
     assert "notes.md" not in observed["files"]
+    assert "classified.yaml" not in observed["files"]
     assert CANARY not in observed["text"]
+    assert DEFENSIVE_MARKER not in observed["text"]
+    assert observed["directory_modes"] == [0o700, 0o700]
+    assert observed["file_modes"] and set(observed["file_modes"]) == {0o600}
     assert private.exists()
     assert not visible.exists()
 
@@ -214,6 +299,86 @@ def test_graphify_rejects_sensitive_generated_artifacts(tmp_path: Path, monkeypa
     assert "rejected sensitive generated content" in captured.err
     assert CANARY not in captured.out + captured.err
     assert not private.exists()
+
+
+def test_graphify_rejects_and_redacts_confidential_success_and_failure_outputs(tmp_path: Path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    (repo / ".env").unlink()
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    private = graphify_output_dir(repo)
+    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
+
+    def generated_sensitive(*args, **kwargs):
+        private.mkdir(parents=True, exist_ok=True)
+        (private / "GRAPH_REPORT.md").write_text(
+            f"confidential: |\n  generated\n  {DEFENSIVE_MARKER}\n", encoding="utf-8"
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", generated_sensitive)
+    assert run_graphify_build(repo, execute=True) == 3
+    captured = capsys.readouterr()
+    assert DEFENSIVE_MARKER not in captured.out + captured.err
+    assert not private.exists()
+
+    def failed(*args, **kwargs):
+        return SimpleNamespace(
+            returncode=7,
+            stdout=f"CONFIDENTIAL={DEFENSIVE_MARKER}",
+            stderr=f"credentials: {DEFENSIVE_MARKER}",
+        )
+
+    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", failed)
+    assert run_graphify_build(repo, execute=True) == 7
+    captured = capsys.readouterr()
+    assert DEFENSIVE_MARKER not in captured.out + captured.err
+    assert captured.err.count("[REDACTED]") >= 2
+    assert not private.exists()
+
+
+def test_graphify_handoff_refuses_regular_file_replaced_by_symlink(tmp_path: Path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    (repo / ".env").unlink()
+    victim = repo / "src" / "app.ts"
+    external = tmp_path / "external.py"
+    external.write_text(f"CONFIDENTIAL={DEFENSIVE_MARKER}\n", encoding="utf-8")
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
+
+    real_open = os.open
+    swapped = False
+
+    def swap_before_open(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if kwargs.get("dir_fd") is None and Path(path) == victim and not swapped:
+            swapped = True
+            victim.unlink()
+            victim.symlink_to(external)
+        return real_open(path, flags, *args, **kwargs)
+
+    subprocess_called = False
+
+    def unexpected_subprocess(*args, **kwargs):
+        nonlocal subprocess_called
+        subprocess_called = True
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("mimry.graphify_wrapper.os.open", swap_before_open)
+    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", unexpected_subprocess)
+    assert run_graphify_build(repo, execute=True) == 2
+    captured = capsys.readouterr()
+    assert swapped
+    assert not subprocess_called
+    assert DEFENSIVE_MARKER not in captured.out + captured.err
+    assert "verified Graphify source handoff" in captured.err
+    assert not graphify_output_dir(repo).exists()
+    assert not graph_output_dir(repo).exists()
 
 
 def test_graphify_environment_remains_minimal_and_secret_scrubbed(tmp_path: Path, monkeypatch):
