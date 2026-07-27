@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 
+from contextlib import contextmanager
 from pathlib import Path
 
 from .paths import graph_output_dir, graphify_output_dir, graphify_vendor_path, repo_root
@@ -52,11 +53,125 @@ SECRET_ENV_PREFIXES = ("OPENAI_", "ANTHROPIC_", "AWS_", "GOOGLE_", "GITHUB_", "G
 GRAPHIFY_DEFAULT_TIMEOUT_SECONDS = 180
 
 
-def purge_graphify_outputs(root: Path, out: Path | None = None) -> None:
-    """Remove private and visible graph output after any unvalidated build."""
+class GraphifyCleanupError(RuntimeError):
+    pass
 
-    shutil.rmtree(out or graphify_output_dir(root), ignore_errors=True)
-    shutil.rmtree(graph_output_dir(root), ignore_errors=True)
+
+def _path_exists(path: Path) -> bool:
+    return os.path.lexists(path)
+
+
+def _remove_graphify_output(path: Path) -> None:
+    try:
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.exists():
+            shutil.rmtree(path)
+    except OSError as exc:
+        raise GraphifyCleanupError(f"could not remove Graphify artifact path {path}") from exc
+    if _path_exists(path):
+        marker_bearing = False
+        try:
+            marker_bearing = tree_contains_sensitive_content(path)
+        except OSError:
+            marker_bearing = True
+        detail = "marker-bearing " if marker_bearing else "unvalidated "
+        raise GraphifyCleanupError(f"{detail}Graphify artifacts remain at {path}; remove this path before retrying")
+
+
+def purge_graphify_outputs(root: Path, out: Path | None = None) -> None:
+    """Remove private and visible graph output and verify that both are gone."""
+
+    failures = []
+    for path in dict.fromkeys((out or graphify_output_dir(root), graph_output_dir(root))):
+        try:
+            _remove_graphify_output(path)
+        except GraphifyCleanupError as exc:
+            failures.append(str(exc))
+    if failures:
+        raise GraphifyCleanupError("; ".join(failures))
+
+
+def _purge_graphify_outputs_or_report(root: Path, out: Path) -> bool:
+    try:
+        purge_graphify_outputs(root, out)
+    except GraphifyCleanupError as exc:
+        print(f"MIMRY Graphify cleanup failed closed: {redact_sensitive_text(str(exc))}", file=sys.stderr)
+        return False
+    return True
+
+
+def _stat_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+@contextmanager
+def _fdopen_owned(fd: int, mode: str):
+    """Transfer an fd to a file object without leaking it when fdopen fails."""
+
+    try:
+        handle = os.fdopen(fd, mode)
+    except BaseException:
+        os.close(fd)
+        raise
+    with handle:
+        yield handle
+
+
+def _copy_verified_regular_file(source: Path, target: Path) -> bool:
+    """Inspect, copy, scan, and re-verify one regular file by descriptor.
+
+    Returns ``False`` after securely dropping a sensitive copy. Any source or
+    target identity change fails closed instead of trusting a pathname race.
+    """
+
+    before = source.lstat()
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        raise ValueError("Graphify source is not a regular file")
+
+    source_flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    source_fd = os.open(source, source_flags)
+    try:
+        opened = os.fstat(source_fd)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            raise ValueError("Graphify source changed during verified copy")
+        with os.fdopen(source_fd, "rb", closefd=False) as source_handle:
+            target_fd = os.open(
+                target,
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            with _fdopen_owned(target_fd, "w+b") as target_handle:
+                target_opened = os.fstat(target_handle.fileno())
+                if not stat.S_ISREG(target_opened.st_mode):
+                    raise ValueError("Graphify copy target is not a regular file")
+                shutil.copyfileobj(source_handle, target_handle)
+                target_handle.flush()
+                target_handle.seek(0)
+                sensitive = opened_file_has_sensitive_content(target, target_handle)
+                target_after = os.fstat(target_handle.fileno())
+                target_current = target.lstat()
+                if not stat.S_ISREG(target_after.st_mode) or (
+                    target_after.st_dev,
+                    target_after.st_ino,
+                ) != (target_opened.st_dev, target_opened.st_ino):
+                    raise ValueError("Graphify copy target changed during verified copy")
+                if _stat_identity(target_current) != _stat_identity(target_after):
+                    raise ValueError("Graphify copy target changed during verified copy")
+
+        after = os.fstat(source_fd)
+        current = source.lstat()
+        if _stat_identity(after) != _stat_identity(opened) or _stat_identity(current) != _stat_identity(opened):
+            raise ValueError("Graphify source changed during verified handoff or artifact copy")
+        if sensitive:
+            target.unlink()
+            if _path_exists(target):
+                raise ValueError("Sensitive Graphify copy could not be removed")
+            return False
+        target.chmod(0o600)
+        return True
+    finally:
+        os.close(source_fd)
 
 
 def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
@@ -79,47 +194,7 @@ def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
             target = handoff / rel
             target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             target.parent.chmod(0o700)
-
-            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-            source_fd = os.open(source, flags)
-            try:
-                opened = os.fstat(source_fd)
-                if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
-                    raise ValueError("Graphify source changed during verified handoff")
-                with os.fdopen(source_fd, "rb", closefd=False) as source_handle:
-                    target_fd = os.open(
-                        target,
-                        os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
-                        0o600,
-                    )
-                    with os.fdopen(target_fd, "w+b") as target_handle:
-                        # Copy only from the no-follow descriptor whose identity was
-                        # inspected above. Then scan the exact copied bytes before
-                        # Graphify can observe the handoff path.
-                        shutil.copyfileobj(source_handle, target_handle)
-                        target_handle.flush()
-                        target_handle.seek(0)
-                        sensitive = opened_file_has_sensitive_content(target, target_handle)
-
-                after = os.fstat(source_fd)
-                current = source.lstat()
-                identity_before = (
-                    opened.st_dev,
-                    opened.st_ino,
-                    opened.st_size,
-                    opened.st_mtime_ns,
-                    opened.st_ctime_ns,
-                )
-                identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
-                path_after = (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns)
-                if identity_after != identity_before or path_after != identity_before:
-                    raise ValueError("Graphify source changed during verified handoff")
-                if sensitive:
-                    target.unlink(missing_ok=True)
-                    continue
-                target.chmod(0o600)
-            finally:
-                os.close(source_fd)
+            _copy_verified_regular_file(source, target)
         except OSError as exc:
             raise ValueError("Could not create a verified Graphify source handoff") from exc
 
@@ -131,6 +206,35 @@ def _copy_safe_graphify_input(root: Path, handoff: Path) -> None:
                 raise ValueError("Graphify source handoff failed MIMRY ignore verification")
         except OSError as exc:
             raise ValueError("Could not verify Graphify source handoff") from exc
+
+
+def sync_visible_graph_output(root: Path, ptr: dict) -> None:
+    """Expose only descriptor-verified Graphify artifacts under mimry-out."""
+
+    src = Path(ptr["indexPath"]) / "graphify"
+    dst = graph_output_dir(root)
+    if tree_contains_sensitive_content(src):
+        if not _purge_graphify_outputs_or_report(root, src):
+            raise GraphifyCleanupError("sensitive Graphify artifacts remain after failed cleanup")
+        raise ValueError("Refusing to expose unvalidated sensitive graph artifacts")
+
+    try:
+        _remove_graphify_output(dst)
+        dst.mkdir(mode=0o700, parents=True, exist_ok=False)
+        for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json", "graph.html"):
+            source = src / name
+            try:
+                before = source.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+                raise ValueError("Graphify artifact is not a regular file")
+            if not _copy_verified_regular_file(source, dst / name):
+                raise ValueError("Refusing to expose sensitive Graphify artifact")
+    except (OSError, ValueError) as exc:
+        if not _purge_graphify_outputs_or_report(root, src):
+            raise GraphifyCleanupError("Graphify synchronization failed and artifacts remain") from exc
+        raise ValueError("Could not synchronize verified Graphify artifacts") from exc
 
 
 def graphify_vendor_available():
@@ -224,7 +328,8 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
     if source == "missing":
         print("Graphify is missing. Run `uv sync` or `git submodule update --init --recursive`.", file=sys.stderr)
         return 2
-    purge_graphify_outputs(root, out)
+    if not _purge_graphify_outputs_or_report(root, out):
+        return 3
     out.parent.mkdir(parents=True, exist_ok=True)
     print("Running MIMRY internal graph build...")
     timeout = int(os.environ.get("MIMRY_GRAPHIFY_TIMEOUT", GRAPHIFY_DEFAULT_TIMEOUT_SECONDS))
@@ -245,7 +350,7 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
                 timeout=timeout,
             )
     except subprocess.TimeoutExpired as exc:
-        purge_graphify_outputs(root, out)
+        cleanup_ok = _purge_graphify_outputs_or_report(root, out)
         print(f"MIMRY internal graph build timed out after {timeout}s", file=sys.stderr)
         stdout = exc.output.decode("utf-8", errors="ignore") if isinstance(exc.output, bytes) else (exc.output or "")
         stderr = exc.stderr.decode("utf-8", errors="ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
@@ -253,23 +358,26 @@ def run_graphify_build(root: Path, *, execute: bool, dry_run: bool = False) -> i
             print(redact_sensitive_text(stdout.strip()[-4000:]), file=sys.stderr)
         if stderr.strip():
             print(redact_sensitive_text(stderr.strip()[-4000:]), file=sys.stderr)
-        return 124
+        return 124 if cleanup_ok else 3
     except (OSError, ValueError) as exc:
-        purge_graphify_outputs(root, out)
+        cleanup_ok = _purge_graphify_outputs_or_report(root, out)
         print(f"MIMRY internal graph build could not start: {redact_sensitive_text(str(exc))}", file=sys.stderr)
-        return 2
+        return 2 if cleanup_ok else 3
     if res.returncode != 0:
-        purge_graphify_outputs(root, out)
+        cleanup_ok = _purge_graphify_outputs_or_report(root, out)
         if res.stdout.strip():
             print(redact_sensitive_text(res.stdout.strip()), file=sys.stderr)
         if res.stderr.strip():
             print(redact_sensitive_text(res.stderr.strip()), file=sys.stderr)
         print(f"MIMRY internal graph build failed with exit {res.returncode}", file=sys.stderr)
-        return res.returncode
+        return res.returncode if cleanup_ok else 3
     if tree_contains_sensitive_content(out):
-        purge_graphify_outputs(root, out)
+        cleanup_ok = _purge_graphify_outputs_or_report(root, out)
         print(
-            "MIMRY internal graph build rejected sensitive generated content; graph artifacts purged.", file=sys.stderr
+            "MIMRY internal graph build rejected sensitive generated content; graph artifacts purged."
+            if cleanup_ok
+            else "MIMRY internal graph build rejected sensitive generated content; cleanup failed closed.",
+            file=sys.stderr,
         )
         return 3
     print("MIMRY internal graph build complete.")

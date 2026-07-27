@@ -11,7 +11,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from mimry.graphify_wrapper import graphify_subprocess_env, run_graphify_build
+from mimry.graphify_wrapper import (
+    GraphifyCleanupError,
+    graphify_subprocess_env,
+    purge_graphify_outputs,
+    run_graphify_build,
+    sync_visible_graph_output,
+)
 from mimry.mcp_server import (
     mimry_brief,
     mimry_context,
@@ -137,6 +143,24 @@ def test_inline_and_multiline_assignments_are_fully_redacted_without_matching_pr
     unclosed = f'auth = """first line\n{DEFENSIVE_MARKER}\n'
     assert contains_sensitive_text(unclosed)
     assert redact_sensitive_text(unclosed) == 'auth = """[REDACTED]'
+
+
+def test_line_leading_javascript_declarations_and_yaml_quoted_multiline_scalars_are_redacted():
+    samples = (
+        f'const auth = "{DEFENSIVE_MARKER}";\n',
+        f"let auth = '{DEFENSIVE_MARKER}';\n",
+        f"var auth = {DEFENSIVE_MARKER};\n",
+        f'auth: "first line\n  {DEFENSIVE_MARKER}\n  last line"\npublic: retained\n',
+        f"credentials: 'first line\n  {DEFENSIVE_MARKER}\n  last line'\npublic: retained\n",
+    )
+    for sample in samples:
+        assert contains_sensitive_text(sample)
+        redacted = redact_sensitive_text(sample)
+        assert DEFENSIVE_MARKER not in redacted
+        assert "[REDACTED]" in redacted
+
+    assert redact_sensitive_text(samples[3]) == 'auth: "[REDACTED]"\npublic: retained\n'
+    assert redact_sensitive_text(samples[4]) == "credentials: '[REDACTED]'\npublic: retained\n"
 
 
 def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_generated_outputs(
@@ -503,6 +527,100 @@ def test_graphify_handoff_refuses_regular_file_mutation_during_copy(tmp_path: Pa
     assert not graph_output_dir(repo).exists()
 
 
+def _write_graphify_artifacts(tmp_path: Path, repo: Path) -> tuple[dict[str, str], Path]:
+    index = tmp_path / "index"
+    private = index / "graphify"
+    private.mkdir(parents=True)
+    (private / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+    (private / "GRAPH_REPORT.md").write_text("# Graph report\n", encoding="utf-8")
+    (private / "manifest.json").write_text("{}\n", encoding="utf-8")
+    return {"indexPath": str(index)}, private
+
+
+def test_visible_graph_sync_preserves_ordinary_artifacts(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    ptr, private = _write_graphify_artifacts(tmp_path, repo)
+
+    sync_visible_graph_output(repo, ptr)
+
+    visible = graph_output_dir(repo)
+    for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json"):
+        assert (visible / name).read_bytes() == (private / name).read_bytes()
+        assert (visible / name).stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("mutation", ["regular-replacement", "symlink-swap", "in-place-rewrite"])
+def test_visible_graph_sync_refuses_source_mutation_and_purges_both_outputs(tmp_path: Path, monkeypatch, mutation: str):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    ptr, private = _write_graphify_artifacts(tmp_path, repo)
+    victim = private / "graph.json"
+    original = victim.read_bytes()
+    original_times = victim.stat()
+    external = tmp_path / "external.json"
+    external.write_text(f'{{"auth":"{DEFENSIVE_MARKER}"}}\n', encoding="utf-8")
+    real_copyfileobj = shutil.copyfileobj
+
+    def mutate_after_copy(source_handle, target_handle, *args, **kwargs):
+        is_victim = os.path.samefile(f"/proc/self/fd/{source_handle.fileno()}", victim)
+        real_copyfileobj(source_handle, target_handle, *args, **kwargs)
+        if not is_victim:
+            return
+        if mutation == "regular-replacement":
+            replacement = victim.with_suffix(".replacement")
+            replacement.write_bytes(original)
+            replacement.replace(victim)
+        elif mutation == "symlink-swap":
+            victim.unlink()
+            victim.symlink_to(external)
+        else:
+            victim.write_bytes(original[::-1])
+            os.utime(victim, ns=(original_times.st_atime_ns, original_times.st_mtime_ns))
+
+    monkeypatch.setattr("mimry.graphify_wrapper.shutil.copyfileobj", mutate_after_copy)
+    with pytest.raises(ValueError, match="synchronize verified Graphify artifacts"):
+        sync_visible_graph_output(repo, ptr)
+
+    assert not private.exists()
+    assert not graph_output_dir(repo).exists()
+
+
+def test_graphify_target_descriptor_is_closed_when_fdopen_raises(tmp_path: Path, monkeypatch, capsys):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    (repo / ".env").unlink()
+    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
+    real_open = os.open
+    real_fdopen = os.fdopen
+    real_close = os.close
+    target_fds = set()
+    closed_fds = []
+
+    def recording_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if flags & os.O_EXCL:
+            target_fds.add(fd)
+        return fd
+
+    def failing_fdopen(fd, mode, *args, **kwargs):
+        if mode == "w+b":
+            raise OSError("deterministic fdopen failure")
+        return real_fdopen(fd, mode, *args, **kwargs)
+
+    def recording_close(fd):
+        closed_fds.append(fd)
+        return real_close(fd)
+
+    monkeypatch.setattr("mimry.graphify_wrapper.os.open", recording_open)
+    monkeypatch.setattr("mimry.graphify_wrapper.os.fdopen", failing_fdopen)
+    monkeypatch.setattr("mimry.graphify_wrapper.os.close", recording_close)
+    assert run_graphify_build(repo, execute=True) == 2
+    capsys.readouterr()
+    assert target_fds
+    assert target_fds.issubset(closed_fds)
+
+
 def test_graphify_timeout_cleans_handoff_and_all_outputs(tmp_path: Path, monkeypatch, capsys):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
@@ -614,6 +732,47 @@ def test_failed_graphify_build_purges_partial_unvalidated_outputs(tmp_path: Path
     assert VALUE_CANARY not in captured.out + captured.err
     assert not private.exists()
     assert not visible.exists()
+
+
+@pytest.mark.parametrize("blocked_output", ["private", "visible"])
+def test_failed_graphify_cleanup_reports_marker_bearing_artifacts_and_fails_closed(
+    tmp_path: Path, monkeypatch, capsys, blocked_output: str
+):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    (repo / ".env").unlink()
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    private = graphify_output_dir(repo)
+    visible = graph_output_dir(repo)
+    blocked = private if blocked_output == "private" else visible
+    other = visible if blocked_output == "private" else private
+    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
+
+    def failed_build(*args, **kwargs):
+        for output in (private, visible):
+            output.mkdir(parents=True, exist_ok=True)
+            (output / "partial.json").write_text(f'{{"auth":"{DEFENSIVE_MARKER}"}}\n', encoding="utf-8")
+        return SimpleNamespace(returncode=9, stdout="", stderr="")
+
+    real_rmtree = shutil.rmtree
+
+    def incomplete_rmtree(path, *args, **kwargs):
+        if Path(path) == blocked:
+            return None
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", failed_build)
+    monkeypatch.setattr("mimry.graphify_wrapper.shutil.rmtree", incomplete_rmtree)
+    assert run_graphify_build(repo, execute=True) == 3
+    captured = capsys.readouterr()
+    assert "cleanup failed closed" in captured.err
+    assert "marker-bearing Graphify artifacts remain" in captured.err
+    assert DEFENSIVE_MARKER not in captured.out + captured.err
+    assert blocked.exists()
+    assert not other.exists()
+
+    with pytest.raises(GraphifyCleanupError, match="marker-bearing Graphify artifacts remain"):
+        purge_graphify_outputs(repo, private)
 
 
 def test_private_key_and_aws_redaction_removes_secret_bodies():

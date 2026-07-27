@@ -20,12 +20,12 @@ from .graphify_artifacts import (
     graphify_shortest_path,
     graphify_surface_matches,
 )
-from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build
+from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build, sync_visible_graph_output
 from .indexer import write_index
 from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir, roots_file
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
-from .security import redact_sensitive_text, safe_root, sanitize_query, tree_contains_sensitive_content
+from .security import redact_sensitive_text, safe_root, sanitize_query
 from .semantic import build_semantic_index, semantic_health, semantic_rows
 from .storage import load_jsonl, load_pointer, register_root, save_pointer
 
@@ -147,21 +147,6 @@ def require(root):
     if not ptr:
         raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
     return ptr
-
-
-def sync_visible_graph_output(root: Path, ptr: dict) -> None:
-    """Expose lightweight MIMRY-branded graph artifacts under .mimry/mimry-out/."""
-    src = Path(ptr["indexPath"]) / "graphify"
-    dst = graph_output_dir(root)
-    if tree_contains_sensitive_content(src):
-        shutil.rmtree(src, ignore_errors=True)
-        shutil.rmtree(dst, ignore_errors=True)
-        raise ValueError("Refusing to expose unvalidated sensitive graph artifacts")
-    dst.mkdir(parents=True, exist_ok=True)
-    for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json", "graph.html"):
-        source = src / name
-        if source.exists():
-            shutil.copy2(source, dst / name)
 
 
 def cmd_index(a):
