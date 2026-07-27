@@ -31,6 +31,7 @@ from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
+from mimry.security import redact_sensitive_text, safe_root, sanitize_data, sanitize_query
 from mimry.state import StateCorruptionError, StateLockTimeoutError
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import active_index_pointer, load_jsonl, load_pointer
@@ -62,22 +63,24 @@ def _state_guard(func):
     @wraps(func)
     def guarded(*args, **kwargs):
         try:
-            return func(*args, **kwargs)
+            return sanitize_data(func(*args, **kwargs))
         except StateCorruptionError as exc:
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
-            return _state_error_payload(exc, root=_root(root) if isinstance(root, str) else None)
+            return sanitize_data(_state_error_payload(exc, root=_root(root) if isinstance(root, str) else None))
         except StateLockTimeoutError as exc:
-            return {
-                "returncode": 2,
-                "error": {
-                    "code": "lock_timeout",
-                    "message": str(exc),
-                    "path": str(exc.path),
-                    "timeout": exc.timeout,
-                    "holder": exc.holder or None,
-                },
-                "recommended": "Check for another running MIMRY process, then retry.",
-            }
+            return sanitize_data(
+                {
+                    "returncode": 2,
+                    "error": {
+                        "code": "lock_timeout",
+                        "message": str(exc),
+                        "path": str(exc.path),
+                        "timeout": exc.timeout,
+                        "holder": exc.holder or None,
+                    },
+                    "recommended": "Check for another running MIMRY process, then retry.",
+                }
+            )
 
     return guarded
 
@@ -92,12 +95,12 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
             print(f"MIMRY state error: {exc}", file=sys.stderr)
             payload = _state_error_payload(exc, root=_root(getattr(args, "root", None)))
             payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
-            return payload
-    return {"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()}
+            return sanitize_data(payload)
+    return sanitize_data({"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
 
 
 def _root(root: str | None) -> Path:
-    return Path(root or ".").resolve()
+    return safe_root(Path(root or "."))
 
 
 def _index_operation(*, exclusive: bool = False):
@@ -205,13 +208,14 @@ def mimry_refresh(root: str | None = None) -> dict[str, Any]:
 def mimry_preflight(query: str, root: str | None = None, force_refresh: bool = False) -> dict[str, Any]:
     """Fast readiness check and task context generation, matching CLI preflight."""
     root_path = _root(root)
+    query = sanitize_query(query)
     payload = _capture_command(
         cmd_preflight, SimpleNamespace(root=str(root_path), task=query, force_refresh=force_refresh)
     )
     status = _status_payload(root_path)
     payload.update(
         {
-            "query": query,
+            "query": redact_sensitive_text(query),
             "root": str(root_path),
             "context_path": str(context_file(root_path)),
             "initialized": status.get("initialized"),
@@ -228,9 +232,10 @@ def mimry_preflight(query: str, root: str | None = None, force_refresh: bool = F
 def mimry_find(query: str, root: str | None = None, limit: int = 10, semantic: bool = False) -> dict[str, Any]:
     """Search indexed files with ranking reasons."""
     root_path = _root(root)
+    query = sanitize_query(query)
     ptr = require(root_path)
     rows = find_rows(Path(ptr["indexPath"]), query, limit, root=root_path, root_id=ptr.get("rootId"), semantic=semantic)
-    payload = {"query": query, "root": str(root_path), "results": rows}
+    payload = {"query": redact_sensitive_text(query), "root": str(root_path), "results": sanitize_data(rows)}
     if semantic:
         payload["semantic"] = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))
     return payload
@@ -242,10 +247,16 @@ def mimry_find(query: str, root: str | None = None, limit: int = 10, semantic: b
 def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Local-only semantic search over bounded MIMRY chunks."""
     root_path = _root(root)
+    query = sanitize_query(query)
     ptr = require(root_path)
     idx = Path(ptr["indexPath"])
     rows, health = semantic_rows(idx, ptr.get("rootId"), query, limit)
-    return {"query": query, "root": str(root_path), "semantic": health, "results": rows}
+    return {
+        "query": redact_sensitive_text(query),
+        "root": str(root_path),
+        "semantic": health,
+        "results": sanitize_data(rows),
+    }
 
 
 @mcp.tool
@@ -254,9 +265,10 @@ def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict
 def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Return files related to a query using graph-aware ranking signals."""
     root_path = _root(root)
+    query = sanitize_query(query)
     ptr = require(root_path)
     rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root_path, root_id=ptr.get("rootId"))
-    return {"query": query, "root": str(root_path), "results": rows}
+    return {"query": redact_sensitive_text(query), "root": str(root_path), "results": sanitize_data(rows)}
 
 
 @mcp.tool
@@ -266,7 +278,7 @@ def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str
     """Recommend an agent/role, context packs, files, risk gates, and verification for a task."""
     root_path = _root(root)
     ptr = require(root_path)
-    return route_payload(root_path, ptr, query, limit=limit)
+    return sanitize_data(route_payload(root_path, ptr, sanitize_query(query), limit=limit))
 
 
 @mcp.tool
@@ -275,9 +287,18 @@ def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str
 def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
     """Write a role-aware MIMRY agent brief and return its path plus route payload."""
     root_path = _root(root)
+    query = sanitize_query(query)
     ptr = require(root_path)
     path, payload = write_brief(root_path, ptr, query, agent, limit=limit)
-    return {"query": query, "root": str(root_path), "agent": payload["agent"], "output": str(path), "payload": payload}
+    return sanitize_data(
+        {
+            "query": redact_sensitive_text(query),
+            "root": str(root_path),
+            "agent": payload["agent"],
+            "output": str(path),
+            "payload": payload,
+        }
+    )
 
 
 @mcp.tool
@@ -286,6 +307,7 @@ def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8)
 def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
     """Search indexed symbols by name."""
     root_path = _root(root)
+    name = sanitize_query(name)
     ptr = require(root_path)
     idx = Path(ptr["indexPath"])
     files = {f["file_id"]: f for f in load_jsonl(idx / "files.jsonl")}
@@ -302,7 +324,7 @@ def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
                     "line_start": s.get("line_start"),
                 }
             )
-    return {"name": name, "root": str(root_path), "symbols": matches}
+    return sanitize_data({"name": name, "root": str(root_path), "symbols": matches})
 
 
 @mcp.tool
@@ -311,9 +333,17 @@ def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
 def mimry_context(query: str, root: str | None = None, semantic: bool = False) -> dict[str, Any]:
     """Generate a MIMRY context pack and return its path plus selected files."""
     root_path = _root(root)
+    query = sanitize_query(query)
     ptr = require(root_path)
     rows = _write_context_pack(root_path, ptr, query, semantic=semantic)
-    return {"query": query, "root": str(root_path), "output": str(context_file(root_path)), "files": rows}
+    return sanitize_data(
+        {
+            "query": redact_sensitive_text(query),
+            "root": str(root_path),
+            "output": str(context_file(root_path)),
+            "files": rows,
+        }
+    )
 
 
 @mcp.tool
@@ -321,7 +351,7 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
 def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[str, Any]:
     """Explain top files, symbols, graph evidence, and verification hints for a task."""
     root_path = _root(root)
-    return _capture_command(cmd_explain, SimpleNamespace(root=str(root_path), query=query, limit=limit))
+    return _capture_command(cmd_explain, SimpleNamespace(root=str(root_path), query=sanitize_query(query), limit=limit))
 
 
 @mcp.tool
@@ -329,7 +359,10 @@ def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[s
 def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, Any]:
     """Find a Graphify relationship path between two files/symbols/queries."""
     root_path = _root(root)
-    return _capture_command(cmd_path, SimpleNamespace(root=str(root_path), source=source, target=target))
+    return _capture_command(
+        cmd_path,
+        SimpleNamespace(root=str(root_path), source=sanitize_query(source), target=sanitize_query(target)),
+    )
 
 
 @mcp.tool
@@ -337,7 +370,10 @@ def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, A
 def mimry_why(surface: str, query: str, root: str | None = None, limit: int = 25) -> dict[str, Any]:
     """Explain why a file or symbol ranked for a task query."""
     root_path = _root(root)
-    return _capture_command(cmd_why, SimpleNamespace(root=str(root_path), surface=surface, query=query, limit=limit))
+    return _capture_command(
+        cmd_why,
+        SimpleNamespace(root=str(root_path), surface=sanitize_query(surface), query=sanitize_query(query), limit=limit),
+    )
 
 
 @mcp.tool

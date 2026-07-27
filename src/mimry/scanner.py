@@ -7,7 +7,7 @@ from pathlib import Path
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
 from .framework_adapters import enrich_framework_facts
 from .paths import stable_id
-from .security import is_text, safe_root, should_ignore
+from .security import contains_sensitive_data, has_sensitive_content, is_text, safe_root, should_ignore
 from .ts_ast_adapter import parse_ts_like
 
 
@@ -32,7 +32,7 @@ def sha(path):
 def scan(root):
     safe_root(root)
     for path in root.rglob("*"):
-        if should_ignore(path, root) or not path.is_file() or path.is_symlink():
+        if not path.is_file() or path.is_symlink() or should_ignore(path, root):
             continue
         try:
             if path.stat().st_size > 1_000_000:
@@ -69,6 +69,10 @@ def file_record(path, root, adapter, status, hint):
 
 
 def adapt(path, root):
+    # Recheck immediately before adapters read content to close the scan/adapt
+    # boundary and fail closed if a file changed after discovery.
+    if has_sensitive_content(path):
+        raise ValueError("secret-bearing content is not indexable")
     ext = path.suffix.lower()
     hint = safe_hint(path) if is_config_manifest(path) else text_hint(path)
     f = file_record(path, root, "generic", "ok", hint)
@@ -122,4 +126,6 @@ def adapt(path, root):
         symbols, edges, imports, exports, status = parse_ts_like(path, root, f)
         f = file_record(path, root, "typescript-ast", status, hint)
     f = enrich_framework_facts(path, root, f, symbols, edges)
+    if contains_sensitive_data((f, symbols, edges, imports, exports)):
+        raise ValueError("adapter output contained sensitive data")
     return f, symbols, edges, sorted(set(imports)), sorted(set(exports))

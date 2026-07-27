@@ -11,6 +11,7 @@ from typing import Any
 from .feedback import ensure_feedback_schema
 from .cache_safety import UnsafeCachePathError, validated_current_root_cache_path
 from .paths import idx_path, pointer_file, roots_file
+from .security import sanitize_data
 from .semantic import ensure_semantic_schema
 from .state import (
     StateCorruptionError,
@@ -203,7 +204,7 @@ def connect(idx):
 
 
 def write_jsonl(path, rows):
-    atomic_write_text(path, "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
+    atomic_write_text(path, "".join(json.dumps(sanitize_data(row), sort_keys=True) + "\n" for row in rows))
 
 
 def load_jsonl(path):

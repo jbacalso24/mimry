@@ -6,6 +6,7 @@ from .feedback import apply_feedback_to_rows
 from .graphify_artifacts import graphify_available, graphify_rows
 from .intent import apply_intent_adjustment, query_terms
 from .semantic import merge_semantic_rows, semantic_rows
+from .security import redact_sensitive_text
 from .storage import connect, load_jsonl
 
 
@@ -150,8 +151,8 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
 
 
 def print_rows(title, rows):
-    print(title)
+    print(redact_sensitive_text(title))
     for i, r in enumerate(rows, 1):
         print(f"{i}. {r['path']}\n   Score: {r['score']}\n   Reason: {r['reason']}")
         if r.get("details"):
-            print(f"   Details: {r['details']}")
+            print(f"   Details: {redact_sensitive_text(r['details'])}")
