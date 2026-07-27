@@ -16,6 +16,7 @@ from .state import (
     atomic_write_text,
     exclusive_file_lock,
     load_json_state,
+    validate_generation,
 )
 
 
@@ -26,7 +27,12 @@ def _recovery_notice(path: Path) -> None:
     )
 
 
-def load_pointer(root):
+def _pointer_lock(root: Path) -> Path:
+    p = pointer_file(root)
+    return p.with_name(f"{p.name}.lock")
+
+
+def _load_pointer_unlocked(root, *, validate_active_generation: bool = True):
     p = pointer_file(root)
     payload, recovered = load_json_state(
         p,
@@ -40,12 +46,20 @@ def load_pointer(root):
     )
     if recovered:
         _recovery_notice(p)
+    if payload and validate_active_generation:
+        validate_generation(payload)
     return payload
+
+
+def load_pointer(root, *, validate_active_generation: bool = True):
+    with exclusive_file_lock(_pointer_lock(Path(root))):
+        return _load_pointer_unlocked(root, validate_active_generation=validate_active_generation)
 
 
 def save_pointer(root, ptr):
     p = pointer_file(root)
-    atomic_write_json(p, ptr, keep_backup=True)
+    with exclusive_file_lock(_pointer_lock(Path(root))):
+        atomic_write_json(p, ptr, keep_backup=True)
 
 
 def _canonical_root_path(value: Any) -> str:
@@ -118,7 +132,7 @@ def connect(idx):
     idx.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(idx / "mimry.sqlite")
     con.executescript(
-        """create table if not exists files(file_id text primary key, rel_path text, filename text, extension text, adapter text, parse_status text, content_hint text, metadata_text text); create table if not exists symbols(symbol_id text primary key, file_id text, name text, kind text, language text, line_start integer); create virtual table if not exists files_fts using fts5(file_id unindexed, rel_path, filename, extension, content_hint, metadata_text);"""
+        """create table if not exists files(file_id text primary key, rel_path text, filename text, extension text, adapter text, parse_status text, content_hint text, metadata_text text); create table if not exists symbols(symbol_id text primary key, file_id text, name text, kind text, language text, line_start integer); create virtual table if not exists files_fts using fts5(file_id unindexed, rel_path, filename, extension, content_hint, metadata_text); create table if not exists index_generation(generation_id text primary key, created_at text not null);"""
     )
     ensure_feedback_schema(con)
     ensure_semantic_schema(con)

@@ -907,6 +907,27 @@ def test_status_reports_graphify_artifact_health(tmp_path):
     assert (repo / ".mimry" / "graphify").exists() is False
 
 
+def test_graphify_reads_base_index_artifacts_after_generation_migration(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graphify_artifacts(repo)
+    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    generation_graphify = Path(ptr["indexPath"]) / "graphify"
+    base_graphify = cache / "indexes" / ptr["rootId"] / "graphify"
+    generation_graphify.rename(base_graphify)
+
+    status = run_cli(repo, cache, "status")
+    path = run_cli(repo, cache, "path", "middleware", "session")
+
+    assert status.returncode == 0, status.stderr
+    assert "Status: current" in status.stdout
+    assert f"Artifact output: {base_graphify}" in status.stdout
+    assert path.returncode == 0, path.stderr
+    assert "Path found" in path.stdout
+
+
 def test_status_reads_legacy_repo_local_graphify_artifacts_without_crashing(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

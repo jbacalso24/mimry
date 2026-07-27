@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .scanner import scan
-from .state import StateCorruptionError, load_json_state
+from .state import StateCorruptionError, load_json_state, validate_generation
 from .storage import load_jsonl
 
 
@@ -31,6 +31,7 @@ def _stored_hashes(idx: Path) -> dict[str, dict[str, Any]]:
 
 
 def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
+    validate_generation(ptr)
     idx = Path(ptr["indexPath"])
     files_path = idx / "files.jsonl"
     files = load_jsonl(files_path)
@@ -81,4 +82,6 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         "missing": missing,
         "state": state,
         "graph": graph,
+        "generation_id": ptr.get("generationId"),
+        "layout": "generation" if ptr.get("generationId") else "legacy",
     }
