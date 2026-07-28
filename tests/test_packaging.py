@@ -52,6 +52,7 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
     allowed_roots = {
         ".gitignore",
         "assets",
+        "benchmarks",
         "docs",
         "scripts",
         "src",
