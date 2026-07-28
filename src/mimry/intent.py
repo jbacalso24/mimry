@@ -4,25 +4,7 @@ import re
 from pathlib import PurePosixPath
 
 CONCEPT_INTENT_TERMS = {"overview", "explain", "spec", "design", "plan", "docs", "doc", "research", "concept"}
-EDIT_INTENT_TERMS = {
-    "edit",
-    "fix",
-    "bug",
-    "implement",
-    "change",
-    "wire",
-    "runtime",
-    "route",
-    "component",
-    "endpoint",
-    "api",
-    "test",
-    "build",
-    "debug",
-    "where",
-    "flow",
-    "update",
-}
+EDIT_ACTION_TERMS = {"edit", "fix", "implement", "change", "wire", "build", "debug", "update"}
 DOC_SEGMENTS = {"docs", "doc", "spec", "specs", "design", "designs", ".claude", ".codex", ".superpowers", "superpowers"}
 MIGRATION_SEGMENTS = {"migrations", "migration", "versions", "alembic"}
 SOURCE_SEGMENTS = {"src", "app", "services", "store", "features", "components", "backend", "lib", "ios"}
@@ -30,6 +12,7 @@ SOURCE_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx", ".swift", ".kt", ".java", ".
 TEST_SEGMENTS = {"tests", "test", "__tests__"}
 TEST_TERMS = {"test", "tests", "testing", "pytest", "vitest", "jest", "spec"}
 MIGRATION_TERMS = {"migration", "migrations", "alembic", "schema"}
+ARTIFACT_INTENT_TERMS = {"test", "tests", "migration", "migrations"}
 
 
 STOPWORDS = {
@@ -122,7 +105,10 @@ def is_source_file(rel_path: str) -> bool:
 
 
 def is_edit_intent(terms: list[str]) -> bool:
-    return bool(set(terms) & EDIT_INTENT_TERMS)
+    term_set = set(terms)
+    explicit_edit_action = bool(term_set & EDIT_ACTION_TERMS)
+    artifact_without_concept = bool(term_set & ARTIFACT_INTENT_TERMS) and not bool(term_set & CONCEPT_INTENT_TERMS)
+    return explicit_edit_action or artifact_without_concept
 
 
 def is_concept_intent(terms: list[str]) -> bool:
