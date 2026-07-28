@@ -36,12 +36,15 @@ def test_wheel_metadata_carries_release_dependency_pins(tmp_path: Path):
     with ZipFile(wheel) as archive:
         metadata_name = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
         metadata = BytesParser().parsebytes(archive.read(metadata_name))
+        entry_points_name = next(name for name in archive.namelist() if name.endswith(".dist-info/entry_points.txt"))
+        entry_points = archive.read(entry_points_name).decode("utf-8")
 
     graphify_requires = [
         value for value in metadata.get_all("Requires-Dist", []) if value.lower().startswith("graphifyy")
     ]
     assert graphify_requires == [GRAPHIFY_REQUIREMENT]
     assert TS_LANGUAGE_PACK_REQUIREMENT in metadata.get_all("Requires-Dist", [])
+    assert "mimry-integration-smoke = mimry.agent_integration:main" in entry_points
 
 
 def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
@@ -50,6 +53,7 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
         ".gitignore",
         "assets",
         "docs",
+        "scripts",
         "src",
         "tests",
         "CHANGELOG.md",
@@ -70,3 +74,4 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
     assert roots <= allowed_roots
     assert not any(forbidden_parts.intersection(path.parts[1:]) for path in payload_paths)
     assert not any(path.name == ".env" for path in payload_paths)
+    assert any(path.as_posix().endswith("scripts/agent_integration_smoke.py") for path in payload_paths)
