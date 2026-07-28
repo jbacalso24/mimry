@@ -280,6 +280,14 @@ Available MCP-style workflows include:
 
 This lets agents ask the local project memory for focused context instead of scraping the whole repo from scratch.
 
+For a real stdio protocol round trip plus isolated Claude Code and Codex MCP registration checks, run:
+
+```bash
+uv run mimry-integration-smoke
+```
+
+The smoke is included in installed wheels as well as source artifacts. It creates a temporary repo/cache and temporary client config homes, passes clients a credential-free allowlisted environment, calls MIMRY tools through an actual FastMCP stdio client, asks Claude Code to health-check the server, and reads Codex's registered transport back as JSON. It never edits the operator's normal Claude/Codex configuration. Missing clients are reported as `UNVERIFIED`, not silently treated as passes; Herdr remains pane-only and is never simulated by this harness.
+
 ## Agent skill install
 
 MIMRY can also install a MIMRY-owned skill/instruction bundle for coding agents. This is separate from Graphify's installer: MIMRY uses Graphify internally, but installs MIMRY workflow rules.

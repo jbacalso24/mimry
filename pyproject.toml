@@ -21,6 +21,7 @@ dependencies = [
 [project.scripts]
 mimry = "mimry.cli:main"
 mimry-mcp = "mimry.mcp_server:main"
+mimry-integration-smoke = "mimry.agent_integration:main"
 
 [dependency-groups]
 dev = [
@@ -44,6 +45,7 @@ packages = ["src/mimry"]
 include = [
     "/src/mimry",
     "/tests",
+    "/scripts/agent_integration_smoke.py",
     "/docs",
     "/assets/banner.svg",
     "/README.md",
