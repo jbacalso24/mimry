@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "session-renewal",
+      "query": "fix users being logged out when their login is renewed",
+      "grades": {
+        "backend/services/session_service.py": 3,
+        "backend/api/auth.py": 2,
+        "backend/repositories/session_repository.py": 2,
+        "backend/tests/test_auth.py": 1
+      },
+      "decoys": [
+        "docs/auth-design.md",
+        "examples/auth_demo.py"
+      ]
+    },
+    {
+      "id": "bearer-middleware",
+      "query": "implement bearer token request validation middleware",
+      "grades": {
+        "backend/middleware/auth.py": 3,
+        "backend/api/auth.py": 2,
+        "backend/services/session_service.py": 1
+      },
+      "decoys": [
+        "docs/auth-design.md"
+      ]
+    },
+    {
+      "id": "checkout-runtime",
+      "query": "debug payment redirect in checkout runtime code",
+      "grades": {
+        "web/src/features/checkout/useCheckout.ts": 3,
+        "web/src/lib/payments.ts": 2,
+        "web/src/app/checkout/page.tsx": 2,
+        "web/tests/checkout.test.tsx": 1
+      },
+      "decoys": [
+        "docs/checkout-plan.md",
+        "archive/checkout-old.ts"
+      ]
+    },
+    {
+      "id": "checkout-tests",
+      "query": "tests for checkout payment redirect",
+      "grades": {
+        "web/tests/checkout.test.tsx": 3,
+        "web/src/features/checkout/useCheckout.ts": 2,
+        "web/src/lib/payments.ts": 1
+      },
+      "decoys": [
+        "docs/checkout-plan.md"
+      ]
+    },
+    {
+      "id": "session-migration",
+      "query": "database migration for session expiry",
+      "grades": {
+        "db/migrations/20260701_add_session_expiry.sql": 3,
+        "db/schema.sql": 2,
+        "backend/repositories/session_repository.py": 1
+      },
+      "decoys": [
+        "docs/auth-design.md"
+      ]
+    },
+    {
+      "id": "unknown",
+      "query": "quantum image renderer vulkan shader",
+      "grades": {},
+      "decoys": [],
+      "expect_empty": true
+    }
+  ]
+}
