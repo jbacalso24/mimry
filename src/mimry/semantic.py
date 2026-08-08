@@ -212,7 +212,7 @@ def build_semantic_index(idx: Path, root_id: str, generation_id: str | None = No
         content_checksum = semantic_rows_checksum(checksum_rows)
         with con:
             con.execute("delete from semantic_chunks where root_id = ?", (root_id,))
-            for chunk, checksum_row in zip(chunks, checksum_rows, strict=True):
+            for _chunk, checksum_row in zip(chunks, checksum_rows, strict=True):
                 con.execute(
                     """
                     insert or replace into semantic_chunks(

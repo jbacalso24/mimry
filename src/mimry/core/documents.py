@@ -43,7 +43,7 @@ def extract_document_text(path: str | Path, *, limit: int = 20000) -> tuple[str,
 
     ext = path.suffix.lower()
     if ext not in DOCUMENT_EXTENSIONS:
-        return ("", f"parse_error:unsupported_extension")
+        return ("", "parse_error:unsupported_extension")
 
     try:
         with zipfile.ZipFile(path, "r") as zf:

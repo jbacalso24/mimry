@@ -62,4 +62,12 @@ target-version = "py311"
 extend-exclude = ["vendor", "benchmarks/fixtures"]
 
 [tool.ruff.lint]
-select = ["E9", "F63", "F7", "F82"]
+# Was ["E9", "F63", "F7", "F82"] -- syntax errors and a couple of bug patterns only,
+# which is why six dead imports/variables accumulated without a single warning.
+# F catches unused and undefined names, B catches real bug shapes.
+select = ["E4", "E7", "E9", "F", "B", "C901"]
+
+[tool.ruff.lint.mccabe]
+# A ratchet, not a target. The pipeline functions currently peak at 31
+# (scanner.adapt); this stops anything getting worse while they come down.
+max-complexity = 31

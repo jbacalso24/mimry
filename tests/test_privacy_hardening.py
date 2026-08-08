@@ -7,7 +7,6 @@ import sqlite3
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -23,7 +22,6 @@ from mimry.mcp_server import (
     mimry_symbol,
     mimry_why,
 )
-from mimry.paths import graph_output_dir
 from mimry.security import (
     STREAM_CHUNK_BYTES,
     contains_sensitive_text,
