@@ -90,6 +90,19 @@ Requirements:
 - [`uv`](https://docs.astral.sh/uv/)
 - Git and network access for the pinned Graphify dependency
 
+### Supported platforms
+
+MIMRY targets **Windows, Linux, and macOS**. Paths are handled POSIX-style
+internally regardless of host, and platform-specific syscalls are capability-guarded
+rather than assumed.
+
+Automated CI currently runs `ubuntu-latest` and `macos-latest`. Windows is supported
+and actively tested locally, but is not yet in the CI matrix — so Windows-specific
+regressions can land without CI catching them. If you develop on Windows, run
+`uv run pytest -q` before opening a PR. Adding `windows-latest` to CI is tracked work;
+it needs the workflow's POSIX-only steps (`.venv/bin/python`, `/tmp`, tarball globbing)
+made portable first.
+
 MIMRY 0.1.x is distributed internally from an authorized checkout or as a direct wheel artifact. It is not published to PyPI/PyPI-style indexes because its metadata intentionally pins Graphify by Git commit. See [`RELEASING.md`](RELEASING.md) for the supported channel and exact commands.
 
 Install from a checkout:
