@@ -5,7 +5,10 @@ import hashlib
 from pathlib import Path
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
-from .framework_adapters import enrich_framework_facts
+from .core.documents import extract_document_text, is_document
+from .core.languages import extract as extract_language
+from .core.languages import language_for
+from .framework_adapters import enrich_framework_facts, markdown_link_targets, sql_table_references
 from .paths import stable_id
 from .security import contains_sensitive_data, has_sensitive_content, is_text, safe_root, should_ignore
 from .ts_ast_adapter import parse_ts_like
@@ -136,16 +139,25 @@ def adapt(path, root):
         f = file_record(path, root, "typescript-ast", "ok", hint)
         symbols, edges, imports, exports, status = parse_ts_like(path, root, f)
         source = path.read_text(encoding="utf-8", errors="ignore")
-        result = __import__("mimry.core.languages", fromlist=["extract"]).extract(path, source)
+        result = extract_language(path, source)
         calls = result.get("calls", [])
         f = file_record(path, root, "typescript-ast", status, hint)
+    elif is_document(path):
+        text, status = extract_document_text(path)
+        doc_hint = text[:2000] if text else ""
+        f = file_record(path, root, "office-document", status, doc_hint)
+        # Populate table_refs from extracted document text, just like we do for source code
+        if text:
+            table_refs = sql_table_references(text)
+            if table_refs:
+                references["table_refs"] = table_refs
     else:
         # Go/Rust/C# via core.languages
-        language = __import__("mimry.core.languages", fromlist=["language_for"]).language_for(path)
+        language = language_for(path)
         if language and ext not in {".py", ".js", ".jsx", ".ts", ".tsx"}:
             try:
                 source = path.read_text(encoding="utf-8", errors="ignore")
-                result = __import__("mimry.core.languages", fromlist=["extract"]).extract(path, source)
+                result = extract_language(path, source)
                 if result.get("status") == "ok":
                     f = file_record(path, root, f"tree-sitter-{language}", "ok", hint)
                     for d in result.get("definitions", []):
@@ -181,16 +193,12 @@ def adapt(path, root):
                 pass
     # Populate references for markdown and SQL
     if ext in {".md", ".mdx"}:
-        from .framework_adapters import markdown_link_targets
-
         doc_links = markdown_link_targets(path, root)
         if doc_links:
             references["doc_links"] = doc_links
 
     # Populate table_refs for any text file (including .sql)
     if ext not in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".bin", ".o", ".exe", ".dll", ".so"}:
-        from .framework_adapters import sql_table_references
-
         try:
             source = path.read_text(encoding="utf-8", errors="ignore")
             table_refs = sql_table_references(source)
