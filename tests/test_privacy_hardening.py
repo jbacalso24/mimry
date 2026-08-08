@@ -262,6 +262,12 @@ def test_sensitive_home_roots_and_descendants_are_rejected(tmp_path: Path, monke
 
     env = os.environ.copy()
     env["HOME"] = str(home)
+    # Python's ntpath.expanduser reads USERPROFILE (then HOMEDRIVE+HOMEPATH) and
+    # ignores HOME entirely, so on Windows the subprocess would resolve the real
+    # home and never see these paths as sensitive.
+    env["USERPROFILE"] = str(home)
+    env["HOMEDRIVE"] = home.drive
+    env["HOMEPATH"] = str(home)[len(home.drive) :]
     env["MIMRY_CACHE_HOME"] = str(tmp_path / "index-cache")
     env["PYTHONPATH"] = str(ROOT / "src")
     for root in (home / ".config", home / ".cache" / "nested"):

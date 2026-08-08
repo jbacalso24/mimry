@@ -11,6 +11,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+# Byte 0 of a lock file is the byte Windows range-locks. msvcrt locks are mandatory
+# rather than advisory, so a waiter cannot even READ a locked byte -- holder metadata
+# has to live after it or diagnostics are unavailable on Windows exactly when they
+# are most useful.
+LOCK_METADATA_OFFSET = 1
+
 GENERATION_SCHEMA_VERSION = "2"
 GENERATION_MANIFEST = "generation.json"
 GENERATION_ARTIFACTS = (
@@ -338,12 +344,18 @@ def file_lock(
                 if not busy:
                     raise
                 if time.monotonic() >= deadline:
-                    handle.seek(0)
-                    holder = handle.read(2048).decode("utf-8", errors="replace")
+                    try:
+                        handle.seek(LOCK_METADATA_OFFSET)
+                        holder = handle.read(2048).decode("utf-8", errors="replace")
+                    except OSError:
+                        # Never let a diagnostic read mask the real timeout error.
+                        holder = ""
                     raise StateLockTimeoutError(path, timeout, holder) from exc
                 time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
         if not effective_shared:
-            handle.seek(0)
+            # Truncate to the lock byte, not to zero, so the byte Windows has
+            # locked survives and holder metadata is rewritten after it.
+            handle.seek(LOCK_METADATA_OFFSET)
             handle.truncate()
             handle.write(json.dumps({"pid": os.getpid(), "acquiredAt": time.time()}, sort_keys=True).encode("utf-8"))
             handle.flush()

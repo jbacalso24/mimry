@@ -42,6 +42,7 @@ def _git_commit(root: Path) -> str | None:
             capture_output=True,
             text=True,
             check=False,
+            stdin=subprocess.DEVNULL,
             timeout=5,
         )
         if result.returncode == 0:

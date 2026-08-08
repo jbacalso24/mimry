@@ -56,6 +56,14 @@ def _client_env(sandbox: Path, *, client: str) -> dict[str, str]:
     env.update(
         {
             "HOME": str(home),
+            # Windows resolves Path.home() from USERPROFILE (then HOMEDRIVE+HOMEPATH)
+            # and ignores HOME entirely. Without these the server subprocess raises
+            # "Could not determine home directory" at startup and the client just
+            # waits out its timeout with no diagnosable error. Point them at the same
+            # sandbox home so isolation is unchanged.
+            "USERPROFILE": str(home),
+            "HOMEDRIVE": home.drive,
+            "HOMEPATH": str(home)[len(home.drive) :],
             "XDG_CONFIG_HOME": str(config),
             "XDG_CACHE_HOME": str(cache),
             "FASTMCP_HOME": str(sandbox / f"{client}-fastmcp"),

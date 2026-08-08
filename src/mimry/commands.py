@@ -39,6 +39,10 @@ def _git_toplevel(root: Path) -> Path | None:
             text=True,
             capture_output=True,
             check=False,
+            # Never let a child inherit this process's stdin. Under the MCP stdio
+            # server that descriptor IS the JSON-RPC channel, so an inherited stdin
+            # lets a child consume protocol bytes and hang the server.
+            stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
         return None
@@ -78,6 +82,7 @@ def ensure_mimry_gitignore(root: Path) -> bool:
             text=True,
             capture_output=True,
             check=False,
+            stdin=subprocess.DEVNULL,
         )
         if ignored.returncode != 0:
             additions.append(pattern)

@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
@@ -42,29 +42,40 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
-      - name: Build release artifacts
-        run: uv build
-
       - name: Test unlocked extracted artifact with an empty cache
         shell: bash
         run: |
           set -euo pipefail
           rm -rf .artifact-src .artifact-venv .artifact-uv-cache
           mkdir .artifact-src .artifact-uv-cache
+          uv build
           tar -xzf dist/*.tar.gz -C .artifact-src
           artifact_root="$(find .artifact-src -mindepth 1 -maxdepth 1 -type d -print -quit)"
           UV_CACHE_DIR="$PWD/.artifact-uv-cache" uv venv .artifact-venv --python "${{ matrix.python-version }}"
+          # uv puts the interpreter in Scripts/ on Windows and bin/ elsewhere.
+          venv_python=".artifact-venv/bin/python"
+          [ -x ".artifact-venv/Scripts/python.exe" ] && venv_python=".artifact-venv/Scripts/python.exe"
           UV_CACHE_DIR="$PWD/.artifact-uv-cache" uv --no-cache pip install \
-            --python .artifact-venv/bin/python "$artifact_root" pytest
+            --python "$venv_python" "$artifact_root" pytest
+          # Run from outside the checkout so the installed artifact is exercised
+          # rather than the working tree. TMPDIR is portable; /tmp is not.
+          scratch="$(mktemp -d)"
           (
-            cd /tmp
-            "$GITHUB_WORKSPACE/.artifact-venv/bin/python" -m pytest -q \
+            cd "$scratch"
+            "$GITHUB_WORKSPACE/$venv_python" -m pytest -q \
               "$GITHUB_WORKSPACE/$artifact_root/tests/test_mimry_cli.py::test_typescript_ast_extracts_tsx_symbols"
           )
 
       - name: Install and smoke-test the wheel
         shell: bash
         run: |
+          set -euo pipefail
           uv venv .wheel-venv --python "${{ matrix.python-version }}"
-          uv pip install --python .wheel-venv/bin/python dist/*.whl
-          .wheel-venv/bin/mimry --help >/dev/null
+          venv_python=".wheel-venv/bin/python"
+          mimry_exe=".wheel-venv/bin/mimry"
+          if [ -x ".wheel-venv/Scripts/python.exe" ]; then
+            venv_python=".wheel-venv/Scripts/python.exe"
+            mimry_exe=".wheel-venv/Scripts/mimry.exe"
+          fi
+          uv pip install --python "$venv_python" dist/*.whl
+          "$mimry_exe" --help >/dev/null
