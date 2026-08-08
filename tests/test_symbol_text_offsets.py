@@ -82,3 +82,17 @@ def test_call_names_are_identifiers_not_whole_expressions(tmp_path, suffix, sour
 
     assert expected <= names, f"missing {expected - names}; got {sorted(names)}"
     assert not any(any(ch.isspace() for ch in n) for n in names), f"expression leaked in: {sorted(names)}"
+
+
+def test_every_parsed_language_is_also_scannable_text() -> None:
+    """A language we parse but omit from TEXT_EXTS gets no secret scan and no hint.
+
+    has_sensitive_content() returns False for extensions outside TEXT_EXTS, so adding
+    C#/Go/Rust to the parser without adding them here left those files unscanned for
+    secrets and with an empty content hint.
+    """
+    from mimry.constants import TEXT_EXTS
+    from mimry.core.languages import EXTENSION_LANGUAGE
+
+    missing = sorted(set(EXTENSION_LANGUAGE) - set(TEXT_EXTS))
+    assert missing == [], f"parsed but not scannable as text: {missing}"
