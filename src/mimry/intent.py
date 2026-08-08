@@ -125,31 +125,31 @@ def apply_intent_adjustment(
 
     if is_edit_intent(terms):
         if is_source_file(rel_path):
-            score += 180 if graphify else 100
+            score += 100
             reasons.append("intent source boost")
         if is_doc_or_plan(rel_path):
             score = int(score * 0.6)
-            score -= 90 if graphify else 60
+            score -= 60
             reasons.append("doc downrank for edit intent")
         if is_test_file(rel_path):
             if set(terms) & TEST_TERMS:
-                score += 45 if graphify else 25
+                score += 25
                 reasons.append("test intent boost")
             else:
                 score = int(score * 0.75)
-                score -= 35 if graphify else 20
+                score -= 20
                 reasons.append("test hint downrank for edit intent")
         if is_migration(rel_path):
             if set(terms) & MIGRATION_TERMS:
-                score += 35 if graphify else 20
+                score += 20
                 reasons.append("migration intent boost")
             else:
                 score = int(score * 0.55)
-                score -= 80 if graphify else 50
+                score -= 50
                 reasons.append("migration downrank for edit intent")
     elif is_concept_intent(terms):
         if is_doc_or_plan(rel_path):
-            score += 45 if graphify else 25
+            score += 25
             reasons.append("concept doc boost")
 
     return max(score, 0), reasons
