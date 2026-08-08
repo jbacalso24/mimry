@@ -46,6 +46,9 @@ class GraphEngine:
                     "type": "file",
                     "kind": file_type,
                     "file_type": file_type,
+                    # A file has no single line. Kept on every node so consumers can
+                    # read one field instead of branching on node type.
+                    "line": None,
                     "community": 0,
                 }
             )
@@ -69,6 +72,9 @@ class GraphEngine:
                     "type": "symbol",
                     "kind": s["kind"],
                     "file_type": s["language"],
+                    # Scanners already carry line_start (ts_ast_adapter, core.languages);
+                    # without it every graph answer points at a file, not a location.
+                    "line": s.get("line_start"),
                     "community": 0,
                 }
             )
@@ -170,6 +176,7 @@ if __name__ == "__main__":
             "name": "login",
             "kind": "function",
             "language": "python",
+            "line_start": 42,
         },
         {
             "symbol_id": "sym2",
@@ -177,8 +184,10 @@ if __name__ == "__main__":
             "name": "AuthManager",
             "kind": "class",
             "language": "python",
+            "line_start": 7,
         },
         {
+            # No line_start: older records and adapters that never captured one.
             "symbol_id": "sym3",
             "file_id": "file2",
             "name": "format_string",
@@ -235,15 +244,36 @@ if __name__ == "__main__":
 
     # Assertions
     try:
-        # 1. Every node has all 8 required keys, and source_file is non-empty
+        # 1. Every node has all 9 required keys, and source_file is non-empty
         for node in result["nodes"]:
-            required_keys = {"id", "label", "norm_label", "source_file", "type", "kind", "file_type", "community"}
+            required_keys = {
+                "id",
+                "label",
+                "norm_label",
+                "source_file",
+                "type",
+                "kind",
+                "file_type",
+                "line",
+                "community",
+            }
             assert set(node.keys()) == required_keys, (
                 f"Node {node['id']} missing keys: {required_keys - set(node.keys())}"
             )
             assert isinstance(node["source_file"], str) and len(node["source_file"]) > 0, (
                 f"Node {node['id']} has empty source_file"
             )
+            assert node["line"] is None or isinstance(node["line"], int), (
+                f"Node {node['id']} line must be int or None, got {node['line']!r}"
+            )
+
+        # 1b. Symbol lines survive the trip; a missing line_start degrades to None
+        # rather than raising, and file nodes never carry one.
+        by_id = {n["id"]: n for n in result["nodes"]}
+        assert by_id["symbol:sym1"]["line"] == 42, f"expected line 42, got {by_id['symbol:sym1']['line']}"
+        assert by_id["symbol:sym2"]["line"] == 7, f"expected line 7, got {by_id['symbol:sym2']['line']}"
+        assert by_id["symbol:sym3"]["line"] is None, "symbol without line_start must degrade to None"
+        assert by_id["file:file1"]["line"] is None, "file nodes must not carry a line"
 
         # 2. File node ids start with "file:", symbol node ids start with "symbol:"
         node_ids = [n["id"] for n in result["nodes"]]

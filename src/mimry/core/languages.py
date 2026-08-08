@@ -12,6 +12,8 @@ EXTENSION_LANGUAGE = {
     ".go": "go",
     ".rs": "rust",
     ".cs": "csharp",
+    ".java": "java",
+    ".php": "php",
 }
 
 NODE_TYPES = {
@@ -73,6 +75,41 @@ NODE_TYPES = {
         "calls": frozenset(["invocation_expression"]),
         "bases": frozenset(["base_list"]),
     },
+    "java": {
+        # Constructors are declared separately from methods; without them the
+        # wiring done in `new Foo(...)` has no caller to attribute.
+        "definitions": frozenset(
+            [
+                "class_declaration",
+                "interface_declaration",
+                "method_declaration",
+                "constructor_declaration",
+                "enum_declaration",
+                "record_declaration",
+            ]
+        ),
+        "imports": frozenset(["import_declaration"]),
+        "calls": frozenset(["method_invocation"]),
+        # Java splits heritage in two: `extends` is superclass, `implements` is
+        # super_interfaces. Listing only one silently halves the inheritance edges.
+        "bases": frozenset(["superclass", "super_interfaces"]),
+    },
+    "php": {
+        "definitions": frozenset(
+            [
+                "class_declaration",
+                "interface_declaration",
+                "trait_declaration",
+                "enum_declaration",
+                "function_definition",
+                "method_declaration",
+            ]
+        ),
+        "imports": frozenset(["namespace_use_declaration"]),
+        # Three call shapes: helper(), $this->method(), Static::method().
+        "calls": frozenset(["function_call_expression", "member_call_expression", "scoped_call_expression"]),
+        "bases": frozenset(["base_clause", "class_interface_clause"]),
+    },
 }
 
 
@@ -90,7 +127,7 @@ def symbol_kind(language: str, node_kind: str) -> str:
         return "interface"
     if node_kind == "enum_declaration":
         return "enum"
-    if node_kind == "record_declaration":
+    if node_kind in ("record_declaration", "trait_declaration"):
         return "class"
     if "class" in node_kind or "struct" in node_kind:
         return "class"
@@ -157,6 +194,27 @@ def _first_identifier(node: Any, source: str) -> str | None:
         if found:
             return found
     return None
+
+
+def _definition_name(node: Any, source: bytes) -> str | None:
+    """The declared name, preferring the grammar's own `name` field.
+
+    _first_identifier returns the first identifier-like descendant, which on a
+    typed method declaration is the *return type*: Java `public String greet()`
+    indexed as `String`, and C# `public MyType Foo()` as `MyType` -- the method
+    disappeared and a phantom symbol took its place. Grammars label the declared
+    name with a `name` field, so ask for it and keep the positional scan only for
+    the nodes that have none (Rust `impl_item` names its subject `type`).
+    """
+    try:
+        named = node.child_by_field_name("name")
+    except Exception:
+        named = None
+    if named is not None:
+        text = _text(source, named).strip()
+        if text:
+            return text
+    return _first_identifier(node, source)
 
 
 def _parent_kinds(node: Any, limit: int = 3) -> set[str]:
@@ -258,7 +316,10 @@ def _base_type_names(container: Any, source: bytes) -> list[str]:
     def visit(node: Any) -> None:
         for child in _children(node):
             kind = child.kind()
-            if kind in ("extends_clause", "implements_clause", "extends_type_clause"):
+            # TS splits extends/implements into two clauses; Java wraps its
+            # interface list in a type_list, so `implements G, R` would otherwise
+            # collapse to whichever name the reversed scan reached first.
+            if kind in ("extends_clause", "implements_clause", "extends_type_clause", "type_list"):
                 visit(child)
                 continue
             name = _expression_name(child, source)
@@ -278,7 +339,21 @@ def _callee_name(node: Any, source: bytes) -> str | None:
     such blob tripped the secret scanner and silently dropped the file from the
     index). Take the final identifier, as the Python adapter does with `Attribute.attr`.
     """
-    callee = next(_children(node), None)
+    # Most grammars make the whole callee expression the first child, but Java's
+    # method_invocation and PHP's member/scoped calls put the object there and the
+    # method in a `name` field -- taking child 0 recorded `$this` and `Registry`
+    # as the callee. Ask for the field first; where it is absent (python, js, ts,
+    # go, rust, csharp) `function` is child 0, so nothing changes for them.
+    callee = None
+    for field in ("name", "function"):
+        try:
+            callee = node.child_by_field_name(field)
+        except Exception:
+            callee = None
+        if callee is not None:
+            break
+    if callee is None:
+        callee = next(_children(node), None)
     if callee is None:
         return None
     name = (_expression_name(callee, source) or "").strip()
@@ -345,7 +420,7 @@ def extract(path: str | Path, source: str) -> dict:
 
         # Definitions
         if kind in node_types["definitions"]:
-            name = _first_identifier(node, source)
+            name = _definition_name(node, source)
             if name:  # Skip if no name found
                 line = _line(node)
                 key = (name, line)
@@ -383,11 +458,18 @@ def extract(path: str | Path, source: str) -> dict:
                     if module and module not in ('"', "'", "`"):
                         break
 
-            # Fallback: try to extract from identifier/scoped_identifier nodes (Python/Rust/C#)
+            # Fallback: try to extract from identifier/scoped_identifier nodes
+            # (Python/Rust/C#/Java, and PHP's namespace_use_clause wrapper)
             if not module:
                 for child in _children(node):
                     child_kind = child.kind()
-                    if child_kind in ("identifier", "dotted_name", "scoped_identifier", "qualified_name"):
+                    if child_kind in (
+                        "identifier",
+                        "dotted_name",
+                        "scoped_identifier",
+                        "qualified_name",
+                        "namespace_use_clause",
+                    ):
                         module = _text(source, child)
                         break
 
@@ -458,6 +540,8 @@ if __name__ == "__main__":
         assert language_for("test.go") == "go"
         assert language_for("test.rs") == "rust"
         assert language_for("test.cs") == "csharp"
+        assert language_for("test.java") == "java"
+        assert language_for("test.php") == "php"
         assert language_for("test.txt") is None
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -649,6 +733,80 @@ namespace MyApp {
             assert all(d["name"] for d in result["definitions"]), "Empty names in definitions"
             cs_counts = (len(result["definitions"]), len(result["imports"]), len(result["calls"]))
 
+            # Java sample
+            java_file = tmppath / "UserService.java"
+            java_file.write_text(
+                """package com.app.svc;
+
+import java.util.List;
+import com.app.model.User;
+
+public interface Greeter { String greet(); }
+
+public class UserService extends BaseService implements Greeter, Runnable {
+    private List<User> users;
+    public UserService() { init(); }
+    public String greet() { return helper.format("hi"); }
+    public void run() { System.out.println(greet()); }
+}
+""",
+                encoding="utf-8",
+            )
+            result = extract(java_file, java_file.read_text(encoding="utf-8"))
+            assert result["status"] == "ok", f"Java parse failed: {result['status']}"
+            assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in java"
+            assert len(result["imports"]) > 0, "No imports in java"
+            assert len(result["calls"]) > 0, "No calls in java"
+            assert all(d["name"] for d in result["definitions"]), "Empty names in definitions"
+            java_names = {d["name"] for d in result["definitions"]}
+            assert {"UserService", "Greeter", "greet"} <= java_names, f"missing java definitions: {java_names}"
+            # extends and implements are separate grammar nodes; both must produce edges.
+            java_bases = {(i["type"], i["base"]) for i in result["inherits"]}
+            assert ("UserService", "BaseService") in java_bases, f"missing extends edge: {java_bases}"
+            assert ("UserService", "Greeter") in java_bases, f"missing implements edge: {java_bases}"
+            assert "com.app.model.User" in {i["module"] for i in result["imports"]}, (
+                f"java import not captured: {result['imports']}"
+            )
+            java_counts = (len(result["definitions"]), len(result["imports"]), len(result["calls"]))
+
+            # PHP sample
+            php_file = tmppath / "UserService.php"
+            php_file.write_text(
+                r"""<?php
+namespace App\Service;
+
+use App\Model\User;
+
+interface Speaker { public function speak(); }
+trait Loggable { public function log($m) { error_log($m); } }
+
+class UserService extends BaseService implements Speaker {
+    public function speak() { return $this->format("hi"); }
+    public function run() { helper_fn(); Registry::make(); $this->speak(); }
+}
+
+function helper_fn() { return 1; }
+""",
+                encoding="utf-8",
+            )
+            result = extract(php_file, php_file.read_text(encoding="utf-8"))
+            assert result["status"] == "ok", f"PHP parse failed: {result['status']}"
+            assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in php"
+            assert len(result["imports"]) > 0, "No imports in php"
+            assert len(result["calls"]) > 0, "No calls in php"
+            assert all(d["name"] for d in result["definitions"]), "Empty names in definitions"
+            php_names = {d["name"] for d in result["definitions"]}
+            assert {"UserService", "Speaker", "Loggable", "helper_fn"} <= php_names, (
+                f"missing php definitions: {php_names}"
+            )
+            # All three PHP call shapes must land, not just the bare function call.
+            php_calls = {c["name"] for c in result["calls"]}
+            assert {"helper_fn", "make", "speak"} <= php_calls, f"missing php call shapes: {php_calls}"
+            php_bases = {(i["type"], i["base"]) for i in result["inherits"]}
+            assert ("UserService", "BaseService") in php_bases, f"missing extends edge: {php_bases}"
+            assert ("UserService", "Speaker") in php_bases, f"missing implements edge: {php_bases}"
+            php_counts = (len(result["definitions"]), len(result["imports"]), len(result["calls"]))
+
         print("OK")
         print(f"Python: {py_counts[0]} defs, {py_counts[1]} imports, {py_counts[2]} calls")
         print(f"JavaScript: {js_counts[0]} defs, {js_counts[1]} imports, {js_counts[2]} calls")
@@ -657,6 +815,8 @@ namespace MyApp {
         print(f"Go: {go_counts[0]} defs, {go_counts[1]} imports, {go_counts[2]} calls")
         print(f"Rust: {rs_counts[0]} defs, {rs_counts[1]} imports, {rs_counts[2]} calls")
         print(f"CSharp: {cs_counts[0]} defs, {cs_counts[1]} imports, {cs_counts[2]} calls")
+        print(f"Java: {java_counts[0]} defs, {java_counts[1]} imports, {java_counts[2]} calls")
+        print(f"PHP: {php_counts[0]} defs, {php_counts[1]} imports, {php_counts[2]} calls")
         sys.exit(0)
     except AssertionError as e:
         print(f"FAILED: {e}", file=sys.stderr)

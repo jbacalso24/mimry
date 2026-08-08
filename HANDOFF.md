@@ -37,7 +37,10 @@ Each of build/languages/resolve/cluster/report/documents has a runnable
 
 Edge types: `defines`, `imports` (file→file), `calls` (symbol→symbol),
 `references` (doc→file, and code/doc→sql_table symbol).
-Languages: Python, JS, JSX, TS, TSX, Go, Rust, C#.
+Languages: Python, JS, JSX, TS, TSX, Go, Rust, C#, Java, PHP.
+
+Every node carries a `line` (int for symbols, `None` for files), so graph answers
+can point at `path:line` instead of just a path.
 
 ## Contracts that will silently break if violated
 
@@ -52,6 +55,12 @@ Languages: Python, JS, JSX, TS, TSX, Go, Rust, C#.
    stable across five `PYTHONHASHSEED` values.
 4. **`clusters` is still consumed** by `search.py` and `freshness.py`. Do not drop it.
 5. **Resolvers decline ambiguity.** Two candidates → emit nothing. Never guess.
+   Rule 2 in `resolve.py` is Python-only and gated on the importer ending `.py`.
+   Known miss left in place: a src-layout Python import (`mimry.core.build` where
+   the file is `src/mimry/core/build.py`) resolves to nothing, because rule 2
+   probes only `mimry/core/build.py`. Letting it fall through to rule 4's suffix
+   match does resolve it, and the edge is correct — but the extra graph evidence
+   changes which reason four CLI/MCP tests report. Decide that one deliberately.
 6. **All source is ASCII** — `tests/test_encoding.py` enforces it and a cp1252 Windows
    console raises on non-ASCII output.
 7. **Use `posixpath`, never `os.path`,** for `rel_path` joins. `os.path.normpath`
@@ -68,6 +77,34 @@ Languages: Python, JS, JSX, TS, TSX, Go, Rust, C#.
   turn the historical Graphify baseline into a current PASS claim.
 - Run `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest -q`
   before handoff, then include their exact outputs.
+
+## Linux and macOS status
+
+**Partially verified on real Linux** (WSL Ubuntu 24.04.4, Python 3.12.3), no
+installation required because these modules are pure stdlib:
+
+- `core/build.py`, `core/cluster.py`, `core/resolve.py`, `core/report.py`,
+  `core/documents.py` self-checks all print `OK` on Linux.
+- `scripts/cross_platform_check.py` builds a graph from fixed in-memory input and
+  prints a digest. Windows prints
+  `425a722173ccb7c7eeabe0189feabec7f88c1a484891e622d8224cc246a897af`, and it is
+  stable across `PYTHONHASHSEED` values. (It was
+  `76f2e5c39d5ab85a39c48036dbadcfd6220b0ea0c42684137c8947ba8688b8c9` before nodes
+  gained `line` and the report gained surprise scores; **Linux needs re-running to
+  confirm it still agrees.**) That means the engine computes
+  byte-identically across platforms, so a cached index is portable between machines.
+
+**Still unverified:** the full suite on Linux/macOS (CLI, MCP, state recovery,
+privacy hardening). Those need `tree-sitter` and `fastmcp` installed. WSL here has
+no `pip`/`ensurepip` and no passwordless sudo, so local install needs either
+`sudo apt install python3-venv python3-pip` or fetching `uv` — both need the
+operator.
+
+To repeat the Linux check:
+
+```
+wsl -d Ubuntu -e bash -lc "cd ~/mimry-linux && python3 scripts/cross_platform_check.py"
+```
 
 Windows fixes made, each of which must stay POSIX-neutral:
 

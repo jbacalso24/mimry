@@ -4,6 +4,65 @@ from collections import defaultdict
 
 from ..security import markdown_inline
 
+_CODE_EXTENSIONS = frozenset(["py", "js", "jsx", "ts", "tsx", "go", "rs", "cs", "java", "php"])
+_DOC_EXTENSIONS = frozenset(["md", "mdx", "txt", "rst"])
+_DATA_EXTENSIONS = frozenset(["sql", "json", "yaml", "yml", "toml", "ini", "cfg"])
+
+
+def _file_category(path: str) -> str:
+    """Bucket a path so a code->doc edge can outrank a code->code one."""
+    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    if ext in _CODE_EXTENSIONS:
+        return "code"
+    if ext in _DOC_EXTENSIONS:
+        return "doc"
+    if ext in _DATA_EXTENSIONS:
+        return "data"
+    return "other"
+
+
+def _top_level_dir(path: str) -> str:
+    return path.split("/")[0] if "/" in path else path
+
+
+def _surprise_score(edge: dict, source_node: dict, target_node: dict, degree: dict) -> tuple[int, list[str]]:
+    """Rank a cross-community edge by how non-obvious it is.
+
+    Every candidate already crosses a community boundary, so that fact earns no
+    points here -- it is the filter, not a discriminator. Scoring is pure integer
+    arithmetic on graph facts, so it stays deterministic across runs and platforms.
+    """
+    score = 0
+    reasons: list[str] = []
+
+    # Resolved rather than stated: the reader cannot verify it by reading one line.
+    if edge.get("confidence") == "INFERRED":
+        score += 2
+        reasons.append("inferred, not stated in source")
+    else:
+        score += 1
+
+    source_file = source_node.get("source_file") or ""
+    target_file = target_node.get("source_file") or ""
+
+    source_category = _file_category(source_file)
+    target_category = _file_category(target_file)
+    if source_category != target_category:
+        score += 2
+        reasons.append(f"crosses file types ({source_category} <-> {target_category})")
+
+    if _top_level_dir(source_file) != _top_level_dir(target_file):
+        score += 2
+        reasons.append("crosses top-level directories")
+
+    source_degree = degree.get(str(source_node.get("id", "")), 0)
+    target_degree = degree.get(str(target_node.get("id", "")), 0)
+    if min(source_degree, target_degree) <= 2 and max(source_degree, target_degree) >= 5:
+        score += 1
+        reasons.append("peripheral node reaches a hub")
+
+    return score, reasons
+
 
 def render_report(graph: dict, *, commit: str | None = None, title: str | None = None) -> str:
     """Render GRAPH_REPORT.md text for a built graph.
@@ -128,40 +187,53 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
         lines.append("- none")
     lines.append("")
 
-    # Section: Surprising Connections (edges crossing communities)
+    # Section: Surprising Connections (edges crossing communities, ranked)
+    #
+    # Sorting these alphabetically returned an arbitrary 10 of however many cross
+    # the boundary, not the 10 worth reading. Rank by surprise instead, and say why.
     lines.append("## Surprising Connections")
-    cross_community_edges = []
+    scored_edges = []
     for edge in edges:
         source_id = str(edge.get("source", ""))
         target_id = str(edge.get("target", ""))
         source_node = node_by_id.get(source_id)
         target_node = node_by_id.get(target_id)
+        if not source_node or not target_node:
+            continue
 
-        if source_node and target_node:
-            source_comm = source_node.get("community")
-            target_comm = target_node.get("community")
-            if source_comm is not None and target_comm is not None and source_comm != target_comm:
-                cross_community_edges.append(edge)
+        source_comm = source_node.get("community")
+        target_comm = target_node.get("community")
+        if source_comm is None or target_comm is None or source_comm == target_comm:
+            continue
 
-    if cross_community_edges:
-        # Sort by (source, target, relation) for determinism, then take top 10
-        cross_community_edges.sort(
-            key=lambda e: (str(e.get("source", "")), str(e.get("target", "")), str(e.get("relation", "")))
+        score, reasons = _surprise_score(edge, source_node, target_node, degree)
+        scored_edges.append((score, reasons, edge, source_node, target_node))
+
+    if scored_edges:
+        # Highest score first; (source, target, relation) breaks every tie, so the
+        # ordering is total and the file stays byte-identical across rebuilds.
+        scored_edges.sort(
+            key=lambda item: (
+                -item[0],
+                str(item[2].get("source", "")),
+                str(item[2].get("target", "")),
+                str(item[2].get("relation", "")),
+            )
         )
 
-        for edge in cross_community_edges[:10]:
-            source_id = str(edge.get("source", ""))
-            target_id = str(edge.get("target", ""))
-            source_node = node_by_id.get(source_id)
-            target_node = node_by_id.get(target_id)
-
-            if source_node and target_node:
-                source_label = markdown_inline(source_node.get("label", source_id))
-                target_label = markdown_inline(target_node.get("label", target_id))
-                source_file = markdown_inline(source_node.get("source_file", "?"))
-                target_file = markdown_inline(target_node.get("source_file", "?"))
-                relation = markdown_inline(edge.get("relation", "relates"))
-                lines.append(f"- `{source_label}` --{relation}--> `{target_label}` ({source_file} -> {target_file})")
+        for score, reasons, edge, source_node, target_node in scored_edges[:10]:
+            source_label = markdown_inline(source_node.get("label", edge.get("source")))
+            target_label = markdown_inline(target_node.get("label", edge.get("target")))
+            source_file = markdown_inline(source_node.get("source_file", "?"))
+            target_file = markdown_inline(target_node.get("source_file", "?"))
+            relation = markdown_inline(edge.get("relation", "relates"))
+            # reasons are built from fixed strings and category names, never from
+            # node text, so the only untrusted values on this line are the five above.
+            why = "; ".join(reasons) if reasons else "crosses a community boundary"
+            lines.append(
+                f"- `{source_label}` --{relation}--> `{target_label}` "
+                f"({source_file} -> {target_file}) - score {score}: {why}"
+            )
     else:
         lines.append("- none")
 
@@ -280,6 +352,48 @@ if __name__ == "__main__":
         # Test 2: Determinism - render twice
         report2 = render_report(synthetic_graph, commit="abc123", title="MIMRY graph report")
         assert report == report2, "Report is not deterministic"
+
+        # Test 2b: Surprising Connections rank by score, not alphabetically.
+        # node2->node4 is EXTRACTED code->code across a/ and x/ (score 3).
+        # node3->node6 is INFERRED code->doc across a/ and m/ (score 6) and sorts
+        # first even though its source id sorts last.
+        ranked_graph = {
+            "nodes": [
+                {"id": "node1", "label": "a/b.py", "source_file": "a/b.py", "community": 0},
+                {"id": "node2", "label": "a/c.py", "source_file": "a/c.py", "community": 0},
+                {"id": "node3", "label": "a/d.py", "source_file": "a/d.py", "community": 0},
+                {"id": "node4", "label": "x/y.py", "source_file": "x/y.py", "community": 1},
+                {"id": "node6", "label": "m/n.md", "source_file": "m/n.md", "community": 1},
+            ],
+            "edges": [
+                {"source": "node1", "target": "node2", "relation": "imports", "confidence": "EXTRACTED"},
+                {"source": "node2", "target": "node4", "relation": "imports", "confidence": "EXTRACTED"},
+                {"source": "node3", "target": "node6", "relation": "references", "confidence": "INFERRED"},
+            ],
+            "clusters": {},
+        }
+        ranked = render_report(ranked_graph, commit="abc123").splitlines()
+        surprise_index = ranked.index("## Surprising Connections")
+        surprise_lines = [line for line in ranked[surprise_index + 1 :] if line.startswith("- ")]
+        assert len(surprise_lines) == 2, f"expected 2 cross-community edges, got {surprise_lines}"
+        assert "`a/d.py`" in surprise_lines[0] and "score 6" in surprise_lines[0], (
+            f"highest-scoring edge must rank first, got: {surprise_lines[0]}"
+        )
+        assert "score 3" in surprise_lines[1], f"lower-scoring edge must rank second, got: {surprise_lines[1]}"
+        assert "crosses file types (code <-> doc)" in surprise_lines[0], (
+            f"reason must be stated, got: {surprise_lines[0]}"
+        )
+        assert render_report(ranked_graph, commit="abc123").isascii(), "ranked report must stay ASCII"
+
+        # Reordering the input must not reorder the output.
+        shuffled_graph = {
+            **ranked_graph,
+            "edges": list(reversed(ranked_graph["edges"])),
+            "nodes": list(reversed(ranked_graph["nodes"])),
+        }
+        assert render_report(shuffled_graph, commit="abc123") == render_report(ranked_graph, commit="abc123"), (
+            "surprise ranking must not depend on input order"
+        )
 
         # Test 3: Empty graph
         empty_graph = {"nodes": [], "edges": []}
