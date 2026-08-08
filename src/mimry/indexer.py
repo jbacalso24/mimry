@@ -10,7 +10,13 @@ from pathlib import Path
 
 from .core.build import GraphEngine
 from .core.cluster import assign_communities
-from .core.resolve import resolve_imports, resolve_calls, resolve_doc_links, resolve_table_refs
+from .core.resolve import (
+    resolve_imports,
+    resolve_calls,
+    resolve_doc_links,
+    resolve_inheritance,
+    resolve_table_refs,
+)
 from .core.report import render_report, build_manifest
 from .paths import idx_path, now, pointer_file, graph_output_dir
 from .scanner import adapt, scan
@@ -119,7 +125,7 @@ def _collect(root: Path):
         if file_symbols:
             symbols_by_file[file_rec["rel_path"]] = file_symbols
         # Accumulate references only if there's at least one non-empty list
-        if file_references.get("doc_links") or file_references.get("table_refs"):
+        if file_references.get("doc_links") or file_references.get("table_refs") or file_references.get("inherits"):
             references[file_rec["rel_path"]] = file_references
     return files, symbols, edges, imports, exports, calls, symbols_by_file, references, sorted(set(unindexable))
 
@@ -152,13 +158,12 @@ def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by
     call_edges = resolve_calls(calls, symbols_by_file, import_edges)
     rel_path_to_id = {f["rel_path"]: f["file_id"] for f in files}
     # Build (rel_path, symbol_name) -> symbol_id map
+    rel_path_of_file_id = {f["file_id"]: f["rel_path"] for f in files}
     symbol_by_path_name = {}
     for sym in symbols:
-        for f in files:
-            if f["file_id"] == sym["file_id"]:
-                key = (f["rel_path"], sym["name"])
-                symbol_by_path_name[key] = sym["symbol_id"]
-                break
+        rel = rel_path_of_file_id.get(sym["file_id"])
+        if rel is not None:
+            symbol_by_path_name[(rel, sym["name"])] = sym["symbol_id"]
 
     for e in call_edges:
         caller_file = e.get("caller_file")
@@ -188,12 +193,29 @@ def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by
     # References structure: {rel_path: {"doc_links": [...], "table_refs": [...]}}
     doc_links_dict = {}
     table_refs_dict = {}
+    inherits_dict = {}
     if references:
         for rel_path, ref_data in references.items():
             if ref_data.get("doc_links"):
                 doc_links_dict[rel_path] = ref_data["doc_links"]
             if ref_data.get("table_refs"):
                 table_refs_dict[rel_path] = ref_data["table_refs"]
+            if ref_data.get("inherits"):
+                inherits_dict[rel_path] = ref_data["inherits"]
+
+    # Step 5b: resolve base types and convert to graph edges (SYMBOL to SYMBOL)
+    for e in resolve_inheritance(inherits_dict, symbols_by_file, import_edges):
+        child_id = symbol_by_path_name.get((e["child_file"], e["child_symbol"]))
+        base_id = symbol_by_path_name.get((e["base_file"], e["base_symbol"]))
+        if child_id and base_id and child_id != base_id:
+            graph["edges"].append(
+                {
+                    "source": f"symbol:{child_id}",
+                    "target": f"symbol:{base_id}",
+                    "relation": "inherits",
+                    "confidence": e["confidence"],
+                }
+            )
 
     # Step 6: resolve doc links and convert to graph edges (FILE to FILE)
     doc_link_edges = resolve_doc_links(doc_links_dict, rel_paths)

@@ -172,6 +172,26 @@ project-root/
 
 MIMRY also stores local indexes in the user cache directory. Those indexes are generated artifacts, not source of truth.
 
+### Graph relationships
+
+The engine emits five edge types:
+
+| relation | shape | from |
+|---|---|---|
+| `defines` | file to symbol | every parsed definition |
+| `imports` | file to file | resolved import/using statements |
+| `calls` | symbol to symbol | call sites resolved to a definition |
+| `inherits` | symbol to symbol | base classes and implemented interfaces |
+| `references` | file to file, file to symbol | markdown links and SQL table mentions |
+
+Languages parsed: Python, JavaScript, JSX, TypeScript, TSX, Go, Rust, C#. Markdown,
+text, `.docx` and `.xlsx` are indexed for content and can carry `references` edges.
+
+Resolution never guesses. A target that is ambiguous, or defined outside the repo,
+produces no edge rather than a plausible one. `inherits` additionally resolves a base
+type by name across the repo when exactly one file defines that name, because C#
+reaches base types through `using <namespace>` rather than a path import.
+
 A context pack includes:
 
 - query and status summary
