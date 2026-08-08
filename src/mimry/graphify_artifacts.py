@@ -578,7 +578,7 @@ def graphify_relationship_lines(root: Path, selected_paths: list[str], max_lines
         tgt_label = t.get("label") or t.get("id")
         src_file = sf or "?"
         tgt_file = tf or "?"
-        line = f"- `{src_label}` --{rel}--> `{tgt_label}` ({src_file} → {tgt_file})"
+        line = f"- `{src_label}` --{rel}--> `{tgt_label}` ({src_file} -> {tgt_file})"
         if conf:
             line += f" [{conf}]"
         lines.append(line)

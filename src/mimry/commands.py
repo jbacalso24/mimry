@@ -327,7 +327,7 @@ def _symbol_lines(fresh: dict, rows: list[dict], limit: int = 12) -> list[str]:
         if rel_path not in selected:
             continue
         loc = f":{sym['line_start']}" if sym.get("line_start") else ""
-        lines.append(f"- `{sym['name']}` ({sym['kind']}, {sym['language']}) — `{rel_path}{loc}`")
+        lines.append(f"- `{sym['name']}` ({sym['kind']}, {sym['language']}) - `{rel_path}{loc}`")
         if len(lines) >= limit:
             break
     return lines
@@ -374,7 +374,7 @@ def _reading_order_lines(rows: list[dict]) -> list[str]:
     lines = []
     for i, row in enumerate(ordered, 1):
         rationale = "primary code/edit path" if _is_likely_edit_surface(row["path"]) else _file_role(row["path"])
-        lines.append(f"{i}. `{row['path']}` — {rationale}; {row['reason']}")
+        lines.append(f"{i}. `{row['path']}` - {rationale}; {row['reason']}")
     return lines
 
 
@@ -383,7 +383,7 @@ def _surface_lines(rows: list[dict], *, edit: bool) -> list[str]:
     if not selected:
         label = "edit surfaces" if edit else "non-edit supporting files"
         return [f"- No obvious {label} selected by this query."]
-    return [f"- `{row['path']}` — {_file_role(row['path'])}; score {row['score']}" for row in selected]
+    return [f"- `{row['path']}` - {_file_role(row['path'])}; score {row['score']}" for row in selected]
 
 
 FRAMEWORK_FACT_MARKERS = (
@@ -431,7 +431,7 @@ def _detected_supporting_file_lines(fresh: dict, rows: list[dict], limit: int = 
             continue
         role = _file_role(rel_path)
         if role in {"test/verification support", "docs/rules support", "config/manifest support"}:
-            candidates.append(f"- `{rel_path}` — detected {role}; read if it constrains the change or verification.")
+            candidates.append(f"- `{rel_path}` - detected {role}; read if it constrains the change or verification.")
         if len(candidates) >= limit:
             break
     return candidates
@@ -682,7 +682,7 @@ def cmd_preflight(a):
     print("Top files:")
     if rows:
         for i, row in enumerate(rows[:5], 1):
-            print(f"{i}. {row['path']} (score {row['score']}) — {row['reason']}")
+            print(f"{i}. {row['path']} (score {row['score']}) - {row['reason']}")
     else:
         print("- none")
     print(f"Next: read {context_file(root)} before opening files.")
@@ -856,7 +856,7 @@ def cmd_route(a):
     print("Likely files:")
     if payload["likely_files"]:
         for i, row in enumerate(payload["likely_files"], 1):
-            print(f"{i}. {row['path']} (score {row['score']}) — {row['reason']}")
+            print(f"{i}. {row['path']} (score {row['score']}) - {row['reason']}")
     else:
         print("- none")
     print(f"Risk level: {payload['risk_level']}")
@@ -957,7 +957,7 @@ def cmd_explain(a):
     source = next((r for r in rows if _is_likely_edit_surface(r["path"])), rows[0] if rows else None)
     print("Likely source of truth:")
     print(
-        f"- `{source['path']}` — open source and tests before editing." if source else "- unknown from current index."
+        f"- `{source['path']}` - open source and tests before editing." if source else "- unknown from current index."
     )
     _print_verification_hints(fresh)
     return 0
@@ -1061,7 +1061,7 @@ def cmd_symbol(a):
     files = {f["file_id"]: f for f in visible_files}
     for i, s in enumerate([s for s in visible_symbols if name.lower() in s["name"].lower()], 1):
         print(
-            f"{i}. {s['name']} ({s['kind']}, {s['language']}) — {files.get(s['file_id'], {}).get('rel_path', s['file_id'])}:{s.get('line_start') or ''}"
+            f"{i}. {s['name']} ({s['kind']}, {s['language']}) - {files.get(s['file_id'], {}).get('rel_path', s['file_id'])}:{s.get('line_start') or ''}"
         )
     return 0
 

@@ -393,11 +393,11 @@ Known limitation: image pixels are not understood by default yet. Image/media su
 
 ## Load deeper references when needed
 
-- `references/workflow.md` — task loop and fast path
-- `references/commands.md` — CLI command guide
-- `references/mcp.md` — MCP tool usage
-- `references/feedback.md` — feedback recording
-- `references/safety.md` — root/privacy safety
+- `references/workflow.md` - task loop and fast path
+- `references/commands.md` - CLI command guide
+- `references/mcp.md` - MCP tool usage
+- `references/feedback.md` - feedback recording
+- `references/safety.md` - root/privacy safety
 
 Load references when the task involves MCP, feedback, safety/root choice, stale indexes, or command details.
 

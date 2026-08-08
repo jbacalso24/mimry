@@ -204,9 +204,19 @@ def test_graphify_rows_consolidate_file_topology_reasons_without_changing_score(
     }
     (graph_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
 
-    [row] = graphify_rows(tmp_path, "widget")
+    rows = graphify_rows(tmp_path, "widget")
+    by_path = {row["path"]: row for row in rows}
+    row = by_path["src/widgets.py"]
 
-    # Preserve the per-node match and topology boosts:
+    # Files reached along relationships now appear as additional lower-scored rows.
+    # helper-a and helper-b never match "widget" textually; they are here only
+    # because the matched nodes point at them, which is the whole point of a graph.
+    assert set(by_path) == {"src/widgets.py", "src/a.py", "src/b.py"}
+    assert by_path["src/a.py"]["score"] < row["score"]
+    assert by_path["src/b.py"]["score"] < row["score"]
+    assert "reached by MIMRY graph relationship" in by_path["src/a.py"]["reason"]
+
+    # The directly matched file keeps its exact score: expansion must not disturb it.
     # (45 label + 35 source + 5 degree + 5 community)
     # + (45 label + 35 source + 10 degree + 5 community).
     assert row["score"] == 185
