@@ -80,11 +80,30 @@ Languages: Python, JS, JSX, TS, TSX, Go, Rust, C#.
 - Two benchmark checks still fail by design: `primary_hit_at_3` (0.75 vs 0.80 gate)
   and `context_token_proxy_max` (more graph evidence → larger context packs).
 
-## THE OPEN ITEM — Linux and macOS
+## Linux and macOS status
 
-**Never verified.** All work happened on Windows 11. CI has never run because
-nothing is pushed. Every platform fix is capability-guarded and should be a no-op
-on POSIX, but that is reasoning, not evidence.
+**Partially verified on real Linux** (WSL Ubuntu 24.04.4, Python 3.12.3), no
+installation required because these modules are pure stdlib:
+
+- `core/build.py`, `core/cluster.py`, `core/resolve.py`, `core/report.py`,
+  `core/documents.py` self-checks all print `OK` on Linux.
+- `scripts/cross_platform_check.py` builds a graph from fixed in-memory input and
+  prints a digest. Windows and Linux both print
+  `76f2e5c39d5ab85a39c48036dbadcfd6220b0ea0c42684137c8947ba8688b8c9`, and it is
+  stable across four `PYTHONHASHSEED` values. That means the engine computes
+  byte-identically across platforms, so a cached index is portable between machines.
+
+**Still unverified:** the full suite on Linux/macOS (CLI, MCP, state recovery,
+privacy hardening). Those need `tree-sitter` and `fastmcp` installed. WSL here has
+no `pip`/`ensurepip` and no passwordless sudo, so local install needs either
+`sudo apt install python3-venv python3-pip` or fetching `uv` — both need the
+operator. CI covers this on push; the matrix now includes `windows-latest`.
+
+To repeat the Linux check:
+
+```
+wsl -d Ubuntu -e bash -lc "cd ~/mimry-linux && python3 scripts/cross_platform_check.py"
+```
 
 Windows fixes made, each of which must stay POSIX-neutral:
 
