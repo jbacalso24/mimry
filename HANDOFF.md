@@ -1,7 +1,5 @@
 # MIMRY core engine — handoff state
 
-Branch: `dev` (15 commits, **not pushed, not merged**). Working tree clean.
-
 ## What was done
 
 Replaced the vendored Graphify dependency (115,306 lines) with MIMRY's own graph
@@ -59,51 +57,17 @@ Languages: Python, JS, JSX, TS, TSX, Go, Rust, C#.
 7. **Use `posixpath`, never `os.path`,** for `rel_path` joins. `os.path.normpath`
    returns backslashes on Windows and would resolve nothing there while passing on Linux.
 
-## Environment gotchas on this machine
-
-- Python: `.venv/Scripts/python.exe`
-- **pytest needs `--basetemp="C:/tmp/<unique>"`.** The default temp dir
-  (`AppData/Local/Temp/pytest-of-j.bacalso`) is permission-locked and produces ~137
-  spurious setup errors. Use a UNIQUE dir per run — concurrent runs sharing one
-  basetemp lock each other and produce fake failures.
-- tree-sitter here uses a **method-style API**: `parse(str)`, `tree.root_node()`,
-  `node.kind()`, `node.child(i)`. `node.type` does not exist. Idiomatic tree-sitter
-  code raises.
-- Git Bash `/tmp` maps to `AppData/Local/Temp`, but Python reads `/tmp` as `C:\tmp`.
-  Use explicit absolute paths.
-
 ## Current status
 
-- **154 tests passing, 0 failing** on Windows.
-- `ruff check` and `ruff format --check` clean.
-- CI matrix now includes `windows-latest` alongside `ubuntu-latest` and `macos-latest`.
-- Two benchmark checks still fail by design: `primary_hit_at_3` (0.75 vs 0.80 gate)
-  and `context_token_proxy_max` (more graph evidence → larger context packs).
-
-## Linux and macOS status
-
-**Partially verified on real Linux** (WSL Ubuntu 24.04.4, Python 3.12.3), no
-installation required because these modules are pure stdlib:
-
-- `core/build.py`, `core/cluster.py`, `core/resolve.py`, `core/report.py`,
-  `core/documents.py` self-checks all print `OK` on Linux.
-- `scripts/cross_platform_check.py` builds a graph from fixed in-memory input and
-  prints a digest. Windows and Linux both print
-  `76f2e5c39d5ab85a39c48036dbadcfd6220b0ea0c42684137c8947ba8688b8c9`, and it is
-  stable across four `PYTHONHASHSEED` values. That means the engine computes
-  byte-identically across platforms, so a cached index is portable between machines.
-
-**Still unverified:** the full suite on Linux/macOS (CLI, MCP, state recovery,
-privacy hardening). Those need `tree-sitter` and `fastmcp` installed. WSL here has
-no `pip`/`ensurepip` and no passwordless sudo, so local install needs either
-`sudo apt install python3-venv python3-pip` or fetching `uv` — both need the
-operator. CI covers this on push; the matrix now includes `windows-latest`.
-
-To repeat the Linux check:
-
-```
-wsl -d Ubuntu -e bash -lc "cd ~/mimry-linux && python3 scripts/cross_platform_check.py"
-```
+- Do not carry forward fixed test counts: report the exact `pytest` result from the
+  commit being handed off.
+- This checkout has no committed CI workflow; do not claim a Windows/Linux/macOS
+  matrix passed. Record real per-platform runs when they happen.
+- The frozen native-graph benchmark is not passing. Current Linux verification
+  fails nDCG@5, primary-hit@3, and context-token floors; do not weaken the gates or
+  turn the historical Graphify baseline into a current PASS claim.
+- Run `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest -q`
+  before handoff, then include their exact outputs.
 
 Windows fixes made, each of which must stay POSIX-neutral:
 
@@ -118,11 +82,6 @@ Windows fixes made, each of which must stay POSIX-neutral:
 | `agent_integration.py::_client_env` | set `USERPROFILE`/`HOMEDRIVE`/`HOMEPATH`; `ntpath.expanduser` ignores `HOME` |
 | all of `src/mimry` | ASCII-only output |
 
-Next steps, in order:
-1. Audit for anything that is now Windows-*specific* rather than
-   Windows-*tolerant* (e.g. `tests/test_mimry_cli.py::_deny_read` uses `icacls`,
-   guarded by `os.name != "nt"` — confirm the POSIX branch still works).
-2. Try to actually run the suite on Linux locally — check for WSL or Docker on this
-   machine. That is real evidence rather than waiting on CI.
-3. `git push -u origin dev` and confirm all three OS lanes go green.
-4. Only then merge.
+For the latest verification state, use the commit's test output or release record;
+this handoff intentionally does not freeze ephemeral branch, machine, or test-count
+claims.

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from ..security import markdown_inline
+
 
 def render_report(graph: dict, *, commit: str | None = None, title: str | None = None) -> str:
     """Render GRAPH_REPORT.md text for a built graph.
@@ -14,12 +16,13 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
 
     # Default title if not provided
     if title is None:
-        title = "# MIMRY graph report"
-    elif not title.startswith("#"):
-        title = f"# {title}"
+        title = "MIMRY graph report"
+    else:
+        title = title.lstrip("# ")
+    title = f"# {markdown_inline(title)}"
 
     # Handle commit
-    commit_str = commit if commit else "unknown"
+    commit_str = markdown_inline(commit if commit else "unknown")
 
     # Extract nodes and edges
     nodes = graph.get("nodes") or []
@@ -72,8 +75,8 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
         )[:10]
         for node in god_nodes:
             node_id = str(node.get("id", "?"))
-            label = node.get("label", node_id)
-            source_file = node.get("source_file", "?")
+            label = markdown_inline(node.get("label", node_id))
+            source_file = markdown_inline(node.get("source_file", "?"))
             deg = degree.get(node_id, 0)
             lines.append(f"- `{label}` ({source_file}) - degree {deg}")
     else:
@@ -115,11 +118,11 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
 
         for comm_id, hub, node_count_in_community in community_hubs:
             hub_id = str(hub.get("id", "?"))
-            label = hub.get("label", hub_id)
-            source_file = hub.get("source_file", "?")
+            label = markdown_inline(hub.get("label", hub_id))
+            source_file = markdown_inline(hub.get("source_file", "?"))
             deg = degree.get(hub_id, 0)
             lines.append(
-                f"- community {comm_id}: `{label}` ({source_file}) - degree {deg}, {node_count_in_community} nodes"
+                f"- community {markdown_inline(comm_id)}: `{label}` ({source_file}) - degree {deg}, {node_count_in_community} nodes"
             )
     else:
         lines.append("- none")
@@ -153,11 +156,11 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
             target_node = node_by_id.get(target_id)
 
             if source_node and target_node:
-                source_label = source_node.get("label", source_id)
-                target_label = target_node.get("label", target_id)
-                source_file = source_node.get("source_file", "?")
-                target_file = target_node.get("source_file", "?")
-                relation = edge.get("relation", "relates")
+                source_label = markdown_inline(source_node.get("label", source_id))
+                target_label = markdown_inline(target_node.get("label", target_id))
+                source_file = markdown_inline(source_node.get("source_file", "?"))
+                target_file = markdown_inline(target_node.get("source_file", "?"))
+                relation = markdown_inline(edge.get("relation", "relates"))
                 lines.append(f"- `{source_label}` --{relation}--> `{target_label}` ({source_file} -> {target_file})")
     else:
         lines.append("- none")

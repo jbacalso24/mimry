@@ -1,6 +1,6 @@
 # Releasing MIMRY
 
-MIMRY's supported release floor is CPython 3.11–3.13 on current GitHub-hosted Ubuntu and macOS runners. Windows remains best-effort until it is added to the required matrix. All dependencies resolve from a standard index; MIMRY no longer pins any dependency to a Git commit.
+MIMRY targets CPython 3.11–3.13 on Windows, Linux, and macOS. This checkout does not contain a committed CI workflow, so do not describe any OS/Python matrix as required or passing. A release needs recorded results from the clean-checkout checks below on each claimed platform. All dependencies resolve from a standard index; MIMRY no longer pins any dependency to a Git commit.
 
 ## Distribution channel
 
@@ -53,4 +53,4 @@ CI additionally extracts the sdist and, with an empty uv cache and no lockfile u
 2. Re-run the unlocked artifact TSX compatibility test before changing `tree-sitter-language-pack`; keep the tested version constrained in project metadata and regenerate `uv.lock`.
 3. Run the complete release checks above on a clean checkout.
 4. Build twice with the same `SOURCE_DATE_EPOCH`, compare SHA-256 checksums, and review wheel metadata and sdist contents before tagging.
-5. Create the internal Git release/upload only after the six CI matrix jobs pass. CI has no publishing credentials or publish step. Publishing to an index requires an explicit release decision.
+5. Create the internal Git release/upload only after the release record contains the exact commands, platform/Python versions, and results for every claimed platform. Publishing to an index or adding automated publishing requires an explicit release decision.

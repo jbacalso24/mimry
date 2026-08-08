@@ -519,7 +519,7 @@ Artifacts land in `.mimry/mimry-out/graph/`: `graph.json`, `GRAPH_REPORT.md`, an
 
 ## Support and releases
 
-Required CI covers Python 3.11–3.13 on current GitHub-hosted Ubuntu and macOS runners. Windows remains best-effort until it joins the required matrix. Releases are manual internal direct artifacts: CI builds, performs an unlocked functional test from the extracted sdist, and clean-installs the wheel, but has no publishing credentials or publish step.
+MIMRY targets Python 3.11–3.13 on Windows, Linux, and macOS. This checkout currently has no committed CI workflow, so release evidence must record the clean-checkout, extracted-sdist, and clean-wheel checks on every platform being claimed. Releases are manual internal direct artifacts and there is no automated publishing step.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the exact artifact and clean-wheel checks.
 

@@ -144,6 +144,18 @@ def test_mcp_status_includes_graph_health_payload(tmp_path: Path, monkeypatch):
     assert payload["graph"]["graph_exists"] is True
     assert payload["graph"]["report_exists"] is True
     assert payload["graph"]["manifest_exists"] is True
+    assert payload["graphify"] == payload["graph"]
+
+
+def test_mcp_init_accepts_legacy_skip_graphify_alias(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+
+    payload = mimry_init(str(repo), skip_graphify=True)
+
+    assert payload["returncode"] == 0
+    assert payload["status"]["initialized"] is True
 
 
 def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, monkeypatch):

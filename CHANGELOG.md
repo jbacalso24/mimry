@@ -12,12 +12,12 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 - Rank by following relationships, not only by matching text: query relevance now propagates two hops along edges.
 - Stop demoting full-text evidence whenever the graph has an opinion. A content-only result was previously multiplied by 0.75 if the graph returned anything, and a file found by both signals had its content score discarded; corroborating evidence now adds.
 - Measured against the recorded baselines on nine cases: ndcg@5 0.6300 -> 0.6907, recall@5 0.8542 -> 0.8958, primary-hit@3 0.5000 -> 0.7500, decoy rate 0.1351 -> 0.1081, and time to a queryable indexed graph roughly halved.
-- **Breaking:** the `mimry graphify` command is removed, `--skip-graphify` becomes `--skip-graph`, and the MCP status payload key `graphify` becomes `graph`. The graph engine identifier is now `mimry-core`.
+- Rename public graph terminology for the native engine: `--skip-graph`, `mimry status`, the MCP `skip_graph` argument, and the status payload key `graph` are canonical. A compatibility window keeps `--skip-graphify`, `mimry graphify status`, MCP `skip_graphify`, and the `graphify` status key functional for existing clients. The graph engine identifier is `mimry-core`.
 
 ### Cross-platform
 
-- Fix six Windows defects that made the benchmark unrunnable and left 75 of 183 tests failing: eager `Path.home()` evaluation in `cache_home`, a sandbox that set `HOME` but not `USERPROFILE`, `fsync` on a read-only descriptor, `os.utime(follow_symlinks=False)` where unsupported, `st_ctime_ns` compared between `os.fstat` and `Path.lstat` (Windows reports creation time at different precision from each, so every file read as tampered and `status`/`path`/`why` were permanently stale), and non-ASCII characters in CLI output that crash a cp1252 console.
-- State supported platforms in the README, including that Windows is not yet in the CI matrix.
+- Fix Windows portability defects in home-directory sandboxing, descriptor syncing, timestamp identity checks, capability-guarded file operations, and cp1252-safe CLI output. Historical failing-test counts are omitted because the suite changes over time.
+- State Windows, Linux, and macOS as targets without claiming a CI matrix that is not present in this checkout.
 
 ### Packaging and support floor
 

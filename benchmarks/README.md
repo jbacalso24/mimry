@@ -2,7 +2,7 @@
 
 This frozen synthetic corpus measures a **retrieval-usefulness proxy**: ranked-file relevance, agent-facing output size, and public CLI latency. It is not proof of agent task completion, developer-time savings, or exact model-token savings.
 
-Run from a source checkout or extracted sdist: `uv run python scripts/agent_usefulness_benchmark.py --repeat 3`. The runner uses a fresh temporary HOME/cache, adds a fake-secret canary, indexes only the fixture (never the gold labels), scans command streams plus generated repo/cache files for leakage, and emits a schema-versioned case-level JSON report. The benchmark is intentionally not an installed wheel entry point because its frozen corpus is source-distribution test data.
+Run from a source checkout or extracted sdist: `uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph`. The native engine builds graph artifacts during indexing, so reports truthfully set `graph_enabled` and include graph node/edge counts even if an older caller omits `--graph`; the flag remains in the documented command to make the measured mode explicit. The runner uses a fresh temporary HOME/cache, adds a fake-secret canary, indexes only the fixture (never the gold labels), scans command streams plus generated repo/cache files for leakage, and emits a schema-versioned case-level JSON report. The benchmark is intentionally not an installed wheel entry point because its frozen corpus is source-distribution test data.
 
 ## Frozen v1 floors
 
@@ -12,3 +12,9 @@ Run from a source checkout or extracted sdist: `uv run python scripts/agent_usef
 - Linux/Python 3.11 dedicated gate: find p95 <= 1,000 ms; context p95 <= 1,500 ms
 
 Threshold changes require a schema/version bump and a before/after case report. The harness exits nonzero until every floor passes. Add a dedicated Ubuntu/Python 3.11 CI gate only after the frozen corpus passes without weakening these floors; other support-matrix jobs must not gate noisy timing.
+
+The current Linux native-graph run is expected to exit 1: nDCG@5, primary-hit@3,
+and the context token-proxy ceiling remain below/above their frozen floors. This is
+an honest failing quality gate, not a benchmark PASS. Historical Graphify and
+no-graph measurements remain attributed in `baseline.graphify.json` and
+`baseline.nograph.json`; they are comparisons, not current-run claims.
