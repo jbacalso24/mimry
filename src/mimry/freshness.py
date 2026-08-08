@@ -6,7 +6,7 @@ from typing import Any
 
 from .scanner import scan
 from .security import filter_index_records, path_has_ignored_part, should_ignore
-from .state import StateCorruptionError, load_json_state, validate_generation
+from .state import UNINDEXABLE_FILE, StateCorruptionError, load_json_state, validate_generation
 from .storage import load_jsonl
 
 
@@ -29,6 +29,17 @@ def _stored_hashes(idx: Path) -> dict[str, dict[str, Any]]:
     if not isinstance(payload, dict):
         raise StateCorruptionError(hashes_path, "expected a JSON object")
     return payload
+
+
+def _unindexable_paths(idx: Path) -> set[str]:
+    """Paths the indexer deliberately refused. Absent on generations written before this."""
+    path = idx / UNINDEXABLE_FILE
+    if not path.exists():
+        return set()
+    payload, _ = load_json_state(path)
+    if not isinstance(payload, list):
+        raise StateCorruptionError(path, "expected a JSON array")
+    return {entry for entry in payload if isinstance(entry, str)}
 
 
 def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
@@ -73,10 +84,15 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         if st.st_size != f.get("size") or st.st_mtime != f.get("mtime"):
             changed.append(rel_path)
 
+    # Files MIMRY refused to index (secret-bearing or unreadable) are absent from
+    # files.jsonl by design. Counting them as changed would keep the index stale
+    # forever, which pins graph health to stale and disables `mimry path`.
+    unindexable = _unindexable_paths(idx)
+
     if files_path.exists():
         for p in scan(root):
             rel = p.relative_to(root).as_posix()
-            if rel not in indexed_paths:
+            if rel not in indexed_paths and rel not in unindexable:
                 changed.append(rel)
 
     changed = sorted(set(changed))
@@ -112,6 +128,8 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         "changed": changed,
         "missing": missing,
         "policy_excluded_count": len(policy_excluded),
+        # Count only: these are paths policy intentionally keeps out of agent context.
+        "unindexable_count": len(unindexable),
         "state": state,
         "graph": visible_graph,
         "generation_id": ptr.get("generationId"),
