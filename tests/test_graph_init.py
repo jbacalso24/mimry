@@ -51,6 +51,21 @@ def test_init_bootstraps_safe_graph_output(tmp_path):
     assert (repo / "graphify-out").exists() is False
 
 
+def test_legacy_skip_graphify_and_graphify_status_aliases_remain_functional(tmp_path):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    env = _env(tmp_path)
+
+    init = _run(repo, env, "init", "--skip-graphify")
+    status = _run(repo, env, "graphify", "status")
+    canonical_status = _run(repo, env, "status")
+
+    assert init.returncode == 0, init.stderr
+    assert status.returncode == canonical_status.returncode
+    assert status.stdout == canonical_status.stdout
+    assert "Initialized: yes" in status.stdout
+
+
 def test_refresh_runs_graph_index_and_status(tmp_path):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)

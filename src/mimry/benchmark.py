@@ -169,7 +169,7 @@ def evaluate(
     *,
     repeat: int = 3,
     gate_latency: bool = True,
-    graph: bool = False,
+    graph: bool = True,
     engine: str = "core",
 ) -> dict[str, Any]:
     if not 1 <= repeat <= 10:
@@ -190,10 +190,12 @@ def evaluate(
         graph_nodes, graph_edges = 0, 0
         init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graph")
         index_out, index_err, index_ms = _run(repo, env, "index")
-        # The native engine builds the graph inside `index`.
-        if graph:
-            graph_status_out, graph_status_err, _ = _run(repo, env, "status", timeout=60)
-            graph_nodes, graph_edges = _graph_size(graph_status_out)
+        # The native engine always builds the graph inside `index`. `graph` is
+        # retained as a public runner argument, but report what actually ran
+        # rather than claiming a no-graph run that never happened.
+        graph_status_out, graph_status_err, _ = _run(repo, env, "status", timeout=60)
+        graph_nodes, graph_edges = _graph_size(graph_status_out)
+        graph_enabled = "graph.json: yes" in graph_status_out
         case_reports, find_latencies, context_latencies, all_output = [], [], [], []
         all_output.extend(
             (
@@ -282,7 +284,7 @@ def evaluate(
         "state": "PASS" if all(checks.values()) else "FAIL",
         "cases": case_reports,
         "engine": engine,
-        "graph_enabled": graph,
+        "graph_enabled": graph_enabled,
         "graph_build_ms": graph_build_ms,
         # Total wall clock to a queryable index WITH a graph. The native engine folds
         # graph construction into indexing, so comparing graph_build_ms alone would
@@ -349,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-latency-gate", action="store_true")
     parser.add_argument("--json-output", type=Path)
     parser.add_argument("--out", type=Path, help="Alias for --json-output")
-    parser.add_argument("--graph", action="store_true", help="Enable graph mode")
+    parser.add_argument("--graph", action="store_true", help="Explicitly select native graph mode (enabled by default)")
     parser.add_argument("--engine", type=str, default="core", help="Engine label for the report")
     parser.add_argument("--compare", type=Path, help="Path to baseline JSON for comparison")
     args = parser.parse_args(argv)

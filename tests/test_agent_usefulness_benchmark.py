@@ -45,6 +45,9 @@ def test_end_to_end_report_is_schema_versioned_and_isolated():
     assert report["profile"] == "quick-local-index"
     assert len(report["cases"]) == len(load_cases(ROOT / "benchmarks" / "cases.v1.json", FIXTURE))
     assert "MIMRY_BENCHMARK_CANARY" not in json.dumps(report)
+    assert report["graph_enabled"] is True
+    assert report["graph_nodes"] > 0
+    assert report["graph_edges"] > 0
 
 
 def test_failed_command_redacts_canary_before_raising(monkeypatch, tmp_path):

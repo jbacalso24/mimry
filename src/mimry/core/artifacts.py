@@ -11,7 +11,7 @@ from typing import Any
 
 from ..intent import apply_intent_adjustment, query_terms
 from ..paths import graph_output_dir
-from ..security import path_has_ignored_part, stat_identity, text_mentions_ignored_path
+from ..security import markdown_inline, path_has_ignored_part, stat_identity, text_mentions_ignored_path
 
 
 GRAPH_ARTIFACT_FILES = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
@@ -544,9 +544,12 @@ def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 1
         tgt_label = t.get("label") or t.get("id")
         src_file = sf or "?"
         tgt_file = tf or "?"
-        line = f"- `{src_label}` --{rel}--> `{tgt_label}` ({src_file} -> {tgt_file})"
+        line = (
+            f"- `{markdown_inline(src_label)}` --{markdown_inline(rel)}--> `{markdown_inline(tgt_label)}` "
+            f"({markdown_inline(src_file)} -> {markdown_inline(tgt_file)})"
+        )
         if conf:
-            line += f" [{conf}]"
+            line += f" [{markdown_inline(conf)}]"
         lines.append(line)
         if len(lines) >= max_lines:
             return lines
@@ -576,5 +579,9 @@ def report_excerpt(root: Path, max_chars: int = 1200) -> str:
             capture = False
         if capture:
             keep.append(line)
-    excerpt = "\n".join(keep).strip() or text[:max_chars]
-    return excerpt[:max_chars]
+    excerpt_lines = keep or text[:max_chars].splitlines()
+    safe_lines = [
+        line if line in {"## Community Hubs", "## God Nodes", "## Surprising Connections"} else markdown_inline(line)
+        for line in excerpt_lines
+    ]
+    return "\n".join(safe_lines)[:max_chars]

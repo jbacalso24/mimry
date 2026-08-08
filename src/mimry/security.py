@@ -289,6 +289,40 @@ def sanitize_query(value: str) -> str:
     return redact_sensitive_text(value)
 
 
+def markdown_inline(value: Any) -> str:
+    """Render untrusted data as one Markdown-safe display line.
+
+    Filenames, graph labels, and indexed excerpts can contain newlines, terminal
+    controls, or backticks. They are valid data on some filesystems, but must
+    never create headings, lists, code spans, or terminal escapes in generated
+    agent-facing Markdown.
+    """
+
+    text = redact_sensitive_text(str(value))
+    rendered: list[str] = []
+    for char in text:
+        codepoint = ord(char)
+        if char == "\n":
+            rendered.append("\\n")
+        elif char == "\r":
+            rendered.append("\\r")
+        elif char == "\t":
+            rendered.append("\\t")
+        elif codepoint < 32 or codepoint == 127:
+            rendered.append(f"\\x{codepoint:02x}")
+        elif char == "`":
+            rendered.append("&#96;")
+        elif char == "&":
+            rendered.append("&amp;")
+        elif char == "<":
+            rendered.append("&lt;")
+        elif char == ">":
+            rendered.append("&gt;")
+        else:
+            rendered.append(char)
+    return "".join(rendered)
+
+
 def sanitize_data(value: Any) -> Any:
     """Recursively redact strings at persistence/API boundaries."""
 
