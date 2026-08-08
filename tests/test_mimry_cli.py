@@ -346,7 +346,7 @@ def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     assert ".ruff_cache" not in files
     assert ".vs" not in files
     graph = json.loads((idx / "graph.json").read_text())
-    assert graph["engine"] == "mimry-graphify-core"
+    assert graph["engine"] == "mimry-core"
     assert graph["nodes"]
 
 

@@ -333,7 +333,7 @@ def write_brief(root: Path, ptr: dict[str, Any], query: str, agent: str, limit: 
     ]
     if payload["likely_files"]:
         for i, row in enumerate(payload["likely_files"], 1):
-            lines.append(f"{i}. `{row['path']}` — score {row['score']}; {row['reason']}")
+            lines.append(f"{i}. `{row['path']}` - score {row['score']}; {row['reason']}")
     else:
         lines.append("- No likely files selected; rerun route/brief with a narrower query.")
     lines += [

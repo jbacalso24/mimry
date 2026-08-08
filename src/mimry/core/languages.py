@@ -347,8 +347,8 @@ def hello():
 class MyClass:
     def method(self):
         os.getcwd()
-""")
-            result = extract(py_file, py_file.read_text())
+""", encoding="utf-8")
+            result = extract(py_file, py_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"Python parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in python"
             assert len(result["imports"]) > 0, "No imports in python"
@@ -372,8 +372,8 @@ class Counter {
         return <div>Count</div>;
     }
 }
-""")
-            result = extract(js_file, js_file.read_text())
+""", encoding="utf-8")
+            result = extract(js_file, js_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"JavaScript parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in js"
             assert len(result["imports"]) > 0, "No imports in js"
@@ -395,8 +395,8 @@ export class Handler {
         process("test");
     }
 }
-""")
-            result = extract(ts_file, ts_file.read_text())
+""", encoding="utf-8")
+            result = extract(ts_file, ts_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"TypeScript parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in ts"
             assert len(result["imports"]) > 0, "No imports in ts"
@@ -419,8 +419,8 @@ export class PageComponent extends React.Component {
         return <MyComponent />;
     }
 }
-""")
-            result = extract(tsx_file, tsx_file.read_text())
+""", encoding="utf-8")
+            result = extract(tsx_file, tsx_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"TSX parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in tsx"
             assert len(result["imports"]) > 0, "No imports in tsx"
@@ -445,8 +445,8 @@ func main() {
 type Config struct {
     Name string
 }
-""")
-            result = extract(go_file, go_file.read_text())
+""", encoding="utf-8")
+            result = extract(go_file, go_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"Go parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in go"
             assert len(result["imports"]) > 0, "No imports in go"
@@ -470,8 +470,8 @@ fn helper() {
 struct Point {
     x: i32,
 }
-""")
-            result = extract(rs_file, rs_file.read_text())
+""", encoding="utf-8")
+            result = extract(rs_file, rs_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"Rust parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in rust"
             assert len(result["imports"]) > 0, "No imports in rust"
@@ -491,8 +491,8 @@ namespace MyApp {
         }
     }
 }
-""")
-            result = extract(cs_file, cs_file.read_text())
+""", encoding="utf-8")
+            result = extract(cs_file, cs_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"CSharp parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in csharp"
             assert len(result["imports"]) > 0, "No imports in csharp"
