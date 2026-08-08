@@ -42,6 +42,12 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
+      # Prints one digest computed from fixed in-memory input. Every OS in the
+      # matrix must print the same value; a divergence means cached indexes are
+      # not portable between machines.
+      - name: Cross-platform graph identity
+        run: uv run python scripts/cross_platform_check.py
+
       - name: Test unlocked extracted artifact with an empty cache
         shell: bash
         run: |
