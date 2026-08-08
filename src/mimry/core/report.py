@@ -6,7 +6,7 @@ from collections import defaultdict
 def render_report(graph: dict, *, commit: str | None = None, title: str | None = None) -> str:
     """Render GRAPH_REPORT.md text for a built graph.
 
-    Format is constrained by readers in graphify_artifacts.py:
+    Format is constrained by readers in artifacts.py:
     - Line 1 is read as report_title
     - A line starting with "- Built from commit:" is parsed for the commit hash
     - Sections under ## Community Hubs, ## God Nodes, ## Surprising Connections are extracted
@@ -67,8 +67,8 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
             key=lambda n: (
                 -degree.get(str(n.get("id")), 0),
                 str(n.get("label", n.get("id", ""))),
-                str(n.get("id", ""))
-            )
+                str(n.get("id", "")),
+            ),
         )[:10]
         for node in god_nodes:
             node_id = str(node.get("id", "?"))
@@ -104,8 +104,8 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
                 key=lambda n: (
                     -degree.get(str(n.get("id", "")), 0),
                     str(n.get("label", n.get("id", ""))),
-                    str(n.get("id", ""))
-                )
+                    str(n.get("id", "")),
+                ),
             )
             community_hubs.append((comm_id, hub, len(comm_nodes)))
 
@@ -118,7 +118,9 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
             label = hub.get("label", hub_id)
             source_file = hub.get("source_file", "?")
             deg = degree.get(hub_id, 0)
-            lines.append(f"- community {comm_id}: `{label}` ({source_file}) - degree {deg}, {node_count_in_community} nodes")
+            lines.append(
+                f"- community {comm_id}: `{label}` ({source_file}) - degree {deg}, {node_count_in_community} nodes"
+            )
     else:
         lines.append("- none")
     lines.append("")
@@ -141,11 +143,7 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
     if cross_community_edges:
         # Sort by (source, target, relation) for determinism, then take top 10
         cross_community_edges.sort(
-            key=lambda e: (
-                str(e.get("source", "")),
-                str(e.get("target", "")),
-                str(e.get("relation", ""))
-            )
+            key=lambda e: (str(e.get("source", "")), str(e.get("target", "")), str(e.get("relation", "")))
         )
 
         for edge in cross_community_edges[:10]:
@@ -190,10 +188,7 @@ def build_manifest(files: list[dict]) -> dict:
         if mtime is None:
             continue
 
-        manifest[rel_path] = {
-            "mtime": float(mtime),
-            "mimry_sha256": file_hash
-        }
+        manifest[rel_path] = {"mtime": float(mtime), "mimry_sha256": file_hash}
 
     # Sort keys for deterministic output
     return dict(sorted(manifest.items()))
@@ -225,7 +220,7 @@ if __name__ == "__main__":
             {"source": "node4", "target": "node6", "relation": "imports", "confidence": "EXTRACTED"},
             {"source": "node5", "target": "node1", "relation": "imports", "confidence": "EXTRACTED"},  # Cross-community
         ],
-        "clusters": {}
+        "clusters": {},
     }
 
     try:
@@ -247,8 +242,9 @@ if __name__ == "__main__":
         assert "## Surprising Connections" in report, "Missing '## Surprising Connections' heading"
 
         # Check cross-community edge appears
-        assert "node1" not in report or "node5" not in report or any("--imports-->" in l for l in lines), \
+        assert "node1" not in report or "node5" not in report or any("--imports-->" in l for l in lines), (
             "Cross-community edge should appear in report"
+        )
 
         # A community hub must be the MOST connected node in its community.
         # node1 (a/b.py) and node2 (a/c.py) both have degree 3, node3 degree 2;
@@ -275,8 +271,9 @@ if __name__ == "__main__":
         assert "\r" not in report, "Report contains \\r characters"
 
         # Check no backslash path separators
-        assert "\\" not in report or all("\\" not in l for l in report.splitlines() if not l.startswith("- ")), \
+        assert "\\" not in report or all("\\" not in l for l in report.splitlines() if not l.startswith("- ")), (
             "Report contains backslash path separators"
+        )
 
         # Test 2: Determinism - render twice
         report2 = render_report(synthetic_graph, commit="abc123", title="MIMRY graph report")
@@ -303,7 +300,9 @@ if __name__ == "__main__":
         assert "a/b.py" in manifest, "a/b.py should be in manifest"
         assert "x/y.py" in manifest, "x/y.py should be in manifest"
         assert "missing_hash" not in manifest, "Records with missing hash should be skipped"
-        assert len([k for k in manifest if k.startswith("a/") or k.startswith("x/")]) == 2, "Should have 2 valid entries"
+        assert len([k for k in manifest if k.startswith("a/") or k.startswith("x/")]) == 2, (
+            "Should have 2 valid entries"
+        )
 
         # Check manifest entry structure
         for rel_path, info in manifest.items():

@@ -38,9 +38,7 @@ def resolve_imports(imports: dict[str, list[str]], rel_paths: set[str]) -> list[
     return results
 
 
-def _resolve_import(
-    importer: str, module: str, rel_paths: set[str], suffix_lookup: dict
-) -> Optional[dict]:
+def _resolve_import(importer: str, module: str, rel_paths: set[str], suffix_lookup: dict) -> Optional[dict]:
     """Try to resolve a single import against available paths.
 
     Returns {"path": str, "confidence": str} or None if unresolvable.
@@ -155,9 +153,7 @@ def _rule3_relative_to_package(importer: str, module: str, rel_paths: set[str]) 
     return None
 
 
-def _rule4_suffix_match(
-    module: str, rel_paths: set[str], suffix_lookup: dict
-) -> Optional[dict]:
+def _rule4_suffix_match(module: str, rel_paths: set[str], suffix_lookup: dict) -> Optional[dict]:
     r"""Rule 4: Suffix match (Go, Rust, C#, bare JS specifiers).
 
     Normalize module by replacing :: and . and \ with /
@@ -291,9 +287,7 @@ def resolve_calls(
 
                 # Pick the innermost (largest line_start)
                 if enclosing_symbols:
-                    caller_symbol = max(
-                        enclosing_symbols, key=lambda s: s.get("line_start", 0)
-                    ).get("name")
+                    caller_symbol = max(enclosing_symbols, key=lambda s: s.get("line_start", 0)).get("name")
 
             # Step 2: Generate candidates from the callee name
             callee_name = call.get("name", "")
@@ -328,9 +322,7 @@ def resolve_calls(
                     break
 
     # Sort deterministically by (caller_file, caller_symbol, target_file, target_symbol)
-    results.sort(
-        key=lambda r: (r["caller_file"], r["caller_symbol"] or "", r["target_file"], r["target_symbol"])
-    )
+    results.sort(key=lambda r: (r["caller_file"], r["caller_symbol"] or "", r["target_file"], r["target_symbol"]))
 
     return results
 
@@ -423,11 +415,7 @@ def _pick_best_symbol(symbol_list: list[dict]) -> dict:
     def key_func(s):
         kind = s.get("kind", "")
         # Prefer function/method (score 0) over class (score 1) over others (score 2)
-        kind_score = (
-            0
-            if kind in ("function", "method")
-            else (1 if kind == "class" else 2)
-        )
+        kind_score = 0 if kind in ("function", "method") else (1 if kind == "class" else 2)
         line_start = s.get("line_start", float("inf"))
         return (kind_score, line_start)
 
@@ -476,14 +464,10 @@ if __name__ == "__main__":
 
         # 2. Every result has confidence EXTRACTED (rules 1 and 2 only in this fixture)
         for r in results:
-            assert r["confidence"] == "EXTRACTED", (
-                f"Expected EXTRACTED, got {r['confidence']} for {r}"
-            )
+            assert r["confidence"] == "EXTRACTED", f"Expected EXTRACTED, got {r['confidence']} for {r}"
 
         # 3. web/src/lib/payments.ts is target of TWO different importers
-        payments_targets = [
-            r for r in results if r["target"] == "web/src/lib/payments.ts"
-        ]
+        payments_targets = [r for r in results if r["target"] == "web/src/lib/payments.ts"]
         assert len(payments_targets) == 2, (
             f"Expected 2 imports of payments, got {len(payments_targets)}: {payments_targets}"
         )
@@ -492,9 +476,7 @@ if __name__ == "__main__":
             "web/tests/checkout.test.tsx",
             "web/src/features/checkout/useCheckout.ts",
         }
-        assert (
-            importers_of_payments == expected_importers
-        ), f"Wrong importers: {importers_of_payments}"
+        assert importers_of_payments == expected_importers, f"Wrong importers: {importers_of_payments}"
 
         # 4. No result has importer == target
         for r in results:
@@ -502,33 +484,21 @@ if __name__ == "__main__":
 
         # 5. Every target is in rel_paths
         for r in results:
-            assert r["target"] in rel_paths, (
-                f"Target {r['target']} not in rel_paths"
-            )
+            assert r["target"] in rel_paths, f"Target {r['target']} not in rel_paths"
 
         # 6. No backslash in any path
         for r in results:
-            assert "\\" not in r["importer"], (
-                f"Backslash in importer: {r['importer']}"
-            )
+            assert "\\" not in r["importer"], f"Backslash in importer: {r['importer']}"
             assert "\\" not in r["target"], f"Backslash in target: {r['target']}"
 
         # 7. Unresolvable import produces NO result
-        test_unresolvable = resolve_imports(
-            {"test/file.py": ["react"]}, rel_paths
-        )
-        assert len(test_unresolvable) == 0, (
-            f"Expected 0 results for unresolvable, got {test_unresolvable}"
-        )
+        test_unresolvable = resolve_imports({"test/file.py": ["react"]}, rel_paths)
+        assert len(test_unresolvable) == 0, f"Expected 0 results for unresolvable, got {test_unresolvable}"
 
         # 8. Ambiguous rule-4 suffix produces NO result
         ambiguous_paths = {"a/util.go", "b/util.go"}
-        test_ambiguous = resolve_imports(
-            {"test/file.go": ["util"]}, ambiguous_paths
-        )
-        assert len(test_ambiguous) == 0, (
-            f"Expected 0 results for ambiguous suffix, got {test_ambiguous}"
-        )
+        test_ambiguous = resolve_imports({"test/file.go": ["util"]}, ambiguous_paths)
+        assert len(test_ambiguous) == 0, f"Expected 0 results for ambiguous suffix, got {test_ambiguous}"
 
         # 9. Calling twice yields identical output
         results2 = resolve_imports(imports, rel_paths)
@@ -543,18 +513,10 @@ if __name__ == "__main__":
             {"web/src/features/checkout/useCheckout.ts": ["../../lib/payments"]},
             rel_paths,
         )
-        assert len(test_windows) == 1, (
-            f"Expected 1 result for Windows test, got {len(test_windows)}"
-        )
-        assert test_windows[0]["target"] == "web/src/lib/payments.ts", (
-            f"Got {test_windows[0]['target']}"
-        )
-        assert "/" in test_windows[0]["target"], (
-            "Target should have forward slashes"
-        )
-        assert "\\" not in test_windows[0]["target"], (
-            "Target should not have backslashes"
-        )
+        assert len(test_windows) == 1, f"Expected 1 result for Windows test, got {len(test_windows)}"
+        assert test_windows[0]["target"] == "web/src/lib/payments.ts", f"Got {test_windows[0]['target']}"
+        assert "/" in test_windows[0]["target"], "Target should have forward slashes"
+        assert "\\" not in test_windows[0]["target"], "Target should not have backslashes"
 
         # ===== Tests for resolve_calls =====
 
@@ -615,62 +577,44 @@ if __name__ == "__main__":
         # Assertion 1: backend/api/auth.py produces a call edge with
         # caller_symbol == "refresh_session", target_symbol == "renew_login"
         auth_edges = [
-            r
-            for r in call_results
-            if r["caller_file"] == "backend/api/auth.py"
-            and r["target_symbol"] == "renew_login"
+            r for r in call_results if r["caller_file"] == "backend/api/auth.py" and r["target_symbol"] == "renew_login"
         ]
-        assert (
-            len(auth_edges) == 1
-        ), f"Expected 1 auth edge to renew_login, got {len(auth_edges)}: {auth_edges}"
+        assert len(auth_edges) == 1, f"Expected 1 auth edge to renew_login, got {len(auth_edges)}: {auth_edges}"
         assert auth_edges[0]["caller_symbol"] == "refresh_session", (
             f"Expected caller_symbol refresh_session, got {auth_edges[0]['caller_symbol']}"
         )
-        assert (
-            auth_edges[0]["target_file"] == "backend/services/session_service.py"
-        ), f"Expected target backend/services/session_service.py, got {auth_edges[0]['target_file']}"
-        assert (
-            auth_edges[0]["confidence"] == "INFERRED"
-        ), f"Expected INFERRED, got {auth_edges[0]['confidence']}"
+        assert auth_edges[0]["target_file"] == "backend/services/session_service.py", (
+            f"Expected target backend/services/session_service.py, got {auth_edges[0]['target_file']}"
+        )
+        assert auth_edges[0]["confidence"] == "INFERRED", f"Expected INFERRED, got {auth_edges[0]['confidence']}"
 
         # Assertion 2: backend/services/session_service.py produces an edge to extend_expiry
         extend_expiry_edges = [
             r
             for r in call_results
-            if r["caller_file"] == "backend/services/session_service.py"
-            and r["target_symbol"] == "extend_expiry"
+            if r["caller_file"] == "backend/services/session_service.py" and r["target_symbol"] == "extend_expiry"
         ]
-        assert (
-            len(extend_expiry_edges) == 1
-        ), f"Expected 1 extend_expiry edge, got {len(extend_expiry_edges)}: {extend_expiry_edges}"
-        assert (
-            extend_expiry_edges[0]["target_file"] == "backend/repositories/session_repository.py"
-        ), f"Unexpected target file: {extend_expiry_edges[0]['target_file']}"
+        assert len(extend_expiry_edges) == 1, (
+            f"Expected 1 extend_expiry edge, got {len(extend_expiry_edges)}: {extend_expiry_edges}"
+        )
+        assert extend_expiry_edges[0]["target_file"] == "backend/repositories/session_repository.py", (
+            f"Unexpected target file: {extend_expiry_edges[0]['target_file']}"
+        )
 
         # Assertion 3: window.location.assign resolves to NOTHING
-        assign_edges = [
-            r
-            for r in call_results
-            if r.get("target_symbol") == "assign"
-        ]
-        assert (
-            len(assign_edges) == 0
-        ), f"Expected no edges for 'assign', got {len(assign_edges)}: {assign_edges}"
+        assign_edges = [r for r in call_results if r.get("target_symbol") == "assign"]
+        assert len(assign_edges) == 0, f"Expected no edges for 'assign', got {len(assign_edges)}: {assign_edges}"
 
         # Assertion 4: Every result has exactly five keys
         for r in call_results:
             keys = set(r.keys())
             expected = {"caller_file", "caller_symbol", "target_file", "target_symbol", "confidence"}
-            assert (
-                keys == expected
-            ), f"Result {r} has wrong keys: {keys}, expected {expected}"
+            assert keys == expected, f"Result {r} has wrong keys: {keys}, expected {expected}"
 
         # Assertion 5: No edge has caller and target being the same symbol in same file
         for r in call_results:
             if r["caller_file"] == r["target_file"]:
-                assert (
-                    r["caller_symbol"] != r["target_symbol"]
-                ), f"Self-recursion detected: {r}"
+                assert r["caller_symbol"] != r["target_symbol"], f"Self-recursion detected: {r}"
 
         # Assertion 6: Confidence values are only EXTRACTED or INFERRED
         for r in call_results:
@@ -692,21 +636,15 @@ if __name__ == "__main__":
 
         # Assertion 8: Calling twice yields identical output
         call_results2 = resolve_calls(calls, symbols_by_file, import_edges_for_calls)
-        assert (
-            call_results == call_results2
-        ), f"Non-deterministic output:\n{call_results}\nvs\n{call_results2}"
+        assert call_results == call_results2, f"Non-deterministic output:\n{call_results}\nvs\n{call_results2}"
 
         # Assertion 9: resolve_calls({}, {}, []) returns []
         empty_result = resolve_calls({}, {}, [])
-        assert (
-            empty_result == []
-        ), f"Empty inputs should return [], got {empty_result}"
+        assert empty_result == [], f"Empty inputs should return [], got {empty_result}"
 
         # Assertion 10: A name defined in TWO different imported files yields NO edge
         # Create a scenario where extend_expiry is in two files
-        ambiguous_calls = {
-            "backend/api/auth.py": [{"name": "shared_func", "line": 5}]
-        }
+        ambiguous_calls = {"backend/api/auth.py": [{"name": "shared_func", "line": 5}]}
         ambiguous_symbols = {
             "backend/api/auth.py": [
                 {
@@ -717,36 +655,27 @@ if __name__ == "__main__":
                 }
             ],
             "file_a.py": [{"name": "shared_func", "kind": "function", "line_start": 1, "line_end": 2}],
-            "file_b.py": [
-                {"name": "shared_func", "kind": "function", "line_start": 1, "line_end": 2}
-            ],
+            "file_b.py": [{"name": "shared_func", "kind": "function", "line_start": 1, "line_end": 2}],
         }
         ambiguous_imports = [
             {"importer": "backend/api/auth.py", "target": "file_a.py", "confidence": "EXTRACTED"},
             {"importer": "backend/api/auth.py", "target": "file_b.py", "confidence": "EXTRACTED"},
         ]
-        ambiguous_result = resolve_calls(
-            ambiguous_calls, ambiguous_symbols, ambiguous_imports
-        )
+        ambiguous_result = resolve_calls(ambiguous_calls, ambiguous_symbols, ambiguous_imports)
         # Should have no edge because shared_func is ambiguous
         shared_func_edges = [
             r
             for r in ambiguous_result
-            if r["caller_file"] == "backend/api/auth.py"
-            and r["target_symbol"] == "shared_func"
+            if r["caller_file"] == "backend/api/auth.py" and r["target_symbol"] == "shared_func"
         ]
-        assert (
-            len(shared_func_edges) == 0
-        ), f"Expected no edge for ambiguous shared_func, got {len(shared_func_edges)}: {shared_func_edges}"
+        assert len(shared_func_edges) == 0, (
+            f"Expected no edge for ambiguous shared_func, got {len(shared_func_edges)}: {shared_func_edges}"
+        )
 
         # Assertion 11: No path contains backslash
         for r in call_results:
-            assert "\\" not in r["caller_file"], (
-                f"Backslash in caller_file: {r['caller_file']}"
-            )
-            assert "\\" not in r["target_file"], (
-                f"Backslash in target_file: {r['target_file']}"
-            )
+            assert "\\" not in r["caller_file"], f"Backslash in caller_file: {r['caller_file']}"
+            assert "\\" not in r["target_file"], f"Backslash in target_file: {r['target_file']}"
 
         print("OK")
         sys.exit(0)

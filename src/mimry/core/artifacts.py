@@ -9,40 +9,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .intent import apply_intent_adjustment, query_terms
-from .paths import (
-    generation_graphify_output_dir,
-    graph_output_dir,
-    graphify_output_dir,
-    legacy_graphify_output_dir,
-)
-from .security import path_has_ignored_part, stat_identity, text_mentions_ignored_path
+from ..intent import apply_intent_adjustment, query_terms
+from ..paths import graph_output_dir
+from ..security import path_has_ignored_part, stat_identity, text_mentions_ignored_path
 
 
-GRAPHIFY_ARTIFACT_FILES = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
+GRAPH_ARTIFACT_FILES = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
 
 
-def graphify_artifact_dir(root: Path) -> Path:
-    """Return the active artifact directory, with read-only legacy fallback.
-
-    New builds write to MIMRY's stable cache-backed Graphify output directory.
-    Readers also recognize the short-lived generation-local layout and the old
-    `.mimry/graphify` layout. Each candidate is selected as one directory so
-    artifacts from different generations/layouts are never mixed.
-    """
-    visible = graph_output_dir(root)
-    if any((visible / name).exists() for name in GRAPHIFY_ARTIFACT_FILES):
-        return visible
-    primary = graphify_output_dir(root)
-    if any((primary / name).exists() for name in GRAPHIFY_ARTIFACT_FILES):
-        return primary
-    generation = generation_graphify_output_dir(root)
-    if generation is not None and any((generation / name).exists() for name in GRAPHIFY_ARTIFACT_FILES):
-        return generation
-    legacy = legacy_graphify_output_dir(root)
-    if any((legacy / name).exists() for name in GRAPHIFY_ARTIFACT_FILES):
-        return legacy
-    return visible
+def artifact_dir(root: Path) -> Path:
+    """Return the graph artifact directory."""
+    return graph_output_dir(root)
 
 
 def _iso_mtime(path: Path) -> str | None:
@@ -88,19 +65,19 @@ def _safe_regular_sha256(path: Path) -> str | None:
         return None
 
 
-def graphify_graph_path(root: Path) -> Path:
-    return graphify_artifact_dir(root) / "graph.json"
+def graph_path(root: Path) -> Path:
+    return artifact_dir(root) / "graph.json"
 
 
-def graphify_report_path(root: Path) -> Path:
-    return graphify_artifact_dir(root) / "GRAPH_REPORT.md"
+def report_path(root: Path) -> Path:
+    return artifact_dir(root) / "GRAPH_REPORT.md"
 
 
-def graphify_manifest_path(root: Path) -> Path:
-    return graphify_artifact_dir(root) / "manifest.json"
+def manifest_path(root: Path) -> Path:
+    return artifact_dir(root) / "manifest.json"
 
 
-def _filtered_graphify_graph(graph: dict) -> dict:
+def _filtered_graph(graph: dict) -> dict:
     nodes = graph.get("nodes") or []
     retained_nodes = [node for node in nodes if not path_has_ignored_part(node_source_file(node) or "")]
     retained_ids = {str(node.get("id")) for node in retained_nodes if node.get("id") is not None}
@@ -113,16 +90,16 @@ def _filtered_graphify_graph(graph: dict) -> dict:
     return {**graph, "nodes": retained_nodes, edge_key: retained_edges}
 
 
-def load_graphify_graph(root: Path) -> dict:
-    path = graphify_graph_path(root)
+def load_graph(root: Path) -> dict:
+    path = graph_path(root)
     if not path.exists():
         return {}
     graph = _load_json(path)
-    return _filtered_graphify_graph(graph) if isinstance(graph, dict) else {}
+    return _filtered_graph(graph) if isinstance(graph, dict) else {}
 
 
-def graphify_available(root: Path) -> bool:
-    g = load_graphify_graph(root)
+def graph_available(root: Path) -> bool:
+    g = load_graph(root)
     return bool(g.get("nodes"))
 
 
@@ -146,17 +123,13 @@ def _report_freshness_lines(path: Path) -> dict[str, str | None]:
     return {"report_title": title, "built_from_commit": built_from_commit}
 
 
-def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, Any]:
-    """Return cheap Graphify artifact health without invoking Graphify or changing ranking."""
-    out = graphify_artifact_dir(root)
-    visible_out = graph_output_dir(root)
-    primary_out = graphify_output_dir(root)
-    generation_out = generation_graphify_output_dir(root)
-    legacy_out = legacy_graphify_output_dir(root)
-    graph_path = graphify_graph_path(root)
-    report_path = graphify_report_path(root)
-    manifest_path = graphify_manifest_path(root)
-    raw_graph = _load_json(graph_path) if graph_path.exists() else None
+def graph_health(root: Path, *, index_state: str | None = None) -> dict[str, Any]:
+    """Return cheap graph artifact health without invoking the graph engine or changing ranking."""
+    out = artifact_dir(root)
+    graph_p = graph_path(root)
+    report_p = report_path(root)
+    manifest_p = manifest_path(root)
+    raw_graph = _load_json(graph_p) if graph_p.exists() else None
     raw_graph = raw_graph if isinstance(raw_graph, dict) else {}
     ignored_artifact_sources = sorted(
         {
@@ -165,8 +138,8 @@ def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, 
             if (source := node_source_file(node)) and path_has_ignored_part(source)
         }
     )
-    graph = _filtered_graphify_graph(raw_graph)
-    manifest = _load_json(manifest_path) if manifest_path.exists() else None
+    graph = _filtered_graph(raw_graph)
+    manifest = _load_json(manifest_p) if manifest_p.exists() else None
     manifest_entries = manifest if isinstance(manifest, dict) else {}
 
     ignored_manifest_sources = sorted(
@@ -201,39 +174,32 @@ def graphify_health(root: Path, *, index_state: str | None = None) -> dict[str, 
                 if abs(source_mtime - float(info["mtime"])) > 1e-6:
                     stale_sources.append(rel_path)
 
-    graph_exists = graph_path.exists()
-    report_exists = report_path.exists()
-    manifest_exists = manifest_path.exists()
+    graph_exists = graph_p.exists()
+    report_exists = report_p.exists()
+    manifest_exists = manifest_p.exists()
     artifact_missing = not graph_exists or not report_exists or not manifest_exists
     source_stale = bool(missing_sources or stale_sources)
     policy_stale = bool(ignored_artifact_sources or ignored_manifest_sources)
     possibly_stale = source_stale or policy_stale or index_state not in (None, "current")
     status = "missing" if artifact_missing else ("stale" if possibly_stale else "current")
 
-    report_info = _report_freshness_lines(report_path)
+    report_info = _report_freshness_lines(report_p)
     return {
         "status": status,
         "output_dir": str(out),
-        "cache_output_dir": str(primary_out),
-        "generation_output_dir": str(generation_out) if generation_out is not None else None,
-        "visible_output_dir": str(visible_out),
-        "legacy_output_dir": str(legacy_out),
-        "using_visible_output": out == visible_out,
-        "using_generation_output": generation_out is not None and out == generation_out,
-        "using_legacy_output": out == legacy_out and out != primary_out and out != visible_out,
-        "graph_path": str(graph_path),
+        "graph_path": str(graph_p),
         "graph_exists": graph_exists,
-        "graph_generated_at": _iso_mtime(graph_path),
+        "graph_generated_at": _iso_mtime(graph_p),
         "graph_nodes": len(graph.get("nodes") or []),
         "graph_edges": len(graph.get("links") or graph.get("edges") or []),
-        "report_path": str(report_path),
+        "report_path": str(report_p),
         "report_exists": report_exists,
-        "report_generated_at": _iso_mtime(report_path),
+        "report_generated_at": _iso_mtime(report_p),
         "report_title": report_info["report_title"],
         "built_from_commit": report_info["built_from_commit"],
-        "manifest_path": str(manifest_path),
+        "manifest_path": str(manifest_p),
         "manifest_exists": manifest_exists,
-        "manifest_generated_at": _iso_mtime(manifest_path),
+        "manifest_generated_at": _iso_mtime(manifest_p),
         "manifest_entries": len(manifest_entries),
         "source_stale": source_stale,
         "source_changed_files": stale_sources,
@@ -269,9 +235,9 @@ def _node_text(node: dict) -> str:
     ).lower()
 
 
-def graphify_surface_matches(root: Path, query: str, limit: int = 5) -> list[dict]:
-    """Resolve a file/symbol/query to Graphify nodes, using artifact text only."""
-    g = load_graphify_graph(root)
+def surface_matches(root: Path, query: str, limit: int = 5) -> list[dict]:
+    """Resolve a file/symbol/query to graph nodes, using artifact text only."""
+    g = load_graph(root)
     terms = query_terms(query)
     if not terms:
         return []
@@ -301,9 +267,9 @@ def graphify_surface_matches(root: Path, query: str, limit: int = 5) -> list[dic
     return sorted(matches, key=lambda m: (-m["score"], m["path"], m["label"]))[:limit]
 
 
-def graphify_evidence_for_path(root: Path, surface: str, max_lines: int = 6) -> list[str]:
-    """Return concise Graphify node/edge evidence for a file or symbol surface."""
-    g = load_graphify_graph(root)
+def evidence_for_path(root: Path, surface: str, max_lines: int = 6) -> list[str]:
+    """Return concise graph node/edge evidence for a file or symbol surface."""
+    g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     surface_lower = surface.lower()
@@ -334,14 +300,14 @@ def graphify_evidence_for_path(root: Path, surface: str, max_lines: int = 6) -> 
     return lines
 
 
-def graphify_shortest_path(root: Path, source_query: str, target_query: str, max_hops: int = 6) -> dict:
-    """Find a shortest relationship path in Graphify artifacts; do not infer missing edges."""
-    g = load_graphify_graph(root)
+def shortest_path(root: Path, source_query: str, target_query: str, max_hops: int = 6) -> dict:
+    """Find a shortest relationship path in graph artifacts; do not infer missing edges."""
+    g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
-    source_matches = graphify_surface_matches(root, source_query, limit=5)
-    target_matches = graphify_surface_matches(root, target_query, limit=5)
+    source_matches = surface_matches(root, source_query, limit=5)
+    target_matches = surface_matches(root, target_query, limit=5)
     if not source_matches or not target_matches:
         return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
 
@@ -463,8 +429,8 @@ def _expand_along_edges(
         row["reasons"].add("reached by MIMRY graph relationship")
 
 
-def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
-    g = load_graphify_graph(root)
+def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
+    g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     terms = query_terms(query)
@@ -491,13 +457,13 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
             if term in text:
                 if term in str(n.get("label", "")).lower() or term in str(n.get("norm_label", "")).lower():
                     score += 45
-                    reasons.append("Graphify node label match")
+                    reasons.append("graph node label match")
                 if term in src.lower():
                     score += 35
-                    reasons.append("Graphify source file match")
+                    reasons.append("graph source file match")
                 if term in str(n.get("id", "")).lower():
                     score += 10
-                    reasons.append("Graphify node id match")
+                    reasons.append("graph node id match")
         if not score:
             continue
         deg = degree.get(str(n.get("id")), 0)
@@ -534,7 +500,7 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
 
     rows = []
     for row in by_file.values():
-        row["score"], intent_reasons = apply_intent_adjustment(row["score"], row["path"], terms, graphify=True)
+        row["score"], intent_reasons = apply_intent_adjustment(row["score"], row["path"], terms, graph=True)
         if row["score"] <= 0:
             continue
         row["reasons"].update(intent_reasons)
@@ -546,18 +512,18 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         if row["topology_boost"]:
             detail = f" ({'; '.join(topology_details)})" if topology_details else ""
             row["reasons"].add(
-                f"Graphify topology boost {row['topology_boost']} across {row['topology_nodes']} matched nodes{detail}"
+                f"graph topology boost {row['topology_boost']} across {row['topology_nodes']} matched nodes{detail}"
             )
         node_preview = ", ".join(row["nodes"][:4])
         reason = ", ".join(sorted(row["reasons"]))
         if node_preview:
             reason += f"; nodes: {node_preview}"
-        rows.append({"path": row["path"], "score": row["score"], "reason": reason, "source": "graphify"})
+        rows.append({"path": row["path"], "score": row["score"], "reason": reason, "source": "graph"})
     return sorted(rows, key=lambda r: (-r["score"], r["path"]))[:limit]
 
 
-def graphify_relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 12) -> list[str]:
-    g = load_graphify_graph(root)
+def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 12) -> list[str]:
+    g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
@@ -587,8 +553,8 @@ def graphify_relationship_lines(root: Path, selected_paths: list[str], max_lines
     return lines
 
 
-def graphify_report_excerpt(root: Path, max_chars: int = 1200) -> str:
-    path = graphify_report_path(root)
+def report_excerpt(root: Path, max_chars: int = 1200) -> str:
+    path = report_path(root)
     if not path.exists():
         return ""
     text = path.read_text(encoding="utf-8", errors="replace")

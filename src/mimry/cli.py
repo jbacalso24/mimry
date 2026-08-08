@@ -37,9 +37,7 @@ def build_parser():
     sub = p.add_subparsers(dest="command", required=True)
     s = sub.add_parser("init", help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees")
     s.add_argument("--root-type", default="repo")
-    s.add_argument(
-        "--skip-graph", action="store_true", help="Create MIMRY metadata without building graph artifacts"
-    )
+    s.add_argument("--skip-graph", action="store_true", help="Create MIMRY metadata without building graph artifacts")
     s.set_defaults(func=cmd_init)
     sub.add_parser("index").set_defaults(func=cmd_index)
     sub.add_parser("reindex").set_defaults(func=cmd_index)

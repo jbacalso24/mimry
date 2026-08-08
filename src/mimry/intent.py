@@ -116,9 +116,9 @@ def is_concept_intent(terms: list[str]) -> bool:
 
 
 def apply_intent_adjustment(
-    score: int, rel_path: str, terms: list[str], *, graphify: bool = False
+    score: int, rel_path: str, terms: list[str], *, graph: bool = False
 ) -> tuple[int, list[str]]:
-    """Apply transparent intent-aware ranking without replacing Graphify/content signals."""
+    """Apply transparent intent-aware ranking without replacing graph/content signals."""
     reasons: list[str] = []
     if score <= 0:
         return score, reasons

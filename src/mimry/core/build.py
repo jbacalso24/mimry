@@ -119,9 +119,9 @@ class GraphEngine:
         Replace /, \, _, -, . with space, collapse whitespace, strip.
         """
         # Replace separators with space
-        normalized = re.sub(r'[/\\_\-.]+', ' ', label)
+        normalized = re.sub(r"[/\\_\-.]+", " ", label)
         # Collapse runs of whitespace
-        normalized = re.sub(r'\s+', ' ', normalized)
+        normalized = re.sub(r"\s+", " ", normalized)
         # Strip
         normalized = normalized.strip()
         # Lowercase
@@ -238,8 +238,12 @@ if __name__ == "__main__":
         # 1. Every node has all 8 required keys, and source_file is non-empty
         for node in result["nodes"]:
             required_keys = {"id", "label", "norm_label", "source_file", "type", "kind", "file_type", "community"}
-            assert set(node.keys()) == required_keys, f"Node {node['id']} missing keys: {required_keys - set(node.keys())}"
-            assert isinstance(node["source_file"], str) and len(node["source_file"]) > 0, f"Node {node['id']} has empty source_file"
+            assert set(node.keys()) == required_keys, (
+                f"Node {node['id']} missing keys: {required_keys - set(node.keys())}"
+            )
+            assert isinstance(node["source_file"], str) and len(node["source_file"]) > 0, (
+                f"Node {node['id']} has empty source_file"
+            )
 
         # 2. File node ids start with "file:", symbol node ids start with "symbol:"
         node_ids = [n["id"] for n in result["nodes"]]
@@ -272,7 +276,9 @@ if __name__ == "__main__":
 
         # 7. Confidence values are only ever the strings "EXTRACTED" or "INFERRED"
         for edge in result["edges"]:
-            assert edge["confidence"] in {"EXTRACTED", "INFERRED"}, f"Edge confidence {edge['confidence']} is not EXTRACTED or INFERRED"
+            assert edge["confidence"] in {"EXTRACTED", "INFERRED"}, (
+                f"Edge confidence {edge['confidence']} is not EXTRACTED or INFERRED"
+            )
 
         # 8. norm_label for "backend/api/auth.py" equals "backend api auth py"
         auth_node = [n for n in result["nodes"] if n["label"] == "backend/api/auth.py"][0]

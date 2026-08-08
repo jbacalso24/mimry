@@ -113,7 +113,9 @@ def _walk(node: Any):
 def _first_identifier(node: Any, source: str) -> str | None:
     """Find the first identifier-like child recursively."""
     kind = node.kind()
-    if kind in ("identifier", "type_identifier", "field_identifier", "property_identifier", "name") or kind.endswith("identifier"):
+    if kind in ("identifier", "type_identifier", "field_identifier", "property_identifier", "name") or kind.endswith(
+        "identifier"
+    ):
         return _text(source, node)
     for child in _children(node):
         found = _first_identifier(child, source)
@@ -231,13 +233,15 @@ def extract(path: str | Path, source: str) -> dict:
                 if key not in seen_defs:
                     seen_defs.add(key)
                     exported = _is_exported(node, lang, source)
-                    definitions.append({
-                        "name": name,
-                        "kind": symbol_kind(lang, kind),
-                        "line_start": line,
-                        "line_end": _end_line(node),
-                        "exported": exported,
-                    })
+                    definitions.append(
+                        {
+                            "name": name,
+                            "kind": symbol_kind(lang, kind),
+                            "line_start": line,
+                            "line_end": _end_line(node),
+                            "exported": exported,
+                        }
+                    )
 
         # Imports
         if kind in node_types["imports"]:
@@ -277,10 +281,12 @@ def extract(path: str | Path, source: str) -> dict:
                             module = parts[1].strip()
 
             if module:
-                imports.append({
-                    "module": module,
-                    "line": _line(node),
-                })
+                imports.append(
+                    {
+                        "module": module,
+                        "line": _line(node),
+                    }
+                )
 
         # Calls
         if kind in node_types["calls"]:
@@ -293,10 +299,12 @@ def extract(path: str | Path, source: str) -> dict:
             if first_child:
                 call_name = _text(source, first_child)
                 if call_name.strip():
-                    calls.append({
-                        "name": call_name,
-                        "line": _line(node),
-                    })
+                    calls.append(
+                        {
+                            "name": call_name,
+                            "line": _line(node),
+                        }
+                    )
 
     # Check for parse errors
     if root_node.has_error():
@@ -337,7 +345,8 @@ if __name__ == "__main__":
 
             # Python sample
             py_file = tmppath / "test.py"
-            py_file.write_text("""
+            py_file.write_text(
+                """
 import os
 from sys import path
 
@@ -347,7 +356,9 @@ def hello():
 class MyClass:
     def method(self):
         os.getcwd()
-""", encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
             result = extract(py_file, py_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"Python parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in python"
@@ -358,7 +369,8 @@ class MyClass:
 
             # JavaScript sample
             js_file = tmppath / "test.js"
-            js_file.write_text("""
+            js_file.write_text(
+                """
 import React from 'react';
 import { useState } from 'react';
 
@@ -372,7 +384,9 @@ class Counter {
         return <div>Count</div>;
     }
 }
-""", encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
             result = extract(js_file, js_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"JavaScript parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in js"
@@ -383,7 +397,8 @@ class Counter {
 
             # TypeScript sample
             ts_file = tmppath / "test.ts"
-            ts_file.write_text("""
+            ts_file.write_text(
+                """
 import { Component } from '@angular/core';
 
 export function process(data: string): void {
@@ -395,7 +410,9 @@ export class Handler {
         process("test");
     }
 }
-""", encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
             result = extract(ts_file, ts_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"TypeScript parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in ts"
@@ -406,7 +423,8 @@ export class Handler {
 
             # TSX sample (critical: must parse with tsx grammar)
             tsx_file = tmppath / "test.tsx"
-            tsx_file.write_text("""
+            tsx_file.write_text(
+                """
 import React from 'react';
 
 export function MyComponent() {
@@ -419,7 +437,9 @@ export class PageComponent extends React.Component {
         return <MyComponent />;
     }
 }
-""", encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
             result = extract(tsx_file, tsx_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"TSX parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in tsx"
@@ -430,7 +450,8 @@ export class PageComponent extends React.Component {
 
             # Go sample
             go_file = tmppath / "test.go"
-            go_file.write_text("""package main
+            go_file.write_text(
+                """package main
 
 import (
     "fmt"
@@ -445,7 +466,9 @@ func main() {
 type Config struct {
     Name string
 }
-""", encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
             result = extract(go_file, go_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"Go parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in go"
@@ -456,7 +479,8 @@ type Config struct {
 
             # Rust sample
             rs_file = tmppath / "test.rs"
-            rs_file.write_text("""use std::fmt;
+            rs_file.write_text(
+                """use std::fmt;
 use std::io;
 
 fn main() {
@@ -470,7 +494,9 @@ fn helper() {
 struct Point {
     x: i32,
 }
-""", encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
             result = extract(rs_file, rs_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"Rust parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in rust"
@@ -481,7 +507,8 @@ struct Point {
 
             # C# sample
             cs_file = tmppath / "test.cs"
-            cs_file.write_text("""using System;
+            cs_file.write_text(
+                """using System;
 using System.Collections;
 
 namespace MyApp {
@@ -491,7 +518,9 @@ namespace MyApp {
         }
     }
 }
-""", encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
             result = extract(cs_file, cs_file.read_text(encoding="utf-8"))
             assert result["status"] == "ok", f"CSharp parse failed: {result['status']}"
             assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in csharp"
@@ -515,5 +544,6 @@ namespace MyApp {
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

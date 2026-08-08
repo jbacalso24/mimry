@@ -164,7 +164,13 @@ def _digest(root: Path) -> str:
 
 
 def evaluate(
-    cases_path: Path, fixture: Path, *, repeat: int = 3, gate_latency: bool = True, graph: bool = False, engine: str = "core"
+    cases_path: Path,
+    fixture: Path,
+    *,
+    repeat: int = 3,
+    gate_latency: bool = True,
+    graph: bool = False,
+    engine: str = "core",
 ) -> dict[str, Any]:
     if not 1 <= repeat <= 10:
         raise ValueError("repeat must be between 1 and 10")
@@ -190,7 +196,16 @@ def evaluate(
             graph_nodes, graph_edges = _graph_size(graph_status_out)
         case_reports, find_latencies, context_latencies, all_output = [], [], [], []
         all_output.extend(
-            (init_out, init_err, index_out, index_err, graph_build_out, graph_build_err, graph_status_out, graph_status_err)
+            (
+                init_out,
+                init_err,
+                index_out,
+                index_err,
+                graph_build_out,
+                graph_build_err,
+                graph_status_out,
+                graph_status_err,
+            )
         )
         for case in cases:
             samples, paths, find_output = [], [], ""

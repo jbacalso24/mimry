@@ -114,12 +114,14 @@ def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by
         importer_id = file_id_of.get(e["importer"])
         target_id = file_id_of.get(e["target"])
         if importer_id and target_id:
-            graph["edges"].append({
-                "source": f"file:{importer_id}",
-                "target": f"file:{target_id}",
-                "relation": "imports",
-                "confidence": e["confidence"],
-            })
+            graph["edges"].append(
+                {
+                    "source": f"file:{importer_id}",
+                    "target": f"file:{target_id}",
+                    "relation": "imports",
+                    "confidence": e["confidence"],
+                }
+            )
 
     # Step 4: resolve calls and convert to graph edges (SYMBOL to SYMBOL)
     call_edges = resolve_calls(calls, symbols_by_file, import_edges)
@@ -148,19 +150,18 @@ def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by
         target_id = symbol_by_path_name.get((target_file, target_symbol))
 
         if caller_id and target_id:
-            graph["edges"].append({
-                "source": f"symbol:{caller_id}",
-                "target": f"symbol:{target_id}",
-                "relation": "calls",
-                "confidence": e["confidence"],
-            })
+            graph["edges"].append(
+                {
+                    "source": f"symbol:{caller_id}",
+                    "target": f"symbol:{target_id}",
+                    "relation": "calls",
+                    "confidence": e["confidence"],
+                }
+            )
 
     # Step 5: drop any edge with missing endpoints
     node_ids = {n["id"] for n in graph["nodes"]}
-    graph["edges"] = [
-        e for e in graph["edges"]
-        if e.get("source") in node_ids and e.get("target") in node_ids
-    ]
+    graph["edges"] = [e for e in graph["edges"] if e.get("source") in node_ids and e.get("target") in node_ids]
 
     # Step 6: assign communities
     graph["nodes"] = assign_communities(graph["nodes"], graph["edges"])

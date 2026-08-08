@@ -364,6 +364,6 @@ def merge_semantic_rows(
             if row.get("details") and not existing.get("details"):
                 existing["details"] = row["details"]
         else:
-            # Keep semantic-only candidates useful but below strong exact/Graphify evidence.
+            # Keep semantic-only candidates useful but below strong exact/graph evidence.
             by_path[row["path"]] = {**row, "score": min(row["score"], 80)}
     return sorted(by_path.values(), key=lambda r: (-r["score"], r["path"]))[:limit]

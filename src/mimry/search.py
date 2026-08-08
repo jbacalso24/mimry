@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from .feedback import apply_feedback_to_rows
-from .graphify_artifacts import graphify_available, graphify_rows
+from .core.artifacts import graph_available, graph_rows
 from .intent import apply_intent_adjustment, query_terms
 from .semantic import merge_semantic_rows, semantic_rows
 from .security import filter_index_records, redact_sensitive_text
@@ -97,7 +97,7 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
             folder = f["rel_path"].rsplit("/", 1)[0] if "/" in f["rel_path"] else "."
             if graph and folder in clusters:
                 s += 5
-                rs.append("Graphify cluster relationship")
+                rs.append("graph cluster relationship")
             row = {"path": f["rel_path"], "score": s, "reason": ", ".join(rs)}
             if any(
                 adapter in f.get("adapter", "")
@@ -114,8 +114,8 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
             fallback_rows.append(row)
     fallback_rows = sorted(fallback_rows, key=lambda r: (-r["score"], r["path"]))
     fallback_by_path = {r["path"]: r for r in fallback_rows if "config-manifest" in r["reason"]}
-    if root is not None and graphify_available(root):
-        rows = graphify_rows(root, q, limit)
+    if root is not None and graph_available(root):
+        rows = graph_rows(root, q, limit)
         if rows:
             rows = [
                 {

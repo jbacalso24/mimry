@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mimry.graphify_artifacts import graphify_rows
+from mimry.core.artifacts import graph_rows
 from mimry.intent import is_concept_intent, is_edit_intent, query_terms
 
 
 def write_graph(root: Path) -> None:
-    graph_dir = root / ".mimry" / "graphify"
-    graph_dir.mkdir(parents=True)
+    graph_dir = root / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
     graph = {
         "nodes": [
             {
@@ -46,10 +46,10 @@ def write_graph(root: Path) -> None:
     (graph_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
 
 
-def test_graphify_broad_query_can_surface_docs(tmp_path):
+def test_graph_broad_query_can_surface_docs(tmp_path):
     write_graph(tmp_path)
 
-    rows = graphify_rows(tmp_path, "ams", limit=4)
+    rows = graph_rows(tmp_path, "ams", limit=4)
 
     paths = [r["path"] for r in rows]
     assert "README.md" in paths
@@ -89,8 +89,8 @@ def test_explicit_edit_verbs_override_concept_language_for_artifacts():
 
 
 def test_test_artifact_ranking_is_action_aware_and_explained(tmp_path):
-    graph_dir = tmp_path / ".mimry" / "graphify"
-    graph_dir.mkdir(parents=True)
+    graph_dir = tmp_path / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
     label = "checkout tests payment redirect architecture overview"
     graph = {
         "nodes": [
@@ -109,7 +109,7 @@ def test_test_artifact_ranking_is_action_aware_and_explained(tmp_path):
     }
     (graph_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
 
-    action_rows = graphify_rows(tmp_path, "tests for checkout payment redirect", limit=2)
+    action_rows = graph_rows(tmp_path, "tests for checkout payment redirect", limit=2)
     assert [row["path"] for row in action_rows] == [
         "web/tests/checkout.test.tsx",
         "docs/checkout-tests-architecture.md",
@@ -117,22 +117,22 @@ def test_test_artifact_ranking_is_action_aware_and_explained(tmp_path):
     assert "test intent boost" in action_rows[0]["reason"]
     assert "doc downrank for edit intent" in action_rows[1]["reason"]
 
-    concept_rows = graphify_rows(tmp_path, "explain checkout tests architecture", limit=2)
+    concept_rows = graph_rows(tmp_path, "explain checkout tests architecture", limit=2)
     assert concept_rows[0]["path"] == "docs/checkout-tests-architecture.md"
     assert "concept doc boost" in concept_rows[0]["reason"]
     test_row = next(row for row in concept_rows if row["path"].startswith("web/tests/"))
     assert "test intent boost" not in test_row["reason"]
     assert "doc downrank for edit intent" not in concept_rows[0]["reason"]
 
-    explicit_edit_rows = graphify_rows(tmp_path, "fix checkout tests architecture overview", limit=2)
+    explicit_edit_rows = graph_rows(tmp_path, "fix checkout tests architecture overview", limit=2)
     assert explicit_edit_rows[0]["path"] == "web/tests/checkout.test.tsx"
     assert "test intent boost" in explicit_edit_rows[0]["reason"]
     assert "doc downrank for edit intent" in explicit_edit_rows[1]["reason"]
 
 
 def test_migration_artifact_ranking_is_action_aware_and_explained(tmp_path):
-    graph_dir = tmp_path / ".mimry" / "graphify"
-    graph_dir.mkdir(parents=True)
+    graph_dir = tmp_path / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
     label = "customer audit retention database migration architecture design docs"
     graph = {
         "nodes": [
@@ -151,7 +151,7 @@ def test_migration_artifact_ranking_is_action_aware_and_explained(tmp_path):
     }
     (graph_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
 
-    action_rows = graphify_rows(tmp_path, "migration for customer audit retention", limit=2)
+    action_rows = graph_rows(tmp_path, "migration for customer audit retention", limit=2)
     assert [row["path"] for row in action_rows] == [
         "db/migrations/20260728_customer_audit_retention.sql",
         "docs/database-migration-architecture.md",
@@ -159,23 +159,23 @@ def test_migration_artifact_ranking_is_action_aware_and_explained(tmp_path):
     assert "migration intent boost" in action_rows[0]["reason"]
     assert "doc downrank for edit intent" in action_rows[1]["reason"]
 
-    concept_rows = graphify_rows(tmp_path, "explain database migration architecture", limit=2)
+    concept_rows = graph_rows(tmp_path, "explain database migration architecture", limit=2)
     assert concept_rows[0]["path"] == "docs/database-migration-architecture.md"
     assert "concept doc boost" in concept_rows[0]["reason"]
     migration_row = next(row for row in concept_rows if row["path"].startswith("db/migrations/"))
     assert "migration intent boost" not in migration_row["reason"]
     assert "doc downrank for edit intent" not in concept_rows[0]["reason"]
 
-    explicit_edit_rows = graphify_rows(tmp_path, "implement migration architecture design docs", limit=2)
+    explicit_edit_rows = graph_rows(tmp_path, "implement migration architecture design docs", limit=2)
     assert explicit_edit_rows[0]["path"] == "db/migrations/20260728_customer_audit_retention.sql"
     assert "migration intent boost" in explicit_edit_rows[0]["reason"]
     assert "doc downrank for edit intent" in explicit_edit_rows[1]["reason"]
 
 
-def test_graphify_edit_intent_promotes_source_above_docs_and_explains(tmp_path):
+def test_graph_edit_intent_promotes_source_above_docs_and_explains(tmp_path):
     write_graph(tmp_path)
 
-    rows = graphify_rows(tmp_path, "fix ams monitor dashboard implementation", limit=4)
+    rows = graph_rows(tmp_path, "fix ams monitor dashboard implementation", limit=4)
 
     paths = [r["path"] for r in rows]
     assert paths.index("src/ams/monitor_dashboard.py") < paths.index("README.md")
@@ -186,9 +186,9 @@ def test_graphify_edit_intent_promotes_source_above_docs_and_explains(tmp_path):
     assert "doc downrank for edit intent" in doc_reason
 
 
-def test_graphify_rows_consolidate_file_topology_reasons_without_changing_score(tmp_path):
-    graph_dir = tmp_path / ".mimry" / "graphify"
-    graph_dir.mkdir(parents=True)
+def test_graph_rows_consolidate_file_topology_reasons_without_changing_score(tmp_path):
+    graph_dir = tmp_path / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
     graph = {
         "nodes": [
             {"id": "first", "label": "Widget first", "source_file": "src/widgets.py", "community": 10},
@@ -204,7 +204,7 @@ def test_graphify_rows_consolidate_file_topology_reasons_without_changing_score(
     }
     (graph_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
 
-    rows = graphify_rows(tmp_path, "widget")
+    rows = graph_rows(tmp_path, "widget")
     by_path = {row["path"]: row for row in rows}
     row = by_path["src/widgets.py"]
 
@@ -220,8 +220,8 @@ def test_graphify_rows_consolidate_file_topology_reasons_without_changing_score(
     # (45 label + 35 source + 5 degree + 5 community)
     # + (45 label + 35 source + 10 degree + 5 community).
     assert row["score"] == 185
-    assert "Graphify topology boost 25 across 2 matched nodes" in row["reason"]
+    assert "graph topology boost 25 across 2 matched nodes" in row["reason"]
     assert "max degree 2" in row["reason"]
     assert "2 communities" in row["reason"]
-    assert "Graphify degree 1" not in row["reason"]
-    assert "Graphify degree 2" not in row["reason"]
+    assert "graph degree 1" not in row["reason"]
+    assert "graph degree 2" not in row["reason"]

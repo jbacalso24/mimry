@@ -35,7 +35,7 @@ class StateCorruptionError(RuntimeError):
         recovery = f" No valid last-known-good backup was found at {backup}." if backup is not None else ""
         super().__init__(
             f"Corrupt MIMRY state at {self.path}: {detail}.{recovery} "
-            "Preserve the corrupt file before moving it aside. Then rerun `mimry init --skip-graphify` "
+            "Preserve the corrupt file before moving it aside. Then rerun `mimry init --skip-graph` "
             "for pointer state, or rerun `mimry index` to rebuild index sidecars."
         )
 
