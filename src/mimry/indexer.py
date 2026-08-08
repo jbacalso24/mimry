@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .core.build import GraphEngine
 from .core.cluster import assign_communities
-from .core.resolve import resolve_imports, resolve_calls
+from .core.resolve import resolve_imports, resolve_calls, resolve_doc_links, resolve_table_refs
 from .core.report import render_report, build_manifest
 from .paths import idx_path, now, pointer_file, graph_output_dir
 from .scanner import adapt, scan
@@ -78,13 +78,18 @@ def _collect(root: Path):
     imports = {}
     exports = {}
     calls = {}
+    references = {}
     symbols_by_file = {}
     for path in scan(root):
         try:
-            file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls = adapt(path, root)
+            file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references = adapt(
+                path, root
+            )
         except (OSError, UnicodeError, ValueError):
             continue
-        if contains_sensitive_data((file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls)):
+        if contains_sensitive_data(
+            (file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references)
+        ):
             continue
         files.append(file_rec)
         symbols += file_symbols
@@ -97,11 +102,14 @@ def _collect(root: Path):
             calls[file_rec["rel_path"]] = file_calls
         if file_symbols:
             symbols_by_file[file_rec["rel_path"]] = file_symbols
-    return files, symbols, edges, imports, exports, calls, symbols_by_file
+        # Accumulate references only if there's at least one non-empty list
+        if file_references.get("doc_links") or file_references.get("table_refs"):
+            references[file_rec["rel_path"]] = file_references
+    return files, symbols, edges, imports, exports, calls, symbols_by_file, references
 
 
-def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file):
-    """Build the native relationship graph: defines + imports + calls, then cluster."""
+def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references):
+    """Build the native relationship graph: defines + imports + calls + references, then cluster."""
     # Step 1: build_graph with imports/exports
     graph = GraphEngine().build_graph(files, symbols, edges, imports=imports, exports=exports)
 
@@ -160,14 +168,68 @@ def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by
                 }
             )
 
-    # Step 5: drop any edge with missing endpoints
+    # Step 5: reconstruct doc_links and table_refs from references
+    # References structure: {rel_path: {"doc_links": [...], "table_refs": [...]}}
+    doc_links_dict = {}
+    table_refs_dict = {}
+    if references:
+        for rel_path, ref_data in references.items():
+            if ref_data.get("doc_links"):
+                doc_links_dict[rel_path] = ref_data["doc_links"]
+            if ref_data.get("table_refs"):
+                table_refs_dict[rel_path] = ref_data["table_refs"]
+
+    # Step 6: resolve doc links and convert to graph edges (FILE to FILE)
+    doc_link_edges = resolve_doc_links(doc_links_dict, rel_paths)
+    for e in doc_link_edges:
+        source_id = file_id_of.get(e["source"])
+        target_id = file_id_of.get(e["target"])
+        if source_id and target_id:
+            graph["edges"].append(
+                {
+                    "source": f"file:{source_id}",
+                    "target": f"file:{target_id}",
+                    "relation": "references",
+                    "confidence": e["confidence"],
+                }
+            )
+
+    # Step 7: resolve table references and convert to graph edges (FILE to SYMBOL)
+    # Build table_symbols map: lower(table_name) -> [(rel_path, symbol_id), ...]
+    table_symbols_map = {}
+    for sym in symbols:
+        if sym.get("kind") == "sql_table":
+            table_name = sym.get("name", "").lower()
+            # Find the rel_path for this symbol
+            for f in files:
+                if f["file_id"] == sym["file_id"]:
+                    if table_name not in table_symbols_map:
+                        table_symbols_map[table_name] = []
+                    table_symbols_map[table_name].append((f["rel_path"], sym["symbol_id"]))
+                    break
+
+    table_ref_edges = resolve_table_refs(table_refs_dict, table_symbols_map)
+    for e in table_ref_edges:
+        source_id = file_id_of.get(e["source"])
+        target_symbol_id = e.get("target_symbol_id")
+        if source_id and target_symbol_id:
+            graph["edges"].append(
+                {
+                    "source": f"file:{source_id}",
+                    "target": f"symbol:{target_symbol_id}",
+                    "relation": "references",
+                    "confidence": e["confidence"],
+                }
+            )
+
+    # Step 8: drop any edge with missing endpoints
     node_ids = {n["id"] for n in graph["nodes"]}
     graph["edges"] = [e for e in graph["edges"] if e.get("source") in node_ids and e.get("target") in node_ids]
 
-    # Step 6: assign communities
+    # Step 9: assign communities
     graph["nodes"] = assign_communities(graph["nodes"], graph["edges"])
 
-    # Step 7: re-sort for determinism
+    # Step 10: re-sort for determinism
     graph["nodes"] = sorted(graph["nodes"], key=lambda n: n["id"])
     graph["edges"] = sorted(graph["edges"], key=lambda e: (e["source"], e["target"], e["relation"]))
 
@@ -247,8 +309,8 @@ def write_index(root, ptr):
             raise RuntimeError("MIMRY root pointer changed while waiting for the operation lock; retry indexing")
         ptr = active
         _cleanup_generations(root, base, ptr)
-        files, symbols, edges, imports, exports, calls, symbols_by_file = _collect(root)
-        graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file)
+        files, symbols, edges, imports, exports, calls, symbols_by_file, references = _collect(root)
+        graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references)
         generation_id = uuid.uuid4().hex
         indexed_at = now()
         staging = generations / f".{generation_id}.staging"
