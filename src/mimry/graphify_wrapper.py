@@ -167,10 +167,14 @@ def _copy_verified_regular_file(source: Path, target: Path, *, provenance: dict 
                 # checks compare the manifest with the real source provenance,
                 # not with the temporary copy time. The identity checks below
                 # fail closed if the path is swapped while setting the mtime.
+                # Windows supports neither follow_symlinks nor fd for utime, so request
+                # the strict form only where the platform implements it. The descriptor
+                # identity re-check below still fails closed if the path was swapped.
+                utime_kwargs = {"follow_symlinks": False} if os.utime in os.supports_follow_symlinks else {}
                 os.utime(
                     target,
                     ns=(os.fstat(target_handle.fileno()).st_atime_ns, opened.st_mtime_ns),
-                    follow_symlinks=False,
+                    **utime_kwargs,
                 )
                 target_after = os.fstat(target_handle.fileno())
                 target_current = target.lstat()

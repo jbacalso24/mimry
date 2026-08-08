@@ -12,7 +12,13 @@ def now():
 
 
 def cache_home():
-    return Path(os.environ.get("MIMRY_CACHE_HOME", Path.home() / ".cache" / "mimry")).expanduser()
+    # Resolve the override first. Passing Path.home() as a get() default evaluates it
+    # eagerly, so an explicit MIMRY_CACHE_HOME still crashed in environments without a
+    # resolvable home directory (Windows sandboxes with no USERPROFILE).
+    configured = os.environ.get("MIMRY_CACHE_HOME")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".cache" / "mimry"
 
 
 def roots_file():

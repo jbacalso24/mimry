@@ -88,7 +88,10 @@ def fsync_tree(path: Path) -> None:
         if entry.is_dir():
             directories.append(entry)
         elif entry.is_file():
-            with entry.open("rb") as handle:
+            # Windows _commit() rejects a read-only descriptor with EBADF, so open the
+            # staged file for update. Keeping the fsync (rather than skipping it on nt)
+            # preserves the durability guarantee the generation publish depends on.
+            with entry.open("rb+") as handle:
                 os.fsync(handle.fileno())
     for directory in reversed(directories):
         _fsync_directory(directory)

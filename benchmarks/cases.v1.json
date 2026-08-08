@@ -71,6 +71,44 @@
       "grades": {},
       "decoys": [],
       "expect_empty": true
+    },
+    {
+      "id": "checkout-payment-chain",
+      "query": "trace what payment processing flow the checkout page invokes",
+      "grades": {
+        "web/src/lib/payments.ts": 3,
+        "web/src/features/checkout/useCheckout.ts": 2,
+        "web/src/app/checkout/page.tsx": 2
+      },
+      "decoys": [
+        "docs/checkout-plan.md",
+        "archive/checkout-old.ts"
+      ]
+    },
+    {
+      "id": "session-service-fan-in",
+      "query": "what request handlers depend on the session service",
+      "grades": {
+        "backend/api/auth.py": 3,
+        "backend/repositories/session_repository.py": 2,
+        "backend/tests/test_auth.py": 2
+      },
+      "decoys": [
+        "docs/auth-design.md",
+        "examples/auth_demo.py"
+      ]
+    },
+    {
+      "id": "login-to-database",
+      "query": "what persistent structures store authentication session information",
+      "grades": {
+        "db/schema.sql": 3,
+        "backend/repositories/session_repository.py": 2,
+        "backend/api/auth.py": 2
+      },
+      "decoys": [
+        "docs/auth-design.md"
+      ]
     }
   ]
 }
