@@ -6,10 +6,12 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
 
+from mimry.core.documents import extract_document_text
 from mimry.mcp_server import (
     mimry_brief,
     mimry_context,
@@ -22,12 +24,15 @@ from mimry.mcp_server import (
     mimry_symbol,
     mimry_why,
 )
+from mimry.scanner import scan
 from mimry.security import (
     STREAM_CHUNK_BYTES,
     contains_sensitive_text,
+    path_has_ignored_part,
     redact_sensitive_text,
     root_contains_sensitive_content,
     safe_root,
+    text_mentions_ignored_path,
     tree_contains_sensitive_content,
 )
 
@@ -38,6 +43,7 @@ CANARY = "sk-" + "proj-" + "FAKECANARY" + ("0" * 24)
 VALUE_CANARY = "privacy-canary-value-123456789"
 QUERY_CANARY = f"TOKEN={VALUE_CANARY}"
 DEFENSIVE_MARKER = "MIMRY_TEST_" + "VALUE_123"
+OFFICE_CANARY = "OFFICE-CANARY-" + ("7" * 24)
 
 
 def run_cli(repo: Path, cache: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -78,6 +84,91 @@ def all_text_files(path: Path) -> str:
         except (OSError, UnicodeError):
             continue
     return "\n".join(rendered)
+
+
+def write_office_document(path: Path, text: str) -> None:
+    member = "word/document.xml" if path.suffix == ".docx" else "xl/sharedStrings.xml"
+    tag = "w:t" if path.suffix == ".docx" else "t"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr(member, f"<{tag}>{text}</{tag}>")
+
+
+@pytest.mark.parametrize("extension", [".docx", ".xlsx"])
+def test_office_documents_redact_spaced_secret_labels_but_keep_safe_search_text(
+    tmp_path: Path, monkeypatch, extension: str
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    document = repo / f"planning{extension}"
+    write_office_document(
+        document,
+        f"Quarterly launch schedule. API Key: {OFFICE_CANARY}. Retain roadmap milestone phoenix.",
+    )
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    indexed_result = run_cli(repo, cache, "index")
+    assert indexed_result.returncode == 0, indexed_result.stderr
+    context_result = run_cli(repo, cache, "context", "roadmap milestone phoenix", "--semantic")
+    assert context_result.returncode == 0, context_result.stderr
+
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    index = Path(pointer["indexPath"])
+    files_jsonl = (index / "files.jsonl").read_text(encoding="utf-8")
+    persisted = all_text_files(index) + sqlite_dump(index / "mimry.sqlite")
+    generated = all_text_files(repo / ".mimry" / "mimry-out")
+
+    assert document.name in files_jsonl
+    assert "roadmap milestone phoenix" in persisted.lower()
+    assert "roadmap milestone phoenix" in generated.lower()
+    assert OFFICE_CANARY not in persisted + generated + context_result.stdout + context_result.stderr
+
+
+@pytest.mark.parametrize("extension", [".docx", ".xlsx"])
+def test_password_protected_office_member_is_skipped_without_aborting_extraction(
+    tmp_path: Path, monkeypatch, extension: str
+):
+    document = tmp_path / f"protected{extension}"
+    write_office_document(document, "unreadable protected content")
+    original_open = zipfile.ZipFile.open
+
+    def encrypted_open(self, name, mode="r", pwd=None, *, force_zip64=False):
+        member_name = name.filename if isinstance(name, zipfile.ZipInfo) else name
+        if member_name in {"word/document.xml", "xl/sharedStrings.xml"}:
+            assert pwd is None, "member size must never be passed as a ZIP password"
+            raise RuntimeError("File is encrypted, password required")
+        return original_open(self, name, mode, pwd, force_zip64=force_zip64)
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", encrypted_open)
+
+    text, status = extract_document_text(document)
+    assert text == ""
+    assert status.startswith("parse_error:")
+
+
+def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_policy(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "safe.py").write_text("print('safe')\n", encoding="utf-8")
+    for dirname in (".GIT", "Node_Modules", ".MIMRY", "MIMRY-OUT", "__PYcache__"):
+        directory = repo / dirname
+        directory.mkdir()
+        (directory / "hidden.py").write_text("print('hidden')\n", encoding="utf-8")
+        (directory / "hidden_secret.py").write_text(f"TOKEN={VALUE_CANARY}\n", encoding="utf-8")
+
+    assert [path.relative_to(repo).as_posix() for path in scan(repo)] == ["safe.py"]
+    assert not root_contains_sensitive_content(repo)
+    for path in (
+        ".GIT/config",
+        "Node_Modules/pkg/index.js",
+        r"C:\repo\.MIMRY\pointer.json",
+        "MIMRY-OUT/context/latest.md",
+        "pkg/__PYcache__/module.pyc",
+    ):
+        assert path_has_ignored_part(path)
+        assert text_mentions_ignored_path(path)
 
 
 def test_sensitive_label_policy_covers_exact_variants_and_yaml_blocks_without_prose_false_positives():

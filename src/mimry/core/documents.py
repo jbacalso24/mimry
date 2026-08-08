@@ -7,6 +7,7 @@ from pathlib import Path
 
 # Extensions for office document files that MIMRY can extract text from.
 DOCUMENT_EXTENSIONS = {".docx", ".xlsx"}
+MAX_MEMBER_BYTES = 5 * 1024 * 1024
 
 
 def is_document(path: str | Path) -> bool:
@@ -67,6 +68,25 @@ def extract_document_text(path: str | Path, *, limit: int = 20000) -> tuple[str,
         return ("", f"parse_error:{e.__class__.__name__}")
 
 
+def _read_member(zf: zipfile.ZipFile, member_name: str) -> bytes | None:
+    """Read one expected Office member with a hard cap and no password guess."""
+
+    try:
+        info = zf.getinfo(member_name)
+    except KeyError:
+        return None
+    if info.file_size > MAX_MEMBER_BYTES:
+        return None
+    try:
+        with zf.open(info, "r", pwd=None) as member:
+            data = member.read(MAX_MEMBER_BYTES + 1)
+    except (OSError, RuntimeError, NotImplementedError, ValueError, zipfile.BadZipFile):
+        # Encrypted, unsupported, and corrupt members are unindexable rather than
+        # fatal to the surrounding repository refresh.
+        return None
+    return data if len(data) <= MAX_MEMBER_BYTES else None
+
+
 def _extract_docx_text(zf: zipfile.ZipFile) -> str:
     """Extract text from a .docx file's word/document.xml."""
     member_name = "word/document.xml"
@@ -75,20 +95,8 @@ def _extract_docx_text(zf: zipfile.ZipFile) -> str:
     if ".." in member_name or member_name.startswith("/"):
         return ""
 
-    try:
-        info = zf.getinfo(member_name)
-    except KeyError:
-        # Member doesn't exist
-        return ""
-
-    # Guard against zip bombs: skip if uncompressed size > 5 MB
-    if info.file_size > 5 * 1024 * 1024:
-        return ""
-
-    try:
-        # Also cap what we actually read to 5 MB
-        data = zf.read(member_name, 5 * 1024 * 1024)
-    except (OSError, zipfile.BadZipFile):
+    data = _read_member(zf, member_name)
+    if data is None:
         return ""
 
     # Decode as UTF-8, ignoring errors
@@ -110,20 +118,8 @@ def _extract_xlsx_text(zf: zipfile.ZipFile) -> str:
     if ".." in member_name or member_name.startswith("/"):
         return ""
 
-    try:
-        info = zf.getinfo(member_name)
-    except KeyError:
-        # Member doesn't exist (spreadsheet with no strings)
-        return ""
-
-    # Guard against zip bombs: skip if uncompressed size > 5 MB
-    if info.file_size > 5 * 1024 * 1024:
-        return ""
-
-    try:
-        # Also cap what we actually read to 5 MB
-        data = zf.read(member_name, 5 * 1024 * 1024)
-    except (OSError, zipfile.BadZipFile):
+    data = _read_member(zf, member_name)
+    if data is None:
         return ""
 
     # Decode as UTF-8, ignoring errors
