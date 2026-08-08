@@ -54,6 +54,11 @@ def _resolve_import(importer: str, module: str, rel_paths: set[str], suffix_look
     if module.startswith("./") or module.startswith("../"):
         return _rule1_relative(importer, module, rel_paths)
 
+    # Python relative import. The leading-dot count is ImportFrom.level, so one
+    # dot stays in the current package and each additional dot climbs a package.
+    if module.startswith("."):
+        return _rule1_python_relative(importer, module, rel_paths)
+
     # Rule 2: Dotted absolute module (Python) - contains . and no /
     if "." in module and "/" not in module:
         return _rule2_dotted_absolute(module, rel_paths)
@@ -97,6 +102,22 @@ def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> Optional
         if with_index in rel_paths:
             return {"path": with_index, "confidence": "EXTRACTED"}
 
+    return None
+
+
+def _rule1_python_relative(importer: str, module: str, rel_paths: set[str]) -> Optional[dict]:
+    """Resolve a leading-dot Python import using its declared relative level."""
+    level = len(module) - len(module.lstrip("."))
+    module_name = module[level:]
+    if not module_name:
+        return None
+    package_dir = posixpath.dirname(importer)
+    for _ in range(level - 1):
+        package_dir = posixpath.dirname(package_dir)
+    candidate = posixpath.join(package_dir, module_name.replace(".", "/"))
+    for path in (candidate + ".py", posixpath.join(candidate, "__init__.py")):
+        if path in rel_paths:
+            return {"path": path, "confidence": "EXTRACTED"}
     return None
 
 
@@ -287,7 +308,13 @@ def resolve_calls(
 
                 # Pick the innermost (largest line_start)
                 if enclosing_symbols:
-                    caller_symbol = max(enclosing_symbols, key=lambda s: s.get("line_start", 0)).get("name")
+                    caller = max(enclosing_symbols, key=lambda s: s.get("line_start", 0))
+                    caller_symbol = caller.get("name")
+                    caller_symbol_id = caller.get("symbol_id")
+                else:
+                    caller_symbol_id = None
+            else:
+                caller_symbol_id = None
 
             # Step 2: Generate candidates from the callee name
             callee_name = call.get("name", "")
@@ -313,8 +340,10 @@ def resolve_calls(
                             {
                                 "caller_file": file_path,
                                 "caller_symbol": caller_symbol,
+                                "caller_symbol_id": caller_symbol_id,
                                 "target_file": target_file,
                                 "target_symbol": target_symbol,
+                                "target_symbol_id": target_info.get("symbol_id"),
                                 "confidence": confidence,
                             }
                         )
@@ -456,6 +485,7 @@ def _resolve_candidate(
         return {
             "file": caller_file,
             "symbol": symbol.get("name"),
+            "symbol_id": symbol.get("symbol_id"),
             "confidence": "EXTRACTED",
         }
 
@@ -475,6 +505,7 @@ def _resolve_candidate(
         return {
             "file": imported_file,
             "symbol": symbol.get("name"),
+            "symbol_id": symbol.get("symbol_id"),
             "confidence": "INFERRED",
         }
 

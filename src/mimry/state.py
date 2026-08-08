@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterator
 # are most useful.
 LOCK_METADATA_OFFSET = 1
 
-GENERATION_SCHEMA_VERSION = "2"
+GENERATION_SCHEMA_VERSION = "3"
 GENERATION_MANIFEST = "generation.json"
 # Paths the indexer refused (secret-bearing or unreadable). Freshness reads this so a
 # refused file is not mistaken for one the user edited. Paths only -- never content.
@@ -31,6 +31,7 @@ GENERATION_ARTIFACTS = (
     "dependencies.json",
     "graph.json",
     "file-hashes.json",
+    UNINDEXABLE_FILE,
 )
 
 
@@ -242,7 +243,13 @@ def validate_generation(pointer: dict[str, Any]) -> None:
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, dict):
         raise StateCorruptionError(manifest_path, "generation manifest has no artifact checksums")
-    for name in GENERATION_ARTIFACTS:
+    schema_version = str(manifest.get("schemaVersion") or "1")
+    required_artifacts = (
+        GENERATION_ARTIFACTS
+        if schema_version not in {"1", "2"}
+        else tuple(name for name in GENERATION_ARTIFACTS if name != UNINDEXABLE_FILE)
+    )
+    for name in required_artifacts:
         artifact = idx / name
         expected = artifacts.get(name)
         if not isinstance(expected, str):
@@ -253,7 +260,6 @@ def validate_generation(pointer: dict[str, Any]) -> None:
     con: sqlite3.Connection | None = None
     metadata: tuple[Any, ...] | None = None
     semantic_rows: list[tuple[Any, ...]] = []
-    schema_version = str(manifest.get("schemaVersion") or "1")
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         if schema_version == "1":
