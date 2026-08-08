@@ -1,0 +1,229 @@
+{
+  "aggregates": {
+    "abstention_accuracy": 1.0,
+    "context_p95_ms": 587.1395,
+    "context_token_proxy_max": 2160,
+    "decoy_rate_at_5": 0.16216216216216217,
+    "find_p95_ms": 341.8978,
+    "ndcg_at_5": 0.6252100622773737,
+    "primary_hit_at_3": 0.75,
+    "recall_at_5": 0.8125
+  },
+  "cases": [
+    {
+      "abstained": null,
+      "context_ms": 432.966,
+      "context_token_proxy": 2081,
+      "decoys_at_5": 1,
+      "expect_empty": false,
+      "find_median_ms": 308.5814,
+      "find_token_proxy": 333,
+      "id": "session-renewal",
+      "ndcg_at_5": 0.498249761305974,
+      "paths": [
+        "web/src/app/checkout/page.tsx",
+        "backend/api/auth.py",
+        "backend/services/session_service.py",
+        "web/src/features/checkout/useCheckout.ts",
+        "examples/auth_demo.py"
+      ],
+      "primary_hit_at_3": true,
+      "query": "fix users being logged out when their login is renewed",
+      "recall_at_5": 0.6666666666666666
+    },
+    {
+      "abstained": null,
+      "context_ms": 587.1395,
+      "context_token_proxy": 1145,
+      "decoys_at_5": 1,
+      "expect_empty": false,
+      "find_median_ms": 323.6788,
+      "find_token_proxy": 191,
+      "id": "bearer-middleware",
+      "ndcg_at_5": 0.7452525342261976,
+      "paths": [
+        "backend/middleware/auth.py",
+        "docs/auth-design.md"
+      ],
+      "primary_hit_at_3": true,
+      "query": "implement bearer token request validation middleware",
+      "recall_at_5": 0.5
+    },
+    {
+      "abstained": null,
+      "context_ms": 413.3334,
+      "context_token_proxy": 1993,
+      "decoys_at_5": 1,
+      "expect_empty": false,
+      "find_median_ms": 318.1629,
+      "find_token_proxy": 406,
+      "id": "checkout-runtime",
+      "ndcg_at_5": 0.9959510427091864,
+      "paths": [
+        "web/src/features/checkout/useCheckout.ts",
+        "web/src/lib/payments.ts",
+        "web/src/app/checkout/page.tsx",
+        "archive/checkout-old.ts",
+        "web/tests/checkout.test.tsx"
+      ],
+      "primary_hit_at_3": true,
+      "query": "debug payment redirect in checkout runtime code",
+      "recall_at_5": 1.0
+    },
+    {
+      "abstained": null,
+      "context_ms": 397.7774,
+      "context_token_proxy": 2086,
+      "decoys_at_5": 0,
+      "expect_empty": false,
+      "find_median_ms": 314.274,
+      "find_token_proxy": 399,
+      "id": "checkout-tests",
+      "ndcg_at_5": 0.7591919243197319,
+      "paths": [
+        "web/src/features/checkout/useCheckout.ts",
+        "web/src/lib/payments.ts",
+        "web/tests/checkout.test.tsx",
+        "web/src/app/checkout/page.tsx",
+        "archive/checkout-old.ts"
+      ],
+      "primary_hit_at_3": true,
+      "query": "tests for checkout payment redirect",
+      "recall_at_5": 1.0
+    },
+    {
+      "abstained": null,
+      "context_ms": 411.5851,
+      "context_token_proxy": 2045,
+      "decoys_at_5": 0,
+      "expect_empty": false,
+      "find_median_ms": 312.8177,
+      "find_token_proxy": 353,
+      "id": "session-migration",
+      "ndcg_at_5": 0.6026493584157245,
+      "paths": [
+        "backend/repositories/session_repository.py",
+        "backend/services/session_service.py",
+        "db/migrations/20260701_add_session_expiry.sql",
+        "backend/api/auth.py",
+        "db/schema.sql"
+      ],
+      "primary_hit_at_3": true,
+      "query": "database migration for session expiry",
+      "recall_at_5": 1.0
+    },
+    {
+      "abstained": true,
+      "context_ms": 405.2255,
+      "context_token_proxy": 821,
+      "decoys_at_5": 0,
+      "expect_empty": true,
+      "find_median_ms": 315.6932,
+      "find_token_proxy": 15,
+      "id": "unknown",
+      "ndcg_at_5": 1.0,
+      "paths": [],
+      "primary_hit_at_3": false,
+      "query": "quantum image renderer vulkan shader",
+      "recall_at_5": 1.0
+    },
+    {
+      "abstained": null,
+      "context_ms": 414.457,
+      "context_token_proxy": 1883,
+      "decoys_at_5": 2,
+      "expect_empty": false,
+      "find_median_ms": 324.038,
+      "find_token_proxy": 430,
+      "id": "checkout-payment-chain",
+      "ndcg_at_5": 0.4129814977047997,
+      "paths": [
+        "web/src/app/checkout/page.tsx",
+        "archive/checkout-old.ts",
+        "docs/checkout-plan.md",
+        "web/src/features/checkout/useCheckout.ts",
+        "web/tests/checkout.test.tsx"
+      ],
+      "primary_hit_at_3": false,
+      "query": "trace what payment processing flow the checkout page invokes",
+      "recall_at_5": 0.6666666666666666
+    },
+    {
+      "abstained": null,
+      "context_ms": 395.7797,
+      "context_token_proxy": 2160,
+      "decoys_at_5": 0,
+      "expect_empty": false,
+      "find_median_ms": 315.7413,
+      "find_token_proxy": 290,
+      "id": "session-service-fan-in",
+      "ndcg_at_5": 0.6936095564324842,
+      "paths": [
+        "backend/services/session_service.py",
+        "backend/api/auth.py",
+        "backend/tests/test_auth.py",
+        "backend/repositories/session_repository.py",
+        "db/migrations/20260701_add_session_expiry.sql"
+      ],
+      "primary_hit_at_3": true,
+      "query": "what request handlers depend on the session service",
+      "recall_at_5": 1.0
+    },
+    {
+      "abstained": null,
+      "context_ms": 435.1262,
+      "context_token_proxy": 2144,
+      "decoys_at_5": 1,
+      "expect_empty": false,
+      "find_median_ms": 314.6364,
+      "find_token_proxy": 351,
+      "id": "login-to-database",
+      "ndcg_at_5": 0.2937948231048917,
+      "paths": [
+        "docs/auth-design.md",
+        "backend/repositories/session_repository.py",
+        "backend/services/session_service.py",
+        "db/migrations/20260701_add_session_expiry.sql",
+        "backend/api/auth.py"
+      ],
+      "primary_hit_at_3": false,
+      "query": "what persistent structures store authentication session information",
+      "recall_at_5": 0.6666666666666666
+    }
+  ],
+  "checks": {
+    "abstention_accuracy": true,
+    "context_token_proxy_max": true,
+    "decoy_rate_at_5": false,
+    "ndcg_at_5": false,
+    "primary_hit_at_3": false,
+    "recall_at_5": true
+  },
+  "claim_boundary": "retrieval usefulness proxy; not agent task completion or model-token savings",
+  "engine": "none",
+  "fixture_sha256": "18bb8a6cae768572576a5e110ad97aef806fb7db5efc25968764ee05bf45b81e",
+  "graph_build_ms": 0.0,
+  "graph_edges": 0,
+  "graph_enabled": false,
+  "graph_nodes": 0,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "profile": "quick-local-index",
+  "python": "3.12.11",
+  "repeat": 3,
+  "schema_version": 1,
+  "setup_ms": {
+    "index": 690.9382,
+    "init": 340.5925
+  },
+  "state": "FAIL",
+  "thresholds": {
+    "abstention_accuracy_min": 1.0,
+    "context_p95_ms_max": 1500.0,
+    "context_token_proxy_max": 2500,
+    "decoy_rate_at_5_max": 0.15,
+    "find_p95_ms_max": 1000.0,
+    "ndcg_at_5_min": 0.7,
+    "primary_hit_at_3_min": 0.8,
+    "recall_at_5_min": 0.75
+  }
+}
