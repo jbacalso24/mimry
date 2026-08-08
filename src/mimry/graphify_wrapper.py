@@ -17,6 +17,7 @@ from pathlib import Path
 from .paths import graph_output_dir, graphify_output_dir, graphify_vendor_path, repo_root
 from .constants import HEAVY_IGNORES
 from .security import (
+    stat_identity,
     is_sensitive,
     opened_file_has_sensitive_content,
     redact_sensitive_text,
@@ -105,8 +106,8 @@ def _purge_graphify_outputs_or_report(root: Path, out: Path) -> bool:
     return True
 
 
-def _stat_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
-    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+def _stat_identity(info: os.stat_result) -> tuple[int, ...]:
+    return stat_identity(info)
 
 
 def _sha256_handle(handle) -> str:

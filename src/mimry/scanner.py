@@ -80,6 +80,7 @@ def adapt(path, root):
     edges = []
     imports = []
     exports = []
+    calls = []
     if is_config_manifest(path):
         metadata = extract_config_metadata(path, root)
         f = file_record(path, root, "config-manifest", "ok", hint)
@@ -87,7 +88,8 @@ def adapt(path, root):
     elif ext == ".py":
         f = file_record(path, root, "python-ast", "ok", hint)
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+            source = path.read_text(encoding="utf-8", errors="ignore")
+            tree = ast.parse(source)
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     kind = "class" if isinstance(node, ast.ClassDef) else "function"
@@ -115,6 +117,14 @@ def adapt(path, root):
                             "confidence": 1.0,
                         }
                     )
+                elif isinstance(node, ast.Call):
+                    callee_name = None
+                    if isinstance(node.func, ast.Name):
+                        callee_name = node.func.id
+                    elif isinstance(node.func, ast.Attribute):
+                        callee_name = node.func.attr
+                    if callee_name:
+                        calls.append({"name": callee_name, "line": getattr(node, "lineno", None)})
                 elif isinstance(node, ast.Import):
                     imports += [a.name for a in node.names]
                 elif isinstance(node, ast.ImportFrom) and node.module:
@@ -124,8 +134,47 @@ def adapt(path, root):
     elif ext in {".js", ".jsx", ".ts", ".tsx"}:
         f = file_record(path, root, "typescript-ast", "ok", hint)
         symbols, edges, imports, exports, status = parse_ts_like(path, root, f)
+        source = path.read_text(encoding="utf-8", errors="ignore")
+        result = __import__("mimry.core.languages", fromlist=["extract"]).extract(path, source)
+        calls = result.get("calls", [])
         f = file_record(path, root, "typescript-ast", status, hint)
+    else:
+        # Go/Rust/C# via core.languages
+        language = __import__("mimry.core.languages", fromlist=["language_for"]).language_for(path)
+        if language and ext not in {".py", ".js", ".jsx", ".ts", ".tsx"}:
+            try:
+                source = path.read_text(encoding="utf-8", errors="ignore")
+                result = __import__("mimry.core.languages", fromlist=["extract"]).extract(path, source)
+                if result.get("status") == "ok":
+                    f = file_record(path, root, f"tree-sitter-{language}", "ok", hint)
+                    for d in result.get("definitions", []):
+                        sid = stable_id(f["file_id"], d["name"], d["kind"], d["line_start"] or 0)
+                        symbols.append({
+                            "symbol_id": sid,
+                            "file_id": f["file_id"],
+                            "name": d["name"],
+                            "kind": d["kind"],
+                            "language": language,
+                            "exported": d["exported"],
+                            "line_start": d["line_start"],
+                            "line_end": d["line_end"],
+                        })
+                        edges.append({
+                            "edge_id": stable_id(f["file_id"], sid, "defines"),
+                            "source_type": "file",
+                            "source_id": f["file_id"],
+                            "target_type": "symbol",
+                            "target_id": sid,
+                            "edge_type": "defines",
+                            "confidence": 1.0,
+                        })
+                    imports = [i["module"] for i in result.get("imports", [])]
+                    calls = result.get("calls", [])
+                else:
+                    f = file_record(path, root, f"tree-sitter-{language}", result.get("status", "parse_error"), hint)
+            except (OSError, UnicodeError):
+                pass
     f = enrich_framework_facts(path, root, f, symbols, edges)
-    if contains_sensitive_data((f, symbols, edges, imports, exports)):
+    if contains_sensitive_data((f, symbols, edges, imports, exports, calls)):
         raise ValueError("adapter output contained sensitive data")
-    return f, symbols, edges, sorted(set(imports)), sorted(set(exports))
+    return f, symbols, edges, sorted(set(imports)), sorted(set(exports)), calls

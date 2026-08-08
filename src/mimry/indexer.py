@@ -4,11 +4,16 @@ import json
 import os
 import shutil
 import sqlite3
+import subprocess
 import uuid
 from pathlib import Path
 
+from .core.build import GraphEngine
+from .core.cluster import assign_communities
+from .core.resolve import resolve_imports, resolve_calls
+from .core.report import render_report, build_manifest
 from .graphify_core import GraphifyCore
-from .paths import idx_path, now, pointer_file
+from .paths import idx_path, now, pointer_file, graph_output_dir
 from .scanner import adapt, scan
 from .security import contains_sensitive_data
 from .semantic import build_semantic_index
@@ -16,6 +21,7 @@ from .state import (
     GENERATION_MANIFEST,
     backup_path,
     atomic_write_json,
+    atomic_write_text,
     fsync_tree,
     generation_manifest,
     _fsync_directory,
@@ -27,6 +33,23 @@ def _fault(point: str) -> None:
     """Deterministic subprocess-only crash hook used by recovery tests."""
     if os.environ.get("MIMRY_FAULT_POINT") == point:
         os._exit(91)
+
+
+def _git_commit(root: Path) -> str | None:
+    """Get the current git commit hash. Returns None on any failure."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        return None
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
 
 
 def _seed_database(previous: Path, staging: Path) -> None:
@@ -54,12 +77,14 @@ def _collect(root: Path):
     edges = []
     imports = {}
     exports = {}
+    calls = {}
+    symbols_by_file = {}
     for path in scan(root):
         try:
-            file_rec, file_symbols, file_edges, file_imports, file_exports = adapt(path, root)
+            file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls = adapt(path, root)
         except (OSError, UnicodeError, ValueError):
             continue
-        if contains_sensitive_data((file_rec, file_symbols, file_edges, file_imports, file_exports)):
+        if contains_sensitive_data((file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls)):
             continue
         files.append(file_rec)
         symbols += file_symbols
@@ -68,7 +93,84 @@ def _collect(root: Path):
             imports[file_rec["rel_path"]] = file_imports
         if file_exports:
             exports[file_rec["rel_path"]] = file_exports
-    return files, symbols, edges, imports, exports
+        if file_calls:
+            calls[file_rec["rel_path"]] = file_calls
+        if file_symbols:
+            symbols_by_file[file_rec["rel_path"]] = file_symbols
+    return files, symbols, edges, imports, exports, calls, symbols_by_file
+
+
+def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file):
+    """Build the native relationship graph: defines + imports + calls, then cluster."""
+    # Step 1: build_graph with imports/exports
+    graph = GraphEngine().build_graph(files, symbols, edges, imports=imports, exports=exports)
+
+    # Step 2: resolve imports
+    rel_paths = {f["rel_path"] for f in files}
+    import_edges = resolve_imports(imports, rel_paths)
+
+    # Step 3: convert import edges to graph edges (FILE to FILE)
+    file_id_of = {f["rel_path"]: f["file_id"] for f in files}
+    for e in import_edges:
+        importer_id = file_id_of.get(e["importer"])
+        target_id = file_id_of.get(e["target"])
+        if importer_id and target_id:
+            graph["edges"].append({
+                "source": f"file:{importer_id}",
+                "target": f"file:{target_id}",
+                "relation": "imports",
+                "confidence": e["confidence"],
+            })
+
+    # Step 4: resolve calls and convert to graph edges (SYMBOL to SYMBOL)
+    call_edges = resolve_calls(calls, symbols_by_file, import_edges)
+    rel_path_to_id = {f["rel_path"]: f["file_id"] for f in files}
+    # Build (rel_path, symbol_name) -> symbol_id map
+    symbol_by_path_name = {}
+    for sym in symbols:
+        for f in files:
+            if f["file_id"] == sym["file_id"]:
+                key = (f["rel_path"], sym["name"])
+                symbol_by_path_name[key] = sym["symbol_id"]
+                break
+
+    for e in call_edges:
+        caller_file = e.get("caller_file")
+        caller_symbol = e.get("caller_symbol")
+        target_file = e.get("target_file")
+        target_symbol = e.get("target_symbol")
+
+        # Skip if caller_symbol or target_symbol is None
+        if caller_symbol is None or target_symbol is None:
+            continue
+
+        # Resolve to symbol ids
+        caller_id = symbol_by_path_name.get((caller_file, caller_symbol))
+        target_id = symbol_by_path_name.get((target_file, target_symbol))
+
+        if caller_id and target_id:
+            graph["edges"].append({
+                "source": f"symbol:{caller_id}",
+                "target": f"symbol:{target_id}",
+                "relation": "calls",
+                "confidence": e["confidence"],
+            })
+
+    # Step 5: drop any edge with missing endpoints
+    node_ids = {n["id"] for n in graph["nodes"]}
+    graph["edges"] = [
+        e for e in graph["edges"]
+        if e.get("source") in node_ids and e.get("target") in node_ids
+    ]
+
+    # Step 6: assign communities
+    graph["nodes"] = assign_communities(graph["nodes"], graph["edges"])
+
+    # Step 7: re-sort for determinism
+    graph["nodes"] = sorted(graph["nodes"], key=lambda n: n["id"])
+    graph["edges"] = sorted(graph["edges"], key=lambda e: (e["source"], e["target"], e["relation"]))
+
+    return graph
 
 
 def _remove_tree(path: Path) -> None:
@@ -144,8 +246,8 @@ def write_index(root, ptr):
             raise RuntimeError("MIMRY root pointer changed while waiting for the operation lock; retry indexing")
         ptr = active
         _cleanup_generations(root, base, ptr)
-        files, symbols, edges, imports, exports = _collect(root)
-        graph = GraphifyCore().build_graph(files, symbols, edges)
+        files, symbols, edges, imports, exports, calls, symbols_by_file = _collect(root)
+        graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file)
         generation_id = uuid.uuid4().hex
         indexed_at = now()
         staging = generations / f".{generation_id}.staging"
@@ -243,6 +345,13 @@ def write_index(root, ptr):
             save_pointer(root, published)
             register_root(published)
             _cleanup_generations(root, base, published)
+
+            # Write visible graph artifacts after successful publication
+            out = graph_output_dir(root)
+            out.mkdir(parents=True, exist_ok=True)
+            atomic_write_json(out / "graph.json", graph)
+            atomic_write_text(out / "GRAPH_REPORT.md", render_report(graph, commit=_git_commit(root)))
+            atomic_write_json(out / "manifest.json", build_manifest(files))
         except BaseException:
             if staging.exists() or staging.is_symlink():
                 _remove_tree(staging)
