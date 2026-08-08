@@ -80,6 +80,8 @@ TEXT_EXTS = {
     ".cs",
     ".go",
     ".rs",
+    ".java",
+    ".php",
     ".md",
     ".txt",
     ".json",

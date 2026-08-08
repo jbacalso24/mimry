@@ -60,8 +60,13 @@ def _resolve_import(importer: str, module: str, rel_paths: set[str], suffix_look
         return _rule1_python_relative(importer, module, rel_paths)
 
     # Rule 2: Dotted absolute module (Python) - contains . and no /
-    if "." in module and "/" not in module:
+    if "." in module and "/" not in module and importer.endswith(".py"):
         return _rule2_dotted_absolute(module, rel_paths)
+    # A dotted module from a non-Python importer is a Java/Kotlin-style package,
+    # not a module path. Rule 2 probes <module>.py and <module>/__init__.py, so
+    # returning its verdict for `com.app.model.User` discarded the import before
+    # rule 4 ever saw it. Rule 3 declines anything dotted, so control reaches the
+    # suffix match, which resolves it or emits nothing.
 
     # Rule 3: Dotted/bare module relative to importer's package (Python)
     result = _rule3_relative_to_package(importer, module, rel_paths)
@@ -706,6 +711,33 @@ if __name__ == "__main__":
         test_ambiguous = resolve_imports({"test/file.go": ["util"]}, ambiguous_paths)
         assert len(test_ambiguous) == 0, f"Expected 0 results for ambiguous suffix, got {test_ambiguous}"
 
+        # 8b. A dotted module that rule 2 cannot place still reaches rule 4.
+        # Java packages and src-layout Python both land here; both resolved to
+        # nothing while rule 2 returned instead of falling through.
+        nested_paths = {"src/main/java/com/app/model/User.java", "src/mimry/core/build.py"}
+        test_java = resolve_imports({"src/main/java/com/app/svc/Svc.java": ["com.app.model.User"]}, nested_paths)
+        assert len(test_java) == 1, f"Expected java package import to resolve, got {test_java}"
+        assert test_java[0]["target"] == "src/main/java/com/app/model/User.java", f"Got {test_java[0]['target']}"
+        assert test_java[0]["confidence"] == "INFERRED", "suffix matches are INFERRED, not EXTRACTED"
+
+        # A Python importer still gets rule 2 and only rule 2, so src-layout
+        # imports stay unresolved. That is a separate known miss: routing them to
+        # rule 4 as well resolves them, but it also shifts ranking enough to change
+        # which evidence four CLI/MCP tests report. Left alone deliberately.
+        test_src_layout = resolve_imports({"tests/test_build.py": ["mimry.core.build"]}, nested_paths)
+        assert test_src_layout == [], f"python dotted imports must not reach rule 4 yet, got {test_src_layout}"
+
+        # Still declines when the fall-through would have to guess.
+        two_users = {"a/com/app/model/User.java", "b/com/app/model/User.java"}
+        assert resolve_imports({"x/Svc.java": ["com.app.model.User"]}, two_users) == [], (
+            "ambiguous dotted suffix must resolve to nothing"
+        )
+
+        # An external dotted module still resolves to nothing.
+        assert resolve_imports({"a/Svc.java": ["java.util.List"]}, nested_paths) == [], (
+            "external package must not resolve"
+        )
+
         # 9. Calling twice yields identical output
         results2 = resolve_imports(imports, rel_paths)
         assert results == results2, "Output is not deterministic"
@@ -811,10 +843,18 @@ if __name__ == "__main__":
         assign_edges = [r for r in call_results if r.get("target_symbol") == "assign"]
         assert len(assign_edges) == 0, f"Expected no edges for 'assign', got {len(assign_edges)}: {assign_edges}"
 
-        # Assertion 4: Every result has exactly five keys
+        # Assertion 4: Every result has exactly seven keys
         for r in call_results:
             keys = set(r.keys())
-            expected = {"caller_file", "caller_symbol", "target_file", "target_symbol", "confidence"}
+            expected = {
+                "caller_file",
+                "caller_symbol",
+                "caller_symbol_id",
+                "target_file",
+                "target_symbol",
+                "target_symbol_id",
+                "confidence",
+            }
             assert keys == expected, f"Result {r} has wrong keys: {keys}, expected {expected}"
 
         # Assertion 5: No edge has caller and target being the same symbol in same file
