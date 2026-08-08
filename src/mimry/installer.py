@@ -519,10 +519,22 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
         "hooks": [{"type": "command", "command": command}],
     }
     pre_tool = existing.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    existing["hooks"]["PreToolUse"] = [h for h in pre_tool if "mimry hook-check" not in str(h)] + [hook]
+    existing["hooks"]["PreToolUse"] = [h for h in pre_tool if not _is_mimry_hook(h)] + [hook]
     _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
     print(f"Hooks installed -> {dst} ({command})")
     return dst
+
+
+def _is_mimry_hook(entry: object) -> bool:
+    """Identify a MIMRY PreToolUse hook regardless of how the launcher resolved.
+
+    The stored command embeds the resolved executable, which on Windows is
+    `mimry.EXE`. Matching the literal "mimry hook-check" therefore never matched
+    there: hooks duplicated on every install, uninstall never removed them, and
+    status always reported them missing.
+    """
+    text = str(entry).lower()
+    return "hook-check" in text and "mimry" in text
 
 
 def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
@@ -536,7 +548,7 @@ def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
     except json.JSONDecodeError:
         return None
     pre_tool = existing.get("hooks", {}).get("PreToolUse", [])
-    filtered = [h for h in pre_tool if "mimry hook-check" not in str(h)]
+    filtered = [h for h in pre_tool if not _is_mimry_hook(h)]
     if len(filtered) == len(pre_tool):
         return None
     existing.setdefault("hooks", {})["PreToolUse"] = filtered
@@ -563,7 +575,10 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
         ).read_text(encoding="utf-8")
     if project and cfg.hook_path:
         hook_file = root / cfg.hook_path
-        result["hooks"] = hook_file.exists() and "mimry hook-check" in hook_file.read_text(encoding="utf-8")
+        result["hooks"] = hook_file.exists() and any(
+            _is_mimry_hook(entry)
+            for entry in json.loads(hook_file.read_text(encoding="utf-8")).get("hooks", {}).get("PreToolUse", [])
+        )
     print(f"MIMRY install status: {cfg.label} ({cfg.key}) / {'project' if project else 'global'}")
     print(f"Skill: {'ok' if result['skill'] else 'missing'} -> {dst}")
     print(f"References: {'ok' if result['references'] else 'missing/broken'} -> {refs}")

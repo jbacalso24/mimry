@@ -5,6 +5,23 @@ import json, os, shutil, sqlite3, subprocess, sys
 from importlib.metadata import version
 from pathlib import Path
 
+import pytest
+
+
+def _posix(text: str) -> str:
+    """Normalize printed paths for comparison.
+
+    MIMRY prints native paths, so Windows shows backslashes. Path *values* it
+    stores (rel_path) stay POSIX everywhere; only display strings differ.
+    """
+    return text.replace("\\", "/")
+
+
+def _norm_hook(text: str) -> str:
+    """Normalize a resolved launcher path: Windows resolves mimry to mimry.EXE."""
+    return text.replace(".EXE", "").replace(".exe", "")
+
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
 
@@ -124,8 +141,8 @@ def test_install_lists_supported_agent_platforms(tmp_path):
     assert "codex" in res.stdout
     assert "hermes" in res.stdout
     assert "agents" in res.stdout
-    assert ".claude/skills/mimry/SKILL.md" in res.stdout
-    assert ".codex/skills/mimry/SKILL.md" in res.stdout
+    assert ".claude/skills/mimry/SKILL.md" in _posix(res.stdout)
+    assert ".codex/skills/mimry/SKILL.md" in _posix(res.stdout)
 
 
 def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_path):
@@ -157,8 +174,8 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     agents = repo / "AGENTS.md"
     assert agents.exists()
     assert "## MIMRY" in agents.read_text(encoding="utf-8")
-    assert "Git hint: git add .codex/skills/mimry/SKILL.md" in res.stdout
-    assert ".codex/skills/mimry/references/" in res.stdout
+    assert "Git hint: git add .codex/skills/mimry/SKILL.md" in _posix(res.stdout)
+    assert ".codex/skills/mimry/references/" in _posix(res.stdout)
     assert "AGENTS.md" in res.stdout
     assert "Codex:" in body
 
@@ -181,7 +198,7 @@ def test_install_dry_run_does_not_write(tmp_path):
 
     assert res.returncode == 0, res.stderr
     assert "DRY RUN" in res.stdout
-    assert ".hermes/skills/mimry/SKILL.md" in res.stdout
+    assert ".hermes/skills/mimry/SKILL.md" in _posix(res.stdout)
     assert not (repo / ".hermes" / "skills" / "mimry" / "SKILL.md").exists()
 
 
@@ -248,7 +265,7 @@ def test_install_project_codex_hooks_and_status_detect_broken_references(tmp_pat
     assert res.returncode == 0, res.stderr
     hooks = repo / ".codex" / "hooks.json"
     assert hooks.exists()
-    assert "mimry hook-check" in hooks.read_text(encoding="utf-8")
+    assert "mimry hook-check" in _norm_hook(hooks.read_text(encoding="utf-8"))
 
     status = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status")
     assert status.returncode == 0, status.stderr
@@ -270,7 +287,7 @@ def test_uninstall_project_codex_removes_hooks_when_requested(tmp_path):
     res = run_cli(repo, tmp_path / "cache", "uninstall", "--project", "--platform", "codex", "--hooks")
 
     assert res.returncode == 0, res.stderr
-    assert "mimry hook-check" not in (repo / ".codex" / "hooks.json").read_text(encoding="utf-8")
+    assert "mimry hook-check" not in _norm_hook((repo / ".codex" / "hooks.json").read_text(encoding="utf-8"))
 
 
 def test_claude_skill_body_is_platform_specific(tmp_path):
@@ -280,7 +297,7 @@ def test_claude_skill_body_is_platform_specific(tmp_path):
     skill = (repo / ".claude" / "skills" / "mimry" / "SKILL.md").read_text(encoding="utf-8")
     assert "Claude Code:" in skill
     assert "$mimry" not in skill
-    assert "mimry hook-check" in (repo / ".claude" / "settings.json").read_text(encoding="utf-8")
+    assert "mimry hook-check" in _norm_hook((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
 
 
 def test_hook_check_emits_nudge_when_mimry_exists(tmp_path):
@@ -350,14 +367,37 @@ def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     assert graph["nodes"]
 
 
+def _deny_read(path: Path):
+    """Make a file genuinely unopenable, and return an undo callable.
+
+    os.chmod cannot remove read access on Windows -- it only toggles the
+    read-only flag -- so a chmod(0) file stays readable there and the test would
+    silently assert nothing.
+    """
+    if os.name != "nt":
+        path.chmod(0)
+        return lambda: path.chmod(0o600)
+    principal = os.environ.get("USERNAME") or "Everyone"
+    subprocess.run(["icacls", str(path), "/deny", f"{principal}:(R)"], capture_output=True, check=False)
+    return lambda: subprocess.run(["icacls", str(path), "/remove:d", principal], capture_output=True, check=False)
+
+
 def test_index_skips_unreadable_files_instead_of_crashing(tmp_path):
     repo = copy_fixture(tmp_path)
     locked = repo / "Prompts.Database" / "Prompts.Database.jfm"
     locked.parent.mkdir()
     locked.write_text("locked database payload", encoding="utf-8")
-    locked.chmod(0)
+    restore = _deny_read(locked)
     cache = tmp_path / "cache"
     try:
+        try:
+            with locked.open("rb"):
+                pass
+        except OSError:
+            pass
+        else:
+            pytest.skip("this platform/filesystem could not make the file unreadable")
+
         assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
         res = run_cli(repo, cache, "index")
         assert res.returncode == 0, res.stderr
@@ -366,7 +406,7 @@ def test_index_skips_unreadable_files_instead_of_crashing(tmp_path):
         assert "Prompts.Database.jfm" not in files
         assert "session.py" in files
     finally:
-        locked.chmod(0o600)
+        restore()
 
 
 def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_example_names(tmp_path):

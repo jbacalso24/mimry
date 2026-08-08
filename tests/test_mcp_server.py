@@ -165,7 +165,7 @@ def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, mon
 
     payload = mimry_context("fix auth session", str(repo))
 
-    assert payload["output"].endswith("mimry-out/context/latest.md")
+    assert payload["output"].replace("\\", "/").endswith("mimry-out/context/latest.md")
     assert payload["files"]
     text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     for section in (
@@ -219,7 +219,7 @@ def test_mcp_preflight_initializes_and_writes_context(tmp_path: Path, monkeypatc
     assert payload["returncode"] == 0
     assert payload["initialized"] is True
     assert payload["index_state"] == "current"
-    assert payload["context_path"].endswith(".mimry/mimry-out/context/latest.md")
+    assert payload["context_path"].replace("\\", "/").endswith(".mimry/mimry-out/context/latest.md")
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
     assert "MIMRY preflight complete" in payload["stdout"]
 

@@ -96,12 +96,18 @@ MIMRY targets **Windows, Linux, and macOS**. Paths are handled POSIX-style
 internally regardless of host, and platform-specific syscalls are capability-guarded
 rather than assumed.
 
-Automated CI currently runs `ubuntu-latest` and `macos-latest`. Windows is supported
-and actively tested locally, but is not yet in the CI matrix — so Windows-specific
-regressions can land without CI catching them. If you develop on Windows, run
-`uv run pytest -q` before opening a PR. Adding `windows-latest` to CI is tracked work;
-it needs the workflow's POSIX-only steps (`.venv/bin/python`, `/tmp`, tarball globbing)
-made portable first.
+CI runs the full suite on `ubuntu-latest`, `macos-latest`, and `windows-latest` across
+Python 3.11–3.13, so a regression on any of the three fails the build.
+
+Specific things that are handled rather than assumed, because each one was a real bug:
+
+- `Path.home()` resolves from `USERPROFILE` on Windows, not `HOME`
+- `fsync` needs a writable descriptor on Windows; `st_ctime` there is *creation* time
+  and differs between `os.fstat` and `Path.lstat` for the same file
+- `os.utime(follow_symlinks=False)` and byte-range lock semantics are capability-guarded
+- CLI output is ASCII, so a cp1252 console cannot fail to encode it
+- subprocesses never inherit stdin, which under the MCP stdio server is the JSON-RPC channel
+- paths are POSIX-normalized internally; only display strings use native separators
 
 MIMRY 0.1.x is distributed internally from an authorized checkout or as a direct wheel artifact. See [`RELEASING.md`](RELEASING.md) for the supported channel and exact commands.
 
