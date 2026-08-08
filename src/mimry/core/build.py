@@ -294,7 +294,7 @@ if __name__ == "__main__":
         clusters = result["clusters"]
         assert "." in clusters, "Clusters should include '.' for root-level files"
         assert "main.py" in clusters["."], f"Root file 'main.py' should be in clusters['.'], got {clusters['.']}"
-        assert "backend/api/auth.py" in clusters.get("backend/api", []), f"backend/api/auth.py should be in clusters"
+        assert "backend/api/auth.py" in clusters.get("backend/api", []), "backend/api/auth.py should be in clusters"
 
         print("OK")
         sys.exit(0)

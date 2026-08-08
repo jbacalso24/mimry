@@ -130,148 +130,128 @@ def _collect(root: Path):
     return files, symbols, edges, imports, exports, calls, symbols_by_file, references, sorted(set(unindexable))
 
 
-def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references):
-    """Build the native relationship graph: defines + imports + calls + references, then cluster."""
-    # Step 1: build_graph with imports/exports
-    graph = GraphEngine().build_graph(files, symbols, edges, imports=imports, exports=exports)
+def _edge(source: str, target: str, relation: str, confidence) -> dict:
+    return {"source": source, "target": target, "relation": relation, "confidence": confidence}
 
-    # Step 2: resolve imports
-    rel_paths = {f["rel_path"] for f in files}
-    import_edges = resolve_imports(imports, rel_paths)
 
-    # Step 3: convert import edges to graph edges (FILE to FILE)
-    file_id_of = {f["rel_path"]: f["file_id"] for f in files}
-    for e in import_edges:
-        importer_id = file_id_of.get(e["importer"])
-        target_id = file_id_of.get(e["target"])
-        if importer_id and target_id:
-            graph["edges"].append(
-                {
-                    "source": f"file:{importer_id}",
-                    "target": f"file:{target_id}",
-                    "relation": "imports",
-                    "confidence": e["confidence"],
-                }
-            )
-
-    # Step 4: resolve calls and convert to graph edges (SYMBOL to SYMBOL)
-    call_edges = resolve_calls(calls, symbols_by_file, import_edges)
-    rel_path_to_id = {f["rel_path"]: f["file_id"] for f in files}
-    # Build (rel_path, symbol_name) -> symbol_id map
-    rel_path_of_file_id = {f["file_id"]: f["rel_path"] for f in files}
-    symbol_by_path_name = {}
+def _symbol_ids_by_path_name(files, symbols) -> dict:
+    """(rel_path, symbol_name) -> symbol_id."""
+    rel_path_of = {f["file_id"]: f["rel_path"] for f in files}
+    index = {}
     for sym in symbols:
-        rel = rel_path_of_file_id.get(sym["file_id"])
-        if rel is not None:
-            symbol_by_path_name[(rel, sym["name"])] = sym["symbol_id"]
+        rel_path = rel_path_of.get(sym["file_id"])
+        if rel_path is not None:
+            index[(rel_path, sym["name"])] = sym["symbol_id"]
+    return index
 
-    for e in call_edges:
-        caller_file = e.get("caller_file")
-        caller_symbol = e.get("caller_symbol")
-        target_file = e.get("target_file")
-        target_symbol = e.get("target_symbol")
 
-        # Skip if caller_symbol or target_symbol is None
-        if caller_symbol is None or target_symbol is None:
+def _table_symbols(files, symbols) -> dict:
+    """lower(table_name) -> [(rel_path, symbol_id), ...]."""
+    rel_path_of = {f["file_id"]: f["rel_path"] for f in files}
+    tables: dict[str, list] = {}
+    for sym in symbols:
+        if sym.get("kind") != "sql_table":
             continue
+        rel_path = rel_path_of.get(sym["file_id"])
+        if rel_path is not None:
+            tables.setdefault(sym.get("name", "").lower(), []).append((rel_path, sym["symbol_id"]))
+    return tables
 
-        # Resolve to symbol ids
-        caller_id = symbol_by_path_name.get((caller_file, caller_symbol))
-        target_id = symbol_by_path_name.get((target_file, target_symbol))
 
-        if caller_id and target_id:
-            graph["edges"].append(
-                {
-                    "source": f"symbol:{caller_id}",
-                    "target": f"symbol:{target_id}",
-                    "relation": "calls",
-                    "confidence": e["confidence"],
-                }
-            )
+def _split_references(references) -> tuple[dict, dict, dict]:
+    """Fan the per-file references bag out into one dict per relationship kind."""
+    doc_links, table_refs, inherits = {}, {}, {}
+    for rel_path, data in (references or {}).items():
+        for key, sink in (("doc_links", doc_links), ("table_refs", table_refs), ("inherits", inherits)):
+            if data.get(key):
+                sink[rel_path] = data[key]
+    return doc_links, table_refs, inherits
 
-    # Step 5: reconstruct doc_links and table_refs from references
-    # References structure: {rel_path: {"doc_links": [...], "table_refs": [...]}}
-    doc_links_dict = {}
-    table_refs_dict = {}
-    inherits_dict = {}
-    if references:
-        for rel_path, ref_data in references.items():
-            if ref_data.get("doc_links"):
-                doc_links_dict[rel_path] = ref_data["doc_links"]
-            if ref_data.get("table_refs"):
-                table_refs_dict[rel_path] = ref_data["table_refs"]
-            if ref_data.get("inherits"):
-                inherits_dict[rel_path] = ref_data["inherits"]
 
-    # Step 5b: resolve base types and convert to graph edges (SYMBOL to SYMBOL)
-    for e in resolve_inheritance(inherits_dict, symbols_by_file, import_edges):
-        child_id = symbol_by_path_name.get((e["child_file"], e["child_symbol"]))
-        base_id = symbol_by_path_name.get((e["base_file"], e["base_symbol"]))
-        if child_id and base_id and child_id != base_id:
-            graph["edges"].append(
-                {
-                    "source": f"symbol:{child_id}",
-                    "target": f"symbol:{base_id}",
-                    "relation": "inherits",
-                    "confidence": e["confidence"],
-                }
-            )
+def _import_graph_edges(import_edges, file_id_of) -> list[dict]:
+    """file -> file."""
+    edges = []
+    for e in import_edges:
+        source, target = file_id_of.get(e["importer"]), file_id_of.get(e["target"])
+        if source and target:
+            edges.append(_edge(f"file:{source}", f"file:{target}", "imports", e["confidence"]))
+    return edges
 
-    # Step 6: resolve doc links and convert to graph edges (FILE to FILE)
-    doc_link_edges = resolve_doc_links(doc_links_dict, rel_paths)
-    for e in doc_link_edges:
-        source_id = file_id_of.get(e["source"])
-        target_id = file_id_of.get(e["target"])
-        if source_id and target_id:
-            graph["edges"].append(
-                {
-                    "source": f"file:{source_id}",
-                    "target": f"file:{target_id}",
-                    "relation": "references",
-                    "confidence": e["confidence"],
-                }
-            )
 
-    # Step 7: resolve table references and convert to graph edges (FILE to SYMBOL)
-    # Build table_symbols map: lower(table_name) -> [(rel_path, symbol_id), ...]
-    table_symbols_map = {}
-    for sym in symbols:
-        if sym.get("kind") == "sql_table":
-            table_name = sym.get("name", "").lower()
-            # Find the rel_path for this symbol
-            for f in files:
-                if f["file_id"] == sym["file_id"]:
-                    if table_name not in table_symbols_map:
-                        table_symbols_map[table_name] = []
-                    table_symbols_map[table_name].append((f["rel_path"], sym["symbol_id"]))
-                    break
+def _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids) -> list[dict]:
+    """symbol -> symbol."""
+    edges = []
+    for e in resolve_calls(calls, symbols_by_file, import_edges):
+        if e.get("caller_symbol") is None or e.get("target_symbol") is None:
+            continue
+        caller = symbol_ids.get((e["caller_file"], e["caller_symbol"]))
+        target = symbol_ids.get((e["target_file"], e["target_symbol"]))
+        if caller and target:
+            edges.append(_edge(f"symbol:{caller}", f"symbol:{target}", "calls", e["confidence"]))
+    return edges
 
-    table_ref_edges = resolve_table_refs(table_refs_dict, table_symbols_map)
-    for e in table_ref_edges:
-        source_id = file_id_of.get(e["source"])
-        target_symbol_id = e.get("target_symbol_id")
-        if source_id and target_symbol_id:
-            graph["edges"].append(
-                {
-                    "source": f"file:{source_id}",
-                    "target": f"symbol:{target_symbol_id}",
-                    "relation": "references",
-                    "confidence": e["confidence"],
-                }
-            )
 
-    # Step 8: drop any edge with missing endpoints
+def _inheritance_graph_edges(inherits, symbols_by_file, import_edges, symbol_ids) -> list[dict]:
+    """symbol -> symbol, child to base."""
+    edges = []
+    for e in resolve_inheritance(inherits, symbols_by_file, import_edges):
+        child = symbol_ids.get((e["child_file"], e["child_symbol"]))
+        base = symbol_ids.get((e["base_file"], e["base_symbol"]))
+        if child and base and child != base:
+            edges.append(_edge(f"symbol:{child}", f"symbol:{base}", "inherits", e["confidence"]))
+    return edges
+
+
+def _doc_link_graph_edges(doc_links, rel_paths, file_id_of) -> list[dict]:
+    """file -> file, from markdown links."""
+    edges = []
+    for e in resolve_doc_links(doc_links, rel_paths):
+        source, target = file_id_of.get(e["source"]), file_id_of.get(e["target"])
+        if source and target:
+            edges.append(_edge(f"file:{source}", f"file:{target}", "references", e["confidence"]))
+    return edges
+
+
+def _table_ref_graph_edges(table_refs, table_symbols, file_id_of) -> list[dict]:
+    """file -> symbol, from SQL table mentions."""
+    edges = []
+    for e in resolve_table_refs(table_refs, table_symbols):
+        source, target = file_id_of.get(e["source"]), e.get("target_symbol_id")
+        if source and target:
+            edges.append(_edge(f"file:{source}", f"symbol:{target}", "references", e["confidence"]))
+    return edges
+
+
+def _finalize_graph(graph) -> dict:
+    """Drop dangling edges, cluster, and sort.
+
+    The sort is not cosmetic: graph.json is checksummed by the generation manifest,
+    so an unstable order would break generation coherence.
+    """
     node_ids = {n["id"] for n in graph["nodes"]}
     graph["edges"] = [e for e in graph["edges"] if e.get("source") in node_ids and e.get("target") in node_ids]
-
-    # Step 9: assign communities
-    graph["nodes"] = assign_communities(graph["nodes"], graph["edges"])
-
-    # Step 10: re-sort for determinism
-    graph["nodes"] = sorted(graph["nodes"], key=lambda n: n["id"])
+    graph["nodes"] = sorted(assign_communities(graph["nodes"], graph["edges"]), key=lambda n: n["id"])
     graph["edges"] = sorted(graph["edges"], key=lambda e: (e["source"], e["target"], e["relation"]))
-
     return graph
+
+
+def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references):
+    """Assemble the relationship graph: defines + imports + calls + inherits + references."""
+    graph = GraphEngine().build_graph(files, symbols, edges, imports=imports, exports=exports)
+
+    rel_paths = {f["rel_path"] for f in files}
+    file_id_of = {f["rel_path"]: f["file_id"] for f in files}
+    symbol_ids = _symbol_ids_by_path_name(files, symbols)
+    import_edges = resolve_imports(imports, rel_paths)
+    doc_links, table_refs, inherits = _split_references(references)
+
+    graph["edges"] += _import_graph_edges(import_edges, file_id_of)
+    graph["edges"] += _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids)
+    graph["edges"] += _inheritance_graph_edges(inherits, symbols_by_file, import_edges, symbol_ids)
+    graph["edges"] += _doc_link_graph_edges(doc_links, rel_paths, file_id_of)
+    graph["edges"] += _table_ref_graph_edges(table_refs, _table_symbols(files, symbols), file_id_of)
+
+    return _finalize_graph(graph)
 
 
 def _remove_tree(path: Path) -> None:

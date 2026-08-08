@@ -195,7 +195,6 @@ def build_manifest(files: list[dict]) -> dict:
 
 
 if __name__ == "__main__":
-    import json
     import sys
 
     # Self-check with synthetic graph
@@ -232,7 +231,7 @@ if __name__ == "__main__":
         assert lines[0].startswith("#"), f"Line 1 should start with #, got: {lines[0]}"
 
         # Check for commit line
-        commit_line = [l for l in lines if l.startswith("- Built from commit:")]
+        commit_line = [line for line in lines if line.startswith("- Built from commit:")]
         assert len(commit_line) > 0, "Missing '- Built from commit:' line"
         assert "abc123" in commit_line[0], f"Commit not found in line: {commit_line[0]}"
 
@@ -242,7 +241,7 @@ if __name__ == "__main__":
         assert "## Surprising Connections" in report, "Missing '## Surprising Connections' heading"
 
         # Check cross-community edge appears
-        assert "node1" not in report or "node5" not in report or any("--imports-->" in l for l in lines), (
+        assert "node1" not in report or "node5" not in report or any("--imports-->" in line for line in lines), (
             "Cross-community edge should appear in report"
         )
 
@@ -271,9 +270,9 @@ if __name__ == "__main__":
         assert "\r" not in report, "Report contains \\r characters"
 
         # Check no backslash path separators
-        assert "\\" not in report or all("\\" not in l for l in report.splitlines() if not l.startswith("- ")), (
-            "Report contains backslash path separators"
-        )
+        assert "\\" not in report or all(
+            "\\" not in line for line in report.splitlines() if not line.startswith("- ")
+        ), "Report contains backslash path separators"
 
         # Test 2: Determinism - render twice
         report2 = render_report(synthetic_graph, commit="abc123", title="MIMRY graph report")

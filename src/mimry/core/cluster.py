@@ -31,7 +31,7 @@ def assign_communities(nodes: list[dict], edges: list[dict]) -> list[dict]:
     labels = {node["id"]: node["id"] for node in nodes}
 
     # Label propagation with convergence check or max 20 iterations
-    for iteration in range(20):
+    for _ in range(20):
         new_labels = {}
         changed = False
 

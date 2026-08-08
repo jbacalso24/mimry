@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json, os, shutil, sqlite3, subprocess, sys
+import json
+import os
+import shutil
+import sqlite3
+import subprocess
+import sys
 from importlib.metadata import version
 from pathlib import Path
 
@@ -922,7 +927,6 @@ def test_status_reports_graph_artifact_health(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
-    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     graph_dir = repo / ".mimry" / "mimry-out" / "graph"
     graph_dir.mkdir(parents=True, exist_ok=True)
     (graph_dir / "graph.json").write_text(
@@ -956,7 +960,6 @@ def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
-    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     graph_dir = repo / ".mimry" / "mimry-out" / "graph"
     graph_dir.mkdir(parents=True, exist_ok=True)
     (graph_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
@@ -988,7 +991,6 @@ def test_status_keeps_legacy_mtime_only_manifest_compatible(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
-    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     graph_dir = repo / ".mimry" / "mimry-out" / "graph"
     graph_dir.mkdir(parents=True, exist_ok=True)
     (graph_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")

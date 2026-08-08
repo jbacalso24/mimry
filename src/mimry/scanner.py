@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-from pathlib import Path
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
 from .core.documents import extract_document_text, is_document
@@ -21,7 +20,7 @@ def text_hint(path, limit=12000):
         text = path.read_bytes()[:limit].decode("utf-8", errors="ignore")
     except OSError:
         return ""
-    return " ".join([l.strip() for l in text.splitlines() if l.strip()][:40])[:2000]
+    return " ".join([line.strip() for line in text.splitlines() if line.strip()][:40])[:2000]
 
 
 def sha(path):

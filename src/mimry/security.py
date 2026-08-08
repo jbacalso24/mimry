@@ -191,7 +191,7 @@ def _label_tokens(label: str) -> set[str]:
     snake = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", label).lower()
     ordered = [piece for piece in re.split(r"[^a-z0-9]+", snake) if piece]
     pieces = set(ordered)
-    pieces.update("_".join(pair) for pair in zip(ordered, ordered[1:]))
+    pieces.update("_".join(pair) for pair in zip(ordered, ordered[1:], strict=False))
     pieces.add("_".join(ordered))
     pieces.add(re.sub(r"[^a-z0-9]", "", snake))
     return pieces

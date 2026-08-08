@@ -600,7 +600,6 @@ def resolve_table_refs(table_refs: dict[str, list[str]], table_symbols: dict[str
 
 if __name__ == "__main__":
     import sys
-    import json
 
     # Test fixture from the task
     imports = {
