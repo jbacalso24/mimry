@@ -76,9 +76,15 @@ def symbol_kind(language: str, node_kind: str) -> str:
     return "function"
 
 
-def _text(source: str, node: Any) -> str:
-    """Extract text from source using byte offsets."""
-    return source[node.start_byte() : node.end_byte()]
+def _text(source: bytes, node: Any) -> str:
+    """Extract a node's text.
+
+    `source` must be the UTF-8 *bytes*, because tree-sitter reports byte offsets.
+    Slicing the decoded str instead shifts every name by the number of extra bytes
+    ahead of it -- a UTF-8 BOM alone costs 2 characters, and Visual Studio writes
+    C#/TS files with a BOM by default, so `formattedNumber` came out `rmattedNumber`.
+    """
+    return source[node.start_byte() : node.end_byte()].decode("utf-8", "replace")
 
 
 def _line(node: Any) -> int | None:
@@ -178,6 +184,59 @@ def _extract_module_from_import(import_text: str, language: str) -> str:
     return text.strip()
 
 
+_IDENTIFIER_KINDS = ("identifier", "type_identifier", "field_identifier", "property_identifier", "name")
+
+
+def _is_identifier_kind(kind: str) -> bool:
+    return kind in _IDENTIFIER_KINDS or kind.endswith("identifier")
+
+
+def _expression_name(node: Any, source: bytes) -> str | None:
+    """Reduce a callee expression to the identifier a caller would match on.
+
+    ponytail: positional heuristic, not name resolution. Upgrade to per-language
+    field lookups if a language needs more than "last segment wins".
+    """
+    kind = node.kind()
+    if _is_identifier_kind(kind):
+        return _text(source, node)
+    if "generic" in kind:
+        # GetService<IFoo>() -- the method is the first segment, not the type argument.
+        for child in _children(node):
+            name = _expression_name(child, source)
+            if name:
+                return name
+        return None
+    # Member access (a.b.Method): the method is the last segment.
+    for child in reversed(list(_children(node))):
+        if "argument" in child.kind():
+            continue
+        name = _expression_name(child, source)
+        if name:
+            return name
+    return None
+
+
+def _callee_name(node: Any, source: bytes) -> str | None:
+    """The called function's name, not the expression that produced it.
+
+    A call node's first child is the whole function expression. Using its text
+    verbatim turns `schemes.Where(x => ...)` into a multi-line blob -- unmatchable
+    as a call target, and large enough to drag file content into the record (one
+    such blob tripped the secret scanner and silently dropped the file from the
+    index). Take the final identifier, as the Python adapter does with `Attribute.attr`.
+    """
+    callee = next(_children(node), None)
+    if callee is None:
+        return None
+    name = (_expression_name(callee, source) or "").strip()
+    # Anything still carrying whitespace is an expression we failed to reduce.
+    # Dropping it beats emitting an edge nothing can resolve.
+    if not name or any(char.isspace() for char in name):
+        return None
+    return name
+
+
 def extract(path: str | Path, source: str) -> dict:
     """Parse and return definitions, imports, calls with status."""
     if isinstance(path, str):
@@ -212,6 +271,9 @@ def extract(path: str | Path, source: str) -> dict:
         parser = get_parser(lang)
         tree = parser.parse(source)
         root_node = tree.root_node()
+        # Past this point every read is by byte offset, so rebind to bytes once
+        # rather than at each _text call site -- one missed site is silent corruption.
+        source = source.encode("utf-8")
     except Exception as exc:
         return {
             "definitions": [],
@@ -290,21 +352,14 @@ def extract(path: str | Path, source: str) -> dict:
 
         # Calls
         if kind in node_types["calls"]:
-            # For call expressions, get the function name (first child)
-            first_child = None
-            for child in _children(node):
-                first_child = child
-                break
-
-            if first_child:
-                call_name = _text(source, first_child)
-                if call_name.strip():
-                    calls.append(
-                        {
-                            "name": call_name,
-                            "line": _line(node),
-                        }
-                    )
+            call_name = _callee_name(node, source)
+            if call_name:
+                calls.append(
+                    {
+                        "name": call_name,
+                        "line": _line(node),
+                    }
+                )
 
     # Check for parse errors
     if root_node.has_error():
