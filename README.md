@@ -62,12 +62,12 @@ MIMRY turns a local repo into a small intelligence layer:
 - **Context packs** for agent handoffs
 - **Task routing and role-aware briefs** for agent orchestration
 - **File and symbol indexes** for quick navigation
-- **Graphify relationship maps** for code/document relationships
+- **Relationship maps** for code/document relationships
 - **Local semantic recall** for fuzzy “I remember something like…” queries
 - **Feedback ranking** from what agents actually opened, changed, missed, or ignored
 - **MCP tools** so coding agents can query MIMRY directly
 - **Privacy-first behavior**: no remote embeddings by default, no source dumps in context packs, and secret-looking feedback values are redacted before persistence
-- **Cooperative test isolation**: tester-owned `acceptance_tests/` trees stay outside ordinary index/Graphify handoff surfaces by default; this is not secrecy, because repository users can still open those files directly
+- **Cooperative test isolation**: tester-owned `acceptance_tests/` trees stay outside ordinary index surfaces by default; this is not secrecy, because repository users can still open those files directly
 
 Use it when you want agents to answer:
 
@@ -88,7 +88,7 @@ Requirements:
 
 - Python `>=3.11` (required CI currently covers 3.11, 3.12, and 3.13)
 - [`uv`](https://docs.astral.sh/uv/)
-- Git and network access for the pinned Graphify dependency
+- Git (for repo analysis)
 
 ### Supported platforms
 
@@ -103,7 +103,7 @@ regressions can land without CI catching them. If you develop on Windows, run
 it needs the workflow's POSIX-only steps (`.venv/bin/python`, `/tmp`, tarball globbing)
 made portable first.
 
-MIMRY 0.1.x is distributed internally from an authorized checkout or as a direct wheel artifact. It is not published to PyPI/PyPI-style indexes because its metadata intentionally pins Graphify by Git commit. See [`RELEASING.md`](RELEASING.md) for the supported channel and exact commands.
+MIMRY 0.1.x is distributed internally from an authorized checkout or as a direct wheel artifact. See [`RELEASING.md`](RELEASING.md) for the supported channel and exact commands.
 
 Install from a checkout:
 
@@ -160,7 +160,7 @@ project-root/
 ├─ .mimry/                  # hidden local control/config
 │  └─ mimry-out/            # generated MIMRY output for agents/humans
 │     ├─ context/latest.md  # latest context pack
-│     └─ graph/             # Graphify-derived relationship artifacts
+│     └─ graph/             # native relationship graph artifacts
 └─ source files...
 ```
 
@@ -172,7 +172,7 @@ A context pack includes:
 - index and graph freshness
 - ranked relevant files with reason labels
 - symbol/entity hints when indexed
-- Graphify relationship and community signals when available
+- graph relationship and community signals when available
 - suggested reading order
 - likely edit surfaces vs support files
 - risk notes for generated/cache/privacy-sensitive paths
@@ -269,7 +269,7 @@ Feedback can add labels such as:
 - `feedback missed-file recovery boost`
 - `feedback ignored suggestion downrank`
 
-Exact filename, symbol, Graphify, framework, and source evidence remain primary. Feedback helps break ties and recover previously missed files; it should not override source-truth signals.
+Exact filename, symbol, graph, framework, and source evidence remain primary. Feedback helps break ties and recover previously missed files; it should not override source-truth signals.
 
 ## MCP for agents
 
@@ -303,7 +303,7 @@ The smoke is included in installed wheels as well as source artifacts. It create
 
 ## Agent skill install
 
-MIMRY can also install a MIMRY-owned skill/instruction bundle for coding agents. This is separate from Graphify's installer: MIMRY uses Graphify internally, but installs MIMRY workflow rules.
+MIMRY can also install a MIMRY-owned skill/instruction bundle for coding agents. It installs MIMRY workflow rules only.
 
 List supported platforms:
 
@@ -470,17 +470,26 @@ markdown-docs
 generic-text
 ```
 
-## Graphify integration
+## Graph engine
 
-MIMRY uses Graphify-derived relationship artifacts for graph navigation and context evidence. Graphify's Git commit is pinned directly in MIMRY's artifact dependency metadata and `uv.lock`, so direct installs from a checkout, sdist, or wheel use the same policy. This internal release is not suitable for PyPI-style indexes, which reject direct Git references. `mimry graphify status` reports the runtime source/version/commit separately and says whether it matches that policy.
+MIMRY builds its own relationship graph in `src/mimry/core/`. Indexing parses each file
+once and derives three kinds of edge from what it already read:
 
-Submodules are optional for normal CLI/test usage. If you specifically want the vendored Graphify checkout under `vendor/graphify`:
+- `defines` -- a file defines a symbol
+- `imports` -- an import statement resolved to a real file in the repo
+- `calls` -- a call site resolved to a symbol, in the same file or through an import
 
-```bash
-git submodule update --init --recursive
-```
+Imports that cannot be resolved unambiguously are dropped rather than guessed, so a
+relationship shown by `mimry path` or `mimry why` is one MIMRY can actually evidence.
+Nodes are grouped into communities by deterministic label propagation, and `graph.json`
+is byte-identical across rebuilds of unchanged sources.
 
-See [`THIRD_PARTY.md`](THIRD_PARTY.md) for Graphify attribution and integration boundaries.
+Languages covered: Python, JavaScript, TypeScript, JSX, TSX, Go, Rust, and C#. Adding a
+language is a table entry in `core/languages.py`, not new code -- every grammar ships in
+the already-pinned `tree-sitter-language-pack`.
+
+Artifacts land in `.mimry/mimry-out/graph/`: `graph.json`, `GRAPH_REPORT.md`, and
+`manifest.json`. They are written during `mimry index`; there is no separate build step.
 
 ## Support and releases
 

@@ -78,7 +78,7 @@ def test_corrupt_pointer_without_backup_is_actionable_and_has_no_traceback(tmp_p
 def test_status_repairs_corrupt_pointer_from_last_known_good_backup(tmp_path: Path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     pointer = repo / ".mimry" / "pointer.json"
     expected = json.loads(pointer.read_text(encoding="utf-8"))
     pointer.write_text("{not-json", encoding="utf-8")
@@ -150,14 +150,14 @@ def test_register_root_rebinds_root_id_to_authoritative_pointer(tmp_path: Path, 
 def test_moved_root_fails_closed_when_recorded_path_is_missing(tmp_path: Path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    initialized = run_cli(repo, cache, "init", "--skip-graphify")
+    initialized = run_cli(repo, cache, "init", "--skip-graph")
     assert initialized.returncode == 0, initialized.stderr
     moved = tmp_path / "moved-repo"
     shutil.move(repo, moved)
     before_pointer = (moved / ".mimry" / "pointer.json").read_bytes()
     before_registry = (cache / "roots.json").read_bytes()
 
-    refused = run_cli(moved, cache, "init", "--skip-graphify")
+    refused = run_cli(moved, cache, "init", "--skip-graph")
 
     assert refused.returncode == 2
     assert "Moved-root rebinding requires an explicit recovery workflow" in refused.stderr
@@ -168,14 +168,14 @@ def test_moved_root_fails_closed_when_recorded_path_is_missing(tmp_path: Path):
 def test_init_refuses_copied_pointer_while_recorded_root_exists(tmp_path: Path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    initialized = run_cli(repo, cache, "init", "--skip-graphify")
+    initialized = run_cli(repo, cache, "init", "--skip-graph")
     assert initialized.returncode == 0, initialized.stderr
     copied = tmp_path / "copied-repo"
     shutil.copytree(repo, copied)
     before_pointer = (copied / ".mimry" / "pointer.json").read_bytes()
     before_registry = (cache / "roots.json").read_bytes()
 
-    refused = run_cli(copied, cache, "init", "--skip-graphify")
+    refused = run_cli(copied, cache, "init", "--skip-graph")
 
     assert refused.returncode == 2
     assert "Refusing MIMRY root identity mismatch" in refused.stderr
@@ -244,7 +244,7 @@ def test_concurrent_registry_updates_do_not_drop_roots(tmp_path: Path, monkeypat
 def _initialized_repo(tmp_path: Path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     return repo, cache
 

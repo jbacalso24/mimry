@@ -22,7 +22,6 @@ from .graphify_artifacts import (
     graphify_shortest_path,
     graphify_surface_matches,
 )
-from .graphify_wrapper import graphify_source, pinned_commit_for_status, run_graphify_build, sync_visible_graph_output
 from .indexer import write_index
 from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir
 from .routing import route_payload, verification_commands, write_brief
@@ -139,15 +138,6 @@ def cmd_init(a):
     )
     save_pointer(root, ptr)
     register_root(ptr)
-    if not getattr(a, "skip_graphify", False):
-        print("Building MIMRY graph artifacts in the private cache ...")
-        graphify_status = run_graphify_build(root, execute=True)
-        if graphify_status != 0:
-            print(
-                "MIMRY initialized, but the internal graph build failed. Run `mimry refresh` after fixing dependencies."
-            )
-            return graphify_status
-    sync_visible_graph_output(root, ptr)
     hygiene = (
         "Added MIMRY metadata/output ignore entries to the target Git worktree .gitignore."
         if gitignore_updated
@@ -193,12 +183,7 @@ def cmd_index(a):
 def cmd_refresh(a):
     root = Path(a.root).resolve()
     ptr = require(root, validate=False)
-    print("Refreshing MIMRY: internal graph build -> MIMRY index -> status")
-    graphify_status = run_graphify_build(root, execute=True)
-    if graphify_status != 0:
-        print("Refresh stopped: internal graph build failed.")
-        return graphify_status
-    sync_visible_graph_output(root, ptr)
+    print("Refreshing MIMRY: MIMRY index -> status")
     stats = write_index(root, ptr)
     print(
         f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nSemantic: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})\nIndex saved: {stats['index']}"
@@ -230,8 +215,6 @@ def cmd_status(a):
     print(
         "MIMRY graph artifact health"
         f"\nStatus: {graphify['status']}"
-        f"\nSource: {graphify_source()}"
-        f"\nPinned commit: {pinned_commit_for_status()}"
         f"\nArtifact output: {graphify['output_dir']}"
         f"\ngraph.json: {'yes' if graphify['graph_exists'] else 'missing'}"
         f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; generated {graphify['graph_generated_at'] or 'unknown'})"

@@ -53,7 +53,7 @@ _PLATFORM_ALIASES = {
 _REFERENCES: dict[str, str] = {
     "workflow.md": """# MIMRY workflow\n\nUse this when starting repo work, debugging, reviewing, or planning.\n\n## Fast path\n\n1. Run `mimry status`.\n2. Route the task with `mimry route \"<task>\"` to pick the likely agent lane, risk level, and next command.\n3. If current, ask a focused question with `mimry context \"<task>\"` or write a role brief with `mimry brief \"<task>\" --agent <role>`.\n4. If stale/missing, run `mimry preflight \"<task>\"`.\n5. Read `.mimry/mimry-out/context/latest.md` or `.mimry/mimry-out/context/brief-<agent>.md`.\n6. Inspect source files directly before editing.\n\n## Source of truth\n\nMIMRY narrows the search space. Source files, tests, build output, and user verification remain final truth.\n""",
     "commands.md": """# MIMRY commands\n\nCommon commands:\n\n```bash\nmimry preflight \"<task>\"\nmimry route \"<task>\"\nmimry route \"<task>\" --json\nmimry brief \"<task>\" --agent <role>\nmimry status\nmimry refresh\nmimry context \"<task>\"\nmimry find \"<query>\"\nmimry related \"<query>\"\nmimry symbol \"<name>\"\nmimry why <file-or-symbol> --query \"<task>\"\nmimry path \"<source>\" \"<target>\"\nmimry semantic \"<query>\"\n```\n\nPrefer precise task queries over generic ones like `frontend` or `fix bug`.\n""",
-    "mcp.md": """# MIMRY MCP\n\nWhen MCP tools are available, prefer them over shell commands for lookup, preflight, context generation, and feedback.\n\nPrimary workflow tools:\n\n- `mimry_status(root?)`\n- `mimry_init(root?, root_type?, skip_graphify?)`\n- `mimry_refresh(root?)`\n- `mimry_preflight(query, root?, force_refresh?)`\n- `mimry_route(query, root?, limit?)`\n- `mimry_brief(query, agent, root?, limit?)`\n- `mimry_context(query, root?, semantic?)`\n\nNavigation and explanation tools:\n\n- `mimry_find(query, root?, limit?, semantic?)`\n- `mimry_related(query, root?, limit?)`\n- `mimry_symbol(name, root?)`\n- `mimry_semantic(query, root?, limit?)`\n- `mimry_explain(query, root?, limit?)`\n- `mimry_path(source, target, root?)`\n- `mimry_why(surface, query, root?, limit?)`\n\nFeedback/tooling tools:\n\n- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, ignored?, verification?, outcome?, notes?)`\n- `mimry_list_adapters(active_only?)`\n\nRules:\n\n- Prefer `mimry_preflight` before broad search or repeated file reads.\n- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n- Use CLI fallback when MCP is unavailable or the agent host has not loaded the server.\n""",
+    "mcp.md": """# MIMRY MCP\n\nWhen MCP tools are available, prefer them over shell commands for lookup, preflight, context generation, and feedback.\n\nPrimary workflow tools:\n\n- `mimry_status(root?)`\n- `mimry_init(root?, root_type?, skip_graph?)`\n- `mimry_refresh(root?)`\n- `mimry_preflight(query, root?, force_refresh?)`\n- `mimry_route(query, root?, limit?)`\n- `mimry_brief(query, agent, root?, limit?)`\n- `mimry_context(query, root?, semantic?)`\n\nNavigation and explanation tools:\n\n- `mimry_find(query, root?, limit?, semantic?)`\n- `mimry_related(query, root?, limit?)`\n- `mimry_symbol(name, root?)`\n- `mimry_semantic(query, root?, limit?)`\n- `mimry_explain(query, root?, limit?)`\n- `mimry_path(source, target, root?)`\n- `mimry_why(surface, query, root?, limit?)`\n\nFeedback/tooling tools:\n\n- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, ignored?, verification?, outcome?, notes?)`\n- `mimry_list_adapters(active_only?)`\n\nRules:\n\n- Prefer `mimry_preflight` before broad search or repeated file reads.\n- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n- Use CLI fallback when MCP is unavailable or the agent host has not loaded the server.\n""",
     "feedback.md": """# MIMRY feedback\n\nAfter meaningful verified work, record what mattered so future rankings improve.\n\n```bash\nmimry feedback --query \"<task>\" \\\n  --context .mimry/mimry-out/context/latest.md \\\n  --opened \"<files opened>\" \\\n  --changed \"<files changed>\" \\\n  --missed \"<important missed files>\" \\\n  --ignored \"<unhelpful suggestions>\" \\\n  --verification \"<command/result>\" \\\n  --outcome passed\n```\n\nDo not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.\n""",
     "safety.md": """# MIMRY safety\n\nGood roots are focused repos, product folders, docs vaults, or curated active-work folders.\n\nBad roots:\n\n- `/`\n- a whole home directory\n- `C:\\`\n- `C:\\Users\\you`\n- system/config/cache folders\n- dependency directories such as `node_modules`\n\nGenerated paths such as `.mimry/`, `.mimry/mimry-out/`, `.git/`, and dependency caches are support artifacts, not source fixes.\n""",
 }
@@ -271,7 +271,7 @@ def skill_body(platform_key: str) -> str:
     }
     note = platform_notes.get(
         platform_key,
-        f"{platforms()[platform_key].label}: platform-specific MIMRY skill install using this host's Graphify-compatible skill directory convention.",
+        f"{platforms()[platform_key].label}: platform-specific MIMRY skill install using this host's skill directory convention.",
     )
     return f"""---
 name: mimry
@@ -323,9 +323,9 @@ mimry feedback --query "<task>" --context .mimry/mimry-out/context/latest.md --o
 ## Stale/missing state rules
 
 - If MIMRY is not initialized for an owned repo, run `mimry preflight "<task>"`; it initializes and builds useful local context.
-- Default preflight is fast: it refreshes cheap index data when needed but does not run slow full Graphify unless requested.
+- Default preflight is fast: it refreshes cheap index data when needed but does not run the slow full refresh unless requested.
 - Use `mimry refresh` or `mimry preflight --force-refresh "<task>"` when graph freshness matters more than speed.
-- If Graphify is stale/missing, say so. Do not invent relationship paths.
+- If graph artifacts are stale/missing, say so. Do not invent relationship paths.
 
 ## Focused navigation commands
 
@@ -380,10 +380,10 @@ Ranking reasons matter. Strong signals include:
 - FTS/BM25 match
 - token match, including camelCase/PascalCase fragments
 - framework adapter facts
-- Graphify community/proximity/path evidence
+- graph community/proximity/path evidence
 - feedback boosts from previously opened/changed/missed files
 
-Weak/limited signals include generic content hints, semantic-only matches, stale Graphify artifacts, and broad docs/plans for code-edit queries. Use `mimry explain`, `mimry why`, or `mimry path` when the ranking is surprising.
+Weak/limited signals include generic content hints, semantic-only matches, stale graph artifacts, and broad docs/plans for code-edit queries. Use `mimry explain`, `mimry why`, or `mimry path` when the ranking is surprising.
 
 ## Adapter expectations
 

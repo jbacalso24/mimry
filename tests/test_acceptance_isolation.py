@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from mimry.commands import cmd_context, cmd_find, cmd_init, cmd_symbol
 from mimry.freshness import index_freshness
 from mimry.graphify_artifacts import graphify_health, graphify_report_excerpt, graphify_rows
-from mimry.graphify_wrapper import run_graphify_build
 from mimry.indexer import write_index
 from mimry.mcp_server import mimry_context, mimry_find, mimry_semantic, mimry_status, mimry_symbol
 from mimry.paths import graph_output_dir, graphify_output_dir
@@ -58,7 +57,7 @@ def test_acceptance_tests_are_absent_from_default_index_and_agent_outputs(tmp_pa
     cache = tmp_path / "cache"
 
     assert [path.relative_to(repo).as_posix() for path in scan(repo)] == ["src/app.py"]
-    for args in (("init", "--skip-graphify"), ("index",), ("context", "public application")):
+    for args in (("init", "--skip-graph"), ("index",), ("context", "public application")):
         result = run_cli(repo, cache, *args)
         assert result.returncode == 0, result.stderr
         assert SENTINEL not in result.stdout + result.stderr
@@ -84,35 +83,6 @@ def test_acceptance_tests_are_absent_from_default_index_and_agent_outputs(tmp_pa
     assert "src/app.py" in persisted
 
 
-def test_acceptance_tests_are_absent_from_graphify_handoff(tmp_path: Path, monkeypatch) -> None:
-    repo = tmp_path / "repo"
-    acceptance = repo / "acceptance_tests"
-    acceptance.mkdir(parents=True)
-    (repo / "app.py").write_text("def app():\n    return 1\n", encoding="utf-8")
-    (acceptance / "test_hidden.py").write_text(f"EXPECTED = '{SENTINEL}'\n", encoding="utf-8")
-    cache = tmp_path / "cache"
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    observed: dict[str, object] = {}
-
-    def fake_run(cmd, **kwargs):
-        handoff = Path(cmd[-1])
-        observed["files"] = sorted(
-            path.relative_to(handoff).as_posix() for path in handoff.rglob("*") if path.is_file()
-        )
-        observed["text"] = "\n".join(path.read_text(encoding="utf-8") for path in handoff.rglob("*") if path.is_file())
-        out = graphify_output_dir(repo)
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "graph.json").write_text('{"nodes": [], "edges": []}', encoding="utf-8")
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", fake_run)
-
-    assert run_graphify_build(repo, execute=True) == 0
-    assert observed["files"] == ["app.py"]
-    assert SENTINEL not in str(observed["text"])
-    assert "acceptance_tests" not in str(observed["text"])
-
 
 def test_existing_index_becomes_stale_when_policy_newly_ignores_acceptance_tests(
     tmp_path: Path, monkeypatch, capsys
@@ -125,7 +95,7 @@ def test_existing_index_becomes_stale_when_policy_newly_ignores_acceptance_tests
         f"def hidden_acceptance_symbol():\n    return '{SENTINEL}'\n", encoding="utf-8"
     )
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
-    assert cmd_init(SimpleNamespace(root=repo, root_type="repo", skip_graphify=True)) == 0
+    assert cmd_init(SimpleNamespace(root=repo, root_type="repo", skip_graph=True)) == 0
 
     from mimry import security
 

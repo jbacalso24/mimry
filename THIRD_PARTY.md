@@ -1,24 +1,45 @@
 # Third-party notices
 
-## Graphify
+MIMRY's graph engine is its own (`src/mimry/core/`). The remaining third-party
+dependencies are runtime libraries, not infrastructure MIMRY defers to.
 
-MIMRY treats Graphify as core graph infrastructure while keeping MIMRY's product boundary around CLI, schema, storage, ranking, and context packs.
+## tree-sitter and tree-sitter-language-pack
+
+Used for parsing source files into symbols, imports, and call sites.
+
+- `tree-sitter` (MIT)
+- `tree-sitter-language-pack`, pinned to `1.12.2` (MIT)
+
+The pin is deliberate: `1.13.x` changes the TSX grammar shape and breaks exported
+function and component extraction. Do not raise it without re-running the locked and
+unlocked artifact tests.
+
+The language pack bundles every grammar MIMRY uses -- Python, JavaScript, TypeScript,
+TSX, Go, Rust and C# -- so adding a supported language costs a table entry in
+`src/mimry/core/languages.py` rather than a new dependency.
+
+## fastmcp
+
+Used for the MCP server entrypoint (`mimry-mcp`) that exposes MIMRY's tools to coding
+agents.
+
+- `fastmcp` (Apache-2.0)
+
+## Historical note
+
+Through 0.1.x development MIMRY used Graphify as its graph engine, pinned by Git commit
+and tracked as a submodule under `vendor/graphify`.
 
 - Upstream repository: https://github.com/safishamsi/graphify
-- Default branch inspected: `v8`
-- Pinned commit: `44c0a5e33c7011813dcebf1a8850c1c6005bf500`
-- Dependency policy: PEP 508 Git URL pinned to that commit in internal direct-install MIMRY artifact metadata
 - Python package: `graphifyy`
-- CLI: `graphify`
-- MCP CLI: `graphify-mcp`
 - License: MIT
 - Copyright: Copyright (c) 2026 Safi Shamsi
 
-The upstream source is tracked as an optional git submodule at `vendor/graphify` instead of a copied tree so the MIMRY repo stays light while retaining a pinned, inspectable Graphify baseline. Normal direct installations use the same commit pin from package metadata; the submodule is not included in release artifacts. Because the metadata contains this direct Git reference, this internal release must not be published to PyPI or a PyPI-style index.
+It was replaced by the native engine after measurement rather than on principle. On
+MIMRY's own retrieval benchmark the native engine scored better on every quality metric
+and reached a queryable indexed graph in roughly half the wall-clock time.
+`benchmarks/baseline.graphify.json` retains the recorded Graphify numbers so the
+comparison stays auditable after the dependency is gone.
 
-Rules for MIMRY integration:
-
-1. Do not expose Graphify's installer, hook, clone, provider config, or assistant integration commands by default.
-2. Default to local/no-network Graphify paths only.
-3. Keep Graphify outputs under MIMRY-owned state/cache paths, not raw `graphify-out/`, unless explicitly debugging upstream.
-4. Preserve upstream MIT license and this notice when updating the submodule.
+Removing it also dropped the direct Git dependency reference from package metadata,
+which was the reason 0.1.x could not be published to a PyPI-style index.

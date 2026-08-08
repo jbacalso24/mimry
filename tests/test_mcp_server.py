@@ -233,7 +233,7 @@ def test_mcp_refresh_rebuilds_index_and_reports_status(tmp_path: Path, monkeypat
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
-    assert mimry_init(str(repo), skip_graphify=True)["returncode"] == 0
+    assert mimry_init(str(repo), skip_graph=True)["returncode"] == 0
 
     payload = mimry_refresh(str(repo))
 

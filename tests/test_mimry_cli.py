@@ -54,7 +54,7 @@ def copy_fixture(tmp_path: Path) -> Path:
 
 def test_init_creates_pointer_config_agent_rules(tmp_path):
     repo = copy_fixture(tmp_path)
-    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graphify")
+    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graph")
     assert res.returncode == 0, res.stderr
     assert (repo / ".mimry" / "pointer.json").exists()
     assert (repo / ".mimry" / "config.toml").exists()
@@ -66,7 +66,7 @@ def test_init_adds_mimry_to_gitignore_without_clobbering_existing_content(tmp_pa
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
     (repo / ".gitignore").write_text("dist/\n# keep me\n", encoding="utf-8")
 
-    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graphify")
+    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graph")
 
     assert res.returncode == 0, res.stderr
     gitignore = (repo / ".gitignore").read_text(encoding="utf-8")
@@ -95,8 +95,8 @@ def test_init_gitignore_is_idempotent_for_existing_mimry_root(tmp_path):
     repo = copy_fixture(tmp_path)
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
 
-    assert run_cli(repo, tmp_path / "cache", "init", "--skip-graphify").returncode == 0
-    assert run_cli(repo, tmp_path / "cache", "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, tmp_path / "cache", "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, tmp_path / "cache", "init", "--skip-graph").returncode == 0
 
     gitignore = (repo / ".gitignore").read_text(encoding="utf-8")
     assert gitignore.count(".mimry/") == 1
@@ -107,7 +107,7 @@ def test_init_defaults_to_current_working_directory(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
 
-    res = run_cli_from_cwd(repo, cache, "init", "--skip-graphify")
+    res = run_cli_from_cwd(repo, cache, "init", "--skip-graph")
 
     assert res.returncode == 0, res.stderr
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
@@ -335,7 +335,7 @@ def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     vs_cache.mkdir(parents=True)
     (vs_cache / "locked.vsidx").write_text("visual studio cache noise")
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     res = run_cli(repo, cache, "index")
     assert res.returncode == 0, res.stderr
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
@@ -358,7 +358,7 @@ def test_index_skips_unreadable_files_instead_of_crashing(tmp_path):
     locked.chmod(0)
     cache = tmp_path / "cache"
     try:
-        assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+        assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
         res = run_cli(repo, cache, "index")
         assert res.returncode == 0, res.stderr
         ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
@@ -393,7 +393,7 @@ def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_exampl
     )
     cache = tmp_path / "cache"
 
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     assert run_cli(repo, cache, "context", "service account npm kube shell env SECRET_TOKEN").returncode == 0
 
@@ -435,7 +435,7 @@ def test_index_ignores_legacy_mimry_out_generated_context(tmp_path):
     legacy.write_text("# generated context should not be indexed\n", encoding="utf-8")
     cache = tmp_path / "cache"
 
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
@@ -446,7 +446,7 @@ def test_index_ignores_legacy_mimry_out_generated_context(tmp_path):
 def test_status_find_symbol_related_context_loop(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     status = run_cli(repo, cache, "status")
     assert status.returncode == 0, status.stdout
@@ -468,7 +468,7 @@ def test_status_find_symbol_related_context_loop(tmp_path):
 def test_route_recommends_backend_for_fastapi_auth_not_tooly(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "route", "fix FastAPI auth bug")
@@ -484,7 +484,7 @@ def test_route_recommends_backend_for_fastapi_auth_not_tooly(tmp_path):
 def test_route_json_outputs_structured_payload_with_risk_severity(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "route", "deploy billing migration", "--json")
@@ -501,7 +501,7 @@ def test_route_json_outputs_structured_payload_with_risk_severity(tmp_path):
 def test_route_recommends_mobile_for_expo_share_extension(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "route", "update Expo share extension")
@@ -514,7 +514,7 @@ def test_route_recommends_mobile_for_expo_share_extension(tmp_path):
 def test_route_recommends_tooly_for_mimry_mcp_route_tool(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "route", "implement mimry MCP route tool")
@@ -527,7 +527,7 @@ def test_route_recommends_tooly_for_mimry_mcp_route_tool(tmp_path):
 def test_route_detects_risk_gates_for_sensitive_terms(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     query = "auth DB migration billing deploy scraping legal secrets"
@@ -541,7 +541,7 @@ def test_route_detects_risk_gates_for_sensitive_terms(tmp_path):
 def test_route_prefers_explicit_specialist_intent_over_index_noise(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     cases = [
@@ -559,7 +559,7 @@ def test_route_prefers_explicit_specialist_intent_over_index_noise(tmp_path):
 def test_route_does_not_create_secret_gate_from_token_match_reason(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "route", "fix Next.js checkout page")
@@ -572,7 +572,7 @@ def test_route_does_not_create_secret_gate_from_token_match_reason(tmp_path):
 def test_brief_writes_role_aware_markdown_sections(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "brief", "fix auth", "--agent", "backend")
@@ -601,7 +601,7 @@ def test_brief_writes_role_aware_markdown_sections(tmp_path):
 def test_explain_summarizes_ranked_files_paths_and_verification_hints(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
 
@@ -619,7 +619,7 @@ def test_explain_summarizes_ranked_files_paths_and_verification_hints(tmp_path):
 def test_why_explains_file_ranking_signals_for_query(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
 
@@ -636,7 +636,7 @@ def test_why_explains_file_ranking_signals_for_query(tmp_path):
 def test_path_finds_graphify_relationship_path_between_surfaces(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
 
@@ -653,7 +653,7 @@ def test_path_finds_graphify_relationship_path_between_surfaces(tmp_path):
 def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
 
@@ -702,7 +702,7 @@ def write_current_graphify_artifacts(repo: Path):
 def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
 
@@ -728,7 +728,7 @@ def test_context_generation_overwrites_legacy_context_with_redirect_warning(tmp_
     legacy = repo / "mimry-out" / "context" / "latest.md"
     legacy.parent.mkdir(parents=True)
     legacy.write_text("# Old stale context\n\nThis should not be trusted.\n", encoding="utf-8")
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "context", "fix auth session")
@@ -761,7 +761,7 @@ testpaths = ["tests"]
     )
     (repo / "tests").mkdir()
     (repo / "tests" / "test_session.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
 
@@ -801,7 +801,7 @@ testpaths = ["tests"]
 def test_context_pack_degrades_when_graphify_relationships_missing(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "context", "auth session")
@@ -815,7 +815,7 @@ def test_context_pack_degrades_when_graphify_relationships_missing(tmp_path):
 def test_preflight_force_refreshes_even_when_current(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
 
@@ -830,7 +830,7 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
 def test_preflight_reindexes_stale_index_in_fast_mode_without_slow_graphify(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
     target = repo / "src" / "auth" / "session.py"
@@ -878,7 +878,7 @@ def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
 def test_status_reports_graphify_artifact_health(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
@@ -912,7 +912,7 @@ def test_status_reports_graphify_artifact_health(tmp_path):
 def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
@@ -944,7 +944,7 @@ def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
 def test_status_keeps_legacy_mtime_only_manifest_compatible(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
@@ -964,7 +964,7 @@ def test_status_keeps_legacy_mtime_only_manifest_compatible(tmp_path):
 def test_graphify_reads_base_index_artifacts_after_generation_migration(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graphify_artifacts(repo)
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
@@ -985,7 +985,7 @@ def test_graphify_reads_base_index_artifacts_after_generation_migration(tmp_path
 def test_status_reads_legacy_repo_local_graphify_artifacts_without_crashing(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     graphify_dir = repo / ".mimry" / "graphify"
@@ -1013,7 +1013,7 @@ def test_status_reads_legacy_repo_local_graphify_artifacts_without_crashing(tmp_
 def test_status_reports_missing_graphify_graph_without_changing_index_exit_code(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     graphify_dir = Path(ptr["indexPath"]) / "graphify"
@@ -1032,7 +1032,7 @@ def test_status_reports_missing_graphify_graph_without_changing_index_exit_code(
 def test_reindex_detects_changed_file(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     target.write_text(target.read_text() + "\ndef validate_session():\n    return True\n")
@@ -1046,7 +1046,7 @@ def test_reindex_detects_changed_file(tmp_path):
 def test_status_detects_same_size_rewrite_with_restored_mtime(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     original_stat = target.stat()
@@ -1066,7 +1066,7 @@ def test_status_detects_same_size_rewrite_with_restored_mtime(tmp_path):
 def test_status_detects_new_indexable_file(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     (repo / "src" / "auth" / "new_flow.py").write_text("def new_login_flow():\n    return True\n", encoding="utf-8")
@@ -1082,7 +1082,7 @@ def test_status_detects_new_indexable_file(tmp_path):
 def test_index_normalizes_stale_pointer_index_path(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     ptr_path = repo / ".mimry" / "pointer.json"
     ptr = json.loads(ptr_path.read_text(encoding="utf-8"))
     stale_index = tmp_path / "old-profile-cache" / ptr["rootId"]
@@ -1103,7 +1103,7 @@ def test_index_normalizes_stale_pointer_index_path(tmp_path):
 def test_cache_wipe_current(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])
@@ -1138,7 +1138,7 @@ def test_cache_wipe_all_rejects_relative_and_empty_cache_home(tmp_path):
 def test_cache_wipe_all_refuses_until_global_writer_coordination_exists(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     assert (cache / "roots.json").exists()
 
@@ -1153,7 +1153,7 @@ def test_cache_wipe_all_refuses_until_global_writer_coordination_exists(tmp_path
 def test_cache_wipe_current_rejects_index_path_outside_safe_cache(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     outside = tmp_path / "outside-index"
     outside.mkdir()
@@ -1179,7 +1179,7 @@ def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):
     mig = repo / "backend" / "alembic" / "versions"
     mig.mkdir(parents=True)
     (mig / "add_auth_token_to_users.py").write_text("auth login token user session " * 60)
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     ctx = run_cli(repo, cache, "context", "understand auth flow and where to edit login token user session")
     assert ctx.returncode == 0, ctx.stderr
@@ -1198,7 +1198,7 @@ def test_typescript_ast_extracts_tsx_symbols(tmp_path):
         'import React, { useState } from "react";\nexport function LoginScreen() {\n  const [token, setToken] = useState(null);\n  return <View><Text>Login</Text></View>;\n}\nconst HelperCard = () => <Text />;\n'
     )
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])
@@ -1251,7 +1251,7 @@ def test_framework_adapters_index_routes_endpoints_screens_schemas_and_docs(tmp_
     )
     cache = tmp_path / "cache"
 
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])
@@ -1293,7 +1293,7 @@ def test_config_manifest_extracts_package_scripts_frameworks_and_env_names(tmp_p
     (repo / "AGENTS.md").write_text("# Rules\nAlways run pnpm test before commits.\npnpm build\n")
     (repo / ".env.example").write_text("API_URL=https://example.test\nSECRET_TOKEN=super-secret-value\n")
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
@@ -1337,7 +1337,7 @@ testpaths = ["tests"]
     )
     (repo / "README.md").write_text("# Demo\nNever print secrets.\nuv run pytest -q\n")
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
@@ -1355,7 +1355,7 @@ testpaths = ["tests"]
 def test_feedback_records_cli_payload_normalizes_paths_and_stats(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     absolute_opened = repo / "src" / "auth" / "session.py"
 
@@ -1399,7 +1399,7 @@ def test_feedback_records_cli_payload_normalizes_paths_and_stats(tmp_path):
 def test_feedback_redacts_likely_secrets_from_user_metadata(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(
@@ -1434,7 +1434,7 @@ def test_feedback_redacts_likely_secrets_from_user_metadata(tmp_path):
 def test_feedback_json_records_equivalent_data_and_show_lists_it(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     payload = {
         "query": "login auth session bridge",
@@ -1467,7 +1467,7 @@ def test_feedback_json_records_equivalent_data_and_show_lists_it(tmp_path):
 def test_feedback_ranking_reasons_boost_missed_opened_changed_and_downrank_ignored(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     assert (
         run_cli(
@@ -1502,7 +1502,7 @@ def test_feedback_ranking_reasons_boost_missed_opened_changed_and_downrank_ignor
 def test_context_pack_final_checklist_includes_feedback_reminder(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "context", "fix login auth session")
@@ -1515,7 +1515,7 @@ def test_context_pack_final_checklist_includes_feedback_reminder(tmp_path):
 def test_semantic_index_stores_local_chunks_without_sensitive_files(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     res = run_cli(repo, cache, "index")
 
     assert res.returncode == 0, res.stderr
@@ -1534,7 +1534,7 @@ def test_semantic_index_stores_local_chunks_without_sensitive_files(tmp_path):
 def test_semantic_command_returns_explainable_local_results(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "semantic", "create session repository save")
@@ -1548,7 +1548,7 @@ def test_semantic_command_returns_explainable_local_results(tmp_path):
 def test_find_semantic_blends_labels_without_hiding_exact_match(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "find", "session repository save", "--semantic")
@@ -1562,7 +1562,7 @@ def test_find_semantic_blends_labels_without_hiding_exact_match(tmp_path):
 def test_semantic_missing_index_degrades_honestly(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
 
     res = run_cli(repo, cache, "semantic", "session repository")
 
@@ -1574,7 +1574,7 @@ def test_semantic_missing_index_degrades_honestly(tmp_path):
 def test_context_semantic_marks_semantic_reasons_and_keeps_source_truth(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "context", "create session repository save", "--semantic")
@@ -1590,7 +1590,7 @@ def test_find_splits_camelcase_query_terms_and_reports_token_match(tmp_path):
     cache = tmp_path / "cache"
     target = repo / "src" / "auth" / "magic_flow.py"
     target.write_text("def createSessionToken():\n    return 'ok'\n", encoding="utf-8")
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "find", "createSessionToken", "--limit", "3")
@@ -1605,7 +1605,7 @@ def test_find_uses_fts_bm25_for_content_hint_phrase(tmp_path):
     cache = tmp_path / "cache"
     target = repo / "src" / "auth" / "phrase_flow.py"
     target.write_text("def session_refresh_flow():\n    return True\n", encoding="utf-8")
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     res = run_cli(repo, cache, "find", "session refresh flow", "--limit", "3")

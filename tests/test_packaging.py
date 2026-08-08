@@ -8,8 +8,6 @@ from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
-GRAPHIFY_COMMIT = "44c0a5e33c7011813dcebf1a8850c1c6005bf500"
-GRAPHIFY_REQUIREMENT = f"graphifyy @ git+https://github.com/safishamsi/graphify.git@{GRAPHIFY_COMMIT}"
 TS_LANGUAGE_PACK_REQUIREMENT = "tree-sitter-language-pack==1.12.2"
 
 
@@ -29,7 +27,6 @@ def _build(tmp_path: Path) -> tuple[Path, Path]:
 def test_wheel_metadata_carries_release_dependency_pins(tmp_path: Path):
     wheel, _ = _build(tmp_path)
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert GRAPHIFY_REQUIREMENT in project["project"]["dependencies"]
     assert TS_LANGUAGE_PACK_REQUIREMENT in project["project"]["dependencies"]
     assert "tool" not in project or "uv" not in project["tool"] or "sources" not in project["tool"]["uv"]
 
@@ -39,10 +36,6 @@ def test_wheel_metadata_carries_release_dependency_pins(tmp_path: Path):
         entry_points_name = next(name for name in archive.namelist() if name.endswith(".dist-info/entry_points.txt"))
         entry_points = archive.read(entry_points_name).decode("utf-8")
 
-    graphify_requires = [
-        value for value in metadata.get_all("Requires-Dist", []) if value.lower().startswith("graphifyy")
-    ]
-    assert graphify_requires == [GRAPHIFY_REQUIREMENT]
     assert TS_LANGUAGE_PACK_REQUIREMENT in metadata.get_all("Requires-Dist", [])
     assert "mimry-integration-smoke = mimry.agent_integration:main" in entry_points
 

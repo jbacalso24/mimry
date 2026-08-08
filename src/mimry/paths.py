@@ -65,10 +65,6 @@ def repo_root():
     return Path(__file__).resolve().parents[2]
 
 
-def graphify_vendor_path():
-    return repo_root() / "vendor" / "graphify"
-
-
 def _root_id_from_pointer(root: Path) -> str | None:
     try:
         payload = json.loads(pointer_file(root).read_text(encoding="utf-8"))

@@ -24,7 +24,6 @@ from .commands import (
     cmd_symbol,
     cmd_why,
 )
-from .graphify_wrapper import cmd_graphify
 from .installer import cmd_hook_check, cmd_install, cmd_uninstall
 from .state import StateCorruptionError, StateLockTimeoutError
 from .storage import RootIdentityError
@@ -39,7 +38,7 @@ def build_parser():
     s = sub.add_parser("init", help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees")
     s.add_argument("--root-type", default="repo")
     s.add_argument(
-        "--skip-graphify", action="store_true", help="Create MIMRY metadata without building graph artifacts"
+        "--skip-graph", action="store_true", help="Create MIMRY metadata without building graph artifacts"
     )
     s.set_defaults(func=cmd_init)
     sub.add_parser("index").set_defaults(func=cmd_index)
@@ -50,7 +49,7 @@ def build_parser():
     s.add_argument(
         "--force-refresh",
         action="store_true",
-        help="Run the slow full refresh path (Graphify build + MIMRY index) before context generation",
+        help="Run the slow full refresh path (graph build + MIMRY index) before context generation",
     )
     s.set_defaults(func=cmd_preflight)
     sub.add_parser("status").set_defaults(func=cmd_status)
@@ -63,7 +62,7 @@ def build_parser():
     s.add_argument(
         "--semantic",
         action="store_true",
-        help="Blend local-only semantic chunks into normal FTS/Graphify/feedback ranking",
+        help="Blend local-only semantic chunks into normal FTS/graph/feedback ranking",
     )
     s.set_defaults(func=cmd_find)
     s = sub.add_parser(
@@ -119,7 +118,7 @@ def build_parser():
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=5)
     s.set_defaults(func=cmd_explain)
-    s = sub.add_parser("path", help="Find a Graphify relationship path between two files/symbols/queries")
+    s = sub.add_parser("path", help="Find a graph relationship path between two files/symbols/queries")
     s.add_argument("source")
     s.add_argument("target")
     s.set_defaults(func=cmd_path)
@@ -159,15 +158,6 @@ def build_parser():
     w.add_argument("--all", action="store_true")
     w.add_argument("--current", action="store_true")
     w.set_defaults(func=cmd_cache_wipe)
-    g = sub.add_parser("graphify", help="Safe MIMRY-owned wrapper around pinned Graphify")
-    gs = g.add_subparsers(dest="graphify_command", required=True)
-    gs.add_parser("status").set_defaults(func=cmd_graphify)
-    gb = gs.add_parser("build")
-    gb.add_argument("--dry-run", action="store_true", help="Show the safe Graphify command without running it")
-    gb.add_argument(
-        "--execute", action="store_true", help="Run the safe local graph build with output under the MIMRY cache"
-    )
-    gb.set_defaults(func=cmd_graphify)
     return p
 
 

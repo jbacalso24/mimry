@@ -11,13 +11,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from mimry.graphify_wrapper import (
-    GraphifyCleanupError,
-    graphify_subprocess_env,
-    purge_graphify_outputs,
-    run_graphify_build,
-    sync_visible_graph_output,
-)
 from mimry.mcp_server import (
     mimry_brief,
     mimry_context,
@@ -186,7 +179,7 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
 
     cli_results = (
-        run_cli(repo, cache, "init", "--skip-graphify"),
+        run_cli(repo, cache, "init", "--skip-graph"),
         run_cli(repo, cache, "index"),
         run_cli(repo, cache, "find", f"CONFIDENTIAL={DEFENSIVE_MARKER}"),
         run_cli(repo, cache, "context", f"credentials: {DEFENSIVE_MARKER}"),
@@ -223,7 +216,7 @@ def test_fake_standalone_token_has_zero_matches_across_owned_surfaces(tmp_path: 
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
 
-    init = run_cli(repo, cache, "init", "--skip-graphify")
+    init = run_cli(repo, cache, "init", "--skip-graph")
     index = run_cli(repo, cache, "index")
     find = run_cli(repo, cache, "find", CANARY)
     context = run_cli(repo, cache, "context", CANARY, "--semantic")
@@ -273,7 +266,7 @@ def test_sensitive_home_roots_and_descendants_are_rejected(tmp_path: Path, monke
     env["PYTHONPATH"] = str(ROOT / "src")
     for root in (home / ".config", home / ".cache" / "nested"):
         result = subprocess.run(
-            [sys.executable, "-m", "mimry.cli", "--root", str(root), "init", "--skip-graphify"],
+            [sys.executable, "-m", "mimry.cli", "--root", str(root), "init", "--skip-graph"],
             cwd=ROOT,
             env=env,
             text=True,
@@ -285,382 +278,7 @@ def test_sensitive_home_roots_and_descendants_are_rejected(tmp_path: Path, monke
         assert not (root / ".mimry").exists()
 
 
-def test_graphify_safe_handoff_excludes_ignored_and_secret_content(tmp_path: Path, monkeypatch, capsys):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / "notes.md").write_text(f"standalone {CANARY}\n", encoding="utf-8")
-    (repo / "classified.yaml").write_text(
-        f"confidential: |\n  harmless-looking line\n  {DEFENSIVE_MARKER}\n", encoding="utf-8"
-    )
-    cache = tmp_path / "cache"
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
 
-    private = graphify_output_dir(repo)
-    visible = graph_output_dir(repo)
-    for output in (private, visible):
-        output.mkdir(parents=True, exist_ok=True)
-        (output / "graph.json").write_text(json.dumps({"canary": CANARY}), encoding="utf-8")
-
-    observed = {}
-
-    def fake_run(cmd, cwd, **kwargs):
-        handoff = Path(cmd[-1])
-        observed["root"] = cmd[-1]
-        observed["cwd"] = str(cwd)
-        observed["files"] = sorted(
-            path.relative_to(handoff).as_posix() for path in handoff.rglob("*") if path.is_file()
-        )
-        observed["text"] = all_text_files(handoff)
-        observed["directory_modes"] = [path.stat().st_mode & 0o777 for path in (handoff, handoff / "src")]
-        observed["file_modes"] = [path.stat().st_mode & 0o777 for path in handoff.rglob("*") if path.is_file()]
-        private.mkdir(parents=True, exist_ok=True)
-        (private / "graph.json").write_text('{"nodes": [], "edges": []}', encoding="utf-8")
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", fake_run)
-    assert run_graphify_build(repo, execute=True) == 0
-    captured = capsys.readouterr()
-    assert CANARY not in captured.out + captured.err
-    assert observed["root"] == observed["cwd"]
-    assert Path(observed["root"]).resolve() != repo.resolve()
-    assert ".env" not in observed["files"]
-    assert "notes.md" not in observed["files"]
-    assert "classified.yaml" not in observed["files"]
-    assert CANARY not in observed["text"]
-    assert DEFENSIVE_MARKER not in observed["text"]
-    assert observed["directory_modes"] == [0o700, 0o700]
-    assert observed["file_modes"] and set(observed["file_modes"]) == {0o600}
-    assert private.exists()
-    assert not visible.exists()
-
-
-def test_graphify_handoff_scans_unlisted_text_extensions_and_rejects_ambiguous_bytes(
-    tmp_path: Path, monkeypatch, capsys
-):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    (repo / "safe.properties").write_text("app.name=mimry\n", encoding="utf-8")
-    (repo / "secret.properties").write_text(f"auth={DEFENSIVE_MARKER}\n", encoding="utf-8")
-    (repo / "ambiguous.dat").write_bytes(b"prefix\x00suffix")
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-
-    called = False
-
-    def unexpected_run(*args, **kwargs):
-        nonlocal called
-        called = True
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", unexpected_run)
-    assert run_graphify_build(repo, execute=True) == 2
-    captured = capsys.readouterr()
-    assert not called
-    assert DEFENSIVE_MARKER not in captured.out + captured.err
-    assert "binary or has an unknown text encoding" in captured.err
-    assert not graphify_output_dir(repo).exists()
-    assert not graph_output_dir(repo).exists()
-
-    (repo / "ambiguous.dat").unlink()
-    observed = {}
-
-    def inspect_run(cmd, **kwargs):
-        handoff = Path(cmd[-1])
-        observed["path"] = handoff
-        observed["files"] = {path.relative_to(handoff).as_posix() for path in handoff.rglob("*") if path.is_file()}
-        observed["text"] = all_text_files(handoff)
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", inspect_run)
-    assert run_graphify_build(repo, execute=True) == 0
-    assert "safe.properties" in observed["files"]
-    assert "secret.properties" not in observed["files"]
-    assert DEFENSIVE_MARKER not in observed["text"]
-    assert not observed["path"].exists()
-
-
-def test_graphify_rejects_sensitive_generated_artifacts(tmp_path: Path, monkeypatch, capsys):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    cache = tmp_path / "cache"
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
-    private = graphify_output_dir(repo)
-
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-
-    def fake_run(*args, **kwargs):
-        private.mkdir(parents=True, exist_ok=True)
-        (private / "graph.json").write_text(json.dumps({"canary": CANARY}), encoding="utf-8")
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", fake_run)
-    assert run_graphify_build(repo, execute=True) == 3
-    captured = capsys.readouterr()
-    assert "rejected sensitive generated content" in captured.err
-    assert CANARY not in captured.out + captured.err
-    assert not private.exists()
-
-
-def test_graphify_rejects_and_redacts_confidential_success_and_failure_outputs(tmp_path: Path, monkeypatch, capsys):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    cache = tmp_path / "cache"
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
-    private = graphify_output_dir(repo)
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-
-    def generated_sensitive(*args, **kwargs):
-        private.mkdir(parents=True, exist_ok=True)
-        (private / "GRAPH_REPORT.md").write_text(
-            f"confidential: |\n  generated\n  {DEFENSIVE_MARKER}\n", encoding="utf-8"
-        )
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", generated_sensitive)
-    assert run_graphify_build(repo, execute=True) == 3
-    captured = capsys.readouterr()
-    assert DEFENSIVE_MARKER not in captured.out + captured.err
-    assert not private.exists()
-
-    def failed(*args, **kwargs):
-        return SimpleNamespace(
-            returncode=7,
-            stdout=f"CONFIDENTIAL={DEFENSIVE_MARKER}",
-            stderr=f"credentials: {DEFENSIVE_MARKER}",
-        )
-
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", failed)
-    assert run_graphify_build(repo, execute=True) == 7
-    captured = capsys.readouterr()
-    assert DEFENSIVE_MARKER not in captured.out + captured.err
-    assert captured.err.count("[REDACTED]") >= 2
-    assert not private.exists()
-
-
-def test_graphify_handoff_refuses_regular_file_replaced_by_symlink(tmp_path: Path, monkeypatch, capsys):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    victim = repo / "src" / "app.ts"
-    external = tmp_path / "external.py"
-    external.write_text(f"CONFIDENTIAL={DEFENSIVE_MARKER}\n", encoding="utf-8")
-    cache = tmp_path / "cache"
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-
-    real_open = os.open
-    swapped = False
-
-    def swap_before_open(path, flags, *args, **kwargs):
-        nonlocal swapped
-        if kwargs.get("dir_fd") is None and Path(path) == victim and not swapped:
-            swapped = True
-            victim.unlink()
-            victim.symlink_to(external)
-        return real_open(path, flags, *args, **kwargs)
-
-    subprocess_called = False
-
-    def unexpected_subprocess(*args, **kwargs):
-        nonlocal subprocess_called
-        subprocess_called = True
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.os.open", swap_before_open)
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", unexpected_subprocess)
-    assert run_graphify_build(repo, execute=True) == 2
-    captured = capsys.readouterr()
-    assert swapped
-    assert not subprocess_called
-    assert DEFENSIVE_MARKER not in captured.out + captured.err
-    assert "verified Graphify source handoff" in captured.err
-    assert not graphify_output_dir(repo).exists()
-    assert not graph_output_dir(repo).exists()
-
-
-@pytest.mark.parametrize("mutation", ["regular-replacement", "in-place-rewrite"])
-def test_graphify_handoff_refuses_regular_file_mutation_during_copy(tmp_path: Path, monkeypatch, capsys, mutation: str):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    victim = repo / "src" / "app.ts"
-    original = victim.read_bytes()
-    original_times = victim.stat()
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-    real_copyfileobj = shutil.copyfileobj
-    observed = {}
-
-    def mutate_after_copy(source_handle, target_handle, *args, **kwargs):
-        is_victim = os.path.samefile(f"/proc/self/fd/{source_handle.fileno()}", victim)
-        target_path = Path(os.readlink(f"/proc/self/fd/{target_handle.fileno()}"))
-        real_copyfileobj(source_handle, target_handle, *args, **kwargs)
-        observed["handoff"] = target_path.parents[1]
-        if not is_victim:
-            return
-        if mutation == "regular-replacement":
-            replacement = victim.with_suffix(".replacement")
-            replacement.write_bytes(original)
-            replacement.replace(victim)
-        else:
-            victim.write_bytes(original[::-1])
-            os.utime(victim, ns=(original_times.st_atime_ns, original_times.st_mtime_ns))
-
-    called = False
-
-    def unexpected_run(*args, **kwargs):
-        nonlocal called
-        called = True
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.shutil.copyfileobj", mutate_after_copy)
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", unexpected_run)
-    assert run_graphify_build(repo, execute=True) == 2
-    captured = capsys.readouterr()
-    assert not called
-    assert "changed during verified handoff" in captured.err
-    assert not observed["handoff"].exists()
-    assert not graphify_output_dir(repo).exists()
-    assert not graph_output_dir(repo).exists()
-
-
-def _write_graphify_artifacts(tmp_path: Path, repo: Path) -> tuple[dict[str, str], Path]:
-    index = tmp_path / "index"
-    private = index / "graphify"
-    private.mkdir(parents=True)
-    (private / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
-    (private / "GRAPH_REPORT.md").write_text("# Graph report\n", encoding="utf-8")
-    (private / "manifest.json").write_text("{}\n", encoding="utf-8")
-    return {"indexPath": str(index)}, private
-
-
-def test_visible_graph_sync_preserves_ordinary_artifacts(tmp_path: Path):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    ptr, private = _write_graphify_artifacts(tmp_path, repo)
-
-    sync_visible_graph_output(repo, ptr)
-
-    visible = graph_output_dir(repo)
-    for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json"):
-        assert (visible / name).read_bytes() == (private / name).read_bytes()
-        assert (visible / name).stat().st_mode & 0o777 == 0o600
-
-
-@pytest.mark.parametrize("mutation", ["regular-replacement", "symlink-swap", "in-place-rewrite"])
-def test_visible_graph_sync_refuses_source_mutation_and_purges_both_outputs(tmp_path: Path, monkeypatch, mutation: str):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    ptr, private = _write_graphify_artifacts(tmp_path, repo)
-    victim = private / "graph.json"
-    original = victim.read_bytes()
-    original_times = victim.stat()
-    external = tmp_path / "external.json"
-    external.write_text(f'{{"auth":"{DEFENSIVE_MARKER}"}}\n', encoding="utf-8")
-    real_copyfileobj = shutil.copyfileobj
-
-    def mutate_after_copy(source_handle, target_handle, *args, **kwargs):
-        is_victim = os.path.samefile(f"/proc/self/fd/{source_handle.fileno()}", victim)
-        real_copyfileobj(source_handle, target_handle, *args, **kwargs)
-        if not is_victim:
-            return
-        if mutation == "regular-replacement":
-            replacement = victim.with_suffix(".replacement")
-            replacement.write_bytes(original)
-            replacement.replace(victim)
-        elif mutation == "symlink-swap":
-            victim.unlink()
-            victim.symlink_to(external)
-        else:
-            victim.write_bytes(original[::-1])
-            os.utime(victim, ns=(original_times.st_atime_ns, original_times.st_mtime_ns))
-
-    monkeypatch.setattr("mimry.graphify_wrapper.shutil.copyfileobj", mutate_after_copy)
-    with pytest.raises(ValueError, match="synchronize verified Graphify artifacts"):
-        sync_visible_graph_output(repo, ptr)
-
-    assert not private.exists()
-    assert not graph_output_dir(repo).exists()
-
-
-def test_graphify_target_descriptor_is_closed_when_fdopen_raises(tmp_path: Path, monkeypatch, capsys):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-    real_open = os.open
-    real_fdopen = os.fdopen
-    real_close = os.close
-    target_fds = set()
-    closed_fds = []
-
-    def recording_open(path, flags, *args, **kwargs):
-        fd = real_open(path, flags, *args, **kwargs)
-        if flags & os.O_EXCL:
-            target_fds.add(fd)
-        return fd
-
-    def failing_fdopen(fd, mode, *args, **kwargs):
-        if mode == "w+b":
-            raise OSError("deterministic fdopen failure")
-        return real_fdopen(fd, mode, *args, **kwargs)
-
-    def recording_close(fd):
-        closed_fds.append(fd)
-        return real_close(fd)
-
-    monkeypatch.setattr("mimry.graphify_wrapper.os.open", recording_open)
-    monkeypatch.setattr("mimry.graphify_wrapper.os.fdopen", failing_fdopen)
-    monkeypatch.setattr("mimry.graphify_wrapper.os.close", recording_close)
-    assert run_graphify_build(repo, execute=True) == 2
-    capsys.readouterr()
-    assert target_fds
-    assert target_fds.issubset(closed_fds)
-
-
-def test_graphify_timeout_cleans_handoff_and_all_outputs(tmp_path: Path, monkeypatch, capsys):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    private = graphify_output_dir(repo)
-    visible = graph_output_dir(repo)
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-    observed = {}
-
-    def timeout(cmd, **kwargs):
-        observed["handoff"] = Path(cmd[-1])
-        for output in (private, visible):
-            output.mkdir(parents=True, exist_ok=True)
-            (output / "partial.json").write_text("{}", encoding="utf-8")
-        raise subprocess.TimeoutExpired(cmd, 1, output="", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", timeout)
-    monkeypatch.setenv("MIMRY_GRAPHIFY_TIMEOUT", "1")
-    assert run_graphify_build(repo, execute=True) == 124
-    capsys.readouterr()
-    assert not observed["handoff"].exists()
-    assert not private.exists()
-    assert not visible.exists()
-
-
-def test_graphify_environment_remains_minimal_and_secret_scrubbed(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", CANARY)
-    monkeypatch.setenv("GITHUB_TOKEN", CANARY)
-    monkeypatch.setenv("PATH", "/safe/bin")
-    env = graphify_subprocess_env(tmp_path / "graphify")
-
-    assert env["PATH"] == "/safe/bin"
-    assert env["GRAPHIFY_OUT"] == str(tmp_path / "graphify")
-    assert "OPENAI_API_KEY" not in env
-    assert "GITHUB_TOKEN" not in env
-    assert CANARY not in json.dumps(env)
 
 
 def test_bare_secret_assignments_never_reach_index_or_graphify(tmp_path: Path, monkeypatch):
@@ -681,7 +299,7 @@ def test_bare_secret_assignments_never_reach_index_or_graphify(tmp_path: Path, m
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
 
     assert root_contains_sensitive_content(repo)
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     idx = Path(pointer["indexPath"])
@@ -713,71 +331,6 @@ def test_whole_file_streaming_detects_late_source_and_generated_canaries(tmp_pat
     assert tree_contains_sensitive_content(generated)
 
 
-def test_failed_graphify_build_purges_partial_unvalidated_outputs(tmp_path: Path, monkeypatch, capsys):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    cache = tmp_path / "cache"
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
-    private = graphify_output_dir(repo)
-    visible = graph_output_dir(repo)
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-
-    def fake_run(*args, **kwargs):
-        for output in (private, visible):
-            output.mkdir(parents=True, exist_ok=True)
-            (output / "partial.json").write_text(f'{{"TOKEN":"{VALUE_CANARY}"}}', encoding="utf-8")
-        return SimpleNamespace(returncode=9, stdout=f"TOKEN={VALUE_CANARY}", stderr="")
-
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", fake_run)
-    assert run_graphify_build(repo, execute=True) == 9
-    captured = capsys.readouterr()
-    assert VALUE_CANARY not in captured.out + captured.err
-    assert not private.exists()
-    assert not visible.exists()
-
-
-@pytest.mark.parametrize("blocked_output", ["private", "visible"])
-def test_failed_graphify_cleanup_reports_marker_bearing_artifacts_and_fails_closed(
-    tmp_path: Path, monkeypatch, capsys, blocked_output: str
-):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    (repo / ".env").unlink()
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
-    private = graphify_output_dir(repo)
-    visible = graph_output_dir(repo)
-    blocked = private if blocked_output == "private" else visible
-    other = visible if blocked_output == "private" else private
-    monkeypatch.setattr("mimry.graphify_wrapper.graphify_source", lambda: "installed")
-
-    def failed_build(*args, **kwargs):
-        for output in (private, visible):
-            output.mkdir(parents=True, exist_ok=True)
-            (output / "partial.json").write_text(f'{{"auth":"{DEFENSIVE_MARKER}"}}\n', encoding="utf-8")
-        return SimpleNamespace(returncode=9, stdout="", stderr="")
-
-    real_rmtree = shutil.rmtree
-
-    def incomplete_rmtree(path, *args, **kwargs):
-        if Path(path) == blocked:
-            return None
-        return real_rmtree(path, *args, **kwargs)
-
-    monkeypatch.setattr("mimry.graphify_wrapper.subprocess.run", failed_build)
-    monkeypatch.setattr("mimry.graphify_wrapper.shutil.rmtree", incomplete_rmtree)
-    assert run_graphify_build(repo, execute=True) == 3
-    captured = capsys.readouterr()
-    assert "cleanup failed closed" in captured.err
-    assert "marker-bearing Graphify artifacts remain" in captured.err
-    assert DEFENSIVE_MARKER not in captured.out + captured.err
-    assert blocked.exists()
-    assert not other.exists()
-
-    with pytest.raises(GraphifyCleanupError, match="marker-bearing Graphify artifacts remain"):
-        purge_graphify_outputs(repo, private)
-
 
 def test_private_key_and_aws_redaction_removes_secret_bodies():
     private_body = "PRIVATE-KEY-BODY-CANARY-123456789"
@@ -801,7 +354,7 @@ def test_cli_and_mcp_lookup_boundaries_never_echo_credential_inputs(tmp_path: Pa
     shutil.copytree(FIXTURE, repo)
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    assert run_cli(repo, cache, "init", "--skip-graphify").returncode == 0
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
     lookup_inputs = (

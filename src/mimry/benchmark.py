@@ -163,30 +163,6 @@ def _digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def _run_external_graphify(repo: Path, out_dir: Path, env: dict[str, str]) -> tuple[str, str, float]:
-    """Invoke graphify directly, bypassing MIMRY's subprocess sandbox.
-
-    The sandbox in graphify_wrapper.py is not portable to Windows and is scheduled for
-    removal; the baseline needs graphify's graph quality, not MIMRY's invocation of it.
-    """
-    out_dir.mkdir(parents=True, exist_ok=True)
-    graph_env = {**env, "GRAPHIFY_OUT": str(out_dir)}
-    started = time.perf_counter_ns()
-    result = subprocess.run(
-        [sys.executable, "-m", "graphify", "update", str(repo)],
-        cwd=repo,
-        env=graph_env,
-        text=True,
-        capture_output=True,
-        timeout=600,
-        check=False,
-    )
-    elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
-    if result.returncode:
-        raise RuntimeError(f"graphify update failed ({result.returncode}): {(result.stderr or result.stdout).strip()}")
-    return result.stdout, result.stderr, elapsed_ms
-
-
 def evaluate(
     cases_path: Path, fixture: Path, *, repeat: int = 3, gate_latency: bool = True, graph: bool = False, engine: str = "core"
 ) -> dict[str, Any]:
@@ -206,23 +182,9 @@ def evaluate(
         graph_status_out = ""
         graph_status_err = ""
         graph_nodes, graph_edges = 0, 0
-        if graph and engine == "graphify":
-            graphify_out = sandbox / "graphify-out"
-            graph_build_out, graph_build_err, graph_build_ms = _run_external_graphify(repo, graphify_out, env)
-        init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graphify")
+        init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graph")
         index_out, index_err, index_ms = _run(repo, env, "index")
-        if graph and engine == "graphify":
-            graph_out_dir = repo / ".mimry" / "mimry-out" / "graph"
-            graph_out_dir.mkdir(parents=True, exist_ok=True)
-            for filename in ("graph.json", "GRAPH_REPORT.md", "manifest.json"):
-                src = graphify_out / filename
-                if filename == "graph.json" and not src.exists():
-                    raise RuntimeError(f"required graphify artifact missing: {filename}")
-                if src.exists():
-                    shutil.copy2(src, graph_out_dir / filename)
-        # The native engine builds the graph inside `index`, so there is no separate
-        # build step to time. Graphify needs one on top of an already-complete index,
-        # which is why setup_total_ms below is the only fair cost comparison.
+        # The native engine builds the graph inside `index`.
         if graph:
             graph_status_out, graph_status_err, _ = _run(repo, env, "status", timeout=60)
             graph_nodes, graph_edges = _graph_size(graph_status_out)

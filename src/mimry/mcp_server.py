@@ -25,7 +25,6 @@ from mimry.commands import (
 )
 from mimry.freshness import index_freshness
 from mimry.graphify_artifacts import graphify_health
-from mimry.graphify_wrapper import graphify_runtime_provenance, pinned_commit_for_status
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
@@ -158,11 +157,7 @@ def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
     changed = fresh["changed"]
     missing = fresh["missing"]
     state = fresh["state"]
-    graphify = graphify_health(root_path, index_state=state)
-    provenance = graphify_runtime_provenance()
-    graphify["source"] = provenance["source"]
-    graphify["pinned_commit"] = pinned_commit_for_status()
-    graphify["runtime_provenance"] = provenance
+    graph = graphify_health(root_path, index_state=state)
     return {
         "initialized": True,
         "root": str(root_path),
@@ -174,7 +169,7 @@ def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
         "deleted_files": missing,
         "policy_excluded_stale_records": fresh["policy_excluded_count"],
         "index_path": str(idx),
-        "graphify": graphify,
+        "graph": graph,
         "semantic": semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files)),
     }
 
@@ -212,11 +207,11 @@ def mimry_reindex(root: str | None = None) -> dict[str, Any]:
 
 @mcp.tool
 @_state_guard
-def mimry_init(root: str | None = None, root_type: str = "repo", skip_graphify: bool = False) -> dict[str, Any]:
+def mimry_init(root: str | None = None, root_type: str = "repo", skip_graph: bool = False) -> dict[str, Any]:
     """Initialize MIMRY metadata for a root."""
     root_path = _root(root)
     payload = _capture_command(
-        cmd_init, SimpleNamespace(root=str(root_path), root_type=root_type, skip_graphify=skip_graphify)
+        cmd_init, SimpleNamespace(root=str(root_path), root_type=root_type, skip_graph=skip_graph)
     )
     payload["status"] = _status_payload(root_path)
     return payload
@@ -225,7 +220,7 @@ def mimry_init(root: str | None = None, root_type: str = "repo", skip_graphify: 
 @mcp.tool
 @_state_guard
 def mimry_refresh(root: str | None = None) -> dict[str, Any]:
-    """Run internal graph build, MIMRY index, semantic index, then status."""
+    """Run MIMRY index, semantic index, then status."""
     root_path = _root(root)
     payload = _capture_command(cmd_refresh, SimpleNamespace(root=str(root_path)))
     payload["status"] = _status_payload(root_path)

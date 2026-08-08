@@ -68,5 +68,3 @@ jobs:
           uv venv .wheel-venv --python "${{ matrix.python-version }}"
           uv pip install --python .wheel-venv/bin/python dist/*.whl
           .wheel-venv/bin/mimry --help >/dev/null
-          .wheel-venv/bin/mimry graphify status | tee /tmp/mimry-graphify-status.txt
-          grep -F "Runtime matches dependency policy: true" /tmp/mimry-graphify-status.txt
