@@ -32,6 +32,7 @@ DEFAULT_THRESHOLDS = {
 }
 _ENV_ALLOWLIST = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SYSTEMROOT")
 _RESULT_RE = re.compile(r"^\d+\. (.+)$")
+_GRAPH_SIZE_RE = re.compile(r"graph\.json:\s*yes\s*\((\d+)\s*nodes/(\d+)\s*edges")
 
 
 def token_proxy(text: str) -> int:
@@ -91,6 +92,10 @@ def _env(sandbox: Path) -> dict[str, str]:
     env.update(
         {
             "HOME": str(sandbox / "home"),
+            # Windows resolves Path.home() from USERPROFILE, not HOME. Without it the
+            # sandbox has no resolvable home and safe_root() raises. Point it at the
+            # sandbox so isolation holds and the guard stays strict.
+            "USERPROFILE": str(sandbox / "home"),
             "XDG_CACHE_HOME": str(sandbox / "xdg-cache"),
             "XDG_CONFIG_HOME": str(sandbox / "xdg-config"),
             "MIMRY_CACHE_HOME": str(sandbox / "mimry-cache"),
@@ -144,6 +149,12 @@ def _paths(stdout: str) -> list[str]:
     return [match.group(1).strip() for line in stdout.splitlines() if (match := _RESULT_RE.match(line))]
 
 
+def _graph_size(status_text: str) -> tuple[int, int]:
+    """Parse graph node and edge counts from mimry status output."""
+    match = _GRAPH_SIZE_RE.search(status_text)
+    return (int(match.group(1)), int(match.group(2))) if match else (0, 0)
+
+
 def _digest(root: Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
@@ -152,7 +163,33 @@ def _digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def evaluate(cases_path: Path, fixture: Path, *, repeat: int = 3, gate_latency: bool = True) -> dict[str, Any]:
+def _run_external_graphify(repo: Path, out_dir: Path, env: dict[str, str]) -> tuple[str, str, float]:
+    """Invoke graphify directly, bypassing MIMRY's subprocess sandbox.
+
+    The sandbox in graphify_wrapper.py is not portable to Windows and is scheduled for
+    removal; the baseline needs graphify's graph quality, not MIMRY's invocation of it.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    graph_env = {**env, "GRAPHIFY_OUT": str(out_dir)}
+    started = time.perf_counter_ns()
+    result = subprocess.run(
+        [sys.executable, "-m", "graphify", "update", str(repo)],
+        cwd=repo,
+        env=graph_env,
+        text=True,
+        capture_output=True,
+        timeout=600,
+        check=False,
+    )
+    elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
+    if result.returncode:
+        raise RuntimeError(f"graphify update failed ({result.returncode}): {(result.stderr or result.stdout).strip()}")
+    return result.stdout, result.stderr, elapsed_ms
+
+
+def evaluate(
+    cases_path: Path, fixture: Path, *, repeat: int = 3, gate_latency: bool = True, graph: bool = False, engine: str = "core"
+) -> dict[str, Any]:
     if not 1 <= repeat <= 10:
         raise ValueError("repeat must be between 1 and 10")
     cases = load_cases(cases_path, fixture)
@@ -163,10 +200,35 @@ def evaluate(cases_path: Path, fixture: Path, *, repeat: int = 3, gate_latency: 
         planted_file = repo / ".env"
         planted_file.write_text(f"PROVIDER_TOKEN={canary}\n", encoding="utf-8")
         env = _env(sandbox)
+        graph_build_ms = 0.0
+        graph_build_out = ""
+        graph_build_err = ""
+        graph_status_out = ""
+        graph_status_err = ""
+        graph_nodes, graph_edges = 0, 0
+        if graph and engine == "graphify":
+            graphify_out = sandbox / "graphify-out"
+            graph_build_out, graph_build_err, graph_build_ms = _run_external_graphify(repo, graphify_out, env)
         init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graphify")
         index_out, index_err, index_ms = _run(repo, env, "index")
+        if graph and engine == "graphify":
+            graph_out_dir = repo / ".mimry" / "mimry-out" / "graph"
+            graph_out_dir.mkdir(parents=True, exist_ok=True)
+            for filename in ("graph.json", "GRAPH_REPORT.md", "manifest.json"):
+                src = graphify_out / filename
+                if filename == "graph.json" and not src.exists():
+                    raise RuntimeError(f"required graphify artifact missing: {filename}")
+                if src.exists():
+                    shutil.copy2(src, graph_out_dir / filename)
+        elif graph:
+            graph_build_out, graph_build_err, graph_build_ms = _run(repo, env, "graphify", "build", "--execute", timeout=300)
+        if graph:
+            graph_status_out, graph_status_err, _ = _run(repo, env, "status", timeout=60)
+            graph_nodes, graph_edges = _graph_size(graph_status_out)
         case_reports, find_latencies, context_latencies, all_output = [], [], [], []
-        all_output.extend((init_out, init_err, index_out, index_err))
+        all_output.extend(
+            (init_out, init_err, index_out, index_err, graph_build_out, graph_build_err, graph_status_out, graph_status_err)
+        )
         for case in cases:
             samples, paths, find_output = [], [], ""
             for _ in range(repeat + 1):
@@ -241,7 +303,59 @@ def evaluate(cases_path: Path, fixture: Path, *, repeat: int = 3, gate_latency: 
         "checks": checks,
         "state": "PASS" if all(checks.values()) else "FAIL",
         "cases": case_reports,
+        "engine": engine,
+        "graph_enabled": graph,
+        "graph_build_ms": graph_build_ms,
+        "graph_nodes": graph_nodes,
+        "graph_edges": graph_edges,
     }
+
+
+COMPARE_METRICS = ("ndcg_at_5", "recall_at_5", "primary_hit_at_3")
+
+
+def compare(current: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
+    """Compare a run against a recorded baseline. Higher is better for COMPARE_METRICS;
+    lower is better for decoy_rate_at_5."""
+    result = {
+        "regressed": False,
+        "baseline_engine": baseline.get("engine"),
+        "baseline_graph_build_ms": baseline.get("graph_build_ms"),
+        "baseline_graph_nodes": baseline.get("graph_nodes"),
+        "baseline_graph_edges": baseline.get("graph_edges"),
+        "current_engine": current.get("engine"),
+        "current_graph_build_ms": current.get("graph_build_ms"),
+        "current_graph_nodes": current.get("graph_nodes"),
+        "current_graph_edges": current.get("graph_edges"),
+        "metrics": {},
+    }
+    tolerance = 1e-9
+    for metric in COMPARE_METRICS:
+        baseline_val = baseline.get("aggregates", {}).get(metric, 0.0)
+        current_val = current.get("aggregates", {}).get(metric, 0.0)
+        delta = current_val - baseline_val
+        metric_regressed = (current_val + tolerance) < baseline_val
+        result["metrics"][metric] = {
+            "baseline": baseline_val,
+            "current": current_val,
+            "delta": delta,
+            "regressed": metric_regressed,
+        }
+        if metric_regressed:
+            result["regressed"] = True
+    baseline_decoy = baseline.get("aggregates", {}).get("decoy_rate_at_5", 1.0)
+    current_decoy = current.get("aggregates", {}).get("decoy_rate_at_5", 1.0)
+    delta_decoy = current_decoy - baseline_decoy
+    decoy_regressed = (current_decoy - tolerance) > baseline_decoy
+    result["metrics"]["decoy_rate_at_5"] = {
+        "baseline": baseline_decoy,
+        "current": current_decoy,
+        "delta": delta_decoy,
+        "regressed": decoy_regressed,
+    }
+    if decoy_regressed:
+        result["regressed"] = True
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -252,19 +366,45 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--no-latency-gate", action="store_true")
     parser.add_argument("--json-output", type=Path)
+    parser.add_argument("--out", type=Path, help="Alias for --json-output")
+    parser.add_argument("--graph", action="store_true", help="Enable graph mode")
+    parser.add_argument("--engine", type=str, default="core", help="Engine label for the report")
+    parser.add_argument("--compare", type=Path, help="Path to baseline JSON for comparison")
     args = parser.parse_args(argv)
+    output_path = args.out or args.json_output
     try:
         report = evaluate(
-            args.cases.resolve(), args.fixture.resolve(), repeat=args.repeat, gate_latency=not args.no_latency_gate
+            args.cases.resolve(),
+            args.fixture.resolve(),
+            repeat=args.repeat,
+            gate_latency=not args.no_latency_gate,
+            graph=args.graph,
+            engine=args.engine,
         )
         code = 0 if report["state"] == "PASS" else 1
     except Exception as exc:
         report, code = {"schema_version": SCHEMA_VERSION, "state": "FAIL", "error": str(exc)}, 2
     rendered = json.dumps(report, indent=2, sort_keys=True)
     print(rendered)
-    if args.json_output:
-        args.json_output.parent.mkdir(parents=True, exist_ok=True)
-        args.json_output.write_text(rendered + "\n", encoding="utf-8")
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered + "\n", encoding="utf-8")
+    if args.compare and code != 2:
+        try:
+            baseline = json.loads(args.compare.read_text(encoding="utf-8"))
+            comparison = compare(report, baseline)
+            print("\n--- Comparison to baseline ---")
+            for metric, values in comparison["metrics"].items():
+                regression_marker = " [REGRESSED]" if values["regressed"] else ""
+                print(
+                    f"{metric}: {values['baseline']:.4f} -> {values['current']:.4f} "
+                    f"(delta: {values['delta']:+.4f}){regression_marker}"
+                )
+            print(f"\nOverall: {'REGRESSED' if comparison['regressed'] else 'OK'}")
+            if comparison["regressed"]:
+                code = 1
+        except Exception as exc:
+            print(f"Comparison failed: {exc}", file=sys.stderr)
     return code
 
 
