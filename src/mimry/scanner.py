@@ -139,7 +139,7 @@ def adapt(path, root):
                 elif isinstance(node, ast.Import):
                     imports += [a.name for a in node.names]
                 elif isinstance(node, ast.ImportFrom) and node.module:
-                    imports.append(node.module)
+                    imports.append("." * node.level + node.module)
         except SyntaxError as e:
             f = file_record(path, root, "python-ast", f"parse_error:{e.__class__.__name__}", hint)
     elif ext in {".js", ".jsx", ".ts", ".tsx"}:

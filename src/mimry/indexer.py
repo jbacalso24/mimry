@@ -184,8 +184,8 @@ def _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids) -> list[
     for e in resolve_calls(calls, symbols_by_file, import_edges):
         if e.get("caller_symbol") is None or e.get("target_symbol") is None:
             continue
-        caller = symbol_ids.get((e["caller_file"], e["caller_symbol"]))
-        target = symbol_ids.get((e["target_file"], e["target_symbol"]))
+        caller = e.get("caller_symbol_id") or symbol_ids.get((e["caller_file"], e["caller_symbol"]))
+        target = e.get("target_symbol_id") or symbol_ids.get((e["target_file"], e["target_symbol"]))
         if caller and target:
             edges.append(_edge(f"symbol:{caller}", f"symbol:{target}", "calls", e["confidence"]))
     return edges
@@ -442,7 +442,7 @@ def write_index(root, ptr):
     return {
         "files": len(files),
         "symbols": len(symbols),
-        "edges": len(edges),
+        "edges": len(graph["edges"]),
         "index": str(final),
         "generation": generation_id,
         "graph_engine": graph["engine"],
