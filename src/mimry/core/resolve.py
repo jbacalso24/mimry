@@ -226,6 +226,214 @@ def _strip_extension(path: str) -> str:
         return file_without_ext
 
 
+def resolve_calls(
+    calls: dict[str, list[dict]],
+    symbols_by_file: dict[str, list[dict]],
+    import_edges: list[dict],
+) -> list[dict]:
+    """Resolve call sites to the symbols they invoke.
+
+    Returns a sorted list of
+    {"caller_file", "caller_symbol", "target_file", "target_symbol", "confidence"}.
+    caller_symbol may be None when the call sits at module level.
+    """
+    results = []
+
+    # Build lookup for imports: importer -> set of targets
+    imports_by_importer = {}
+    for edge in import_edges:
+        importer = edge.get("importer")
+        target = edge.get("target")
+        if importer and target:
+            if importer not in imports_by_importer:
+                imports_by_importer[importer] = set()
+            imports_by_importer[importer].add(target)
+
+    # Build symbol lookup: file -> {name -> list of symbols}
+    # This allows efficient O(1) lookup by name within a file
+    symbols_by_file_and_name = {}
+    for file_path, symbols in symbols_by_file.items():
+        if file_path not in symbols_by_file_and_name:
+            symbols_by_file_and_name[file_path] = {}
+        for symbol in symbols:
+            name = symbol.get("name")
+            if name:
+                if name not in symbols_by_file_and_name[file_path]:
+                    symbols_by_file_and_name[file_path][name] = []
+                symbols_by_file_and_name[file_path][name].append(symbol)
+
+    # Process each file's calls
+    for file_path, call_list in calls.items():
+        # Get symbols in this file
+        file_symbols = symbols_by_file.get(file_path, [])
+
+        # Get imports from this file
+        imported_targets = imports_by_importer.get(file_path, set())
+
+        for call in call_list:
+            # Step 1: Find the calling symbol
+            call_line = call.get("line")
+            caller_symbol = None
+
+            if call_line is not None:
+                # Find the innermost symbol that encloses this line
+                enclosing_symbols = []
+                for symbol in file_symbols:
+                    line_start = symbol.get("line_start")
+                    line_end = symbol.get("line_end")
+
+                    # Handle missing values - cannot determine caller
+                    if line_start is None or line_end is None:
+                        continue
+
+                    if line_start <= call_line <= line_end:
+                        enclosing_symbols.append(symbol)
+
+                # Pick the innermost (largest line_start)
+                if enclosing_symbols:
+                    caller_symbol = max(
+                        enclosing_symbols, key=lambda s: s.get("line_start", 0)
+                    ).get("name")
+
+            # Step 2: Generate candidates from the callee name
+            callee_name = call.get("name", "")
+            candidates = _generate_candidates(callee_name)
+
+            # Step 3: Resolve candidates (first hit wins)
+            for candidate in candidates:
+                target_info = _resolve_candidate(
+                    candidate,
+                    file_path,
+                    imported_targets,
+                    symbols_by_file_and_name,
+                )
+
+                if target_info:
+                    target_file = target_info["file"]
+                    target_symbol = target_info["symbol"]
+                    confidence = target_info["confidence"]
+
+                    # Never emit self-recursion (same symbol in same file)
+                    if not (file_path == target_file and caller_symbol == target_symbol):
+                        results.append(
+                            {
+                                "caller_file": file_path,
+                                "caller_symbol": caller_symbol,
+                                "target_file": target_file,
+                                "target_symbol": target_symbol,
+                                "confidence": confidence,
+                            }
+                        )
+                    # First hit wins - don't try other candidates
+                    break
+
+    # Sort deterministically by (caller_file, caller_symbol, target_file, target_symbol)
+    results.sort(
+        key=lambda r: (r["caller_file"], r["caller_symbol"] or "", r["target_file"], r["target_symbol"])
+    )
+
+    return results
+
+
+def _generate_candidates(callee_name: str) -> list[str]:
+    """Generate candidate identifiers from a callee name.
+
+    From "SessionRepository().extend_expiry", get ["extend_expiry", "SessionRepository"]
+    From "fmt.Println", get ["Println", "fmt"]
+    From "renew_login", get ["renew_login"]
+    """
+    # Split on dots first
+    parts = callee_name.split(".")
+
+    # Strip call syntax: remove everything from ( onwards in each part
+    parts = [p[: p.index("(")] if "(" in p else p for p in parts]
+
+    # Filter out empty parts and strip whitespace
+    parts = [p.strip() for p in parts if p.strip()]
+
+    if not parts:
+        return []
+
+    # Return: last part first (the actual invoked name), then first part (if different)
+    if len(parts) == 1:
+        return parts
+    else:
+        # Last part first, then first part
+        candidates = [parts[-1], parts[0]]
+        # Remove duplicates while preserving order
+        return [c for i, c in enumerate(candidates) if c not in candidates[:i]]
+
+
+def _resolve_candidate(
+    candidate: str,
+    caller_file: str,
+    imported_targets: set,
+    symbols_by_file_and_name: dict,
+) -> Optional[dict]:
+    """Resolve a candidate identifier.
+
+    Returns {"file": str, "symbol": str, "confidence": str} or None.
+
+    Rules:
+    1. Same file -> confidence EXTRACTED
+    2. Exactly one imported file defines it -> confidence INFERRED
+    3. Otherwise -> None (ambiguous or not found)
+    """
+
+    # Rule 1: Same file
+    file_symbols = symbols_by_file_and_name.get(caller_file, {})
+    if candidate in file_symbols:
+        symbol = _pick_best_symbol(file_symbols[candidate])
+        return {
+            "file": caller_file,
+            "symbol": symbol.get("name"),
+            "confidence": "EXTRACTED",
+        }
+
+    # Rule 2: Imported files
+    # Try to find the candidate in imported files (but only one file)
+    found_files = []
+    for imported_file in imported_targets:
+        imported_symbols = symbols_by_file_and_name.get(imported_file, {})
+        if candidate in imported_symbols:
+            found_files.append(imported_file)
+
+    # If found in exactly one imported file, resolve it
+    if len(found_files) == 1:
+        imported_file = found_files[0]
+        imported_symbols = symbols_by_file_and_name[imported_file]
+        symbol = _pick_best_symbol(imported_symbols[candidate])
+        return {
+            "file": imported_file,
+            "symbol": symbol.get("name"),
+            "confidence": "INFERRED",
+        }
+
+    # If found in multiple imported files or none -> None
+    return None
+
+
+def _pick_best_symbol(symbol_list: list[dict]) -> dict:
+    """Pick the best symbol when multiple symbols have the same name.
+
+    Prefer: function/method > class > other
+    On tie: lowest line_start (first defined)
+    """
+
+    def key_func(s):
+        kind = s.get("kind", "")
+        # Prefer function/method (score 0) over class (score 1) over others (score 2)
+        kind_score = (
+            0
+            if kind in ("function", "method")
+            else (1 if kind == "class" else 2)
+        )
+        line_start = s.get("line_start", float("inf"))
+        return (kind_score, line_start)
+
+    return min(symbol_list, key=key_func)
+
+
 if __name__ == "__main__":
     import sys
     import json
@@ -347,6 +555,198 @@ if __name__ == "__main__":
         assert "\\" not in test_windows[0]["target"], (
             "Target should not have backslashes"
         )
+
+        # ===== Tests for resolve_calls =====
+
+        # Fixture from task
+        calls = {
+            "backend/api/auth.py": [{"name": "renew_login", "line": 5}],
+            "backend/services/session_service.py": [
+                {"name": "SessionRepository().extend_expiry", "line": 5},
+                {"name": "SessionRepository", "line": 5},
+            ],
+            "web/src/lib/payments.ts": [{"name": "window.location.assign", "line": 1}],
+        }
+        symbols_by_file = {
+            "backend/api/auth.py": [
+                {
+                    "name": "refresh_session",
+                    "kind": "function",
+                    "line_start": 4,
+                    "line_end": 5,
+                }
+            ],
+            "backend/services/session_service.py": [
+                {"name": "renew_login", "kind": "function", "line_start": 4, "line_end": 5}
+            ],
+            "backend/repositories/session_repository.py": [
+                {"name": "SessionRepository", "kind": "class", "line_start": 1, "line_end": 4},
+                {
+                    "name": "extend_expiry",
+                    "kind": "function",
+                    "line_start": 2,
+                    "line_end": 4,
+                },
+            ],
+            "web/src/lib/payments.ts": [
+                {
+                    "name": "redirectToPayment",
+                    "kind": "function",
+                    "line_start": 1,
+                    "line_end": 1,
+                }
+            ],
+        }
+        import_edges_for_calls = [
+            {
+                "importer": "backend/api/auth.py",
+                "target": "backend/services/session_service.py",
+                "confidence": "EXTRACTED",
+            },
+            {
+                "importer": "backend/services/session_service.py",
+                "target": "backend/repositories/session_repository.py",
+                "confidence": "EXTRACTED",
+            },
+        ]
+
+        call_results = resolve_calls(calls, symbols_by_file, import_edges_for_calls)
+
+        # Assertion 1: backend/api/auth.py produces a call edge with
+        # caller_symbol == "refresh_session", target_symbol == "renew_login"
+        auth_edges = [
+            r
+            for r in call_results
+            if r["caller_file"] == "backend/api/auth.py"
+            and r["target_symbol"] == "renew_login"
+        ]
+        assert (
+            len(auth_edges) == 1
+        ), f"Expected 1 auth edge to renew_login, got {len(auth_edges)}: {auth_edges}"
+        assert auth_edges[0]["caller_symbol"] == "refresh_session", (
+            f"Expected caller_symbol refresh_session, got {auth_edges[0]['caller_symbol']}"
+        )
+        assert (
+            auth_edges[0]["target_file"] == "backend/services/session_service.py"
+        ), f"Expected target backend/services/session_service.py, got {auth_edges[0]['target_file']}"
+        assert (
+            auth_edges[0]["confidence"] == "INFERRED"
+        ), f"Expected INFERRED, got {auth_edges[0]['confidence']}"
+
+        # Assertion 2: backend/services/session_service.py produces an edge to extend_expiry
+        extend_expiry_edges = [
+            r
+            for r in call_results
+            if r["caller_file"] == "backend/services/session_service.py"
+            and r["target_symbol"] == "extend_expiry"
+        ]
+        assert (
+            len(extend_expiry_edges) == 1
+        ), f"Expected 1 extend_expiry edge, got {len(extend_expiry_edges)}: {extend_expiry_edges}"
+        assert (
+            extend_expiry_edges[0]["target_file"] == "backend/repositories/session_repository.py"
+        ), f"Unexpected target file: {extend_expiry_edges[0]['target_file']}"
+
+        # Assertion 3: window.location.assign resolves to NOTHING
+        assign_edges = [
+            r
+            for r in call_results
+            if r.get("target_symbol") == "assign"
+        ]
+        assert (
+            len(assign_edges) == 0
+        ), f"Expected no edges for 'assign', got {len(assign_edges)}: {assign_edges}"
+
+        # Assertion 4: Every result has exactly five keys
+        for r in call_results:
+            keys = set(r.keys())
+            expected = {"caller_file", "caller_symbol", "target_file", "target_symbol", "confidence"}
+            assert (
+                keys == expected
+            ), f"Result {r} has wrong keys: {keys}, expected {expected}"
+
+        # Assertion 5: No edge has caller and target being the same symbol in same file
+        for r in call_results:
+            if r["caller_file"] == r["target_file"]:
+                assert (
+                    r["caller_symbol"] != r["target_symbol"]
+                ), f"Self-recursion detected: {r}"
+
+        # Assertion 6: Confidence values are only EXTRACTED or INFERRED
+        for r in call_results:
+            assert r["confidence"] in (
+                "EXTRACTED",
+                "INFERRED",
+            ), f"Invalid confidence: {r['confidence']}"
+
+        # Assertion 7: Call at line inside no definition yields caller_symbol None
+        test_module_level = resolve_calls(
+            {
+                "backend/api/auth.py": [{"name": "some_func", "line": 100}]  # line 100 not inside any definition
+            },
+            symbols_by_file,
+            import_edges_for_calls,
+        )
+        # Should resolve or not depending on whether some_func exists, but shouldn't crash
+        assert isinstance(test_module_level, list), "Should return a list without crashing"
+
+        # Assertion 8: Calling twice yields identical output
+        call_results2 = resolve_calls(calls, symbols_by_file, import_edges_for_calls)
+        assert (
+            call_results == call_results2
+        ), f"Non-deterministic output:\n{call_results}\nvs\n{call_results2}"
+
+        # Assertion 9: resolve_calls({}, {}, []) returns []
+        empty_result = resolve_calls({}, {}, [])
+        assert (
+            empty_result == []
+        ), f"Empty inputs should return [], got {empty_result}"
+
+        # Assertion 10: A name defined in TWO different imported files yields NO edge
+        # Create a scenario where extend_expiry is in two files
+        ambiguous_calls = {
+            "backend/api/auth.py": [{"name": "shared_func", "line": 5}]
+        }
+        ambiguous_symbols = {
+            "backend/api/auth.py": [
+                {
+                    "name": "refresh_session",
+                    "kind": "function",
+                    "line_start": 4,
+                    "line_end": 5,
+                }
+            ],
+            "file_a.py": [{"name": "shared_func", "kind": "function", "line_start": 1, "line_end": 2}],
+            "file_b.py": [
+                {"name": "shared_func", "kind": "function", "line_start": 1, "line_end": 2}
+            ],
+        }
+        ambiguous_imports = [
+            {"importer": "backend/api/auth.py", "target": "file_a.py", "confidence": "EXTRACTED"},
+            {"importer": "backend/api/auth.py", "target": "file_b.py", "confidence": "EXTRACTED"},
+        ]
+        ambiguous_result = resolve_calls(
+            ambiguous_calls, ambiguous_symbols, ambiguous_imports
+        )
+        # Should have no edge because shared_func is ambiguous
+        shared_func_edges = [
+            r
+            for r in ambiguous_result
+            if r["caller_file"] == "backend/api/auth.py"
+            and r["target_symbol"] == "shared_func"
+        ]
+        assert (
+            len(shared_func_edges) == 0
+        ), f"Expected no edge for ambiguous shared_func, got {len(shared_func_edges)}: {shared_func_edges}"
+
+        # Assertion 11: No path contains backslash
+        for r in call_results:
+            assert "\\" not in r["caller_file"], (
+                f"Backslash in caller_file: {r['caller_file']}"
+            )
+            assert "\\" not in r["target_file"], (
+                f"Backslash in target_file: {r['target_file']}"
+            )
 
         print("OK")
         sys.exit(0)

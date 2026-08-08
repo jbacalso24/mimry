@@ -130,8 +130,18 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
                 }
                 for r in rows
             ]
-            seen = {r["path"] for r in rows}
-            merged = list(rows)
+            # A file found by BOTH the graph and the content index is better
+            # evidence than one found by either alone. Previously the graph row
+            # won and the content score was dropped on the floor.
+            merged = [dict(r) for r in rows]
+            by_path = {r["path"]: r for r in merged}
+            content_by_path = {r["path"]: r for r in fallback_rows}
+            for path, graph_row in by_path.items():
+                content_row = content_by_path.get(path)
+                if content_row:
+                    graph_row["score"] += content_row["score"]
+                    graph_row["reason"] += ", corroborated by MIMRY content index"
+            seen = set(by_path)
             for r in fallback_rows:
                 if r["path"] in seen:
                     continue
@@ -140,7 +150,6 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
                     extra["reason"] = r["reason"] + ", MIMRY config-manifest operating context"
                 else:
                     extra["reason"] = r["reason"] + ", MIMRY fallback index signal"
-                    extra["score"] = max(1, int(r["score"] * 0.75))
                 merged.append(extra)
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))

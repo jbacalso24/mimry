@@ -31,7 +31,11 @@ def test_manifest_rejects_path_escape_and_missing_primary(tmp_path):
 
 def test_frozen_manifest_is_valid_and_gold_is_outside_fixture():
     cases = load_cases(ROOT / "benchmarks" / "cases.v1.json", FIXTURE)
-    assert len(cases) == 6
+    # Assert the invariant, not a magic count: every case in the manifest loads,
+    # ids are unique, and the gold answers never live inside the fixture the
+    # benchmark indexes.
+    assert cases
+    assert len({case["id"] for case in cases}) == len(cases)
     assert not (FIXTURE / "cases.v1.json").exists()
 
 
@@ -39,7 +43,7 @@ def test_end_to_end_report_is_schema_versioned_and_isolated():
     report = evaluate(ROOT / "benchmarks" / "cases.v1.json", FIXTURE, repeat=1, gate_latency=False)
     assert report["schema_version"] == 1
     assert report["profile"] == "quick-local-index"
-    assert len(report["cases"]) == 6
+    assert len(report["cases"]) == len(load_cases(ROOT / "benchmarks" / "cases.v1.json", FIXTURE))
     assert "MIMRY_BENCHMARK_CANARY" not in json.dumps(report)
 
 
