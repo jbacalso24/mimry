@@ -389,6 +389,80 @@ def graphify_shortest_path(root: Path, source_query: str, target_query: str, max
     return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
 
 
+# How far a query's evidence travels along relationships, and how fast it decays.
+# Two hops covers "the page calls a hook that calls the payments module" without
+# letting a hub node drag in the whole repository.
+_EXPANSION_DECAY = (0.35, 0.15)
+
+
+def _expand_along_edges(
+    nodes: list[dict],
+    links: list[dict],
+    matched_scores: dict[str, int],
+    by_file: dict[str, dict],
+) -> None:
+    """Carry query relevance from matched nodes to their neighbours.
+
+    Scoring a node only on its own text is what a plain search index already does;
+    it wins a multi-hop question only when the answer file happens to contain the
+    query words. Following edges is the thing a graph is actually for.
+    """
+    if not matched_scores:
+        return
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    for edge in links:
+        source, target = _edge_endpoints(edge)
+        if source and target:
+            adjacency[source].add(target)
+            adjacency[target].add(source)
+    if not adjacency:
+        return
+
+    node_by_id = {str(n.get("id")): n for n in nodes if n.get("id")}
+    reached: dict[str, int] = {}
+    frontier = dict(matched_scores)
+    for decay in _EXPANSION_DECAY:
+        nxt: dict[str, int] = {}
+        for node_id in sorted(frontier):
+            carried = int(frontier[node_id] * decay)
+            if carried <= 0:
+                continue
+            for neighbour in sorted(adjacency.get(node_id, ())):
+                # Directly matched nodes keep their own score. Letting expansion
+                # top them up as well was measured and scored worse overall
+                # (ndcg 0.6845 vs 0.6907): it rewards whichever file has the most
+                # neighbours rather than the one the query is actually about.
+                if neighbour in matched_scores:
+                    continue
+                if carried > reached.get(neighbour, 0):
+                    reached[neighbour] = carried
+                    nxt[neighbour] = carried
+        frontier = nxt
+        if not frontier:
+            break
+
+    for node_id in sorted(reached):
+        node = node_by_id.get(node_id)
+        src = node_source_file(node) if node else None
+        if not src:
+            continue
+        row = by_file.setdefault(
+            src,
+            {
+                "path": src,
+                "score": 0,
+                "reasons": set(),
+                "nodes": [],
+                "max_degree": 0,
+                "communities": set(),
+                "topology_boost": 0,
+                "topology_nodes": 0,
+            },
+        )
+        row["score"] += reached[node_id]
+        row["reasons"].add("reached by MIMRY graph relationship")
+
+
 def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
     g = load_graphify_graph(root)
     nodes = g.get("nodes") or []
@@ -405,6 +479,7 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         if e.get("target"):
             degree[str(e["target"])] += 1
 
+    matched_scores: dict[str, int] = {}
     for n in nodes:
         src = node_source_file(n)
         if not src:
@@ -453,6 +528,9 @@ def graphify_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
             row["topology_nodes"] += 1
         if n.get("community") is not None:
             row["communities"].add(str(n["community"]))
+        matched_scores[str(n.get("id"))] = max(matched_scores.get(str(n.get("id")), 0), score)
+
+    _expand_along_edges(nodes, links, matched_scores, by_file)
 
     rows = []
     for row in by_file.values():
