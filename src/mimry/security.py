@@ -138,6 +138,12 @@ SENSITIVE_VALUE_RE = re.compile(
     r"client-key-data\s*:|client-certificate-data\s*:|"
     r"-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----)"
 )
+SPACED_SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r"(?i)(?P<label>\b(?:api[ \t_-]+key|client[ \t_-]+secret|private[ \t_-]+key|"
+    r"access[ \t_-]+token|auth(?:entication|orization)?[ \t_-]+token|"
+    r"service[ \t_-]+credentials?))(?P<separator>[ \t]*[:=][ \t]*)"
+    r"(?P<value>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|[^\s,;})]+)"
+)
 
 STREAM_CHUNK_BYTES = 64 * 1024
 STREAM_OVERLAP_CHARS = 8 * 1024
@@ -165,6 +171,8 @@ def contains_sensitive_text(text: str) -> bool:
         return False
     if PRIVATE_KEY_BLOCK_RE.search(text) or STANDALONE_SECRET_RE.search(text) or SENSITIVE_VALUE_RE.search(text):
         return True
+    if any(_spaced_assignment_value_is_sensitive(match) for match in SPACED_SENSITIVE_ASSIGNMENT_RE.finditer(text)):
+        return True
     if any(_is_sensitive_label(match.group("label")) for match in YAML_BLOCK_ASSIGNMENT_RE.finditer(text)):
         return True
     if any(_is_sensitive_label(match.group("label")) for match in YAML_QUOTED_MULTILINE_ASSIGNMENT_RE.finditer(text)):
@@ -180,6 +188,7 @@ def redact_sensitive_text(text: str) -> str:
     redacted = PRIVATE_KEY_BLOCK_RE.sub(REDACTED, text)
     redacted = STANDALONE_SECRET_RE.sub(REDACTED, redacted)
     redacted = SENSITIVE_VALUE_RE.sub(REDACTED, redacted)
+    redacted = SPACED_SENSITIVE_ASSIGNMENT_RE.sub(_redact_spaced_assignment, redacted)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
     redacted = YAML_QUOTED_MULTILINE_ASSIGNMENT_RE.sub(_redact_yaml_quoted_multiline, redacted)
     redacted = ASSIGNMENT_RE.sub(_redact_assignment, redacted)
@@ -209,7 +218,7 @@ def _assignment_value_is_sensitive(value: str, operator: str = "=") -> bool:
     quoted = len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}
     if quoted:
         candidate = candidate[1:-1].strip()
-    if not candidate:
+    if not candidate or candidate == REDACTED:
         return False
     if operator == ":" and not quoted and any(char.isspace() for char in candidate):
         # Bare colon phrases are common in prose and Markdown. Retain explicit
@@ -218,6 +227,18 @@ def _assignment_value_is_sensitive(value: str, operator: str = "=") -> bool:
         if not lowered.startswith(("bearer ", "basic ")) and not STANDALONE_SECRET_RE.search(candidate):
             return False
     return not candidate.startswith(("process.env.", "os.getenv(", "Deno.env.get(", "import.meta.env."))
+
+
+def _spaced_assignment_value_is_sensitive(match: re.Match[str]) -> bool:
+    return _assignment_value_is_sensitive(match.group("value"), "=")
+
+
+def _redact_spaced_assignment(match: re.Match[str]) -> str:
+    if not _spaced_assignment_value_is_sensitive(match):
+        return match.group(0)
+    value = match.group("value")
+    quote = value[0] if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"} else ""
+    return f"{match.group('label')}{match.group('separator')}{quote}{REDACTED}{quote}"
 
 
 def _assignment_match_is_sensitive(match: re.Match[str]) -> bool:
@@ -358,26 +379,36 @@ def _raw_file_has_sensitive_content(path: Path) -> bool:
     return _stream_contains_sensitive_content(path)
 
 
+def _has_heavy_ignore(parts) -> bool:
+    """Match policy directory names independent of filesystem case rules."""
+
+    ignored = {part.casefold() for part in HEAVY_IGNORES}
+    return any(str(part).casefold() in ignored for part in parts)
+
+
 def should_ignore(path, root):
     try:
         parts = path.relative_to(root).parts
     except ValueError:
         parts = path.parts
-    return any(p in HEAVY_IGNORES for p in parts) or is_sensitive(path) or has_sensitive_content(path)
+    return _has_heavy_ignore(parts) or is_sensitive(path) or has_sensitive_content(path)
 
 
 def path_has_ignored_part(path: str | Path) -> bool:
     """Classify artifact/index paths without opening the referenced source."""
 
     normalized = str(path).replace("\\", "/")
-    return any(part in HEAVY_IGNORES for part in normalized.split("/") if part not in {"", "."})
+    return _has_heavy_ignore(part for part in normalized.split("/") if part not in {"", "."})
 
 
 def text_mentions_ignored_path(text: str) -> bool:
     """Detect ignored path components in prose without matching ordinary words."""
 
     normalized = text.replace("\\", "/")
-    return any(re.search(rf"(?:^|[/\s`'\"(\[{{:=]){re.escape(part)}/", normalized) for part in HEAVY_IGNORES)
+    return any(
+        re.search(rf"(?:^|[/\s`'\"(\[{{:=]){re.escape(part)}/", normalized, flags=re.IGNORECASE)
+        for part in HEAVY_IGNORES
+    )
 
 
 def filter_index_records(files: list[dict], symbols: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
@@ -404,7 +435,7 @@ def root_contains_sensitive_content(root: Path) -> bool:
             parts = path.relative_to(root).parts
             if contains_sensitive_text(path.name):
                 return True
-            if any(part in HEAVY_IGNORES for part in parts):
+            if _has_heavy_ignore(parts):
                 continue
             if is_sensitive(path) or _is_env_example(path):
                 if _raw_file_has_sensitive_content(path):

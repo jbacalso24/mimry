@@ -9,7 +9,14 @@ from .core.languages import extract as extract_language
 from .core.languages import language_for
 from .framework_adapters import enrich_framework_facts, markdown_link_targets, sql_table_references
 from .paths import stable_id
-from .security import contains_sensitive_data, has_sensitive_content, is_text, safe_root, should_ignore
+from .security import (
+    contains_sensitive_data,
+    has_sensitive_content,
+    is_text,
+    redact_sensitive_text,
+    safe_root,
+    should_ignore,
+)
 from .ts_ast_adapter import parse_ts_like
 
 
@@ -152,11 +159,13 @@ def adapt(path, root):
         f = file_record(path, root, "typescript-ast", status, hint)
     elif is_document(path):
         text, status = extract_document_text(path)
-        doc_hint = text[:2000] if text else ""
+        safe_text = redact_sensitive_text(text) if text else ""
+        doc_hint = safe_text[:2000]
         f = file_record(path, root, "office-document", status, doc_hint)
-        # Populate table_refs from extracted document text, just like we do for source code
-        if text:
-            table_refs = sql_table_references(text)
+        # Populate table_refs only from the same redacted text allowed into the
+        # searchable index and semantic/context surfaces.
+        if safe_text:
+            table_refs = sql_table_references(safe_text)
             if table_refs:
                 references["table_refs"] = table_refs
     else:
