@@ -220,8 +220,9 @@ def evaluate(
                     raise RuntimeError(f"required graphify artifact missing: {filename}")
                 if src.exists():
                     shutil.copy2(src, graph_out_dir / filename)
-        elif graph:
-            graph_build_out, graph_build_err, graph_build_ms = _run(repo, env, "graphify", "build", "--execute", timeout=300)
+        # The native engine builds the graph inside `index`, so there is no separate
+        # build step to time. Graphify needs one on top of an already-complete index,
+        # which is why setup_total_ms below is the only fair cost comparison.
         if graph:
             graph_status_out, graph_status_err, _ = _run(repo, env, "status", timeout=60)
             graph_nodes, graph_edges = _graph_size(graph_status_out)
@@ -306,6 +307,10 @@ def evaluate(
         "engine": engine,
         "graph_enabled": graph,
         "graph_build_ms": graph_build_ms,
+        # Total wall clock to a queryable index WITH a graph. The native engine folds
+        # graph construction into indexing, so comparing graph_build_ms alone would
+        # flatter it; this counts everything either engine needs.
+        "setup_total_ms": init_ms + index_ms + graph_build_ms,
         "graph_nodes": graph_nodes,
         "graph_edges": graph_edges,
     }

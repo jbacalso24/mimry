@@ -97,7 +97,7 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         "edges": [
             edge
             for edge in graph.get("edges", [])
-            if edge.get("from") in allowed_node_ids and edge.get("to") in allowed_node_ids
+            if edge.get("source") in allowed_node_ids and edge.get("target") in allowed_node_ids
         ],
         "clusters": {
             folder: [path for path in paths if not should_ignore(root / path, root)]

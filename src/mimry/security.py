@@ -2,11 +2,29 @@ from __future__ import annotations
 
 import fnmatch
 import codecs
+import os
 import re
 from pathlib import Path
 from typing import Any, BinaryIO
 
 from .constants import HEAVY_IGNORES, SENSITIVE_PATTERNS, TEXT_EXTS
+
+
+def stat_identity(info: os.stat_result) -> tuple[int, ...]:
+    """Return a file identity tuple for detecting a swap during a verified read.
+
+    On POSIX, st_ctime is the inode change time and is a genuine tamper signal.
+    On Windows it is the *creation* time, and os.fstat() reports it at a
+    different precision than Path.lstat() for the very same file -- observed
+    differing in the sub-microsecond digits. Including it there makes every
+    comparison fail, so a descriptor check meant to catch tampering instead
+    reports every file as tampered and callers fall back to "stale forever".
+
+    dev/inode/size/mtime stay reliable on both platforms and are what the
+    comparison actually depends on.
+    """
+    identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+    return identity if os.name == "nt" else (*identity, info.st_ctime_ns)
 
 
 REDACTED = "[REDACTED]"

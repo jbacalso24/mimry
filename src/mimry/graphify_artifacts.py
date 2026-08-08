@@ -16,7 +16,7 @@ from .paths import (
     graphify_output_dir,
     legacy_graphify_output_dir,
 )
-from .security import path_has_ignored_part, text_mentions_ignored_path
+from .security import path_has_ignored_part, stat_identity, text_mentions_ignored_path
 
 
 GRAPHIFY_ARTIFACT_FILES = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
@@ -76,9 +76,9 @@ def _safe_regular_sha256(path: Path) -> str | None:
                 digest.update(chunk)
             after = os.fstat(fd)
             current = path.lstat()
-            opened_id = (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns)
-            after_id = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
-            current_id = (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns)
+            opened_id = stat_identity(opened)
+            after_id = stat_identity(after)
+            current_id = stat_identity(current)
             if after_id != opened_id or current_id != opened_id:
                 return None
             return digest.hexdigest()
