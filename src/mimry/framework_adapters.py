@@ -18,6 +18,11 @@ _SQL_TABLE_RE = re.compile(
 )
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
 _MD_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+\.mdx?(?:#[^)]+)?)\)", re.IGNORECASE)
+_MD_LINK_TARGET_RE = re.compile(r"\[[^\]]+\]\(([^)]+?)(?:#[^)]+)?\)", re.IGNORECASE)
+_SQL_TABLE_REF_RE = re.compile(
+    r"\b(?:FROM|JOIN|UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+[\"`\[]?([A-Za-z_][\w.]*)",
+    re.IGNORECASE,
+)
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(?P<body>.*?)\n---\s*\n", re.DOTALL)
 
 
@@ -315,6 +320,75 @@ def markdown_doc_facts(path: Path, root: Path) -> list[str]:
     if any(token in lower for token in ("decision", "adr", "spec", "plan", "readme", "docs/")):
         facts.append("markdown relationship hint docs specs plans decisions")
     return facts
+
+
+def markdown_link_targets(path: Path, root: Path) -> list[str]:
+    """Return raw link targets found in a markdown file: md links and wiki links.
+
+    Filters out external URLs (http://, https://, etc.) and same-page anchors.
+    Returns sorted, de-duplicated list, capped at 50.
+    """
+    text = _read_text(path)
+    targets = set()
+
+    # Find markdown links [text](target) - any target, not just .md/.mdx
+    for match in _MD_LINK_TARGET_RE.finditer(text):
+        target = match.group(1).strip()
+        # Skip external URLs
+        if re.match(r"^[a-z][a-z0-9+.-]*://", target, re.IGNORECASE):
+            continue
+        # Skip mailto: links
+        if target.startswith("mailto:"):
+            continue
+        # Skip same-page anchors
+        if target.startswith("#"):
+            continue
+        # Strip trailing fragment
+        if "#" in target:
+            target = target.split("#", 1)[0]
+        if target:
+            targets.add(target)
+
+    # Find wiki links [[target]]
+    for match in _WIKI_LINK_RE.finditer(text):
+        target = match.group(1).strip()
+        if target:
+            targets.add(target)
+
+    result = sorted(targets)
+    return result[:50]
+
+
+def sql_table_references(text: str) -> list[str]:
+    """Return table names a source file appears to query.
+
+    Scans for SQL DML/DDL keywords followed by an identifier.
+    Rules:
+    - Take the last dotted segment (public.sessions -> sessions)
+    - Strip surrounding quotes/backticks/brackets
+    - Ignore SQL keywords that follow (SELECT, WHERE, SET, VALUES, ON, AS, INTO)
+    - Return sorted, de-duplicated, capped at 50
+    """
+    tables = set()
+    keywords_to_skip = {"SELECT", "WHERE", "SET", "VALUES", "ON", "AS", "INTO"}
+
+    for match in _SQL_TABLE_REF_RE.finditer(text):
+        # Get the matched table identifier
+        identifier = match.group(1).strip()
+
+        # Strip surrounding quotes/backticks/brackets
+        identifier = identifier.strip('"`[]')
+
+        # Take the last dotted segment
+        if "." in identifier:
+            identifier = identifier.split(".")[-1]
+
+        # Check if this looks like a valid identifier, not a SQL keyword
+        if identifier and identifier.upper() not in keywords_to_skip:
+            tables.add(identifier.lower())
+
+    result = sorted(tables)
+    return result[:50]
 
 
 def _frontmatter_facts(text: str) -> list[str]:

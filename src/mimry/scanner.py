@@ -81,6 +81,7 @@ def adapt(path, root):
     imports = []
     exports = []
     calls = []
+    references = {"doc_links": [], "table_refs": []}
     if is_config_manifest(path):
         metadata = extract_config_metadata(path, root)
         f = file_record(path, root, "config-manifest", "ok", hint)
@@ -178,7 +179,27 @@ def adapt(path, root):
                     f = file_record(path, root, f"tree-sitter-{language}", result.get("status", "parse_error"), hint)
             except (OSError, UnicodeError):
                 pass
+    # Populate references for markdown and SQL
+    if ext in {".md", ".mdx"}:
+        from .framework_adapters import markdown_link_targets
+
+        doc_links = markdown_link_targets(path, root)
+        if doc_links:
+            references["doc_links"] = doc_links
+
+    # Populate table_refs for any text file (including .sql)
+    if ext not in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".bin", ".o", ".exe", ".dll", ".so"}:
+        from .framework_adapters import sql_table_references
+
+        try:
+            source = path.read_text(encoding="utf-8", errors="ignore")
+            table_refs = sql_table_references(source)
+            if table_refs:
+                references["table_refs"] = table_refs
+        except (OSError, UnicodeError):
+            pass
+
     f = enrich_framework_facts(path, root, f, symbols, edges)
-    if contains_sensitive_data((f, symbols, edges, imports, exports, calls)):
+    if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references)):
         raise ValueError("adapter output contained sensitive data")
-    return f, symbols, edges, sorted(set(imports)), sorted(set(exports)), calls
+    return f, symbols, edges, sorted(set(imports)), sorted(set(exports)), calls, references

@@ -422,6 +422,105 @@ def _pick_best_symbol(symbol_list: list[dict]) -> dict:
     return min(symbol_list, key=key_func)
 
 
+def resolve_doc_links(doc_links: dict[str, list[str]], rel_paths: set[str]) -> list[dict]:
+    """Resolve markdown link targets to repo files.
+
+    Returns sorted [{"source": rel_path, "target": rel_path, "confidence": str}].
+    """
+    results = []
+
+    for source, targets in doc_links.items():
+        for target in targets:
+            result = _resolve_doc_link(source, target, rel_paths)
+            if result:
+                resolved, confidence = result
+                results.append(
+                    {
+                        "source": source,
+                        "target": resolved,
+                        "confidence": confidence,
+                    }
+                )
+
+    # Remove self-loops
+    results = [r for r in results if r["source"] != r["target"]]
+
+    # Sort deterministically
+    results.sort(key=lambda r: (r["source"], r["target"]))
+    return results
+
+
+def _resolve_doc_link(source: str, target: str, rel_paths: set[str]) -> Optional[tuple[str, str]]:
+    """Resolve a single markdown link target.
+
+    Returns (resolved_path, confidence) or None if unresolvable.
+    """
+    # Rule 1: Absolute path (starts with /)
+    if target.startswith("/"):
+        candidate = target.lstrip("/")
+        if candidate in rel_paths:
+            return (candidate, "EXTRACTED")
+        # Continue to other rules if exact match not found
+        target = candidate
+
+    # Rule 2: Relative path - join against source's directory
+    source_dir = posixpath.dirname(source)
+    candidate = posixpath.normpath(posixpath.join(source_dir, target))
+    if candidate in rel_paths:
+        return (candidate, "EXTRACTED")
+
+    # Rule 3: Bare basename - unique match in rel_paths (handles wiki-link matching wiki-link.md)
+    if "/" not in target:
+        basename_matches = []
+        target_lower = target.lower()
+        for path in rel_paths:
+            path_basename = posixpath.basename(path)
+            path_basename_lower = path_basename.lower()
+            # Check exact match or match without extension
+            if path_basename_lower == target_lower:
+                basename_matches.append(path)
+            elif path_basename_lower.rsplit(".", 1)[0] == target_lower:
+                basename_matches.append(path)
+
+        if len(basename_matches) == 1:
+            return (basename_matches[0], "INFERRED")
+
+    return None
+
+
+def resolve_table_refs(table_refs: dict[str, list[str]], table_symbols: dict[str, list[tuple[str, str]]]) -> list[dict]:
+    """Link files that query a table to the file whose schema defines it.
+
+    table_symbols maps a lowercased table name to [(rel_path, symbol_id), ...].
+    Returns sorted [{"source": rel_path, "target_file": rel_path,
+                     "target_symbol_id": str, "confidence": str}].
+    """
+    results = []
+
+    for source, tables in table_refs.items():
+        for table in tables:
+            # Look up the lowercased table name
+            definitions = table_symbols.get(table.lower(), [])
+
+            # Only emit if exactly one file defines the table
+            if len(definitions) == 1:
+                target_file, symbol_id = definitions[0]
+                # Never emit edge from file to itself
+                if source != target_file:
+                    results.append(
+                        {
+                            "source": source,
+                            "target_file": target_file,
+                            "target_symbol_id": symbol_id,
+                            "confidence": "INFERRED",
+                        }
+                    )
+
+    # Sort deterministically
+    results.sort(key=lambda r: (r["source"], r["target_file"], r["target_symbol_id"]))
+    return results
+
+
 if __name__ == "__main__":
     import sys
     import json
@@ -675,6 +774,113 @@ if __name__ == "__main__":
         # Assertion 11: No path contains backslash
         for r in call_results:
             assert "\\" not in r["caller_file"], f"Backslash in caller_file: {r['caller_file']}"
+            assert "\\" not in r["target_file"], f"Backslash in target_file: {r['target_file']}"
+
+        # ===== Tests for resolve_doc_links =====
+
+        # Test fixture: markdown docs with various link types
+        doc_links = {
+            "docs/auth-guide.md": ["../src/auth/session.py", "https://example.com", "#anchor-only", "wiki-link"],
+            "docs/checkout.md": ["/backend/payments.py"],
+        }
+
+        rel_paths_for_docs = {
+            "src/auth/session.py",
+            "backend/payments.py",
+            "wiki-link.md",
+            "docs/auth-guide.md",
+            "docs/checkout.md",
+        }
+
+        doc_link_results = resolve_doc_links(doc_links, rel_paths_for_docs)
+
+        # Assertion 1: doc link to code file resolves EXTRACTED
+        auth_to_session = [
+            r for r in doc_link_results if r["source"] == "docs/auth-guide.md" and r["target"] == "src/auth/session.py"
+        ]
+        assert len(auth_to_session) == 1, (
+            f"Expected 1 link from auth-guide to session.py, got {len(auth_to_session)}: {auth_to_session}"
+        )
+        assert auth_to_session[0]["confidence"] == "EXTRACTED", (
+            f"Expected EXTRACTED, got {auth_to_session[0]['confidence']}"
+        )
+
+        # Assertion 2: absolute path resolves correctly
+        checkout_to_payments = [
+            r for r in doc_link_results if r["source"] == "docs/checkout.md" and r["target"] == "backend/payments.py"
+        ]
+        assert len(checkout_to_payments) == 1, (
+            f"Expected 1 link from checkout to payments, got {len(checkout_to_payments)}: {checkout_to_payments}"
+        )
+
+        # Assertion 3: wiki-link resolves INFERRED by unique basename
+        auth_to_wiki = [
+            r for r in doc_link_results if r["source"] == "docs/auth-guide.md" and "wiki-link" in r["target"]
+        ]
+        assert len(auth_to_wiki) == 1, f"Expected wiki-link to resolve uniquely, got {len(auth_to_wiki)}"
+        assert auth_to_wiki[0]["confidence"] == "INFERRED", (
+            f"Expected INFERRED for wiki-link, got {auth_to_wiki[0]['confidence']}"
+        )
+
+        # Assertion 4: external URLs (https://) produce no edge
+        https_links = [r for r in doc_link_results if "example.com" in r.get("target", "")]
+        assert len(https_links) == 0, f"Expected no edge for external URL, got {https_links}"
+
+        # Assertion 5: anchors-only produce no edge
+        anchor_links = [r for r in doc_link_results if r.get("target") == "#anchor-only"]
+        assert len(anchor_links) == 0, f"Expected no edge for anchor-only, got {anchor_links}"
+
+        # Assertion 6: No self-loops
+        for r in doc_link_results:
+            assert r["source"] != r["target"], f"Self-loop detected: {r}"
+
+        # Assertion 7: No backslashes
+        for r in doc_link_results:
+            assert "\\" not in r["source"], f"Backslash in source: {r['source']}"
+            assert "\\" not in r["target"], f"Backslash in target: {r['target']}"
+
+        # ===== Tests for resolve_table_refs =====
+
+        # Test fixture: SQL table references
+        table_refs = {
+            "backend/repositories/session_repository.py": ["sessions", "user_sessions"],
+            "backend/migrations/init.sql": ["sessions"],
+            "backend/api/auth.py": ["USERS", "payments"],  # case-insensitive
+        }
+
+        # table_symbols: table_name.lower() -> [(rel_path, symbol_id), ...]
+        table_symbols = {
+            "sessions": [("db/schema.sql", "sql_table_sessions")],
+            "user_sessions": [("db/schema.sql", "sql_table_user_sessions")],
+            "users": [("db/schema.sql", "sql_table_users")],
+            "payments": [
+                ("db/schema.sql", "sql_table_payments_v1"),
+                ("db/schema.sql", "sql_table_payments_v2"),
+            ],  # ambiguous
+        }
+
+        table_ref_results = resolve_table_refs(table_refs, table_symbols)
+
+        # Assertion 8: table referenced by exactly one schema resolves INFERRED
+        session_refs = [r for r in table_ref_results if r["target_symbol_id"] == "sql_table_sessions"]
+        assert len(session_refs) > 0, f"Expected reference to sessions table, got {table_ref_results}"
+        assert session_refs[0]["confidence"] == "INFERRED", f"Expected INFERRED, got {session_refs[0]['confidence']}"
+
+        # Assertion 9: table defined in two files produces NO edge
+        payment_refs = [r for r in table_ref_results if "payments" in r.get("target_symbol_id", "")]
+        assert len(payment_refs) == 0, f"Expected no edge for ambiguous payment table, got {payment_refs}"
+
+        # Assertion 10: case-insensitive lookup
+        user_refs = [r for r in table_ref_results if "users" in r.get("target_symbol_id", "")]
+        assert len(user_refs) > 0, f"Expected case-insensitive lookup for USERS, got {table_ref_results}"
+
+        # Assertion 11: No file-to-itself edges
+        for r in table_ref_results:
+            assert r["source"] != r["target_file"], f"File-to-itself edge: {r}"
+
+        # Assertion 12: No backslashes
+        for r in table_ref_results:
+            assert "\\" not in r["source"], f"Backslash in source: {r['source']}"
             assert "\\" not in r["target_file"], f"Backslash in target_file: {r['target_file']}"
 
         print("OK")
