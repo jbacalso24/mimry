@@ -10,10 +10,10 @@ from types import SimpleNamespace
 
 from mimry.commands import cmd_context, cmd_find, cmd_init, cmd_symbol
 from mimry.freshness import index_freshness
-from mimry.graphify_artifacts import graphify_health, graphify_report_excerpt, graphify_rows
+from mimry.core.artifacts import graph_health, report_excerpt, graph_rows
 from mimry.indexer import write_index
 from mimry.mcp_server import mimry_context, mimry_find, mimry_semantic, mimry_status, mimry_symbol
-from mimry.paths import graph_output_dir, graphify_output_dir
+from mimry.paths import graph_output_dir
 from mimry.scanner import scan
 from mimry.storage import load_pointer
 
@@ -47,7 +47,7 @@ def sqlite_text(path: Path) -> str:
 def test_acceptance_tests_are_absent_from_default_index_and_agent_outputs(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     acceptance = repo / "acceptance_tests"
-    acceptance.mkdir(parents=True)
+    acceptance.mkdir(parents=True, exist_ok=True)
     (repo / "src").mkdir()
     (repo / "src" / "app.py").write_text("def public_app():\n    return 'ok'\n", encoding="utf-8")
     (acceptance / "test_hidden_contract.py").write_text(
@@ -83,13 +83,12 @@ def test_acceptance_tests_are_absent_from_default_index_and_agent_outputs(tmp_pa
     assert "src/app.py" in persisted
 
 
-
 def test_existing_index_becomes_stale_when_policy_newly_ignores_acceptance_tests(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     repo = tmp_path / "repo"
     acceptance = repo / "acceptance_tests"
-    acceptance.mkdir(parents=True)
+    acceptance.mkdir(parents=True, exist_ok=True)
     (repo / "app.py").write_text("def app():\n    return 1\n", encoding="utf-8")
     (acceptance / "test_hidden.py").write_text(
         f"def hidden_acceptance_symbol():\n    return '{SENTINEL}'\n", encoding="utf-8"
@@ -155,10 +154,10 @@ def test_existing_index_becomes_stale_when_policy_newly_ignores_acceptance_tests
     )
 
 
-def test_existing_graphify_artifacts_filter_acceptance_sources_and_report(tmp_path: Path) -> None:
+def test_existing_graph_artifacts_filter_acceptance_sources_and_report(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     graph_dir = graph_output_dir(repo)
-    graph_dir.mkdir(parents=True)
+    graph_dir.mkdir(parents=True, exist_ok=True)
     graph = {
         "nodes": [
             {"id": "public", "label": "public_app", "source_file": "src/app.py"},
@@ -181,9 +180,9 @@ def test_existing_graphify_artifacts_filter_acceptance_sources_and_report(tmp_pa
         encoding="utf-8",
     )
 
-    assert graphify_rows(repo, SENTINEL) == []
-    assert graphify_report_excerpt(repo) == ""
-    health = graphify_health(repo, index_state="current")
+    assert graph_rows(repo, SENTINEL) == []
+    assert report_excerpt(repo) == ""
+    health = graph_health(repo, index_state="current")
     assert health["status"] == "stale"
     assert health["graph_nodes"] == 1
     assert health["graph_edges"] == 0
@@ -204,11 +203,11 @@ def test_ignored_path_detection_covers_relative_absolute_and_windows_forms() -> 
         assert text_mentions_ignored_path(path)
 
 
-def test_graphify_report_keeps_benign_heavy_ignore_words(tmp_path: Path) -> None:
+def test_graph_report_keeps_benign_heavy_ignore_words(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     graph_dir = graph_output_dir(repo)
-    graph_dir.mkdir(parents=True)
+    graph_dir.mkdir(parents=True, exist_ok=True)
     report = "# Graph report\n## Community Hubs\nCompleted build target for vendor integration\n"
     (graph_dir / "GRAPH_REPORT.md").write_text(report, encoding="utf-8")
 
-    assert "Completed build target for vendor integration" in graphify_report_excerpt(repo)
+    assert "Completed build target for vendor integration" in report_excerpt(repo)

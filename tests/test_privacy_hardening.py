@@ -23,7 +23,7 @@ from mimry.mcp_server import (
     mimry_symbol,
     mimry_why,
 )
-from mimry.paths import graph_output_dir, graphify_output_dir
+from mimry.paths import graph_output_dir
 from mimry.security import (
     STREAM_CHUNK_BYTES,
     contains_sensitive_text,
@@ -278,10 +278,7 @@ def test_sensitive_home_roots_and_descendants_are_rejected(tmp_path: Path, monke
         assert not (root / ".mimry").exists()
 
 
-
-
-
-def test_bare_secret_assignments_never_reach_index_or_graphify(tmp_path: Path, monkeypatch):
+def test_bare_secret_assignments_never_reach_index_or_graph(tmp_path: Path, monkeypatch):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     (repo / ".env").unlink()
@@ -329,7 +326,6 @@ def test_whole_file_streaming_detects_late_source_and_generated_canaries(tmp_pat
         handle.seek((STREAM_CHUNK_BYTES * 84) - 4)
         handle.write(payload)
     assert tree_contains_sensitive_content(generated)
-
 
 
 def test_private_key_and_aws_redaction_removes_secret_bodies():

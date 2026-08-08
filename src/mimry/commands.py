@@ -14,13 +14,13 @@ from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_
 from .constants import SCHEMA_VERSION
 from .feedback import feedback_payload_from_args, feedback_stats, list_feedback, record_feedback, show_feedback
 from .freshness import index_freshness
-from .graphify_artifacts import (
-    graphify_evidence_for_path,
-    graphify_health,
-    graphify_relationship_lines,
-    graphify_report_excerpt,
-    graphify_shortest_path,
-    graphify_surface_matches,
+from .core.artifacts import (
+    evidence_for_path,
+    graph_health,
+    relationship_lines,
+    report_excerpt,
+    shortest_path,
+    surface_matches,
 )
 from .indexer import write_index
 from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir
@@ -133,7 +133,7 @@ def cmd_init(a):
         mdir(root) / "AGENT_RULES.md",
         "# MIMRY Agent Rules\n\n"
         "Use MIMRY before repeated grep or blind file reading.\n"
-        "Tester-owned `acceptance_tests/` is excluded from ordinary MIMRY indexing and Graphify handoff by default. "
+        "Tester-owned `acceptance_tests/` is excluded from ordinary MIMRY indexing by default. "
         "This is cooperative workflow isolation, not secrecy: repository users can still open those files directly.\n",
     )
     save_pointer(root, ptr)
@@ -207,31 +207,25 @@ def cmd_status(a):
     missing = fresh["missing"]
     state = fresh["state"]
     g = fresh["graph"]
-    graphify = graphify_health(root, index_state=state)
+    graph = graph_health(root, index_state=state)
     semantic = semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files))
     print(
         f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nPolicy-excluded stale records: {fresh['policy_excluded_count']}\nIndex path: {idx}"
     )
     print(
         "MIMRY graph artifact health"
-        f"\nStatus: {graphify['status']}"
-        f"\nArtifact output: {graphify['output_dir']}"
-        f"\ngraph.json: {'yes' if graphify['graph_exists'] else 'missing'}"
-        f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; generated {graphify['graph_generated_at'] or 'unknown'})"
-        f"\nGRAPH_REPORT.md: {'yes' if graphify['report_exists'] else 'missing'}"
-        f" (generated {graphify['report_generated_at'] or 'unknown'})"
-        f"\nmanifest.json: {'yes' if graphify['manifest_exists'] else 'missing'}"
-        f" ({graphify['manifest_entries']} entries; generated {graphify['manifest_generated_at'] or 'unknown'})"
-        f"\nBuilt from commit: {graphify['built_from_commit'] or 'unknown'}"
-        f"\nGraph source changes: {len(graphify['source_changed_files'])} changed, {len(graphify['source_missing_files'])} missing"
-        f"\nMIMRY graph artifacts stale/missing: {'yes' if graphify['status'] != 'current' else 'no'}"
+        f"\nStatus: {graph['status']}"
+        f"\nArtifact output: {graph['output_dir']}"
+        f"\ngraph.json: {'yes' if graph['graph_exists'] else 'missing'}"
+        f" ({graph['graph_nodes']} nodes/{graph['graph_edges']} edges; generated {graph['graph_generated_at'] or 'unknown'})"
+        f"\nGRAPH_REPORT.md: {'yes' if graph['report_exists'] else 'missing'}"
+        f" (generated {graph['report_generated_at'] or 'unknown'})"
+        f"\nmanifest.json: {'yes' if graph['manifest_exists'] else 'missing'}"
+        f" ({graph['manifest_entries']} entries; generated {graph['manifest_generated_at'] or 'unknown'})"
+        f"\nBuilt from commit: {graph['built_from_commit'] or 'unknown'}"
+        f"\nGraph source changes: {len(graph['source_changed_files'])} changed, {len(graph['source_missing_files'])} missing"
+        f"\nMIMRY graph artifacts stale/missing: {'yes' if graph['status'] != 'current' else 'no'}"
     )
-    if graphify.get("using_legacy_output"):
-        print("Compatibility: reading existing legacy repo-local graph artifacts; next refresh writes to the cache.")
-    elif graphify.get("using_generation_output"):
-        print(
-            "Compatibility: reading generation-local graph artifacts; next refresh migrates them to the stable cache."
-        )
     print(f"Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})")
     if state == "stale":
         if changed:
@@ -247,18 +241,18 @@ def cmd_status(a):
                 + ("" if len(missing) <= 10 else f", +{len(missing) - 10} more")
             )
         print("Recommended: Run `mimry reindex`.")
-    if graphify["status"] != "current":
+    if graph["status"] != "current":
         print("Graph recommended: Run `mimry refresh`.")
     return 0 if state == "current" else 2
 
 
-def _index_and_graphify_health(root: Path, ptr: dict):
+def _index_and_graph_health(root: Path, ptr: dict):
     fresh = index_freshness(root, ptr)
-    graphify = graphify_health(root, index_state=fresh["state"])
-    return fresh, graphify
+    graph = graph_health(root, index_state=fresh["state"])
+    return fresh, graph
 
 
-def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
+def _print_status_summary(ptr: dict, fresh: dict, graph: dict):
     semantic = semantic_health(Path(fresh["index_path"]), ptr.get("rootId"), expected_files=len(fresh["files"]))
     print(
         "Status summary:"
@@ -268,8 +262,8 @@ def _print_status_summary(ptr: dict, fresh: dict, graphify: dict):
         f"\n- Changed/deleted files: {len(fresh['changed'])}/{len(fresh['missing'])}"
         f"\n- Policy-excluded stale records: {fresh['policy_excluded_count']}"
         f"\n- Graph nodes/edges: {len(fresh['graph'].get('nodes', []))}/{len(fresh['graph'].get('edges', []))}"
-        f"\n- MIMRY graph artifacts: {graphify['status']}"
-        f" ({graphify['graph_nodes']} nodes/{graphify['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)"
+        f"\n- MIMRY graph artifacts: {graph['status']}"
+        f" ({graph['graph_nodes']} nodes/{graph['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)"
         f"\n- Semantic: {semantic['status']} ({semantic['chunks']} chunks, backend {semantic['backend']})"
     )
 
@@ -284,12 +278,12 @@ def _relative_status_path(root: Path, maybe_path: str | Path | None) -> str:
         return str(maybe_path)
 
 
-def _refresh_action(fresh: dict, graphify: dict) -> str:
+def _refresh_action(fresh: dict, graph: dict) -> str:
     actions = []
     if fresh["state"] != "current":
         actions.append(f"index is {fresh['state']}")
-    if graphify["status"] != "current":
-        actions.append(f"MIMRY graph artifacts are {graphify['status']}")
+    if graph["status"] != "current":
+        actions.append(f"MIMRY graph artifacts are {graph['status']}")
     if not actions:
         return "none (index and MIMRY graph artifacts are current)"
     return "run `mimry refresh` (" + "; ".join(actions) + ")"
@@ -449,22 +443,22 @@ def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
     return lines
 
 
-def _graphify_context_lines(root: Path, rows: list[dict], graphify: dict) -> list[str]:
+def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]:
     paths = [r["path"] for r in rows]
-    relationship_lines = graphify_relationship_lines(root, paths)
-    report_excerpt = graphify_report_excerpt(root)
-    if graphify["status"] != "current":
-        status = graphify["status"]
+    rel_lines = relationship_lines(root, paths)
+    exc = report_excerpt(root)
+    if graph["status"] != "current":
+        status = graph["status"]
         return [
             f"- MIMRY relationship data is missing or stale (`{status}`); run `mimry refresh` before relying on graph paths.",
             "- No relationship path was invented. Use source imports/callers directly if this remains empty.",
         ]
-    lines = relationship_lines or [
+    lines = rel_lines or [
         "- MIMRY relationship data is current, but no path connected the selected files for this query.",
         "- No relationship path was invented; rerun with a narrower symbol/file query if graph navigation matters.",
     ]
-    if report_excerpt:
-        lines += ["", "### Graphify Report Signals", report_excerpt]
+    if exc:
+        lines += ["", "### Graph Report Signals", exc]
     return lines
 
 
@@ -473,7 +467,7 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
     rows = find_rows(
         Path(ptr["indexPath"]), query, limit, True, root=root, root_id=ptr.get("rootId"), semantic=semantic
     )
-    fresh, graphify = _index_and_graphify_health(root, ptr)
+    fresh, graph = _index_and_graph_health(root, ptr)
     semantic_state = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"), expected_files=len(fresh["files"]))
     file_records = _selected_file_records(fresh, rows)
     verification_commands = _verification_commands(fresh)
@@ -487,10 +481,10 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
         f"- Root: `{root}`",
         f"- Index: {fresh['state']} (last indexed: {ptr.get('lastIndexedAt') or 'never'}; files: {len(fresh['files'])}; symbols: {len(fresh['symbols'])})",
         f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
-        f"- MIMRY graph artifacts: {graphify['status']} ({graphify['graph_nodes']} nodes / {graphify['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)",
+        f"- MIMRY graph artifacts: {graph['status']} ({graph['graph_nodes']} nodes / {graph['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)",
         f"- Semantic: {semantic_state['status']} ({semantic_state['chunks']} chunks, backend {semantic_state['backend']}; mode: {'on' if semantic else 'off'})",
-        f"- MIMRY graph files: graph.json {'present' if graphify['graph_exists'] else 'missing'}, GRAPH_REPORT.md {'present' if graphify['report_exists'] else 'missing'}, manifest.json {'present' if graphify['manifest_exists'] else 'missing'}",
-        f"- Refresh action: {_refresh_action(fresh, graphify)}",
+        f"- MIMRY graph files: graph.json {'present' if graph['graph_exists'] else 'missing'}, GRAPH_REPORT.md {'present' if graph['report_exists'] else 'missing'}, manifest.json {'present' if graph['manifest_exists'] else 'missing'}",
+        f"- Refresh action: {_refresh_action(fresh, graph)}",
         "",
         "## Summary",
         f"MIMRY found {len(rows)} relevant file(s). Use this as an agent handoff: read in order, verify source/tests, and avoid unsupported edits.",
@@ -523,8 +517,8 @@ def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, se
             ]
         ),
         "",
-        "## Graphify Relationships / Communities",
-        *_graphify_context_lines(root, rows, graphify),
+        "## Graph Relationships / Communities",
+        *_graph_context_lines(root, rows, graph),
         "",
         "## Suggested Reading Order",
         *_reading_order_lines(rows),
@@ -597,19 +591,19 @@ def cmd_preflight(a):
     ptr = load_pointer(root, validate_active_generation=False)
     if not ptr:
         init_ran = True
-        init_status = cmd_init(SimpleNamespace(root=str(root), root_type="repo", skip_graphify=True))
+        init_status = cmd_init(SimpleNamespace(root=str(root), root_type="repo", skip_graph=True))
         if init_status != 0:
             return init_status
 
     with active_index_pointer(root) as active:
         assert active is not None
         ptr = active
-        fresh, graphify = _index_and_graphify_health(root, ptr)
+        fresh, graph = _index_and_graph_health(root, ptr)
     reasons = []
     if fresh["state"] != "current":
         reasons.append(f"index {fresh['state']}")
-    if graphify["status"] != "current":
-        reasons.append(f"MIMRY graph artifacts {graphify['status']}")
+    if graph["status"] != "current":
+        reasons.append(f"MIMRY graph artifacts {graph['status']}")
     force_refresh = getattr(a, "force_refresh", False)
     if force_refresh:
         reasons.append("forced")
@@ -619,11 +613,8 @@ def cmd_preflight(a):
     if force_refresh:
         refresh_ran = True
         print("Preflight refresh: running (forced)")
-        graphify_status = run_graphify_build(root, execute=True)
-        if graphify_status != 0:
-            print("Preflight stopped: internal graph build failed.")
-            return graphify_status
-        sync_visible_graph_output(root, ptr)
+        # The graph is built and published by write_index itself now, so the forced
+        # path is just a full reindex. There is no separate build step to run first.
         stats = write_index(root, ptr)
         index_ran = True
         print(
@@ -631,7 +622,7 @@ def cmd_preflight(a):
             f"Graph edges: {stats['edges']}; Index: {stats['index']}"
         )
     elif fresh["state"] in {"missing", "stale"}:
-        print(f"Preflight index: running (index {fresh['state']}; skipping slow Graphify build)")
+        print(f"Preflight index: running (index {fresh['state']})")
         stats = write_index(root, ptr)
         index_ran = True
         print(
@@ -652,7 +643,7 @@ def cmd_preflight(a):
     with active_index_pointer(root) as active:
         assert active is not None
         ptr = active
-        fresh, graphify = _index_and_graphify_health(root, ptr)
+        fresh, graph = _index_and_graph_health(root, ptr)
         rows = _write_context_pack(root, ptr, a.task)
 
     print("MIMRY preflight complete")
@@ -660,7 +651,7 @@ def cmd_preflight(a):
     print(f"Init ran: {'yes' if init_ran else 'no'}")
     print(f"Refresh ran: {'yes' if refresh_ran else 'no'}")
     print(f"Index ran: {'yes' if index_ran else 'no'}")
-    _print_status_summary(ptr, fresh, graphify)
+    _print_status_summary(ptr, fresh, graph)
     print(f"Context: {context_file(root)}")
     print("Top files:")
     if rows:
@@ -907,11 +898,11 @@ def _format_path_step(step: dict) -> str:
 def cmd_explain(a):
     root = Path(a.root).resolve()
     ptr = require(root)
-    fresh, graphify = _index_and_graphify_health(root, ptr)
+    fresh, graph = _index_and_graph_health(root, ptr)
     query = sanitize_query(a.query)
     rows = find_rows(Path(ptr["indexPath"]), query, getattr(a, "limit", 5), True, root=root, root_id=ptr.get("rootId"))
     print(f"MIMRY explain: {query}")
-    _print_status_summary(ptr, fresh, graphify)
+    _print_status_summary(ptr, fresh, graph)
     print("Top relevant files:")
     if rows:
         for i, row in enumerate(rows, 1):
@@ -927,15 +918,15 @@ def cmd_explain(a):
         print(line)
 
     print("Relationship paths:")
-    relationship_lines = graphify_relationship_lines(root, [r["path"] for r in rows], max_lines=6)
-    if graphify["status"] != "current":
-        print(f"- Graphify is {graphify['status']}; run `mimry refresh` before relying on relationship paths.")
+    rel_lines = relationship_lines(root, [r["path"] for r in rows], max_lines=6)
+    if graph["status"] != "current":
+        print(f"- Graph is {graph['status']}; run `mimry refresh` before relying on relationship paths.")
         print("- No relationship path was invented.")
-    elif relationship_lines:
-        for line in relationship_lines:
+    elif rel_lines:
+        for line in rel_lines:
             print(line)
     else:
-        print("- No Graphify relationship path connected these ranked files. No relationship path was invented.")
+        print("- No graph relationship path connected these ranked files. No relationship path was invented.")
 
     source = next((r for r in rows if _is_likely_edit_surface(r["path"])), rows[0] if rows else None)
     print("Likely source of truth:")
@@ -950,22 +941,22 @@ def cmd_explain(a):
 def cmd_path(a):
     root = Path(a.root).resolve()
     ptr = require(root)
-    fresh, graphify = _index_and_graphify_health(root, ptr)
+    fresh, graph = _index_and_graph_health(root, ptr)
     source = sanitize_query(a.source)
     target = sanitize_query(a.target)
     print(f"MIMRY path: {source} -> {target}")
-    if graphify["status"] != "current":
-        print(f"No Graphify relationship path found: Graphify artifacts are {graphify['status']}.")
+    if graph["status"] != "current":
+        print(f"No graph relationship path found: graph artifacts are {graph['status']}.")
         print("No path was invented. Run `mimry refresh`, then retry with file paths or symbol names.")
         return 0
-    result = graphify_shortest_path(root, source, target)
+    result = shortest_path(root, source, target)
     if result["found"] and result["steps"]:
         print("Path found:")
         for step in result["steps"]:
             print(_format_path_step(step))
-        print("Source of truth: Graphify artifacts plus indexed source files; verify by opening each file above.")
+        print("Source of truth: graph artifacts plus indexed source files; verify by opening each file above.")
         return 0
-    print("No Graphify relationship path found between the resolved surfaces.")
+    print("No graph relationship path found between the resolved surfaces.")
     print("No path was invented.")
     _print_candidate_matches("Source candidates:", result["source_matches"])
     _print_candidate_matches("Target candidates:", result["target_matches"])
@@ -981,7 +972,7 @@ def cmd_path(a):
 def cmd_why(a):
     root = Path(a.root).resolve()
     ptr = require(root)
-    fresh, graphify = _index_and_graphify_health(root, ptr)
+    fresh, graph = _index_and_graph_health(root, ptr)
     idx = Path(ptr["indexPath"])
     query = sanitize_query(a.query)
     rows = find_rows(idx, query, max(getattr(a, "limit", 25), 25), True, root=root, root_id=ptr.get("rootId"))
@@ -1016,18 +1007,18 @@ def cmd_why(a):
     else:
         print("This surface was not in the top ranked results for that query.")
         print("Ranking signals:")
-        print("- no direct filename/symbol/Graphify/config signal found in the current result window")
+        print("- no direct filename/symbol/graph/config signal found in the current result window")
         print("Fallback: try a narrower query or `mimry find`/`mimry symbol`.")
-    print("Graphify evidence:")
-    if graphify["status"] != "current":
-        print(f"- Graphify is {graphify['status']}; run `mimry refresh` for current graph evidence.")
+    print("Graph evidence:")
+    if graph["status"] != "current":
+        print(f"- Graph is {graph['status']}; run `mimry refresh` for current graph evidence.")
     else:
-        evidence = graphify_evidence_for_path(root, surface)
-        for line in evidence or ["- no matching Graphify node/edge evidence for this surface"]:
+        evidence = evidence_for_path(root, surface)
+        for line in evidence or ["- no matching graph node/edge evidence for this surface"]:
             print(line)
-        matches = graphify_surface_matches(root, surface, limit=3)
+        matches = surface_matches(root, surface, limit=3)
         if matches:
-            _print_candidate_matches("Resolved Graphify candidates:", matches)
+            _print_candidate_matches("Resolved graph candidates:", matches)
     _print_verification_hints(fresh)
     return 0
 

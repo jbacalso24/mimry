@@ -33,7 +33,7 @@ ROLE_PACKS = {
     "reviewer": ["code-review-pack", "risk-gates-pack", "evidence-checklist-pack"],
     "qa": ["qa-test-pack", "regression-pack", "repro-verification-pack"],
     "docs": ["docs-pack", "source-truth-pack", "release-notes-pack"],
-    "tooly": ["mimry-tooling-pack", "cli-mcp-pack", "graphify-context-pack"],
+    "tooly": ["mimry-tooling-pack", "cli-mcp-pack", "graph-context-pack"],
     "general": ["general-context-pack", "source-truth-pack", "verification-pack"],
 }
 
@@ -44,7 +44,7 @@ ROLE_OWNS = {
     "reviewer": "Review-only audit, evidence gathering, risk assessment, and non-mutating recommendations.",
     "qa": "Reproduction, test coverage, regression checks, fixtures, and verification plans.",
     "docs": "Docs, README/help text, source-truth summaries, and release/handoff notes.",
-    "tooly": "MIMRY CLI/MCP/tooling, Graphify wrappers, indexing/search/context packs, and agent substrate work.",
+    "tooly": "MIMRY CLI/MCP/tooling, graph engine, indexing/search/context packs, and agent substrate work.",
     "general": "Cross-cutting implementation where no single specialist lane dominates.",
 }
 
@@ -97,7 +97,7 @@ MOBILE_TERMS = {"mobile", "expo", "ios", "android", "native", "react native", "s
 REVIEWER_TERMS = {"review", "audit", "assess", "inspect", "security review", "code review"}
 QA_TERMS = {"test", "qa", "regression", "repro", "verify", "fixture", "pytest", "vitest"}
 DOCS_TERMS = {"docs", "documentation", "readme", "guide", "help", "changelog", "release notes"}
-TOOLY_TERMS = {"mimry", "tooly", "mcp", "graphify", "index", "context pack", "cli", "routing", "route tool"}
+TOOLY_TERMS = {"mimry", "tooly", "mcp", "graph", "index", "context pack", "cli", "routing", "route tool"}
 
 
 def normalize_agent(agent: str | None) -> str:
@@ -179,7 +179,7 @@ def _score_roles(
         scores["mobile"] += 20
         reasons["mobile"].append("Expo/native mobile signal")
     if (root and root.name.lower() == "mimry") and any(
-        term in q for term in ("mcp", "cli", "graphify", "routing", "route", "context pack")
+        term in q for term in ("mcp", "cli", "graph", "routing", "route", "context pack")
     ):
         scores["tooly"] += 22
         reasons["tooly"].append("MIMRY repo tooling surface")

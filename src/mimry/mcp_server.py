@@ -24,7 +24,7 @@ from mimry.commands import (
     require,
 )
 from mimry.freshness import index_freshness
-from mimry.graphify_artifacts import graphify_health
+from mimry.core.artifacts import graph_health
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.routing import route_payload, write_brief
@@ -157,7 +157,7 @@ def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
     changed = fresh["changed"]
     missing = fresh["missing"]
     state = fresh["state"]
-    graph = graphify_health(root_path, index_state=state)
+    graph = graph_health(root_path, index_state=state)
     return {
         "initialized": True,
         "root": str(root_path),
@@ -384,7 +384,7 @@ def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[s
 @mcp.tool
 @_state_guard
 def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, Any]:
-    """Find a Graphify relationship path between two files/symbols/queries."""
+    """Find a graph relationship path between two files/symbols/queries."""
     root_path = _root(root)
     return _capture_command(
         cmd_path,

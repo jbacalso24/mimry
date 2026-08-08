@@ -29,7 +29,7 @@ def _run(repo: Path, env: dict[str, str], *args: str) -> subprocess.CompletedPro
     )
 
 
-def test_init_bootstraps_safe_graphify_output(tmp_path):
+def test_init_bootstraps_safe_graph_output(tmp_path):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     env = _env(tmp_path)
@@ -37,18 +37,22 @@ def test_init_bootstraps_safe_graphify_output(tmp_path):
     res = _run(repo, env, "init")
 
     assert res.returncode == 0, res.stderr
-    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
-    internal_graph_dir = Path(ptr["indexPath"]) / "graphify"
     visible_graph_dir = repo / ".mimry" / "mimry-out" / "graph"
-    assert internal_graph_dir.exists()
-    assert visible_graph_dir.exists()
+    # init bootstraps the output location; the graph itself is built by index,
+    # which is the only thing that parses the tree.
+    assert visible_graph_dir.is_dir()
+    assert not (visible_graph_dir / "graph.json").exists()
+
+    index = _run(repo, env, "index")
+    assert index.returncode == 0, index.stderr
     assert (visible_graph_dir / "graph.json").exists()
     assert (visible_graph_dir / "GRAPH_REPORT.md").exists()
+    assert (visible_graph_dir / "manifest.json").exists()
     assert (repo / ".mimry" / "graphify").exists() is False
     assert (repo / "graphify-out").exists() is False
 
 
-def test_refresh_runs_graphify_index_and_status(tmp_path):
+def test_refresh_runs_graph_index_and_status(tmp_path):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     env = _env(tmp_path)
@@ -61,7 +65,6 @@ def test_refresh_runs_graphify_index_and_status(tmp_path):
 
     assert res.returncode == 0, res.stderr
     assert "Refreshing MIMRY" in res.stdout
-    assert "MIMRY internal graph build complete." in res.stdout
     assert "MIMRY indexing complete" in res.stdout
     assert "Index: current" in res.stdout
     assert (visible_graph_dir / "graph.json").exists()

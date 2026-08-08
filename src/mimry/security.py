@@ -295,7 +295,7 @@ def contains_sensitive_data(value) -> bool:
 def stream_contains_sensitive_content(handle: BinaryIO, *, strict_text: bool = False) -> bool:
     """Scan an opened file with bounded memory, preserving cross-chunk matches.
 
-    ``strict_text`` is used at the Graphify trust boundary. Invalid UTF-8 and
+    ``strict_text`` is used at the graph-input trust boundary. Invalid UTF-8 and
     NUL-bearing/binary-ambiguous input are rejected there rather than silently
     decoded or trusted based on a filename extension.
     """
@@ -304,14 +304,14 @@ def stream_contains_sensitive_content(handle: BinaryIO, *, strict_text: bool = F
     overlap = ""
     for raw in iter(lambda: handle.read(STREAM_CHUNK_BYTES), b""):
         if strict_text and any(byte < 32 and byte not in (9, 10, 13) for byte in raw):
-            raise ValueError("Graphify source is binary or has an unknown text encoding")
+            raise ValueError("source is binary or has an unknown text encoding")
         # Sparse files and binary-ish generated artifacts can contain long NUL
         # runs before ordinary UTF-8 text. Drop NULs so line-anchored checks also
         # catch UTF-16-style ASCII without loading the whole file.
         try:
             decoded = decoder.decode(raw.replace(b"\x00", b""))
         except UnicodeDecodeError as exc:
-            raise ValueError("Graphify source is binary or has an unknown text encoding") from exc
+            raise ValueError("source is binary or has an unknown text encoding") from exc
         text = overlap + decoded
         if contains_sensitive_text(text):
             return True
@@ -319,7 +319,7 @@ def stream_contains_sensitive_content(handle: BinaryIO, *, strict_text: bool = F
     try:
         tail = overlap + decoder.decode(b"", final=True)
     except UnicodeDecodeError as exc:
-        raise ValueError("Graphify source is binary or has an unknown text encoding") from exc
+        raise ValueError("source is binary or has an unknown text encoding") from exc
     return contains_sensitive_text(tail)
 
 
@@ -339,7 +339,7 @@ def opened_file_has_sensitive_content(path: Path, handle: BinaryIO) -> bool:
     # Extension is not a security boundary: an unlisted text format such as
     # ``.properties`` must receive the same byte-level classification and secret
     # scan as Python/JSON/TOML. Env examples retain their indexing exemption, but
-    # are still required to be unambiguous UTF-8 before Graphify sees them.
+    # are still required to be unambiguous UTF-8 before the graph sees them.
     sensitive = stream_contains_sensitive_content(handle, strict_text=True)
     return False if _is_env_example(path) else sensitive
 
@@ -394,7 +394,7 @@ def is_text(path):
 
 
 def root_contains_sensitive_content(root: Path) -> bool:
-    """Detect ordinary secret-bearing text before handing a root to Graphify."""
+    """Detect ordinary secret-bearing text before a root is indexed."""
 
     safe_root(root)
     for path in root.rglob("*"):

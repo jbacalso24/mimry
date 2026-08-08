@@ -149,25 +149,29 @@ def adapt(path, root):
                     f = file_record(path, root, f"tree-sitter-{language}", "ok", hint)
                     for d in result.get("definitions", []):
                         sid = stable_id(f["file_id"], d["name"], d["kind"], d["line_start"] or 0)
-                        symbols.append({
-                            "symbol_id": sid,
-                            "file_id": f["file_id"],
-                            "name": d["name"],
-                            "kind": d["kind"],
-                            "language": language,
-                            "exported": d["exported"],
-                            "line_start": d["line_start"],
-                            "line_end": d["line_end"],
-                        })
-                        edges.append({
-                            "edge_id": stable_id(f["file_id"], sid, "defines"),
-                            "source_type": "file",
-                            "source_id": f["file_id"],
-                            "target_type": "symbol",
-                            "target_id": sid,
-                            "edge_type": "defines",
-                            "confidence": 1.0,
-                        })
+                        symbols.append(
+                            {
+                                "symbol_id": sid,
+                                "file_id": f["file_id"],
+                                "name": d["name"],
+                                "kind": d["kind"],
+                                "language": language,
+                                "exported": d["exported"],
+                                "line_start": d["line_start"],
+                                "line_end": d["line_end"],
+                            }
+                        )
+                        edges.append(
+                            {
+                                "edge_id": stable_id(f["file_id"], sid, "defines"),
+                                "source_type": "file",
+                                "source_id": f["file_id"],
+                                "target_type": "symbol",
+                                "target_id": sid,
+                                "edge_type": "defines",
+                                "confidence": 1.0,
+                            }
+                        )
                     imports = [i["module"] for i in result.get("imports", [])]
                     calls = result.get("calls", [])
                 else:

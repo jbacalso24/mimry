@@ -153,7 +153,7 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     assert "mimry_route" in body
     assert "references/workflow.md" in body
     assert "$mimry" in body
-    assert "graphify install" not in body
+    assert "graphify" not in body
     agents = repo / "AGENTS.md"
     assert agents.exists()
     assert "## MIMRY" in agents.read_text(encoding="utf-8")
@@ -329,10 +329,10 @@ def test_install_global_rejects_always_on(tmp_path):
 def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     repo = copy_fixture(tmp_path)
     ruff_cache = repo / ".ruff_cache" / "0.15.20"
-    ruff_cache.mkdir(parents=True)
+    ruff_cache.mkdir(parents=True, exist_ok=True)
     (ruff_cache / "cached-result").write_text("generated cache noise")
     vs_cache = repo / ".vs" / "Prompts" / "FileContentIndex"
-    vs_cache.mkdir(parents=True)
+    vs_cache.mkdir(parents=True, exist_ok=True)
     (vs_cache / "locked.vsidx").write_text("visual studio cache noise")
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
@@ -431,7 +431,7 @@ def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_exampl
 def test_index_ignores_legacy_mimry_out_generated_context(tmp_path):
     repo = copy_fixture(tmp_path)
     legacy = repo / "mimry-out" / "context" / "latest.md"
-    legacy.parent.mkdir(parents=True)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
     legacy.write_text("# generated context should not be indexed\n", encoding="utf-8")
     cache = tmp_path / "cache"
 
@@ -603,7 +603,7 @@ def test_explain_summarizes_ranked_files_paths_and_verification_hints(tmp_path):
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
+    write_current_graph_artifacts(repo)
 
     res = run_cli(repo, cache, "explain", "auth session bug")
 
@@ -621,7 +621,7 @@ def test_why_explains_file_ranking_signals_for_query(tmp_path):
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
+    write_current_graph_artifacts(repo)
 
     res = run_cli(repo, cache, "why", "src/auth/session.py", "--query", "login auth session")
 
@@ -629,16 +629,16 @@ def test_why_explains_file_ranking_signals_for_query(tmp_path):
     assert "MIMRY why: src/auth/session.py" in res.stdout
     assert "Ranked for query: login auth session" in res.stdout
     assert "Ranking signals" in res.stdout
-    assert "Graphify evidence" in res.stdout
-    assert "filename" in res.stdout or "Graphify" in res.stdout
+    assert "Graph evidence:" in res.stdout
+    assert "filename" in res.stdout or "Graph" in res.stdout
 
 
-def test_path_finds_graphify_relationship_path_between_surfaces(tmp_path):
+def test_path_finds_graph_relationship_path_between_surfaces(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
+    write_current_graph_artifacts(repo)
 
     res = run_cli(repo, cache, "path", "middleware", "session")
 
@@ -655,28 +655,27 @@ def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
+    write_current_graph_artifacts(repo)
 
     res = run_cli(repo, cache, "path", "middleware", "missing-target")
 
     assert res.returncode == 0, res.stderr
-    assert "No Graphify relationship path found" in res.stdout
+    assert "No graph relationship path found" in res.stdout
     assert "No path was invented" in res.stdout
     assert "Fallback queries" in res.stdout
 
     broad_token_res = run_cli(repo, cache, "path", "nonexistent-surface", "another-missing-surface")
     assert broad_token_res.returncode == 0, broad_token_res.stderr
-    assert "No Graphify relationship path found" in broad_token_res.stdout
+    assert "No graph relationship path found" in broad_token_res.stdout
     assert "No path was invented" in broad_token_res.stdout
     assert "Path found" not in broad_token_res.stdout
 
 
-def write_current_graphify_artifacts(repo: Path):
+def write_current_graph_artifacts(repo: Path):
     target = repo / "src" / "auth" / "session.py"
-    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
-    graphify_dir = Path(ptr["indexPath"]) / "graphify"
-    graphify_dir.mkdir(parents=True, exist_ok=True)
-    (graphify_dir / "graph.json").write_text(
+    graph_dir = repo / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    (graph_dir / "graph.json").write_text(
         json.dumps(
             {
                 "nodes": [
@@ -689,11 +688,11 @@ def write_current_graphify_artifacts(repo: Path):
         + "\n",
         encoding="utf-8",
     )
-    (graphify_dir / "GRAPH_REPORT.md").write_text(
+    (graph_dir / "GRAPH_REPORT.md").write_text(
         "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit: `abc123`\n",
         encoding="utf-8",
     )
-    (graphify_dir / "manifest.json").write_text(
+    (graph_dir / "manifest.json").write_text(
         json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}}) + "\n",
         encoding="utf-8",
     )
@@ -704,7 +703,7 @@ def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
+    write_current_graph_artifacts(repo)
 
     before = json.loads((repo / ".mimry" / "pointer.json").read_text())["lastIndexedAt"]
     res = run_cli(repo, cache, "preflight", "fix auth session bug")
@@ -726,7 +725,7 @@ def test_context_generation_overwrites_legacy_context_with_redirect_warning(tmp_
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     legacy = repo / "mimry-out" / "context" / "latest.md"
-    legacy.parent.mkdir(parents=True)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
     legacy.write_text("# Old stale context\n\nThis should not be trusted.\n", encoding="utf-8")
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
@@ -763,7 +762,7 @@ testpaths = ["tests"]
     (repo / "tests" / "test_session.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
+    write_current_graph_artifacts(repo)
 
     res = run_cli(repo, cache, "preflight", "fix auth session pytest ruff verification")
 
@@ -775,7 +774,7 @@ testpaths = ["tests"]
         "## Status Summary",
         "## Relevant Files",
         "## Relevant Symbols / Entities",
-        "## Graphify Relationships / Communities",
+        "## Graph Relationships / Communities",
         "## Suggested Reading Order",
         "## Likely Edit Surfaces",
         "## Likely Non-Edit Supporting Files",
@@ -798,11 +797,13 @@ testpaths = ["tests"]
     assert "MIMRY narrows context" in text
 
 
-def test_context_pack_degrades_when_graphify_relationships_missing(tmp_path):
+def test_context_pack_degrades_when_graph_relationships_missing(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
+    # Indexing always publishes a graph now, so degradation has to be provoked.
+    shutil.rmtree(repo / ".mimry" / "mimry-out" / "graph")
 
     res = run_cli(repo, cache, "context", "auth session")
 
@@ -817,7 +818,7 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
+    write_current_graph_artifacts(repo)
 
     res = run_cli(repo, cache, "preflight", "fix auth session bug", "--force-refresh")
 
@@ -827,12 +828,12 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
     assert "Index: current" in res.stdout
 
 
-def test_preflight_reindexes_stale_index_in_fast_mode_without_slow_graphify(tmp_path):
+def test_preflight_reindexes_stale_index_in_fast_mode_without_slow_graph(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
+    write_current_graph_artifacts(repo)
     target = repo / "src" / "auth" / "session.py"
     target.write_text(
         target.read_text(encoding="utf-8") + "\ndef preflight_marker():\n    return True\n", encoding="utf-8"
@@ -841,7 +842,7 @@ def test_preflight_reindexes_stale_index_in_fast_mode_without_slow_graphify(tmp_
     res = run_cli(repo, cache, "preflight", "preflight marker auth session")
 
     assert res.returncode == 0, res.stderr
-    assert "Preflight index: running (index stale; skipping slow Graphify build)" in res.stdout
+    assert "Preflight index: running (index stale)" in res.stdout
     assert "Refresh ran: no" in res.stdout
     assert "Index ran: yes" in res.stdout
     assert "Index: current" in res.stdout
@@ -875,23 +876,23 @@ def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
     assert ignored.returncode == 0, ignored.stderr
 
 
-def test_status_reports_graphify_artifact_health(tmp_path):
+def test_status_reports_graph_artifact_health(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
-    graphify_dir = Path(ptr["indexPath"]) / "graphify"
-    graphify_dir.mkdir(parents=True)
-    (graphify_dir / "graph.json").write_text(
+    graph_dir = repo / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    (graph_dir / "graph.json").write_text(
         '{"nodes": [{"id": "n1"}], "edges": [{"source": "n1", "target": "n1"}]}\n', encoding="utf-8"
     )
-    (graphify_dir / "GRAPH_REPORT.md").write_text(
+    (graph_dir / "GRAPH_REPORT.md").write_text(
         "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit: `abc123`\n",
         encoding="utf-8",
     )
-    (graphify_dir / "manifest.json").write_text(
+    (graph_dir / "manifest.json").write_text(
         json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}}) + "\n",
         encoding="utf-8",
     )
@@ -916,12 +917,12 @@ def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
-    graphify_dir = Path(ptr["indexPath"]) / "graphify"
-    graphify_dir.mkdir(parents=True)
-    (graphify_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
-    (graphify_dir / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
+    graph_dir = repo / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    (graph_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+    (graph_dir / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
-    (graphify_dir / "manifest.json").write_text(
+    (graph_dir / "manifest.json").write_text(
         json.dumps({"src/auth/session.py": {"mtime": int(target.stat().st_mtime), "mimry_sha256": digest}}),
         encoding="utf-8",
     )
@@ -948,11 +949,11 @@ def test_status_keeps_legacy_mtime_only_manifest_compatible(tmp_path):
     assert run_cli(repo, cache, "index").returncode == 0
     target = repo / "src" / "auth" / "session.py"
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
-    graphify_dir = Path(ptr["indexPath"]) / "graphify"
-    graphify_dir.mkdir(parents=True)
-    (graphify_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
-    (graphify_dir / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
-    (graphify_dir / "manifest.json").write_text(
+    graph_dir = repo / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    (graph_dir / "graph.json").write_text('{"nodes": [], "edges": []}\n', encoding="utf-8")
+    (graph_dir / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
+    (graph_dir / "manifest.json").write_text(
         json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime}}), encoding="utf-8"
     )
 
@@ -961,65 +962,18 @@ def test_status_keeps_legacy_mtime_only_manifest_compatible(tmp_path):
     assert "Status: current" in status.stdout
 
 
-def test_graphify_reads_base_index_artifacts_after_generation_migration(tmp_path):
+def test_status_reports_missing_graph_artifact_without_changing_index_exit_code(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    write_current_graphify_artifacts(repo)
-    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
-    generation_graphify = Path(ptr["indexPath"]) / "graphify"
-    base_graphify = cache / "indexes" / ptr["rootId"] / "graphify"
-    generation_graphify.rename(base_graphify)
-
-    status = run_cli(repo, cache, "status")
-    path = run_cli(repo, cache, "path", "middleware", "session")
-
-    assert status.returncode == 0, status.stderr
-    assert "Status: current" in status.stdout
-    assert f"Artifact output: {base_graphify}" in status.stdout
-    assert path.returncode == 0, path.stderr
-    assert "Path found" in path.stdout
-
-
-def test_status_reads_legacy_repo_local_graphify_artifacts_without_crashing(tmp_path):
-    repo = copy_fixture(tmp_path)
-    cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
-    assert run_cli(repo, cache, "index").returncode == 0
-    target = repo / "src" / "auth" / "session.py"
-    graphify_dir = repo / ".mimry" / "graphify"
-    graphify_dir.mkdir(parents=True)
-    (graphify_dir / "graph.json").write_text(
-        '{"nodes": [{"id": "n1"}], "edges": [{"source": "n1", "target": "n1"}]}\n', encoding="utf-8"
-    )
-    (graphify_dir / "GRAPH_REPORT.md").write_text(
-        "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit: `legacy123`\n",
-        encoding="utf-8",
-    )
-    (graphify_dir / "manifest.json").write_text(
-        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}}) + "\n",
-        encoding="utf-8",
-    )
-
-    status = run_cli(repo, cache, "status")
-
-    assert status.returncode == 0, status.stdout
-    assert "Status: current" in status.stdout
-    assert "Built from commit: legacy123" in status.stdout
-    assert "Compatibility: reading existing legacy repo-local graph artifacts" in status.stdout
-
-
-def test_status_reports_missing_graphify_graph_without_changing_index_exit_code(tmp_path):
-    repo = copy_fixture(tmp_path)
-    cache = tmp_path / "cache"
-    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
-    assert run_cli(repo, cache, "index").returncode == 0
-    ptr = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
-    graphify_dir = Path(ptr["indexPath"]) / "graphify"
-    graphify_dir.mkdir(parents=True)
-    (graphify_dir / "GRAPH_REPORT.md").write_text("# Graph Report - fixture\n", encoding="utf-8")
-    (graphify_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+    graph_dir = repo / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    # Indexing always publishes graph.json now, so the missing-artifact path has
+    # to be created deliberately rather than assumed.
+    (graph_dir / "graph.json").unlink(missing_ok=True)
+    (graph_dir / "GRAPH_REPORT.md").write_text("# Graph Report - fixture\n", encoding="utf-8")
+    (graph_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
     status = run_cli(repo, cache, "status")
 
@@ -1086,7 +1040,7 @@ def test_index_normalizes_stale_pointer_index_path(tmp_path):
     ptr_path = repo / ".mimry" / "pointer.json"
     ptr = json.loads(ptr_path.read_text(encoding="utf-8"))
     stale_index = tmp_path / "old-profile-cache" / ptr["rootId"]
-    stale_index.mkdir(parents=True)
+    stale_index.mkdir(parents=True, exist_ok=True)
     sentinel = stale_index / "do-not-touch.txt"
     sentinel.write_text("old profile data", encoding="utf-8")
     ptr["indexPath"] = str(stale_index)
@@ -1177,7 +1131,7 @@ def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):
     docs.mkdir()
     (docs / "auth-plan.md").write_text("auth login token user session " * 80)
     mig = repo / "backend" / "alembic" / "versions"
-    mig.mkdir(parents=True)
+    mig.mkdir(parents=True, exist_ok=True)
     (mig / "add_auth_token_to_users.py").write_text("auth login token user session " * 60)
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
@@ -1225,10 +1179,10 @@ def test_framework_adapters_index_routes_endpoints_screens_schemas_and_docs(tmp_
         encoding="utf-8",
     )
     next_dir = repo / "src" / "app" / "board" / "[cardId]"
-    next_dir.mkdir(parents=True)
+    next_dir.mkdir(parents=True, exist_ok=True)
     (next_dir / "page.tsx").write_text("export default function CardPage() { return <div /> }\n", encoding="utf-8")
     api_dir = repo / "src" / "app" / "api" / "cards"
-    api_dir.mkdir(parents=True)
+    api_dir.mkdir(parents=True, exist_ok=True)
     (api_dir / "route.ts").write_text("export async function GET() { return Response.json({}) }\n", encoding="utf-8")
     (repo / "api.py").write_text(
         "from fastapi import FastAPI, APIRouter\napp = FastAPI()\nrouter = APIRouter()\n@app.get('/cards/{card_id}')\ndef read_card(card_id: str):\n    return {'id': card_id}\n@router.post('/cards')\ndef create_card():\n    return {}\n",
@@ -1239,7 +1193,7 @@ def test_framework_adapters_index_routes_endpoints_screens_schemas_and_docs(tmp_
         encoding="utf-8",
     )
     expo_route = repo / "app" / "cards"
-    expo_route.mkdir(parents=True)
+    expo_route.mkdir(parents=True, exist_ok=True)
     (expo_route / "[id].tsx").write_text("export default function CardScreen() { return null }\n", encoding="utf-8")
     (repo / "schema.sql").write_text(
         "CREATE TABLE cards (id INTEGER PRIMARY KEY, title TEXT, status TEXT);\n", encoding="utf-8"
