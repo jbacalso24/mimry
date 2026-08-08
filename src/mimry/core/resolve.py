@@ -356,6 +356,83 @@ def _generate_candidates(callee_name: str) -> list[str]:
         return [c for i, c in enumerate(candidates) if c not in candidates[:i]]
 
 
+def resolve_inheritance(
+    inherits: dict[str, list[dict]],
+    symbols_by_file: dict[str, list[dict]],
+    import_edges: list[dict],
+) -> list[dict]:
+    """Resolve `class Bar : BaseThing, IFoo` to the symbols those base types name.
+
+    Returns a sorted list of
+    {"child_file", "child_symbol", "base_file", "base_symbol", "confidence"}.
+
+    Same resolution order and the same refusal to guess as resolve_calls: same file
+    wins, then exactly one imported file, otherwise nothing is emitted. In C# the
+    base type usually lives behind a namespace `using` rather than a path import, so
+    a large share stays unresolved by design rather than being invented.
+    """
+    imports_by_importer: dict[str, set] = {}
+    for edge in import_edges:
+        importer = edge.get("importer")
+        target = edge.get("target")
+        if importer and target:
+            imports_by_importer.setdefault(importer, set()).add(target)
+
+    symbols_by_file_and_name: dict[str, dict] = {}
+    for file_path, symbols in symbols_by_file.items():
+        by_name = symbols_by_file_and_name.setdefault(file_path, {})
+        for symbol in symbols:
+            name = symbol.get("name")
+            if name:
+                by_name.setdefault(name, []).append(symbol)
+
+    # Repo-wide index of type names, used only when the import graph cannot answer.
+    # C# reaches a base type through `using <namespace>`, not a path import, so
+    # path-based resolution finds almost nothing: on a real solution this took
+    # inherits edges from 5 to ~507. Restricted to type-like kinds and to names owned
+    # by exactly one file, so it resolves rather than guesses -- method names collide
+    # constantly, which is why calls deliberately do not get this fallback.
+    type_owners: dict[str, set] = {}
+    for file_path, symbols in symbols_by_file.items():
+        for symbol in symbols:
+            if symbol.get("kind") in ("class", "interface", "enum"):
+                name = symbol.get("name")
+                if name:
+                    type_owners.setdefault(name, set()).add(file_path)
+
+    results = []
+    for file_path, entries in inherits.items():
+        imported_targets = imports_by_importer.get(file_path, set())
+        for entry in entries:
+            child = entry.get("type")
+            base = entry.get("base")
+            if not child or not base:
+                continue
+            target_info = _resolve_candidate(base, file_path, imported_targets, symbols_by_file_and_name)
+            if not target_info:
+                owners = type_owners.get(base, ())
+                if len(owners) == 1:
+                    owner = next(iter(owners))
+                    target_info = {"file": owner, "symbol": base, "confidence": "INFERRED"}
+            if not target_info:
+                continue
+            # A type is not its own base; guards a self-edge when a name repeats.
+            if file_path == target_info["file"] and child == target_info["symbol"]:
+                continue
+            results.append(
+                {
+                    "child_file": file_path,
+                    "child_symbol": child,
+                    "base_file": target_info["file"],
+                    "base_symbol": target_info["symbol"],
+                    "confidence": target_info["confidence"],
+                }
+            )
+
+    results.sort(key=lambda r: (r["child_file"], r["child_symbol"], r["base_file"], r["base_symbol"]))
+    return results
+
+
 def _resolve_candidate(
     candidate: str,
     caller_file: str,

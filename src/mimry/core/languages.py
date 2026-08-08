@@ -19,21 +19,31 @@ NODE_TYPES = {
         "definitions": frozenset(["function_definition", "class_definition"]),
         "imports": frozenset(["import_statement", "import_from_statement"]),
         "calls": frozenset(["call"]),
+        "bases": frozenset(["argument_list"]),
     },
     "javascript": {
-        "definitions": frozenset(["function_declaration", "class_declaration", "variable_declarator"]),
+        "definitions": frozenset(
+            ["function_declaration", "class_declaration", "variable_declarator", "interface_declaration"]
+        ),
         "imports": frozenset(["import_statement"]),
         "calls": frozenset(["call_expression"]),
+        "bases": frozenset(["class_heritage", "extends_type_clause"]),
     },
     "typescript": {
-        "definitions": frozenset(["function_declaration", "class_declaration", "variable_declarator"]),
+        "definitions": frozenset(
+            ["function_declaration", "class_declaration", "variable_declarator", "interface_declaration"]
+        ),
         "imports": frozenset(["import_statement"]),
         "calls": frozenset(["call_expression"]),
+        "bases": frozenset(["class_heritage", "extends_type_clause"]),
     },
     "tsx": {
-        "definitions": frozenset(["function_declaration", "class_declaration", "variable_declarator"]),
+        "definitions": frozenset(
+            ["function_declaration", "class_declaration", "variable_declarator", "interface_declaration"]
+        ),
         "imports": frozenset(["import_statement"]),
         "calls": frozenset(["call_expression"]),
+        "bases": frozenset(["class_heritage", "extends_type_clause"]),
     },
     "go": {
         "definitions": frozenset(["function_declaration", "method_declaration", "type_declaration"]),
@@ -46,9 +56,22 @@ NODE_TYPES = {
         "calls": frozenset(["call_expression"]),
     },
     "csharp": {
-        "definitions": frozenset(["class_declaration", "method_declaration", "namespace_declaration"]),
+        # Interfaces, records and structs are first-class types in .NET; without them
+        # "what implements IFoo" has no node to point at.
+        "definitions": frozenset(
+            [
+                "class_declaration",
+                "method_declaration",
+                "namespace_declaration",
+                "interface_declaration",
+                "record_declaration",
+                "struct_declaration",
+                "enum_declaration",
+            ]
+        ),
         "imports": frozenset(["using_directive"]),
         "calls": frozenset(["invocation_expression"]),
+        "bases": frozenset(["base_list"]),
     },
 }
 
@@ -63,6 +86,12 @@ def language_for(path: str | Path) -> str | None:
 
 def symbol_kind(language: str, node_kind: str) -> str:
     """Map a tree-sitter node kind to MIMRY's symbol kind vocabulary."""
+    if node_kind == "interface_declaration":
+        return "interface"
+    if node_kind == "enum_declaration":
+        return "enum"
+    if node_kind == "record_declaration":
+        return "class"
     if "class" in node_kind or "struct" in node_kind:
         return "class"
     if node_kind == "impl_item":
@@ -217,6 +246,29 @@ def _expression_name(node: Any, source: bytes) -> str | None:
     return None
 
 
+def _base_type_names(container: Any, source: bytes) -> list[str]:
+    """Every base type named in a heritage clause, in source order.
+
+    Deliberately not a _walk: descending the whole subtree would also collect the
+    type arguments, so `IHandler<Command>` would yield `Command` as a second base.
+    Recurse only through the clause wrappers (TS splits extends/implements into two).
+    """
+    names: list[str] = []
+
+    def visit(node: Any) -> None:
+        for child in _children(node):
+            kind = child.kind()
+            if kind in ("extends_clause", "implements_clause", "extends_type_clause"):
+                visit(child)
+                continue
+            name = _expression_name(child, source)
+            if name and name not in names:
+                names.append(name)
+
+    visit(container)
+    return names
+
+
 def _callee_name(node: Any, source: bytes) -> str | None:
     """The called function's name, not the expression that produced it.
 
@@ -248,6 +300,7 @@ def extract(path: str | Path, source: str) -> dict:
             "definitions": [],
             "imports": [],
             "calls": [],
+            "inherits": [],
             "status": "parse_error:unsupported_language",
         }
 
@@ -256,6 +309,7 @@ def extract(path: str | Path, source: str) -> dict:
             "definitions": [],
             "imports": [],
             "calls": [],
+            "inherits": [],
             "status": "parse_error:unsupported_language",
         }
 
@@ -263,7 +317,9 @@ def extract(path: str | Path, source: str) -> dict:
     definitions: list[dict] = []
     imports: list[dict] = []
     calls: list[dict] = []
+    inherits: list[dict] = []
     seen_defs: set[tuple[str, int | None]] = set()
+    base_kinds = node_types.get("bases", frozenset())
 
     try:
         from tree_sitter_language_pack import get_parser
@@ -279,6 +335,7 @@ def extract(path: str | Path, source: str) -> dict:
             "definitions": [],
             "imports": [],
             "calls": [],
+            "inherits": [],
             "status": f"parse_error:{exc.__class__.__name__}",
         }
 
@@ -304,6 +361,12 @@ def extract(path: str | Path, source: str) -> dict:
                             "exported": exported,
                         }
                     )
+                    # Heritage hangs directly off the type declaration. Functions have
+                    # no such child, so this never fires for them.
+                    for child in _children(node):
+                        if child.kind() in base_kinds:
+                            for base in _base_type_names(child, source):
+                                inherits.append({"type": name, "base": base, "line": line})
 
         # Imports
         if kind in node_types["imports"]:
@@ -367,6 +430,7 @@ def extract(path: str | Path, source: str) -> dict:
             "definitions": definitions,
             "imports": imports,
             "calls": calls,
+            "inherits": inherits,
             "status": "parse_error:tree_sitter_has_error",
         }
 
@@ -374,6 +438,7 @@ def extract(path: str | Path, source: str) -> dict:
         "definitions": definitions,
         "imports": imports,
         "calls": calls,
+        "inherits": inherits,
         "status": "ok",
     }
 

@@ -84,6 +84,7 @@ def adapt(path, root):
     imports = []
     exports = []
     calls = []
+    inherits = []
     references = {"doc_links": [], "table_refs": []}
     if is_config_manifest(path):
         metadata = extract_config_metadata(path, root)
@@ -121,6 +122,13 @@ def adapt(path, root):
                             "confidence": 1.0,
                         }
                     )
+                    if isinstance(node, ast.ClassDef):
+                        for base in node.bases:
+                            base_name = getattr(base, "id", None) or getattr(base, "attr", None)
+                            if base_name:
+                                inherits.append(
+                                    {"type": node.name, "base": base_name, "line": getattr(node, "lineno", None)}
+                                )
                 elif isinstance(node, ast.Call):
                     callee_name = None
                     if isinstance(node.func, ast.Name):
@@ -141,6 +149,7 @@ def adapt(path, root):
         source = path.read_text(encoding="utf-8", errors="ignore")
         result = extract_language(path, source)
         calls = result.get("calls", [])
+        inherits = result.get("inherits", [])
         f = file_record(path, root, "typescript-ast", status, hint)
     elif is_document(path):
         text, status = extract_document_text(path)
@@ -187,6 +196,7 @@ def adapt(path, root):
                         )
                     imports = [i["module"] for i in result.get("imports", [])]
                     calls = result.get("calls", [])
+                    inherits = result.get("inherits", [])
                 else:
                     f = file_record(path, root, f"tree-sitter-{language}", result.get("status", "parse_error"), hint)
             except (OSError, UnicodeError):
@@ -206,6 +216,9 @@ def adapt(path, root):
                 references["table_refs"] = table_refs
         except (OSError, UnicodeError):
             pass
+
+    if inherits:
+        references["inherits"] = inherits
 
     f = enrich_framework_facts(path, root, f, symbols, edges)
     if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references)):
