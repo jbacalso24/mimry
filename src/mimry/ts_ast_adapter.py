@@ -20,8 +20,9 @@ def _language_for(path: Path) -> str:
     return "javascript"
 
 
-def _text(source: str, node: Any) -> str:
-    return source[node.start_byte() : node.end_byte()]
+def _text(source: bytes, node: Any) -> str:
+    # UTF-8 bytes, not str: tree-sitter offsets are byte offsets. See core/languages.py::_text.
+    return source[node.start_byte() : node.end_byte()].decode("utf-8", "replace")
 
 
 def _line(node: Any) -> int | None:
@@ -96,6 +97,9 @@ def parse_ts_like(
         root_node = tree.root_node()
     except Exception as exc:
         return symbols, edges, imports, exports, f"parse_error:{exc.__class__.__name__}"
+
+    # The regex fallback above needed str; everything below indexes by byte offset.
+    source = source.encode("utf-8")
 
     def add_symbol(name: str | None, kind: str, node: Any, exported: bool = False, confidence: float = 0.95) -> None:
         if not name:
