@@ -19,6 +19,9 @@ LOCK_METADATA_OFFSET = 1
 
 GENERATION_SCHEMA_VERSION = "2"
 GENERATION_MANIFEST = "generation.json"
+# Paths the indexer refused (secret-bearing or unreadable). Freshness reads this so a
+# refused file is not mistaken for one the user edited. Paths only -- never content.
+UNINDEXABLE_FILE = "unindexable.json"
 GENERATION_ARTIFACTS = (
     "mimry.sqlite",
     "files.jsonl",

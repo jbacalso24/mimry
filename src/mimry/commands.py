@@ -215,7 +215,7 @@ def cmd_status(a):
     graph = graph_health(root, index_state=state)
     semantic = semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files))
     print(
-        f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nPolicy-excluded stale records: {fresh['policy_excluded_count']}\nIndex path: {idx}"
+        f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nPolicy-excluded stale records: {fresh['policy_excluded_count']}\nFiles MIMRY refused to index: {fresh.get('unindexable_count', 0)}\nIndex path: {idx}"
     )
     print(
         "MIMRY graph artifact health"

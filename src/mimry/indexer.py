@@ -18,6 +18,7 @@ from .security import contains_sensitive_data
 from .semantic import build_semantic_index
 from .state import (
     GENERATION_MANIFEST,
+    UNINDEXABLE_FILE,
     backup_path,
     atomic_write_json,
     atomic_write_text,
@@ -80,16 +81,31 @@ def _collect(root: Path):
     calls = {}
     references = {}
     symbols_by_file = {}
+    # Paths deliberately kept out of the index: secret-bearing or unreadable. They are
+    # recorded so freshness can tell "MIMRY refused this" from "the user changed this".
+    # Without it a single secret-bearing file reports as changed on every run, the index
+    # never reaches `current`, and that pins graph health to stale -- which disables
+    # `mimry path` entirely. Content never leaves this list; only the path is kept.
+    unindexable: list[str] = []
+
+    def _note_unindexable(path: Path) -> None:
+        try:
+            unindexable.append(path.relative_to(root).as_posix())
+        except ValueError:
+            pass
+
     for path in scan(root):
         try:
             file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references = adapt(
                 path, root
             )
         except (OSError, UnicodeError, ValueError):
+            _note_unindexable(path)
             continue
         if contains_sensitive_data(
             (file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references)
         ):
+            _note_unindexable(path)
             continue
         files.append(file_rec)
         symbols += file_symbols
@@ -105,7 +121,7 @@ def _collect(root: Path):
         # Accumulate references only if there's at least one non-empty list
         if file_references.get("doc_links") or file_references.get("table_refs"):
             references[file_rec["rel_path"]] = file_references
-    return files, symbols, edges, imports, exports, calls, symbols_by_file, references
+    return files, symbols, edges, imports, exports, calls, symbols_by_file, references, sorted(set(unindexable))
 
 
 def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references):
@@ -309,7 +325,7 @@ def write_index(root, ptr):
             raise RuntimeError("MIMRY root pointer changed while waiting for the operation lock; retry indexing")
         ptr = active
         _cleanup_generations(root, base, ptr)
-        files, symbols, edges, imports, exports, calls, symbols_by_file, references = _collect(root)
+        files, symbols, edges, imports, exports, calls, symbols_by_file, references, unindexable = _collect(root)
         graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references)
         generation_id = uuid.uuid4().hex
         indexed_at = now()
@@ -378,6 +394,7 @@ def write_index(root, ptr):
             write_jsonl(staging / "exports.jsonl", [{"file": key, "exports": value} for key, value in exports.items()])
             atomic_write_json(staging / "dependencies.json", imports)
             atomic_write_json(staging / "graph.json", graph)
+            atomic_write_json(staging / UNINDEXABLE_FILE, unindexable)
             atomic_write_json(
                 staging / "file-hashes.json",
                 {
