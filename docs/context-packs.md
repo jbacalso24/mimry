@@ -8,11 +8,11 @@ Required sections:
 
 - `# MIMRY Context Pack`
 - query
-- status summary: root, index freshness, Graphify freshness, and refresh action
+- status summary: root, index freshness, graph freshness, and refresh action
 - relevant files with scores, reasons, adapter evidence, and roles
 - relevant symbols/entities when indexed
-- Graphify relationships/communities/report signals when current
-- explicit degradation when Graphify data is missing/stale; MIMRY must not invent links
+- graph relationships/communities/report signals when current
+- explicit degradation when graph data is missing/stale; MIMRY must not invent links
 - suggested reading order with rationale
 - likely edit surfaces and likely non-edit supporting files
 - risk notes for generated/cache paths, secrets/privacy-sensitive paths, broad dirty work, tests/docs/config support files

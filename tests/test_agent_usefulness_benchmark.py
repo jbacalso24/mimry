@@ -54,6 +54,6 @@ def test_failed_command_redacts_canary_before_raising(monkeypatch, tmp_path):
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", f"failed {PRIVACY_CANARY}"),
     )
     with pytest.raises(RuntimeError) as error:
-        _run(tmp_path, {}, "init", "--skip-graphify")
+        _run(tmp_path, {}, "init", "--skip-graph")
     assert PRIVACY_CANARY not in str(error.value)
     assert "privacy canary detected" in str(error.value)

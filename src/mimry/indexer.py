@@ -12,7 +12,6 @@ from .core.build import GraphEngine
 from .core.cluster import assign_communities
 from .core.resolve import resolve_imports, resolve_calls
 from .core.report import render_report, build_manifest
-from .graphify_core import GraphifyCore
 from .paths import idx_path, now, pointer_file, graph_output_dir
 from .scanner import adapt, scan
 from .security import contains_sensitive_data

@@ -81,7 +81,7 @@ async def _protocol_smoke(repo: Path, cache: Path, server_command: list[str]) ->
         if missing:
             raise RuntimeError(f"MCP protocol is missing required tools: {', '.join(missing)}")
 
-        init = (await client.call_tool("mimry_init", {"root": str(repo), "skip_graphify": True})).data
+        init = (await client.call_tool("mimry_init", {"root": str(repo), "skip_graph": True})).data
         if init.get("returncode") != 0:
             raise RuntimeError(f"mimry_init failed over MCP: {init}")
 

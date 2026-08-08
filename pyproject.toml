@@ -11,7 +11,6 @@ requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
     "fastmcp>=3.4.2",
-    "graphifyy @ git+https://github.com/safishamsi/graphify.git@44c0a5e33c7011813dcebf1a8850c1c6005bf500",
     "tree-sitter>=0.25.2",
     # 1.13.x changes the TSX grammar shape and breaks exported function/component
     # extraction. Keep the version proved by the locked and unlocked artifact tests.
@@ -33,14 +32,12 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mimry"]
 
 # Keep source releases reviewable. Generated state, local work products, and
-# the optional Graphify submodule are intentionally omitted.
+# generated state are intentionally omitted.
 [tool.hatch.build.targets.sdist]
 include = [
     "/src/mimry",

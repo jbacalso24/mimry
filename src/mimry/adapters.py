@@ -75,7 +75,7 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         parser="manifest-specific safe metadata parsers",
         emits=("commands", "package_manager", "frameworks", "entrypoints", "env_names", "agent_rules"),
         agent_use="Gives coding agents exact commands, package managers, frameworks, env variable names, and repo rules before edits without exposing secret values.",
-        notes="Operating-context adapter layered alongside Graphify; does not replace code graph extraction.",
+        notes="Operating-context adapter layered alongside the graph; does not replace code graph extraction.",
     ),
     AdapterInfo(
         name="nextjs-app-router",
