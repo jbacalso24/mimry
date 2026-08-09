@@ -399,11 +399,20 @@ def opened_file_has_sensitive_content(path: Path, handle: BinaryIO) -> bool:
     return False if _is_env_example(path) else sensitive
 
 
-def has_sensitive_content(path: Path) -> bool:
+def has_sensitive_content(path: Path, data: bytes | None = None) -> bool:
+    """Check if file has sensitive content.
+
+    Pass `data` (bytes) to use already-captured content instead of reopening.
+    If data is None, will read from path (for non-indexing use).
+    """
     if _is_env_example(path):
         return False
     if path.suffix.lower() not in TEXT_EXTS and path.name not in {"config", "credentials"}:
         return False
+    if data is not None:
+        import io
+
+        return stream_contains_sensitive_content(io.BytesIO(data))
     return _stream_contains_sensitive_content(path)
 
 

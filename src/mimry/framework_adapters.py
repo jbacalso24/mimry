@@ -32,16 +32,22 @@ def enrich_framework_facts(
     file_record: dict[str, Any],
     symbols: list[dict[str, Any]],
     edges: list[dict[str, Any]],
+    source_data: bytes | None = None,
 ) -> dict[str, Any]:
     """Attach deterministic framework facts to an indexed file record.
 
     The structured facts live in metadata_text/content_hint so existing FTS, ranking,
     context packs, and MCP outputs can use them without a new storage migration.
+
+    Pass `source_data` (bytes) to avoid reopening the file during indexing.
+    If source_data is None, will read from path (for non-indexing use).
     """
     rel = path.relative_to(root).as_posix()
     ext = path.suffix.lower()
     facts: list[str] = []
     adapters: list[str] = []
+    # Decode source_data once if provided
+    source_text = source_data.decode("utf-8", errors="ignore") if source_data else None
 
     if ext in _TS_EXTS:
         next_facts = nextjs_app_router_facts(rel)
@@ -54,35 +60,35 @@ def enrich_framework_facts(
             facts.extend(expo_facts)
 
     if ext == ".py":
-        fastapi_facts = fastapi_endpoint_facts(path, root, file_record, symbols, edges)
+        fastapi_facts = fastapi_endpoint_facts(path, root, file_record, symbols, edges, source=source_text)
         if fastapi_facts:
             adapters.append("fastapi")
             facts.extend(fastapi_facts)
-        sql_facts = sql_schema_facts_from_text(_read_text(path), path, root, file_record, symbols, edges)
+        sql_facts = sql_schema_facts_from_text(source_text or _read_text(path), path, root, file_record, symbols, edges)
         if sql_facts:
             adapters.append("sql-schema")
             facts.extend(sql_facts)
 
     if path.name in {"app.json", "app.config.json"} or path.name.startswith("app.config."):
-        expo_facts = expo_config_facts(path, root)
+        expo_facts = expo_config_facts(path, root, text=source_text)
         if expo_facts:
             adapters.append("react-native-expo")
             facts.extend(expo_facts)
             if is_config_manifest(path):
-                facts.insert(0, extract_config_metadata(path, root))
+                facts.insert(0, extract_config_metadata(path, root, data=source_data))
 
     if ext == ".sql":
-        sql_facts = sql_schema_facts_from_text(_read_text(path), path, root, file_record, symbols, edges)
+        sql_facts = sql_schema_facts_from_text(source_text or _read_text(path), path, root, file_record, symbols, edges)
         adapters.append("sql-schema")
         facts.extend(sql_facts or ["sql schema file"])
 
     if ext in {".md", ".mdx"}:
-        doc_facts = markdown_doc_facts(path, root)
+        doc_facts = markdown_doc_facts(path, root, text=source_text)
         if doc_facts:
             adapters.append("markdown-docs")
             facts.extend(doc_facts)
             if is_config_manifest(path):
-                facts.insert(0, extract_config_metadata(path, root))
+                facts.insert(0, extract_config_metadata(path, root, data=source_data))
 
     if not facts:
         return file_record
@@ -143,8 +149,10 @@ def fastapi_endpoint_facts(
     file_record: dict[str, Any],
     symbols: list[dict[str, Any]],
     edges: list[dict[str, Any]],
+    source: str | None = None,
 ) -> list[str]:
-    source = _read_text(path)
+    if source is None:
+        source = _read_text(path)
     if "FastAPI" not in source and "APIRouter" not in source and "@app." not in source and "@router." not in source:
         return []
     try:
@@ -210,8 +218,9 @@ def _ast_call_name(node: ast.AST) -> str:
     return ""
 
 
-def expo_config_facts(path: Path, root: Path) -> list[str]:
-    text = _read_text(path)
+def expo_config_facts(path: Path, root: Path, text: str | None = None) -> list[str]:
+    if text is None:
+        text = _read_text(path)
     rel = path.relative_to(root).as_posix()
     facts = [f"expo config file {rel}", "react native mobile surface"]
     if path.name.endswith(".json"):
@@ -294,8 +303,9 @@ def _sql_columns(body: str) -> list[str]:
     return columns[:40]
 
 
-def markdown_doc_facts(path: Path, root: Path) -> list[str]:
-    text = _read_text(path)
+def markdown_doc_facts(path: Path, root: Path, text: str | None = None) -> list[str]:
+    if text is None:
+        text = _read_text(path)
     rel = path.relative_to(root).as_posix()
     facts = [f"markdown doc file {rel}"]
     frontmatter = _frontmatter_facts(text)
@@ -322,13 +332,16 @@ def markdown_doc_facts(path: Path, root: Path) -> list[str]:
     return facts
 
 
-def markdown_link_targets(path: Path, root: Path) -> list[str]:
+def markdown_link_targets(path: Path, root: Path, source: str | None = None) -> list[str]:
     """Return raw link targets found in a markdown file: md links and wiki links.
 
     Filters out external URLs (http://, https://, etc.) and same-page anchors.
     Returns sorted, de-duplicated list, capped at 50.
+
+    Pass `source` (decoded text) to avoid reopening the file during indexing.
+    If source is None, will read from path (for non-indexing use).
     """
-    text = _read_text(path)
+    text = source if source is not None else _read_text(path)
     targets = set()
 
     # Find markdown links [text](target) - any target, not just .md/.mdx
