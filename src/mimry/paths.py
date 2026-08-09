@@ -1,3 +1,16 @@
+"""Path and identity utilities for MIMRY.
+
+CRITICAL: NFC normalization is the single canonical form for all paths and
+filenames used in identity-bearing metadata (file_id, rel_path, filename,
+extension, metadata_text, semantic chunks, and canonical digest).
+
+This ensures that checkouts where the filesystem stores filenames in NFC
+vs NFD (e.g. café vs café) produce identical records, hashes, and search
+indices. The raw native path is preserved only in the "path" field.
+
+All identity-bearing path fields MUST derive from canonical_rel_path() or
+Path(canonical_rel_path()).name / .suffix.
+"""
 from __future__ import annotations
 
 import hashlib
