@@ -19,7 +19,8 @@ from .core.resolve import (
 )
 from .core.report import render_report, build_manifest
 from .paths import idx_path, now, pointer_file, graph_output_dir
-from .scanner import adapt, scan
+from .constants import SCHEMA_VERSION
+from .scanner import adapt, scan, FileChangedError
 from .security import contains_sensitive_data
 from .semantic import build_semantic_index
 from .state import (
@@ -105,7 +106,7 @@ def _collect(root: Path):
             file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references = adapt(
                 path, root
             )
-        except (OSError, UnicodeError, ValueError):
+        except (FileChangedError, OSError, UnicodeError, ValueError):
             _note_unindexable(path)
             continue
         if contains_sensitive_data(
@@ -127,6 +128,33 @@ def _collect(root: Path):
         # Accumulate references only if there's at least one non-empty list
         if file_references.get("doc_links") or file_references.get("table_refs") or file_references.get("inherits"):
             references[file_rec["rel_path"]] = file_references
+
+    # Sort all collections for determinism
+    files = sorted(files, key=lambda f: f["rel_path"])
+    symbols = sorted(
+        symbols, key=lambda s: (s["file_id"], s["name"], s["kind"], s.get("line_start") or 0, s["symbol_id"])
+    )
+    edges = sorted(
+        edges,
+        key=lambda e: (
+            e["source_type"],
+            e["source_id"],
+            e["target_type"],
+            e["target_id"],
+            e["edge_type"],
+            str(e["confidence"]),
+            e["edge_id"],
+        ),
+    )
+    imports = dict(sorted(imports.items()))
+    exports = dict(sorted(exports.items()))
+    calls_items = [
+        (k, sorted(v, key=lambda c: (c.get("name", ""), c.get("line") or 0))) for k, v in sorted(calls.items())
+    ]
+    calls = dict(calls_items)
+    symbols_by_file = dict(sorted(symbols_by_file.items()))
+    references = dict(sorted(references.items()))
+
     return files, symbols, edges, imports, exports, calls, symbols_by_file, references, sorted(set(unindexable))
 
 
@@ -329,6 +357,14 @@ def write_index(root, ptr):
         if not active or active.get("rootId") != ptr.get("rootId"):
             raise RuntimeError("MIMRY root pointer changed while waiting for the operation lock; retry indexing")
         ptr = active
+
+        # Validate schema version: if pointer has a recorded schema version and it doesn't match
+        # the current SCHEMA_VERSION, we must rebuild to recompute file IDs correctly.
+        existing_schema = ptr.get("schemaVersion")
+        if existing_schema and existing_schema != SCHEMA_VERSION:
+            # Schema version mismatch: invalidate the existing generation and rebuild
+            pass  # Will rebuild with the new schema version
+
         _cleanup_generations(root, base, ptr)
         files, symbols, edges, imports, exports, calls, symbols_by_file, references, unindexable = _collect(root)
         graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references)
@@ -426,6 +462,7 @@ def write_index(root, ptr):
                 "indexPath": str(final),
                 "generationId": generation_id,
                 "lastIndexedAt": indexed_at,
+                "schemaVersion": SCHEMA_VERSION,
             }
             save_pointer(root, published)
             register_root(published)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"
 HEAVY_IGNORES = {
     # Tester-owned acceptance suites are intentionally outside ordinary agent
     # indexing. This is cooperative workflow isolation, not a secrecy boundary:
