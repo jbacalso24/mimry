@@ -279,7 +279,7 @@ def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path:
 
 def test_mcp_reports_outdated_schema_as_upgrade_not_corruption(tmp_path: Path, monkeypatch):
     """Outdated schema should report index_schema_outdated, not state_corruption."""
-    from mimry.state import IndexSchemaMigrationError, GENERATION_MANIFEST, validate_generation
+    from mimry.state import GENERATION_MANIFEST
 
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
@@ -463,6 +463,7 @@ def test_mcp_digest_tool_structured_errors(tmp_path: Path, monkeypatch):
     actual_ptr = load_pointer(repo)
     generation_id = actual_ptr["generationId"]
     from mimry.state import GENERATION_MANIFEST
+
     generation_path = Path(actual_ptr["indexPath"]) / GENERATION_MANIFEST
     gen_data = {
         "schemaVersion": "2",
