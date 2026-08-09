@@ -43,9 +43,34 @@ STOPWORDS = {
 }
 TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+EXCLUSION_RE = re.compile(
+    r"\b(?:without(?:\s+(?:touching|changing|editing|modifying))?|exclude(?:d|ing)?)"
+    r"\s*:?\s*(?P<scope>\"[^\"]+\"|'[^']+'|[^,;.!?]+)",
+    flags=re.IGNORECASE,
+)
+EXCLUSION_CONTROL_TERMS = {
+    "without",
+    "touching",
+    "changing",
+    "editing",
+    "modifying",
+    "exclude",
+    "excluded",
+    "excluding",
+    "except",
+    "not",
+    "don",
+}
+
+POSITIVE_CLAUSE_BOUNDARY_RE = re.compile(
+    r"\s+(?:but|while|when|then|so|to|from)\b|"
+    r"\s+and\s+(?=(?:edit|fix|implement|change|wire|build|debug|update|touch|modify)\w*\b)",
+    flags=re.IGNORECASE,
+)
+NEGATED_EXCLUDE_PREFIX_RE = re.compile(r"(?:\bdo\s+not|\bdon't)\s*$", flags=re.IGNORECASE)
 
 
-def query_terms(q: str) -> list[str]:
+def _normalized_terms(q: str) -> list[str]:
     """Return normalized query tokens for paths, symbols, FTS, and intent.
 
     Handles snake/kebab/path punctuation plus camelCase/PascalCase identifiers,
@@ -62,6 +87,47 @@ def query_terms(q: str) -> list[str]:
             seen.add(term)
             terms.append(term)
     return terms
+
+
+def excluded_query_terms(q: str) -> list[str]:
+    """Extract ordinary explicit negative scopes without attempting general NLP."""
+    excluded: list[str] = []
+    seen: set[str] = set()
+    for match in EXCLUSION_RE.finditer(q):
+        if match.group(0).lower().lstrip().startswith("exclude") and NEGATED_EXCLUDE_PREFIX_RE.search(
+            q[: match.start()]
+        ):
+            continue
+        raw_scope = match.group("scope").strip()
+        if raw_scope[:1] in {'"', "'"}:
+            scope = raw_scope.strip(" \t\"'")
+        else:
+            # Keep the negative scope bounded when the sentence continues with
+            # another positive instruction ("... backend while editing frontend").
+            scope = POSITIVE_CLAUSE_BOUNDARY_RE.split(raw_scope, maxsplit=1)[0].strip()
+        for term in _normalized_terms(scope):
+            if term in EXCLUSION_CONTROL_TERMS or term in seen:
+                continue
+            seen.add(term)
+            excluded.append(term)
+    return excluded
+
+
+def query_terms(q: str) -> list[str]:
+    """Return positive normalized query tokens for lexical, graph, and intent ranking."""
+    excluded = set(excluded_query_terms(q))
+    return [term for term in _normalized_terms(q) if term not in excluded and term not in EXCLUSION_CONTROL_TERMS]
+
+
+def apply_exclusion_adjustment(score: int, rel_path: str, excluded_terms: list[str]) -> tuple[int, list[str]]:
+    """Strongly downrank paths explicitly placed outside the requested scope."""
+    if score <= 0 or not excluded_terms:
+        return score, []
+    path_terms = set(_normalized_terms(rel_path))
+    matched = [term for term in excluded_terms if term in path_terms]
+    if not matched:
+        return score, []
+    return max(1, int(score * 0.1)), [f"excluded scope downrank: {' '.join(matched)}"]
 
 
 def path_parts(rel_path: str) -> tuple[str, ...]:

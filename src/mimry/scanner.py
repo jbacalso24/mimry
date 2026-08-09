@@ -20,6 +20,7 @@ from .security import (
     redact_sensitive_text,
     safe_root,
     should_ignore,
+    should_ignore_path,
 )
 from .ts_ast_adapter import parse_ts_like
 
@@ -133,11 +134,12 @@ def text_hint(path, limit=12000, data=None):
     return " ".join([line.strip() for line in text.splitlines() if line.strip()][:40])[:2000]
 
 
-def scan(root):
+def scan(root, *, inspect_sensitive_content: bool = True):
     safe_root(root)
     paths = []
     for path in root.rglob("*"):
-        if not path.is_file() or path.is_symlink() or should_ignore(path, root):
+        ignored = should_ignore(path, root) if inspect_sensitive_content else should_ignore_path(path, root)
+        if not path.is_file() or path.is_symlink() or ignored:
             continue
         try:
             if path.stat().st_size > 1_000_000:

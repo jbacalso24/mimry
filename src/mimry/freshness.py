@@ -4,21 +4,21 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from .scanner import scan
-from .security import filter_index_records, path_has_ignored_part, should_ignore
+from . import security
+from .paths import canonical_rel_path
+from .scanner import read_snapshot, scan
+from .security import filter_index_records, path_has_ignored_part, should_ignore_path
 from .state import UNINDEXABLE_FILE, StateCorruptionError, load_json_state, validate_generation
 from .storage import load_jsonl
 
 
-def file_sha256(path: Path) -> str | None:
-    h = hashlib.sha256()
+def file_sha256(path: Path, *, root: Path | None = None) -> str | None:
+    """Hash one proven regular, non-symlink snapshot without following races."""
     try:
-        with path.open("rb") as fh:
-            for chunk in iter(lambda: fh.read(65536), b""):
-                h.update(chunk)
+        data, _ = read_snapshot(path, root=root)
     except OSError:
         return None
-    return h.hexdigest()
+    return hashlib.sha256(data).hexdigest()
 
 
 def _stored_hashes(idx: Path) -> dict[str, dict[str, Any]]:
@@ -52,37 +52,56 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     changed: list[str] = []
     missing: list[str] = []
     policy_excluded: list[str] = []
+    live_excluded: list[str] = []
     indexed_paths = {f.get("rel_path") for f in files if f.get("rel_path")}
+    # Resolve canonical identities back to their native filesystem spellings.
+    # scan() also preserves the existing fail-closed NFC collision check.
+    native_paths = {canonical_rel_path(path, root): path for path in scan(root, inspect_sensitive_content=False)}
 
     for f in files:
         rel_path = f["rel_path"]
-        p = root / rel_path
+        p = native_paths.get(rel_path, root / rel_path)
         # Path policy must be applied before filesystem existence. Otherwise a
         # deleted record from a newly excluded tree leaks through `missing`.
         if path_has_ignored_part(rel_path):
             policy_excluded.append(rel_path)
+            continue
+        # A replaced symlink must never inherit trust from the indexed regular
+        # file, even when its target has identical bytes.
+        if p.is_symlink():
+            changed.append(rel_path)
+            live_excluded.append(rel_path)
             continue
         if not p.exists():
             missing.append(rel_path)
             continue
         # Policy changes must invalidate old generations. Otherwise a file that
         # became ignored after it was indexed remains searchable indefinitely.
-        if should_ignore(p, root):
+        if should_ignore_path(p, root):
             policy_excluded.append(rel_path)
             continue
-        expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
-        if expected_hash:
-            actual_hash = file_sha256(p)
-            if actual_hash is None or actual_hash != expected_hash:
-                changed.append(rel_path)
-            continue
         try:
-            st = p.stat()
+            data, st = read_snapshot(p, root=root)
         except OSError:
+            # Unreadable, non-regular, outside-root, and raced files are stale and
+            # hidden from cached context until a safe refresh proves them again.
             changed.append(rel_path)
+            live_excluded.append(rel_path)
             continue
-        if st.st_size != f.get("size") or st.st_mtime != f.get("mtime"):
-            changed.append(rel_path)
+        expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
+        content_changed = (
+            hashlib.sha256(data).hexdigest() != expected_hash
+            if expected_hash
+            else st.st_size != f.get("size") or st.st_mtime != f.get("mtime")
+        )
+        if not content_changed:
+            continue
+        changed.append(rel_path)
+        # Do not rescan unchanged indexed bytes, but fail closed when changed
+        # bytes newly contain a secret: keep the stale record out of every
+        # context/status consumer immediately.
+        if security.has_sensitive_content(p, data=data):
+            live_excluded.append(rel_path)
 
     # Files MIMRY refused to index (secret-bearing or unreadable) are absent from
     # files.jsonl by design. Counting them as changed would keep the index stale
@@ -90,9 +109,19 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     unindexable = _unindexable_paths(idx)
 
     if files_path.exists():
-        for p in scan(root):
-            rel = p.relative_to(root).as_posix()
-            if rel not in indexed_paths and rel not in unindexable:
+        # Indexed files were secret-scanned from the exact bytes whose hashes we
+        # compare above. Re-running content heuristics over every cached file made
+        # a current preflight parse the repository repeatedly. Discover paths
+        # cheaply, then secret-scan only genuinely new candidates before calling
+        # them a source change.
+        for rel, p in native_paths.items():
+            if rel in indexed_paths or rel in unindexable:
+                continue
+            try:
+                data, _ = read_snapshot(p, root=root)
+            except OSError:
+                continue
+            if not security.has_sensitive_content(p, data=data):
                 changed.append(rel)
 
     changed = sorted(set(changed))
@@ -103,6 +132,16 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(graph, dict):
         raise StateCorruptionError(graph_path, "expected a JSON object")
     visible_files, visible_symbols = filter_index_records(files, symbols)
+    policy_and_live_excluded = set(policy_excluded) | set(live_excluded)
+    # A deleted indexed file is just as unsafe to serve from stale cache as a
+    # live policy exclusion: its source no longer exists to validate the cached
+    # files/symbols/graph/feedback/semantic evidence. Keep status stale and pass
+    # its path through the same bounded reader deny set without forcing refresh.
+    excluded_paths = policy_and_live_excluded | set(missing)
+    visible_files = [record for record in visible_files if record.get("rel_path") not in excluded_paths]
+    visible_file_ids = {record.get("file_id") for record in visible_files}
+    visible_symbols = [record for record in visible_symbols if record.get("file_id") in visible_file_ids]
+    visible_paths = {record.get("rel_path") for record in visible_files}
     allowed_node_ids = {
         *(f"file:{record['file_id']}" for record in visible_files),
         *(f"symbol:{record['symbol_id']}" for record in visible_symbols),
@@ -116,9 +155,9 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
             if edge.get("source") in allowed_node_ids and edge.get("target") in allowed_node_ids
         ],
         "clusters": {
-            folder: [path for path in paths if not should_ignore(root / path, root)]
+            folder: [path for path in paths if path in visible_paths]
             for folder, paths in graph.get("clusters", {}).items()
-            if not should_ignore(root / folder, root)
+            if not path_has_ignored_part(folder)
         },
     }
     return {
@@ -127,7 +166,10 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         "symbols": visible_symbols,
         "changed": changed,
         "missing": missing,
-        "policy_excluded_count": len(policy_excluded),
+        "policy_excluded_count": len(policy_and_live_excluded),
+        # Bounded path-only deny set for stale readers of cached JSONL, graph,
+        # feedback, and semantic artifacts. Never include file content here.
+        "excluded_paths": sorted(excluded_paths),
         # Count only: these are paths policy intentionally keeps out of agent context.
         "unindexable_count": len(unindexable),
         "state": state,

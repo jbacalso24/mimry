@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,6 +87,34 @@ def canonical_rel_path(path, root) -> str:
     """
     rel = Path(path).relative_to(root).as_posix()
     return unicodedata.normalize("NFC", rel)
+
+
+def canonical_cached_rel_path(value: object) -> str | None:
+    """Canonicalize an untrusted cached repository path, or reject it.
+
+    Cached/legacy graph and retrieval artifacts may carry native separators or
+    redundant ``.`` components. They must compare in the same NFC/POSIX identity
+    domain as indexed paths. Absolute and traversal-bearing values are rejected
+    rather than resolved because they are unsafe at a repository deny boundary.
+    """
+    if not isinstance(value, str) or not value or "\x00" in value:
+        return None
+    portable = value.replace("\\", "/")
+    # Any leading Windows drive designator is outside the repository-relative
+    # identity domain. This includes drive-relative and malformed forms such as
+    # ``C:app/x``, ``C:.\\app\\x``, and ``C::app/x`` as well as ``C:/app/x``.
+    if portable.startswith("/") or re.match(r"^[A-Za-z]:", portable):
+        return None
+    parts: list[str] = []
+    for part in portable.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            return None
+        parts.append(part)
+    if not parts:
+        return None
+    return unicodedata.normalize("NFC", "/".join(parts))
 
 
 def repo_root():
