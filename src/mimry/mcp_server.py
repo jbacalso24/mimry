@@ -31,11 +31,31 @@ from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
 from mimry.security import filter_index_records, redact_sensitive_text, safe_root, sanitize_data, sanitize_query
-from mimry.state import StateCorruptionError, StateLockTimeoutError
+from mimry.state import StateCorruptionError, StateLockTimeoutError, IndexSchemaMigrationError
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import RootIdentityError, active_index_pointer, load_jsonl, load_pointer
 
 mcp = FastMCP("MIMRY")
+
+
+def _schema_upgrade_error_payload(exc: IndexSchemaMigrationError, *, root: Path | None = None) -> dict[str, Any]:
+    """Handle IndexSchemaMigrationError: schema upgrade needed, not corruption."""
+    message = str(exc)
+    return {
+        "returncode": 2,
+        "initialized": False,
+        **({"root": str(root)} if root is not None else {}),
+        "state_error": message,
+        "error": {
+            "code": "index_schema_outdated",
+            "message": message,
+            "path": str(exc.path),
+            "detail": exc.detail,
+            "generation_id": exc.generation_id,
+            "schema_version": exc.schema_version,
+        },
+        "recommended": "Run `mimry index` to rebuild the index. Source files are unaffected.",
+    }
 
 
 def _state_error_payload(exc: StateCorruptionError, *, root: Path | None = None) -> dict[str, Any]:
@@ -63,6 +83,10 @@ def _state_guard(func):
     def guarded(*args, **kwargs):
         try:
             return sanitize_data(func(*args, **kwargs))
+        except IndexSchemaMigrationError as exc:
+            # Must catch before StateCorruptionError since it's a subclass
+            root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
+            return sanitize_data(_schema_upgrade_error_payload(exc, root=_root(root) if isinstance(root, str) else None))
         except StateCorruptionError as exc:
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
             return sanitize_data(_state_error_payload(exc, root=_root(root) if isinstance(root, str) else None))
@@ -103,6 +127,12 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         try:
             code = func(args)
+        except IndexSchemaMigrationError as exc:
+            # Must catch before StateCorruptionError since it's a subclass
+            print(f"MIMRY index schema outdated: {exc}", file=sys.stderr)
+            payload = _schema_upgrade_error_payload(exc, root=_root(getattr(args, "root", None)))
+            payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
+            return sanitize_data(payload)
         except StateCorruptionError as exc:
             print(f"MIMRY state error: {exc}", file=sys.stderr)
             payload = _state_error_payload(exc, root=_root(getattr(args, "root", None)))

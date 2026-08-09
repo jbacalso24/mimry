@@ -24,7 +24,7 @@ from mimry.mcp_server import (
     mimry_why,
 )
 from mimry.paths import idx_path
-from mimry.storage import save_pointer
+from mimry.storage import load_pointer, save_pointer
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
@@ -275,3 +275,96 @@ def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path:
     assert feedback["returncode"] == 0
     assert feedback["feedback"]["outcome"] == "passed"
     assert "src/auth/session.py" in feedback["feedback"]["changed_paths"]
+
+
+def test_mcp_reports_outdated_schema_as_upgrade_not_corruption(tmp_path: Path, monkeypatch):
+    """Outdated schema should report index_schema_outdated, not state_corruption."""
+    from mimry.state import IndexSchemaMigrationError, GENERATION_MANIFEST, validate_generation
+
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+
+    # Get the actual pointer which now has a generationId
+    actual_ptr = load_pointer(repo)
+    generation_id = actual_ptr["generationId"]
+
+    # Simulate old schema by modifying generation.json
+    generation_path = Path(actual_ptr["indexPath"]) / GENERATION_MANIFEST
+    gen_data = {
+        "schemaVersion": "2",  # Old incompatible schema
+        "generationId": generation_id,  # Must match the pointer
+        "createdAt": "test",
+        "artifacts": {},  # Empty artifacts dict (won't be checked since we error on schema first)
+    }
+    generation_path.write_text(__import__("json").dumps(gen_data), encoding="utf-8")
+
+    payload = mimry_find("auth", str(repo))
+
+    assert payload["returncode"] == 2
+    assert payload["error"]["code"] == "index_schema_outdated"
+    assert "outdated" in payload["error"]["message"].lower() or "rebuild" in payload["error"]["message"].lower()
+    assert "corrupt" not in payload["error"]["message"].lower()
+    assert "mimry index" in payload["error"]["message"].lower()
+
+
+def test_mcp_still_reports_real_corruption_as_corruption(tmp_path: Path, monkeypatch):
+    """Real corruption should still report state_corruption code."""
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+
+    # Corrupt a file to simulate real corruption (must corrupt a file that will be checksum-validated)
+    actual_ptr = load_pointer(repo)
+    files_path = Path(actual_ptr["indexPath"]) / "files.jsonl"
+    files_path.write_bytes(b"corrupted bytes that are not JSON")
+
+    payload = mimry_find("auth", str(repo))
+
+    assert payload["returncode"] == 2
+    assert payload["error"]["code"] == "state_corruption"
+    assert "corrupt" in payload["error"]["message"].lower()
+
+
+def test_mcp_tool_list_is_backward_compatible(tmp_path: Path):
+    """Every existing tool must still be registered."""
+    from mimry.mcp_server import mimry_symbol, mimry_semantic
+
+    assert callable(mimry_status)
+    assert callable(mimry_find)
+    assert callable(mimry_semantic)
+    assert callable(mimry_symbol)
+    assert callable(mimry_init)
+    assert callable(mimry_refresh)
+    assert callable(mimry_preflight)
+    assert callable(mimry_explain)
+    assert callable(mimry_path)
+    assert callable(mimry_why)
+    assert callable(mimry_feedback)
+    assert callable(mimry_route)
+    assert callable(mimry_brief)
+    assert callable(mimry_context)
