@@ -466,12 +466,11 @@ def resolve_inheritance(
             target_info = _resolve_candidate(base, file_path, imported_targets, symbols_by_file_and_name)
             if not target_info:
                 owners = type_owners.get(base, ())
+                # Exactly one owner is unambiguous. Two or more is a genuine
+                # conflict: picking the lexicographically first would invent an
+                # edge the source never justified, so decline instead.
                 if len(owners) == 1:
-                    owner = sorted(owners)[0]
-                    target_info = {"file": owner, "symbol": base, "confidence": "INFERRED"}
-                elif len(owners) > 1:
-                    # Multiple files own this type; pick the one with earliest sorted path
-                    owner = sorted(owners)[0]
+                    owner = next(iter(sorted(owners)))
                     target_info = {"file": owner, "symbol": base, "confidence": "INFERRED"}
             if not target_info:
                 continue
@@ -539,19 +538,12 @@ def _resolve_candidate(
             "confidence": "INFERRED",
         }
     elif len(found_files) > 1:
-        # Multiple files have this symbol; pick the one with earliest sorted path
-        found_files.sort()
-        imported_file = found_files[0]
-        imported_symbols = symbols_by_file_and_name[imported_file]
-        symbol = _pick_best_symbol(imported_symbols[candidate])
-        return {
-            "file": imported_file,
-            "symbol": symbol.get("name"),
-            "symbol_id": symbol.get("symbol_id"),
-            "confidence": "INFERRED",
-        }
+        # Ambiguous: more than one file exports this name and nothing in the
+        # source picks between them. Declining is the contract; selecting the
+        # first sorted path would hide the conflict behind a stable-looking answer.
+        return None
 
-    # If found in multiple imported files or none -> None
+    # Found in no imported file.
     return None
 
 
