@@ -1,6 +1,32 @@
 # Releasing MIMRY
 
-MIMRY targets CPython 3.11–3.13 on Windows, Linux, and macOS. This checkout does not contain a committed CI workflow, so do not describe any OS/Python matrix as required or passing. A release needs recorded results from the clean-checkout checks below on each claimed platform. All dependencies resolve from a standard index; MIMRY no longer pins any dependency to a Git commit.
+MIMRY targets CPython 3.11–3.13 on Windows, Linux, and macOS. That matrix is committed
+in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every push and pull
+request: 3 operating systems x 3 Python versions, plus two aggregate jobs. All dependencies
+resolve from a standard index; MIMRY no longer pins any dependency to a Git commit.
+
+A green CI run is **required** for a release, and it is **not a substitute for review**. CI
+proves the checks that are automated; it says nothing about whether the change is the right
+one, and the determinism golden values are only as good as the last time a human looked at
+what they encode.
+
+### Required checks
+
+| Job | Runs on | What it proves |
+| --- | --- | --- |
+| `release-floor` | 3 OS x Python 3.11/3.12/3.13 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix, unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
+| `determinism-aggregate` | ubuntu-latest, needs `release-floor` | Every one of the 9 matrix cells emitted evidence, and all of them agree with each other and with the committed golden values on the canonical digest, the retrieval rankings, and the context pack |
+| `benchmark-gate` | ubuntu-latest, locked env | The frozen agent-usefulness floors still pass (`state == "PASS"`), on the current fixture hash |
+
+### Canonical versus operational evidence
+
+Release evidence must distinguish the two. Canonical state is reproducible and is what the
+golden values pin: relative file identities, symbols and line pointers, imports/exports,
+graph nodes/edges/communities, semantic chunks, retrieval ranking order, and context-pack
+evidence ordering. The operational envelope legitimately differs per run and must never
+appear in a comparison: timestamps, generation UUIDs, absolute cache and root paths, mtimes
+used only for cache invalidation, feedback event IDs, and raw SQLite byte layout. See
+[`docs/determinism.md`](docs/determinism.md).
 
 ## Distribution channel
 
@@ -45,12 +71,18 @@ uv pip install --python /tmp/mimry-wheel-venv/bin/python dist/*.whl
 
 The packaging tests verify the wheel's `Requires-Dist` entries and the sdist allow-list.
 
-CI additionally extracts the sdist and, with an empty uv cache and no lockfile use, installs its dependencies and runs the TSX `LoginScreen` extraction test. This guards the functional behavior of unlocked artifact resolution, not only CLI startup.
+CI additionally extracts the sdist and, with an empty uv cache and no lockfile use, installs
+its dependencies and runs the full parser and determinism surface against that unlocked
+resolution: Python, TS/TSX, Java, PHP, Go, SQL and Markdown extraction, symbols and line
+pointers, imports, calls, references, and the canonical digest. The sdist ships no `uv.lock`,
+so this lane is the first place a newer parser release would appear. Import success is not
+evidence of parser compatibility, which is why `tree-sitter` carries an upper bound
+(`>=0.25.2,<0.26`) alongside the exact `tree-sitter-language-pack` pin.
 
 ## Release policy
 
 1. Update `version` in `pyproject.toml` and the matching changelog section.
-2. Re-run the unlocked artifact TSX compatibility test before changing `tree-sitter-language-pack`; keep the tested version constrained in project metadata and regenerate `uv.lock`.
+2. Re-run the unlocked-artifact parser and determinism lane before changing `tree-sitter` or `tree-sitter-language-pack`; keep both constrained in project metadata and regenerate `uv.lock`. Widening the `tree-sitter` upper bound requires that lane to pass and the golden determinism values to be re-confirmed, not regenerated to match.
 3. Run the complete release checks above on a clean checkout.
 4. Build twice with the same `SOURCE_DATE_EPOCH`, compare SHA-256 checksums, and review wheel metadata and sdist contents before tagging.
 5. Create the internal Git release/upload only after the release record contains the exact commands, platform/Python versions, and results for every claimed platform. Publishing to an index or adding automated publishing requires an explicit release decision.

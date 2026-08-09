@@ -35,11 +35,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 DIGEST_VERSION = "1"
+
+# A masked operational value must not swallow the token that follows it. The
+# root `/w/checkout` appears inside `/w/checkout-plan.md`, which is a different
+# path and canonical content; requiring the next character to be outside an
+# identifier keeps that intact while still matching `/w/checkout/src` and
+# `` `/w/checkout` ``.
+_VALUE_BOUNDARY = r"(?![A-Za-z0-9_.\-])"
 
 # Dropped from every file record before hashing: an absolute checkout path and a
 # filesystem timestamp are provenance, not meaning.
@@ -141,3 +149,56 @@ def canonical_digest(idx: Path, root_id: str | None = None) -> str:
     """SHA-256 over the canonical semantic state of one index generation."""
     blob = json.dumps(canonical_state(idx, root_id), sort_keys=True, ensure_ascii=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def normalize_context(
+    text: str,
+    *,
+    root: str | Path | None = None,
+    index_path: str | Path | None = None,
+    generation_id: str | None = None,
+    indexed_at: str | None = None,
+) -> str:
+    """Blank the operational envelope out of a rendered context pack.
+
+    Only the four values named by the caller are masked, and only where they
+    appear verbatim. Everything else on the line survives, because everything
+    else is canonical: file and symbol counts, evidence ordering, reason
+    labels, risk notes, and content hashes.
+
+    This deliberately does not pattern-match "anything that looks like a
+    timestamp" or "any 32-character hex token". MIMRY's own risk notes mention
+    generated paths, and content hashes are 32-hex-adjacent; masking by shape
+    rather than by value hid real semantic drift.
+
+    Substitutions run longest-value-first so the index path -- which embeds the
+    generation id -- is replaced whole instead of leaving a stub behind.
+    """
+    replacements: list[tuple[str, str]] = []
+    for value, token in (
+        (index_path, "<indexpath>"),
+        (root, "<root>"),
+        (generation_id, "<generation>"),
+        (indexed_at, "<timestamp>"),
+    ):
+        if not value:
+            continue
+        candidates = {str(value)}
+        if isinstance(value, Path) or token in ("<root>", "<indexpath>"):
+            # A path can reach the pack in native or POSIX form depending on
+            # which layer rendered it; mask both spellings of the same value.
+            candidates.add(Path(str(value)).as_posix())
+        for candidate in candidates:
+            if candidate:
+                replacements.append((candidate, token))
+
+    replacements.sort(key=lambda pair: len(pair[0]), reverse=True)
+
+    lines = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        for candidate, token in replacements:
+            line = re.sub(re.escape(candidate) + _VALUE_BOUNDARY, token, line)
+        lines.append(line)
+    return "\n".join(lines)
