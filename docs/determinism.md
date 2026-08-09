@@ -155,18 +155,50 @@ Permutations cover normal and reversed file-creation order, varied
 `PYTHONHASHSEED` (including `random`), repeated clean-cache runs, and locale and
 timezone variation.
 
-Every permutation must produce the same canonical digest and the same ordered
-retrieval and context output. CI runs the matrix on Linux, macOS, and Windows,
-uploads each job's digest, and a dedicated aggregation job downloads all of them
-and asserts they are identical to each other and to
-`tests/fixtures/determinism_golden.json`. Printing a digest per job would prove
-nothing on its own; the comparison is the gate.
+Every permutation must produce the same value for all three compared fields:
 
-The committed golden digest for the frozen fixture is
-`23db8b1d1535bd3e94675bd304330083c4b07746bc23f498b9f48da8787e019c`.
+| Field | What it covers |
+| --- | --- |
+| `digest` | Structural canonical state: file identities, symbols, imports/exports, graph nodes/edges/communities, clusters, semantic chunks, unindexable list |
+| `rankingsDigest` | Ordered `mimry find` results and their reason strings, for the frozen queries |
+| `contextDigest` | The normalized context pack — evidence ordering, reading order, risk notes, verification commands |
+
+Structural agreement alone is not enough. The digest can match while the ranking
+an agent actually reads, or the pack it is handed, has moved — so rankings and
+context are compared as first-class fields, not folded into one opaque hash.
+
+CI runs the matrix on Linux, macOS, and Windows across Python 3.11–3.13. Each of
+the 9 cells uploads its full evidence, and `determinism-aggregate` requires an
+artifact from **every** expected cell before comparing: a platform that produced
+nothing is a failure, not silent agreement. Divergence prints the first
+differing field (`rankings[2].reason`, `contextLines[41]`, …) rather than two
+hashes.
+
+### Context normalization
+
+Comparing context packs means blanking the operational envelope out of rendered
+Markdown. `mimry.digest.normalize_context` masks exactly four values, **by
+value, not by shape**: the absolute root, the index path, the generation ID, and
+the indexed-at timestamp.
+
+Masking by shape is what this replaced, and it was hiding drift. Dropping every
+line containing "Generated" also dropped MIMRY's own risk note about generated
+and cache paths; rewriting any 32-character hex token would also rewrite a
+canonical content hash. A masked value is also boundary-aware, so a root of
+`/w/checkout` does not eat `/w/checkout-plan.md`.
+
+`tests/test_context_normalization.py` pins the negative cases: ordinary
+semantic text containing "Generated", an unrelated 32-hex token, an unrelated
+timestamp, and a root-like substring must all survive untouched.
 
 To re-baseline after an intentional semantic change:
 
 ```bash
 uv run python scripts/determinism_matrix.py --update-golden
 ```
+
+That rewrites all three golden values plus the raw rankings and context lines
+used for field-level diffs. Re-baselining is a claim that the semantic change
+was intended — read the diff it produces before committing it. Regenerating the
+golden to make a red gate go green is how a real regression gets laundered into
+the contract.
