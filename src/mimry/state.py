@@ -57,6 +57,32 @@ class StateCorruptionError(RuntimeError):
         )
 
 
+class IndexSchemaMigrationError(StateCorruptionError):
+    """Raised when an index predates the current canonical-identity schema.
+
+    Subclasses StateCorruptionError so every existing handler -- the CLI, the
+    MCP server, freshness -- keeps treating it as unusable state and keeps its
+    payload shape. Only the wording differs: nothing here is damaged, the index
+    is just older than the identity contract this build computes, and telling
+    someone upgrading MIMRY that their state is "corrupt" sends them hunting for
+    a fault that does not exist.
+    """
+
+    def __init__(self, path: Path, generation_id: str, schema_version: str):
+        self.path = Path(path)
+        self.backup = None
+        self.generation_id = generation_id
+        self.schema_version = schema_version
+        self.detail = f"index generation {generation_id} uses identity schema {schema_version}"
+        RuntimeError.__init__(
+            self,
+            f"MIMRY index generation {generation_id} was built under identity schema {schema_version}, which "
+            f"derived canonical IDs from the absolute checkout path. This build uses schema "
+            f"{GENERATION_SCHEMA_VERSION}, so the two cannot be mixed. Run `mimry index` to rebuild it. "
+            "Nothing is damaged and no source file is affected.",
+        )
+
+
 class StateLockTimeoutError(RuntimeError):
     """Raised when a MIMRY state lock cannot be acquired in bounded time."""
 
@@ -252,11 +278,7 @@ def validate_generation(pointer: dict[str, Any]) -> None:
         raise StateCorruptionError(manifest_path, "generation manifest has no artifact checksums")
     schema_version = str(manifest.get("schemaVersion") or "1")
     if schema_version in INCOMPATIBLE_IDENTITY_SCHEMAS:
-        raise StateCorruptionError(
-            manifest_path,
-            f"index generation {generation_id} was built under identity schema {schema_version}, which derived "
-            f"canonical IDs from the absolute checkout path. Run `mimry index` to rebuild it",
-        )
+        raise IndexSchemaMigrationError(manifest_path, generation_id, schema_version)
     required_artifacts = (
         GENERATION_ARTIFACTS
         if schema_version not in {"1", "2"}
