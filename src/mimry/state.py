@@ -17,7 +17,14 @@ from typing import Any, Callable, Iterator
 # are most useful.
 LOCK_METADATA_OFFSET = 1
 
-GENERATION_SCHEMA_VERSION = "3"
+# Bumped to 4 when canonical IDs stopped deriving from the absolute checkout
+# path. Generations at 1-3 carry path-derived file, symbol, edge, and chunk
+# identities that no longer match anything this build computes.
+GENERATION_SCHEMA_VERSION = "4"
+# Generation layouts whose identities predate the canonical-ID contract. They
+# are refused rather than partially reused: mixing old and new identities would
+# leave a graph whose edges point at nothing.
+INCOMPATIBLE_IDENTITY_SCHEMAS = frozenset({"1", "2", "3"})
 GENERATION_MANIFEST = "generation.json"
 # Paths the indexer refused (secret-bearing or unreadable). Freshness reads this so a
 # refused file is not mistaken for one the user edited. Paths only -- never content.
@@ -244,6 +251,12 @@ def validate_generation(pointer: dict[str, Any]) -> None:
     if not isinstance(artifacts, dict):
         raise StateCorruptionError(manifest_path, "generation manifest has no artifact checksums")
     schema_version = str(manifest.get("schemaVersion") or "1")
+    if schema_version in INCOMPATIBLE_IDENTITY_SCHEMAS:
+        raise StateCorruptionError(
+            manifest_path,
+            f"index generation {generation_id} was built under identity schema {schema_version}, which derived "
+            f"canonical IDs from the absolute checkout path. Run `mimry index` to rebuild it",
+        )
     required_artifacts = (
         GENERATION_ARTIFACTS
         if schema_version not in {"1", "2"}

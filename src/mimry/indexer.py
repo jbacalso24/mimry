@@ -358,12 +358,13 @@ def write_index(root, ptr):
             raise RuntimeError("MIMRY root pointer changed while waiting for the operation lock; retry indexing")
         ptr = active
 
-        # Validate schema version: if pointer has a recorded schema version and it doesn't match
-        # the current SCHEMA_VERSION, we must rebuild to recompute file IDs correctly.
-        existing_schema = ptr.get("schemaVersion")
-        if existing_schema and existing_schema != SCHEMA_VERSION:
-            # Schema version mismatch: invalidate the existing generation and rebuild
-            pass  # Will rebuild with the new schema version
+        # A pointer written under an older identity schema names a generation whose
+        # file, symbol, and chunk IDs were derived from the absolute checkout path.
+        # Drop it rather than seeding the new generation's SQLite from it, which
+        # would carry stale rows keyed by IDs nothing else in this build produces.
+        if ptr.get("schemaVersion") not in (None, SCHEMA_VERSION):
+            ptr = {**ptr, "indexPath": str(base), "lastIndexedAt": None}
+            ptr.pop("generationId", None)
 
         _cleanup_generations(root, base, ptr)
         files, symbols, edges, imports, exports, calls, symbols_by_file, references, unindexable = _collect(root)

@@ -3,16 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
-import unicodedata
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from mimry.indexer import write_index, _collect
-from mimry.paths import stable_id
-from mimry.scanner import scan, file_record, adapt
+from mimry.scanner import scan
 from mimry.storage import register_root, save_pointer
 
 
@@ -122,7 +119,7 @@ def test_full_index_identical_across_creation_order(tmp_path: Path):
 
     # Files must have identical structure except for absolute path
     assert len(files_a_sorted) == len(files_b_sorted)
-    for fa, fb in zip(files_a_sorted, files_b_sorted):
+    for fa, fb in zip(files_a_sorted, files_b_sorted, strict=True):
         assert fa["rel_path"] == fb["rel_path"]
         assert fa["file_id"] == fb["file_id"]
         assert fa["hash"] == fb["hash"]
@@ -178,7 +175,7 @@ def test_canonical_ids_identical_across_absolute_roots(tmp_path: Path):
     files_a_sorted = sorted(files_a, key=lambda f: f["rel_path"])
     files_b_sorted = sorted(files_b, key=lambda f: f["rel_path"])
 
-    for fa, fb in zip(files_a_sorted, files_b_sorted):
+    for fa, fb in zip(files_a_sorted, files_b_sorted, strict=True):
         assert fa["rel_path"] == fb["rel_path"]
         assert fa["file_id"] == fb["file_id"], f"file_id mismatch for {fa['rel_path']}"
 
@@ -186,7 +183,7 @@ def test_canonical_ids_identical_across_absolute_roots(tmp_path: Path):
     symbols_a_sorted = sorted(symbols_a, key=lambda s: (s["file_id"], s["name"]))
     symbols_b_sorted = sorted(symbols_b, key=lambda s: (s["file_id"], s["name"]))
 
-    for sa, sb in zip(symbols_a_sorted, symbols_b_sorted):
+    for sa, sb in zip(symbols_a_sorted, symbols_b_sorted, strict=True):
         assert sa["symbol_id"] == sb["symbol_id"]
 
 
@@ -210,26 +207,57 @@ def test_file_record_hash_matches_snapshot_bytes(tmp_path: Path):
 
 
 def test_file_changed_during_read_is_not_indexed(tmp_path: Path):
-    """File that changes between metadata snapshot and content read must raise FileChangedError."""
+    """A file rewritten mid-parse must be refused, not recorded half-and-half.
+
+    The record's hash, size, and mtime come from the snapshot taken before
+    parsing. If an adapter below saw different bytes, persisting the record
+    would claim evidence that never coexisted in any single version of the file.
+    """
+    from mimry import scanner
+
     repo = tmp_path / "repo"
     repo.mkdir()
-    test_file = repo / "volatile.py"
-    test_file.write_text("# original\n")
+    volatile = repo / "volatile.py"
+    volatile.write_text("def original():\n    pass\n")
 
-    # Monkeypatch sha() to mutate the file before reading it
+    original_enrich = scanner.enrich_framework_facts
+
+    def rewrite_then_enrich(path, root, f, symbols, edges):
+        # Stand in for a real editor writing the file while MIMRY parses it.
+        if path.name == "volatile.py":
+            path.write_text(
+                "def mutated():" + chr(10) + "    pass" + chr(10) + "# a much longer second version" + chr(10)
+            )
+        return original_enrich(path, root, f, symbols, edges)
+
+    with patch.object(scanner, "enrich_framework_facts", rewrite_then_enrich):
+        with pytest.raises(scanner.FileChangedError):
+            scanner.adapt(volatile, repo)
+
+    # And through the collector it degrades to unindexable rather than raising
+    # or writing a mixed record.
+    with patch.object(scanner, "enrich_framework_facts", rewrite_then_enrich):
+        files, _, _, _, _, _, _, _, unindexable = _collect(repo)
+
+    assert [f["rel_path"] for f in files] == []
+    assert "volatile.py" in unindexable
+
+
+def test_adapt_hash_and_parser_input_come_from_the_same_bytes(tmp_path: Path):
+    """The recorded hash must describe exactly the source the symbols came from."""
     from mimry import scanner
-    original_sha = scanner.sha
 
-    def mutating_sha(path):
-        if "volatile" in str(path):
-            path.write_text("# mutated\n")
-        return original_sha(path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    target = repo / "mod.py"
+    body = chr(10).join(["def alpha():", "    pass", "", "", "def beta():", "    pass", ""])
+    target.write_text(body)
 
-    with patch.object(scanner, "sha", mutating_sha):
-        # This should either raise FileChangedError or mark as unindexable
-        files, _, _, _, _, _, _, _, _ = _collect(repo)
-        # The file should be marked as unindexable due to mismatch
-        # (or it should have been skipped)
+    record, symbols, *_ = scanner.adapt(target, repo)
+
+    assert record["hash"] == hashlib.sha256(target.read_bytes()).hexdigest()
+    assert record["size"] == len(target.read_bytes())
+    assert sorted(s["name"] for s in symbols) == ["alpha", "beta"]
 
 
 def test_oversized_and_unreadable_files_still_skipped_gracefully(tmp_path: Path):

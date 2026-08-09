@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / "tests" / "fixtures" / "determinism_repo"
 GOLDEN = REPO / "tests" / "fixtures" / "determinism_golden.json"
+
+# Operational envelope that legitimately differs between two runs of identical
+# content. Masked before comparison so it cannot fake a divergence.
+_ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T[\d:.]+(?:\+\d{2}:\d{2}|Z)?")
+_HEX32 = re.compile(r"\b[0-9a-f]{32}\b")
 
 sys.path.insert(0, str(REPO / "src"))
 
@@ -92,11 +98,17 @@ def run_worker(root: str, out: str) -> int:
 
     cmd_context(argparse.Namespace(root=str(root_path), query="session refresh flow", semantic=True))
     context = (root_path / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
-    # The pack embeds the absolute root and a generation timestamp; both are
-    # operational. Compare the evidence ordering, which is not.
-    context_lines = [
-        line for line in context.splitlines() if line.strip() and str(root_path) not in line and "Generated" not in line
-    ]
+    # The pack embeds absolute paths, generation UUIDs, and timestamps -- all
+    # operational envelope. Blank those out rather than dropping whole lines,
+    # because the same lines also carry canonical facts (file and symbol counts)
+    # that must be compared.
+    context_lines = []
+    for line in context.splitlines():
+        if not line.strip() or str(root_path) in line or "Generated" in line:
+            continue
+        line = _ISO_TIMESTAMP.sub("<timestamp>", line)
+        line = _HEX32.sub("<generation>", line)
+        context_lines.append(line)
 
     payload = {
         "digest": canonical_digest(idx, ptr["rootId"]),
