@@ -162,6 +162,9 @@ and asserts they are identical to each other and to
 `tests/fixtures/determinism_golden.json`. Printing a digest per job would prove
 nothing on its own; the comparison is the gate.
 
+The committed golden digest for the frozen fixture is
+`23db8b1d1535bd3e94675bd304330083c4b07746bc23f498b9f48da8787e019c`.
+
 To re-baseline after an intentional semantic change:
 
 ```bash
