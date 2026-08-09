@@ -44,26 +44,71 @@ def _setup_pointer(root: Path, cache: Path, root_id: str) -> dict:
     return pointer
 
 
+# Deliberately not in canonical order: nested directories interleaved with root
+# files, so filesystem creation order and canonical order genuinely differ.
+_CREATION_ORDER = [
+    "zeta.py",
+    "src/widget.py",
+    "alpha.py",
+    "src/adapter.py",
+    "docs/guide.md",
+    "src/nested/deep.py",
+    "beta.py",
+]
+_CANONICAL_ORDER = [
+    "alpha.py",
+    "beta.py",
+    "docs/guide.md",
+    "src/adapter.py",
+    "src/nested/deep.py",
+    "src/widget.py",
+    "zeta.py",
+]
+
+
+def _write_in_order(root: Path, names: list[str]) -> None:
+    for name in names:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {name}\n", encoding="utf-8")
+
+
+def test_scan_returns_canonical_order_directly(tmp_path: Path):
+    """The scanner's own output order is the contract.
+
+    This must never sort the result before asserting: doing so is what let the
+    previous version of this test pass while `scan()` returned raw filesystem
+    order. The expectation is a literal list computed independently of the
+    scanner.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_in_order(repo, _CREATION_ORDER)
+
+    observed = [p.relative_to(repo).as_posix() for p in scan(repo)]
+
+    assert observed == _CANONICAL_ORDER, (
+        f"scan() must yield canonical order directly, got {observed}"
+    )
+    assert observed != _CREATION_ORDER, (
+        "creation order and canonical order must differ for this test to mean anything"
+    )
+
+
 def test_scan_order_independent_of_creation_order(tmp_path: Path):
-    """Files scanned must be in deterministic order regardless of creation order."""
-    # Create repo A: files created in reverse alphabetical order
+    """Two repos with identical content but opposite creation order scan alike."""
     repo_a = tmp_path / "repo_a"
     repo_a.mkdir()
-    for name in reversed(["a.py", "b.py", "c.py"]):
-        (repo_a / name).write_text(f"# {name}\n")
+    _write_in_order(repo_a, _CREATION_ORDER)
 
-    # Create repo B: files created in forward alphabetical order
     repo_b = tmp_path / "repo_b"
     repo_b.mkdir()
-    for name in ["a.py", "b.py", "c.py"]:
-        (repo_b / name).write_text(f"# {name}\n")
+    _write_in_order(repo_b, list(reversed(_CREATION_ORDER)))
 
-    # Scan both repos
-    scan_a = sorted([p.relative_to(repo_a).as_posix() for p in scan(repo_a)])
-    scan_b = sorted([p.relative_to(repo_b).as_posix() for p in scan(repo_b)])
+    scan_a = [p.relative_to(repo_a).as_posix() for p in scan(repo_a)]
+    scan_b = [p.relative_to(repo_b).as_posix() for p in scan(repo_b)]
 
-    # Must be identical lists
-    assert scan_a == scan_b == ["a.py", "b.py", "c.py"]
+    assert scan_a == scan_b == _CANONICAL_ORDER
 
 
 def test_full_index_identical_across_creation_order(tmp_path: Path):

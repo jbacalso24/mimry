@@ -198,43 +198,84 @@ class TestSymbolResolutionTies:
         # Different symbol_ids should produce different keys
         assert key1 != key2
 
-    def test_symbol_resolution_tie_is_total(self):
-        """Two symbols same name/line in different files resolve same under shuffle."""
+    # A real tie: four candidates in ONE file, all enclosing the call line, all
+    # sharing line_start so "innermost wins" cannot decide it. Only the
+    # documented total key can. The previous version of this test gave each file
+    # a single symbol, so shuffling was a no-op and it asserted nothing.
+    _TIED_CALLERS = [
+        {"name": "outer_method", "kind": "method", "line_start": 1, "line_end": 20, "symbol_id": "sD"},
+        {"name": "outer_fn", "kind": "function", "line_start": 1, "line_end": 20, "symbol_id": "sC"},
+        {"name": "OuterIface", "kind": "interface", "line_start": 1, "line_end": 20, "symbol_id": "sB"},
+        {"name": "OuterClass", "kind": "class", "line_start": 1, "line_end": 20, "symbol_id": "sA"},
+    ]
+
+    def _resolve_with(self, callers):
         from mimry.core.resolve import resolve_calls
 
-        calls = {
-            "main.py": [{"name": "process", "line": 5}],
-        }
+        return resolve_calls(
+            {"main.py": [{"name": "helper", "line": 5}]},
+            {
+                "main.py": list(callers),
+                "utils.py": [
+                    {"name": "helper", "kind": "function", "line_start": 1, "line_end": 3, "symbol_id": "sH"}
+                ],
+            },
+            [{"importer": "main.py", "target": "utils.py"}],
+        )
 
-        symbols_by_file = {
-            "utils.py": [
-                {"name": "process", "kind": "function", "line_start": 1, "line_end": 10, "symbol_id": "s1"},
-            ],
-            "helpers.py": [
-                {"name": "process", "kind": "function", "line_start": 1, "line_end": 10, "symbol_id": "s2"},
-            ],
-            "main.py": [
-                {"name": "main", "kind": "function", "line_start": 1, "line_end": 20, "symbol_id": "s3"},
-            ],
-        }
+    def test_same_file_symbol_tie_follows_the_documented_total_key(self):
+        """Kind priority decides when line_start ties: class beats interface beats function."""
+        from mimry.core.resolve import symbol_selection_key
 
-        import_edges = [
-            {"importer": "main.py", "target": "utils.py"},
-            {"importer": "main.py", "target": "helpers.py"},
+        expected = min(self._TIED_CALLERS, key=symbol_selection_key)
+        assert expected["name"] == "OuterClass", "the fixture must actually exercise kind priority"
+
+        result = self._resolve_with(self._TIED_CALLERS)
+        assert result, "the call must resolve; an empty result proves nothing about tie-breaking"
+        assert result[0]["caller_symbol"] == expected["name"]
+        assert result[0]["caller_symbol_id"] == expected["symbol_id"]
+
+    def test_same_file_symbol_tie_is_stable_under_reversal_and_shuffle(self):
+        forward = self._resolve_with(self._TIED_CALLERS)
+        assert forward[0]["caller_symbol"] == "OuterClass"
+
+        assert self._resolve_with(list(reversed(self._TIED_CALLERS))) == forward
+        for seed in (0, 1, 7, 42, 1234, 99991):
+            shuffled = list(self._TIED_CALLERS)
+            random.Random(seed).shuffle(shuffled)
+            assert self._resolve_with(shuffled) == forward, f"selection moved under shuffle seed {seed}"
+
+    def test_innermost_enclosing_symbol_still_wins_when_line_start_differs(self):
+        """The tie-break must not override the primary rule."""
+        callers = [
+            {"name": "OuterClass", "kind": "class", "line_start": 1, "line_end": 20, "symbol_id": "sA"},
+            {"name": "inner_fn", "kind": "function", "line_start": 4, "line_end": 8, "symbol_id": "sZ"},
         ]
+        result = self._resolve_with(callers)
+        assert result[0]["caller_symbol"] == "inner_fn"
+        assert self._resolve_with(list(reversed(callers))) == result
 
-        result1 = resolve_calls(calls, symbols_by_file, import_edges)
+    def test_ambiguous_cross_file_target_is_declined(self):
+        """Declining a genuinely ambiguous target stays separate from tie-breaking."""
+        from mimry.core.resolve import resolve_calls
 
-        # Shuffle symbols in each file
-        symbols_by_file_shuffled = {}
-        for file_path, symbols in symbols_by_file.items():
-            symbols_by_file_shuffled[file_path] = list(symbols)
-            random.Random(42).shuffle(symbols_by_file_shuffled[file_path])
-
-        result2 = resolve_calls(calls, symbols_by_file_shuffled, import_edges)
-
-        # Results should match
-        assert result1 == result2
+        result = resolve_calls(
+            {"main.py": [{"name": "process", "line": 5}]},
+            {
+                "main.py": [{"name": "main", "kind": "function", "line_start": 1, "line_end": 20, "symbol_id": "s3"}],
+                "utils.py": [
+                    {"name": "process", "kind": "function", "line_start": 1, "line_end": 10, "symbol_id": "s1"}
+                ],
+                "helpers.py": [
+                    {"name": "process", "kind": "function", "line_start": 1, "line_end": 10, "symbol_id": "s2"}
+                ],
+            },
+            [
+                {"importer": "main.py", "target": "utils.py"},
+                {"importer": "main.py", "target": "helpers.py"},
+            ],
+        )
+        assert result == [], "two equally good targets in different files must be declined, not guessed"
 
 
 class TestEdgeSortKey:
