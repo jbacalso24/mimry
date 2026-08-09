@@ -163,7 +163,19 @@ jobs:
       # ranking or context-pack regression that clears the determinism gate
       # still has to fail here.
       - name: Run the benchmark and require PASS
-        run: uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph
+        run: |
+          uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph --out benchmarks/result.core.json
+
+      # Without --out the runner prints fresh JSON to stdout and leaves the
+      # tracked file untouched, so a stale committed result reads as current.
+      # Publish what this run actually measured.
+      - name: Upload benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: benchmarks/result.core.json
+          if-no-files-found: error
 
       - name: Assert the committed report is PASS on the current fixture
         run: uv run pytest -q tests/test_benchmark_quality_gate.py
