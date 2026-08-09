@@ -753,3 +753,21 @@ def test_search_reason_strings_are_deterministic(tmp_path):
     assert [(r["path"], r["reason"]) for r in forward_rows] == [(r["path"], r["reason"]) for r in reverse_rows]
     # And stable when the very same index is queried twice.
     assert forward_rows == find_rows(forward, query, limit=10)
+
+
+def test_semantic_chunk_ids_do_not_depend_on_the_machine_local_root_id(tmp_path):
+    """chunk_id is canonical semantic identity, so a uuid4 must not reach it.
+
+    root_id is minted by `mimry init` with uuid.uuid4(). Deriving chunk_id from
+    it makes two identical checkouts of the same repository disagree on every
+    semantic identity, which is the same defect as deriving file_id from the
+    absolute checkout path.
+    """
+    from mimry.semantic import _chunk
+
+    created_at = now()
+    left = _chunk("11111111-1111-1111-1111-111111111111", "fid", "src/a.py", "path", "src/a.py session", created_at)
+    right = _chunk("22222222-2222-2222-2222-222222222222", "fid", "src/a.py", "path", "src/a.py session", created_at)
+
+    assert left is not None and right is not None
+    assert left["chunk_id"] == right["chunk_id"]
