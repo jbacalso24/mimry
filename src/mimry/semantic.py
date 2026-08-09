@@ -299,7 +299,7 @@ def semantic_rows(
     try:
         ensure_semantic_schema(con)
         rows = con.execute(
-            "select rel_path, chunk_kind, chunk_text_preview, vector_json from semantic_chunks where root_id = ?",
+            "select chunk_id, rel_path, chunk_kind, chunk_text_preview, vector_json from semantic_chunks where root_id = ? order by rel_path, chunk_kind, chunk_id",
             (root_id,),
         ).fetchall()
     finally:
