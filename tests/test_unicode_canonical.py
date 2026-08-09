@@ -3,6 +3,7 @@
 Ensures that NFC and NFD filenames produce identical records
 and that the canonical path is used for all identity-bearing metadata.
 """
+
 from __future__ import annotations
 
 import unicodedata
@@ -11,7 +12,7 @@ import tempfile
 
 import pytest
 
-from mimry.scanner import file_record, adapt
+from mimry.scanner import file_record
 from mimry.paths import canonical_rel_path
 
 

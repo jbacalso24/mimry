@@ -216,9 +216,7 @@ class TestSymbolResolutionTies:
             {"main.py": [{"name": "helper", "line": 5}]},
             {
                 "main.py": list(callers),
-                "utils.py": [
-                    {"name": "helper", "kind": "function", "line_start": 1, "line_end": 3, "symbol_id": "sH"}
-                ],
+                "utils.py": [{"name": "helper", "kind": "function", "line_start": 1, "line_end": 3, "symbol_id": "sH"}],
             },
             [{"importer": "main.py", "target": "utils.py"}],
         )

@@ -87,12 +87,8 @@ def test_scan_returns_canonical_order_directly(tmp_path: Path):
 
     observed = [p.relative_to(repo).as_posix() for p in scan(repo)]
 
-    assert observed == _CANONICAL_ORDER, (
-        f"scan() must yield canonical order directly, got {observed}"
-    )
-    assert observed != _CREATION_ORDER, (
-        "creation order and canonical order must differ for this test to mean anything"
-    )
+    assert observed == _CANONICAL_ORDER, f"scan() must yield canonical order directly, got {observed}"
+    assert observed != _CREATION_ORDER, "creation order and canonical order must differ for this test to mean anything"
 
 
 def test_scan_order_independent_of_creation_order(tmp_path: Path):
