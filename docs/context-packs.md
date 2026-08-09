@@ -8,17 +8,15 @@ Required sections:
 
 - `# MIMRY Context Pack`
 - query
-- status summary: root, index freshness, graph freshness, and refresh action
-- relevant files with scores, reasons, adapter evidence, and roles
+- status: root, index freshness, graph freshness, and refresh action (condensed)
+- relevant files with scores, reasons, adapter evidence, and roles (compact)
 - relevant symbols/entities when indexed
 - graph relationships/communities/report signals when current
 - explicit degradation when graph data is missing/stale; MIMRY must not invent links
-- suggested reading order with rationale
-- likely edit surfaces and likely non-edit supporting files
-- risk notes for generated/cache paths, secrets/privacy-sensitive paths, broad dirty work, tests/docs/config support files
-- suggested verification commands detected from config manifests and repo docs
-- source-of-truth reminder
-- final report checklist for agents, including a reminder to record `mimry feedback` after verification
+- reading order with roles (no duplicate reasons)
+- edit surfaces and support files (path lists only)
+- risks: generated/cache/dirty paths and degradation warnings (condensed)
+- verify with: suggested verification commands detected from config manifests and repo docs
 
 Rules:
 
