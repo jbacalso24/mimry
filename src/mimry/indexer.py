@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import sqlite3
+import time
 import subprocess
 import uuid
 from pathlib import Path
@@ -34,6 +35,29 @@ from .state import (
     _fsync_directory,
 )
 from .storage import active_index_pointer, connect, register_root, save_pointer, write_jsonl
+
+
+def _publish_generation(staging: Path, final: Path, *, attempts: int = 12, delay: float = 0.05) -> None:
+    """Rename a fully written staging directory into its final generation.
+
+    POSIX renames a directory atomically regardless of open handles. Windows
+    does not: os.replace raises WinError 5 (EACCES) while anything still holds
+    a handle inside the tree -- an antivirus or Search indexer scanning the
+    files MIMRY just wrote, or a SQLite handle the OS has not finished
+    releasing. The condition is transient and clears in milliseconds.
+
+    Retry with bounded backoff, then fail loudly. Never fall back to a
+    copy-then-delete: that would publish a partially visible generation, which
+    is the exact failure the staging directory exists to prevent.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(staging, final)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
 
 
 def _fault(point: str) -> None:
@@ -459,7 +483,7 @@ def write_index(root, ptr):
             manifest = generation_manifest(staging, generation_id, indexed_at)
             atomic_write_json(staging / GENERATION_MANIFEST, manifest)
             fsync_tree(staging)
-            os.replace(staging, final)
+            _publish_generation(staging, final)
             _fsync_directory(generations)
             _fault("after-generation")
 
