@@ -1,0 +1,4 @@
+# The determinism fixture is hashed and compared against a committed golden
+# digest on Linux, macOS, and Windows. Git must not rewrite line endings on
+# checkout or every Windows run would report a false divergence.
+* -text
