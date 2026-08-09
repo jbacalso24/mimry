@@ -66,3 +66,38 @@ def test_failed_command_redacts_canary_before_raising(monkeypatch, tmp_path):
         _run(tmp_path, {}, "init", "--skip-graph")
     assert PRIVACY_CANARY not in str(error.value)
     assert "privacy canary detected" in str(error.value)
+
+
+def test_benchmark_sandbox_can_parse_every_supported_language(tmp_path):
+    """The sandbox must not silently degrade the index it measures.
+
+    The env allowlist scrubs the Windows variables tree-sitter-language-pack
+    needs to resolve its grammar cache. When that fails it raises, MIMRY
+    records `parse_error:RuntimeError`, and indexing continues -- so every
+    TypeScript file lost its symbols while the benchmark still produced a
+    plausible-looking score. A whole language degrading to zero symbols must
+    fail this test, not quietly lower the measurement.
+    """
+    import shutil
+
+    from mimry.benchmark import _env, _run
+
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    env = _env(tmp_path)
+    _run(repo, env, "init", "--skip-graph")
+    _run(repo, env, "index")
+
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    index = Path(pointer["indexPath"])
+    files = [json.loads(line) for line in (index / "files.jsonl").read_text(encoding="utf-8").splitlines() if line]
+
+    broken = sorted(f["rel_path"] for f in files if str(f.get("parse_status", "")).startswith("parse_error"))
+    assert broken == [], f"benchmark sandbox failed to parse: {broken}"
+
+    symbols = [json.loads(line) for line in (index / "symbols.jsonl").read_text(encoding="utf-8").splitlines() if line]
+    by_id = {f["file_id"]: f["rel_path"] for f in files}
+    defining = {by_id[s["file_id"]] for s in symbols if s["file_id"] in by_id}
+    # One representative per parsed language in the fixture.
+    for expected in ("web/src/lib/payments.ts", "backend/api/auth.py", "db/schema.sql"):
+        assert expected in defining, f"{expected} produced no symbols in the benchmark sandbox"
