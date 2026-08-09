@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,6 +60,17 @@ def graph_output_dir(root):
 
 def stable_id(*parts):
     return hashlib.sha256("::".join(map(str, parts)).encode()).hexdigest()[:24]
+
+
+def canonical_rel_path(path, root) -> str:
+    """The canonical repository-relative identity of a file.
+
+    POSIX separators, NFC-normalized Unicode, case preserved. This is the single
+    normalization rule for sorting and identity on Linux, macOS, and Windows.
+    Sorting on the resulting str uses codepoint order, which is locale-independent.
+    """
+    rel = Path(path).relative_to(root).as_posix()
+    return unicodedata.normalize("NFC", rel)
 
 
 def repo_root():

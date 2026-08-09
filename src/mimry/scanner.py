@@ -4,11 +4,12 @@ import ast
 import hashlib
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
+from .constants import SCHEMA_VERSION
 from .core.documents import extract_document_text, is_document
 from .core.languages import extract as extract_language
 from .core.languages import language_for
 from .framework_adapters import enrich_framework_facts, markdown_link_targets, sql_table_references
-from .paths import stable_id
+from .paths import stable_id, canonical_rel_path
 from .security import (
     contains_sensitive_data,
     has_sensitive_content,
@@ -18,6 +19,46 @@ from .security import (
     should_ignore,
 )
 from .ts_ast_adapter import parse_ts_like
+
+
+class FileChangedError(OSError):
+    """Raised when a file changes between snapshots during indexing."""
+
+    pass
+
+
+def read_snapshot(path, limit=1_000_000):
+    """Read a file once and prove it did not change underneath us.
+
+    Returns (data, stat_result). Raises FileChangedError if the file's
+    size/mtime/inode changed across the read, after bounded retries.
+    """
+    from pathlib import Path
+
+    path = Path(path)
+    for attempt in range(3):
+        stat_before = path.stat()
+        try:
+            with path.open("rb") as fh:
+                data = fh.read(limit + 1)
+        except OSError as e:
+            raise FileChangedError(f"Cannot read {path}: {e}") from e
+
+        stat_after = path.stat()
+
+        # Check if file changed: size, mtime, or inode (st_ino on POSIX)
+        if (
+            stat_before.st_size == stat_after.st_size
+            and stat_before.st_mtime == stat_after.st_mtime
+            and stat_before.st_ino == stat_after.st_ino
+        ):
+            return data, stat_before
+
+        if attempt < 2:
+            continue
+        raise FileChangedError(f"File {path} changed between stat checks during read")
+
+    raise FileChangedError(f"File {path} changed during read snapshot")
 
 
 def text_hint(path, limit=12000):
@@ -40,6 +81,7 @@ def sha(path):
 
 def scan(root):
     safe_root(root)
+    paths = []
     for path in root.rglob("*"):
         if not path.is_file() or path.is_symlink() or should_ignore(path, root):
             continue
@@ -54,13 +96,16 @@ def scan(root):
                 pass
         except OSError:
             continue
+        paths.append(path)
+    # Sort deterministically by canonical path to ensure filesystem order doesn't leak into results
+    for path in sorted(paths, key=lambda p: canonical_rel_path(p, root)):
         yield path
 
 
 def file_record(path, root, adapter, status, hint):
     st = path.stat()
-    rel = path.relative_to(root).as_posix()
-    fid = stable_id(str(root.resolve()), rel)
+    rel = canonical_rel_path(path, root)
+    fid = stable_id(SCHEMA_VERSION, rel)
     return {
         "file_id": fid,
         "path": str(path.resolve()),
