@@ -6,7 +6,7 @@ from typing import Any
 
 from . import security
 from .paths import canonical_rel_path
-from .scanner import read_snapshot, scan
+from .scanner import SCANNER_FILE_SIZE_LIMIT, read_snapshot, scan
 from .security import filter_index_records, path_has_ignored_part, should_ignore_path
 from .state import UNINDEXABLE_FILE, StateCorruptionError, load_json_state, validate_generation
 from .storage import load_jsonl
@@ -89,14 +89,22 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
             live_excluded.append(rel_path)
             continue
         expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
+        is_oversized = st.st_size > SCANNER_FILE_SIZE_LIMIT
+        size_changed = st.st_size != f.get("size")
         content_changed = (
-            hashlib.sha256(data).hexdigest() != expected_hash
-            if expected_hash
-            else st.st_size != f.get("size") or st.st_mtime != f.get("mtime")
+            is_oversized
+            or size_changed
+            or (hashlib.sha256(data).hexdigest() != expected_hash if expected_hash else st.st_mtime != f.get("mtime"))
         )
         if not content_changed:
             continue
         changed.append(rel_path)
+        if is_oversized:
+            # read_snapshot() is deliberately bounded. Once an indexed file
+            # grows past that boundary, bytes outside the acquired snapshot
+            # cannot be classified safely, so cached readers must fail closed.
+            live_excluded.append(rel_path)
+            continue
         # Do not rescan unchanged indexed bytes, but fail closed when changed
         # bytes newly contain a secret: keep the stale record out of every
         # context/status consumer immediately.
