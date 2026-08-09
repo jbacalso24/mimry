@@ -430,7 +430,9 @@ def _detected_supporting_file_lines(fresh: dict, rows: list[dict], limit: int = 
 
 def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
     selected_paths = [row["path"] for row in rows]
-    dirty = fresh["changed"] or fresh["missing"]
+    excluded_paths = set(fresh.get("excluded_paths", ()))
+    visible_changed = [path for path in fresh["changed"] if path not in excluded_paths]
+    dirty = visible_changed or fresh["missing"]
     lines = [
         "- Generated/cache paths (`.mimry/`, `.git/`, caches, build outputs) are support artifacts; do not edit them as source fixes.",
         "- Secrets/privacy-sensitive files are skipped by scanner policy; do not paste secret values into context packs or final reports.",
@@ -446,9 +448,13 @@ def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
             + ", ".join(f"`{markdown_inline(p)}`" for p in risky_selected[:8])
         )
     if dirty:
-        changed = ", ".join(f"`{markdown_inline(p)}`" for p in (fresh["changed"] + fresh["missing"])[:8])
+        details = [*(f"`{markdown_inline(path)}`" for path in visible_changed[:8])]
+        if fresh["missing"]:
+            details.append(f"{len(fresh['missing'])} deleted indexed file(s) withheld from stale context")
         lines.append(
-            f"- Index detected changed/deleted files ({changed}); avoid broad dirty work until refreshed/verified."
+            "- Index detected changed/deleted files ("
+            + ", ".join(details)
+            + "); avoid broad dirty work until refreshed/verified."
         )
     if fresh.get("policy_excluded_count"):
         lines.append(
@@ -479,12 +485,29 @@ def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]
     return lines
 
 
-def _write_context_pack(root: Path, ptr: dict, query: str, *, limit: int = 8, semantic: bool = False) -> list[dict]:
+def _write_context_pack(
+    root: Path,
+    ptr: dict,
+    query: str,
+    *,
+    limit: int = 8,
+    semantic: bool = False,
+    fresh: dict | None = None,
+    graph: dict | None = None,
+) -> list[dict]:
     query = sanitize_query(query)
+    if fresh is None or graph is None:
+        fresh, graph = _index_and_graph_health(root, ptr)
     rows = find_rows(
-        Path(ptr["indexPath"]), query, limit, True, root=root, root_id=ptr.get("rootId"), semantic=semantic
+        Path(ptr["indexPath"]),
+        query,
+        limit,
+        True,
+        root=root,
+        root_id=ptr.get("rootId"),
+        semantic=semantic,
+        excluded_paths=fresh["excluded_paths"],
     )
-    fresh, graph = _index_and_graph_health(root, ptr)
     semantic_state = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"), expected_files=len(fresh["files"]))
     file_records = _selected_file_records(fresh, rows)
     verification_commands = _verification_commands(fresh)
@@ -640,7 +663,7 @@ def cmd_preflight(a):
             f"MIMRY indexing complete. Files: {stats['files']}; Symbols: {stats['symbols']}; "
             f"Graph edges: {stats['edges']}; Index: {stats['index']}"
         )
-    elif fresh["state"] in {"missing", "stale"}:
+    elif fresh["state"] == "missing":
         print(f"Preflight index: running (index {fresh['state']})")
         stats = write_index(root, ptr)
         index_ran = True
@@ -662,8 +685,9 @@ def cmd_preflight(a):
     with active_index_pointer(root) as active:
         assert active is not None
         ptr = active
-        fresh, graph = _index_and_graph_health(root, ptr)
-        rows = _write_context_pack(root, ptr, a.task)
+        if index_ran:
+            fresh, graph = _index_and_graph_health(root, ptr)
+        rows = _write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
 
     print("MIMRY preflight complete")
     print(f"Root: {root}")

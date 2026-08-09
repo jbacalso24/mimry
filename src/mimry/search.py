@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from .feedback import apply_feedback_to_rows
 from .core.artifacts import graph_available, graph_rows
-from .intent import apply_intent_adjustment, query_terms
+from .intent import apply_exclusion_adjustment, apply_intent_adjustment, excluded_query_terms, query_terms
+from .paths import canonical_cached_rel_path
 from .semantic import merge_semantic_rows, semantic_rows
 from .security import filter_index_records, redact_sensitive_text
-from .storage import connect, load_jsonl
+from .storage import connect, load_jsonl, load_pointer
 
 
 def _fts_match_query(terms: list[str]) -> str:
@@ -75,17 +77,56 @@ def score(f, q, fts_boost: tuple[int, str] | None = None):
     return s, reasons
 
 
-def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic):
+def _apply_exclusions(rows, q):
+    excluded_terms = excluded_query_terms(q)
+    if not excluded_terms:
+        return rows
+    adjusted = []
+    for row in rows:
+        if "excluded scope downrank:" in row.get("reason", ""):
+            adjusted.append(row)
+            continue
+        score, reasons = apply_exclusion_adjustment(row["score"], row["path"], excluded_terms)
+        reason = ", ".join(filter(None, [row.get("reason", ""), *reasons]))
+        adjusted.append({**row, "score": score, "reason": reason})
+    return sorted(adjusted, key=lambda r: (-r["score"], r["path"]))
+
+
+def _without_excluded(rows, excluded_paths):
+    canonical_excluded = {
+        canonical for path in excluded_paths if (canonical := canonical_cached_rel_path(path)) is not None
+    }
+    retained = []
+    for row in rows:
+        canonical = canonical_cached_rel_path(row.get("rel_path") or row.get("path"))
+        # Imported/cached absolute or traversal-bearing paths are not valid
+        # repository candidates. Fail closed instead of resolving them.
+        if canonical is None or canonical in canonical_excluded:
+            continue
+        retained.append(row)
+    return retained
+
+
+def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded_paths):
     if not semantic:
-        return rows[:limit]
+        return _apply_exclusions(_without_excluded(rows, excluded_paths), q)[:limit]
     sem_rows, _health = semantic_rows(idx, root_id, q, limit)
     merged = merge_semantic_rows(rows, sem_rows, limit=limit)
-    return apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)[:limit]
+    ranked = apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)
+    return _apply_exclusions(_without_excluded(ranked, excluded_paths), q)[:limit]
 
 
-def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=False):
+def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=False, excluded_paths=None):
+    if excluded_paths is None and root is not None:
+        ptr = load_pointer(root)
+        if ptr is not None and Path(ptr["indexPath"]) == Path(idx):
+            from .freshness import index_freshness
+
+            excluded_paths = index_freshness(root, ptr)["excluded_paths"]
+    excluded_paths = frozenset(excluded_paths or ())
     fallback_rows = []
     files, _ = filter_index_records(load_jsonl(idx / "files.jsonl"))
+    files = _without_excluded(files, excluded_paths)
     fts_scores = _fts_scores(idx, q)
     known_paths = {f["rel_path"] for f in files}
 
@@ -119,19 +160,22 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
     if root is not None and graph_available(root):
         rows = graph_rows(root, q, limit)
         if rows:
-            rows = [
-                {
-                    **r,
-                    "reason": r["reason"]
-                    + (", MIMRY config-manifest operating context" if r["path"] in fallback_by_path else ""),
-                    **(
-                        {"details": fallback_by_path[r["path"]].get("details", "")}
-                        if r["path"] in fallback_by_path
-                        else {}
-                    ),
-                }
-                for r in rows
-            ]
+            rows = _without_excluded(
+                [
+                    {
+                        **r,
+                        "reason": r["reason"]
+                        + (", MIMRY config-manifest operating context" if r["path"] in fallback_by_path else ""),
+                        **(
+                            {"details": fallback_by_path[r["path"]].get("details", "")}
+                            if r["path"] in fallback_by_path
+                            else {}
+                        ),
+                    }
+                    for r in rows
+                ],
+                excluded_paths,
+            )
             # A file found by BOTH the graph and the content index is better
             # evidence than one found by either alone. Previously the graph row
             # won and the content score was dropped on the floor.
@@ -156,9 +200,9 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
-            return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic)
+            return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
-    return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic)
+    return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)
 
 
 def print_rows(title, rows):

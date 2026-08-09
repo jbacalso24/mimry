@@ -9,6 +9,9 @@ from typing import Any, BinaryIO
 
 from .constants import HEAVY_IGNORES, SENSITIVE_PATTERNS, TEXT_EXTS
 
+HEAVY_IGNORES_CASEFOLD = frozenset(part.casefold() for part in HEAVY_IGNORES)
+_HEAVY_IGNORES_SOURCE = HEAVY_IGNORES
+
 
 def stat_identity(info: os.stat_result) -> tuple[int, ...]:
     """Return a file identity tuple for detecting a swap during a verified read.
@@ -513,16 +516,24 @@ def _raw_file_has_sensitive_content(path: Path) -> bool:
 def _has_heavy_ignore(parts) -> bool:
     """Match policy directory names independent of filesystem case rules."""
 
-    ignored = {part.casefold() for part in HEAVY_IGNORES}
-    return any(str(part).casefold() in ignored for part in parts)
+    global HEAVY_IGNORES_CASEFOLD, _HEAVY_IGNORES_SOURCE
+    if HEAVY_IGNORES is not _HEAVY_IGNORES_SOURCE:
+        HEAVY_IGNORES_CASEFOLD = frozenset(part.casefold() for part in HEAVY_IGNORES)
+        _HEAVY_IGNORES_SOURCE = HEAVY_IGNORES
+    return any(str(part).casefold() in HEAVY_IGNORES_CASEFOLD for part in parts)
 
 
-def should_ignore(path, root):
+def should_ignore_path(path, root):
+    """Apply filename/directory policy without reopening file content."""
     try:
         parts = path.relative_to(root).parts
     except ValueError:
         parts = path.parts
-    return _has_heavy_ignore(parts) or is_sensitive(path) or has_sensitive_content(path)
+    return _has_heavy_ignore(parts) or is_sensitive(path)
+
+
+def should_ignore(path, root):
+    return should_ignore_path(path, root) or has_sensitive_content(path)
 
 
 def path_has_ignored_part(path: str | Path) -> bool:

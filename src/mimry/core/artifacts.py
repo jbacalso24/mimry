@@ -434,6 +434,7 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     terms = query_terms(query)
+
     if not terms:
         return []
 
@@ -501,9 +502,11 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
     rows = []
     for row in by_file.values():
         row["score"], intent_reasons = apply_intent_adjustment(row["score"], row["path"], terms, graph=True)
+
         if row["score"] <= 0:
             continue
         row["reasons"].update(intent_reasons)
+
         topology_details = []
         if row["max_degree"]:
             topology_details.append(f"max degree {row['max_degree']}")

@@ -873,7 +873,7 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
     assert "Index: current" in res.stdout
 
 
-def test_preflight_reindexes_stale_index_in_fast_mode_without_slow_graph(tmp_path):
+def test_preflight_keeps_stale_cached_context_fast_without_reindexing(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
@@ -887,10 +887,11 @@ def test_preflight_reindexes_stale_index_in_fast_mode_without_slow_graph(tmp_pat
     res = run_cli(repo, cache, "preflight", "preflight marker auth session")
 
     assert res.returncode == 0, res.stderr
-    assert "Preflight index: running (index stale)" in res.stdout
+    assert "Preflight refresh: skipped (fast mode; index stale" in res.stdout
     assert "Refresh ran: no" in res.stdout
-    assert "Index ran: yes" in res.stdout
-    assert "Index: current" in res.stdout
+    assert "Index ran: no" in res.stdout
+    assert "Index: stale" in res.stdout
+    assert "run `mimry preflight --force-refresh" in res.stdout
     assert "MIMRY preflight complete" in res.stdout
 
 
