@@ -1,3 +1,208 @@
 {
-  "canonicalDigest": "23db8b1d1535bd3e94675bd304330083c4b07746bc23f498b9f48da8787e019c"
+  "canonicalDigest": "23db8b1d1535bd3e94675bd304330083c4b07746bc23f498b9f48da8787e019c",
+  "contextDigest": "8d543728cb1985d40157e86277e680538e1fa13cbfbb515f8b3c50ee3e83c5ed",
+  "contextLines": [
+    "# MIMRY Context Pack",
+    "## Query",
+    "session refresh flow",
+    "## Status",
+    "Index: current (11 files, 19 symbols; 0 changed, 0 deleted)",
+    "Graph: current (30 nodes, 31 edges)",
+    "Semantic: current (on)",
+    "Refresh: none (index and MIMRY graph artifacts are current)",
+    "## Summary",
+    "MIMRY found 8 file(s). Read in order; verify source/tests; avoid unsupported edits.",
+    "## Relevant Files",
+    "Each file: relative path only; read source before editing.",
+    "### 1. `svc/php/Session.php`",
+    "Score: 459 | Adapter: `tree-sitter-php` | supporting context",
+    "Evidence: graph node label match, graph source file match, graph topology boost 60 across 4 matched nodes (max degree 3; 1 communities); nodes: svc/php/Session.php, Session, renew, extend, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match",
+    "### 2. `backend/api/auth.py`",
+    "Score: 401 | Adapter: `python-ast` | likely edit surface",
+    "Evidence: graph node label match, graph topology boost 20 across 1 matched nodes (max degree 3; 1 communities), reached by MIMRY graph relationship; nodes: refresh_session, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match",
+    "### 3. `backend/services/session_service.py`",
+    "Score: 338 | Adapter: `python-ast` | likely edit surface",
+    "Evidence: graph node label match, graph source file match, graph topology boost 65 across 3 matched nodes (max degree 5; 1 communities); nodes: backend/services/session_service.py, extend_expiry, renew_login, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match",
+    "### 4. `svc/java/com/app/User.java`",
+    "Score: 265 | Adapter: `tree-sitter-java` | supporting context",
+    "Evidence: graph node label match, graph topology boost 15 across 1 matched nodes (max degree 2; 1 communities), reached by MIMRY graph relationship; nodes: refresh, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match",
+    "### 5. `db/schema.sql`",
+    "Score: 171 | Adapter: `sql-schema` | likely edit surface",
+    "Evidence: graph node label match, graph topology boost 15 across 1 matched nodes (max degree 2; 1 communities), reached by MIMRY graph relationship; nodes: sessions, corroborated by MIMRY content index",
+    "- sql schema table sessions columns id active file db/schema.sql",
+    "- sql schema table users columns id file db/schema.sql",
+    "### 6. `docs/auth-design.md`",
+    "Score: 163 | Adapter: `markdown-docs` | docs/rules support",
+    "Evidence: reached by MIMRY graph relationship, corroborated by MIMRY content index",
+    "- markdown headings Auth design",
+    "### 7. `README.md`",
+    "Score: 80 | Adapter: `markdown-docs+config-manifest` | docs/rules support",
+    "Evidence: semantic adapter-fact match, semantic match, semantic path/symbol match",
+    "- markdown headings determinism fixture",
+    "### 8. `svc/go/store.go`",
+    "Score: 47 | Adapter: `tree-sitter-go` | supporting context",
+    "Evidence: content hint match, token match: session, metadata match, FTS/BM25 match, tree-sitter-go adapter, graph cluster relationship, MIMRY fallback index signal",
+    "## Relevant Symbols / Entities",
+    "- `NewStore` (function, go) - `svc/go/store.go:7`",
+    "- `Store` (type, go) - `svc/go/store.go:3`",
+    "- `User` (class, java) - `svc/java/com/app/User.java:3`",
+    "- `getName` (function, java) - `svc/java/com/app/User.java:6`",
+    "- `refresh` (function, java) - `svc/java/com/app/User.java:10`",
+    "- `Session` (class, php) - `svc/php/Session.php:5`",
+    "- `extend` (function, php) - `svc/php/Session.php:12`",
+    "- `renew` (function, php) - `svc/php/Session.php:7`",
+    "- `sessions` (sql_table, sql) - `db/schema.sql:1`",
+    "- `users` (sql_table, sql) - `db/schema.sql:6`",
+    "- `extend_expiry` (function, python) - `backend/services/session_service.py:9`",
+    "- `renew_login` (function, python) - `backend/services/session_service.py:4`",
+    "## Graph Relationships / Communities",
+    "- `svc/go/store.go` --defines--> `Store` (svc/go/store.go -> svc/go/store.go) [EXTRACTED]",
+    "- `svc/go/store.go` --defines--> `NewStore` (svc/go/store.go -> svc/go/store.go) [EXTRACTED]",
+    "- `svc/java/com/app/User.java` --defines--> `refresh` (svc/java/com/app/User.java -> svc/java/com/app/User.java) [EXTRACTED]",
+    "- `svc/java/com/app/User.java` --defines--> `getName` (svc/java/com/app/User.java -> svc/java/com/app/User.java) [EXTRACTED]",
+    "- `svc/java/com/app/User.java` --defines--> `User` (svc/java/com/app/User.java -> svc/java/com/app/User.java) [EXTRACTED]",
+    "- `svc/php/Session.php` --defines--> `Session` (svc/php/Session.php -> svc/php/Session.php) [EXTRACTED]",
+    "- `svc/php/Session.php` --defines--> `renew` (svc/php/Session.php -> svc/php/Session.php) [EXTRACTED]",
+    "- `svc/php/Session.php` --defines--> `extend` (svc/php/Session.php -> svc/php/Session.php) [EXTRACTED]",
+    "- `db/schema.sql` --defines--> `sessions` (db/schema.sql -> db/schema.sql) [INFERRED]",
+    "- `db/schema.sql` --defines--> `users` (db/schema.sql -> db/schema.sql) [INFERRED]",
+    "- `backend/services/session_service.py` --references--> `sessions` (backend/services/session_service.py -> db/schema.sql) [INFERRED]",
+    "- `backend/services/session_service.py` --defines--> `extend_expiry` (backend/services/session_service.py -> backend/services/session_service.py) [EXTRACTED]",
+    "### Graph Report Signals",
+    "## God Nodes",
+    "- &#96;backend/api/auth.py&#96; (backend/api/auth.py) - degree 7",
+    "- &#96;backend/services/session_service.py&#96; (backend/services/session_service.py) - degree 5",
+    "- &#96;refresh_session&#96; (backend/api/auth.py) - degree 3",
+    "- &#96;renew_login&#96; (backend/services/session_service.py) - degree 3",
+    "- &#96;svc/java/com/app/User.java&#96; (svc/java/com/app/User.java) - degree 3",
+    "- &#96;svc/php/Session.php&#96; (svc/php/Session.php) - degree 3",
+    "- &#96;AuthHandler&#96; (backend/api/auth.py) - degree 2",
+    "- &#96;BaseHandler&#96; (backend/api/auth.py) - degree 2",
+    "- &#96;Checkout&#96; (web/src/app/checkout.tsx) - degree 2",
+    "- &#96;db/schema.sql&#96; (db/schema.sql) - degree 2",
+    "## Community Hubs",
+    "- community 0: &#96;svc/go/store.go&#96; (svc/go/store.go) - degree 2, 3 nodes",
+    "- community 1: &#96;Checkout&#96; (web/src/app/checkout.tsx) - degree 2, 4 nodes",
+    "- community 2: &#96;svc/java/com/app/User.java&#96; (svc/java/com/app/User.java) - degree 3, 4 nodes",
+    "- community 3: &#96;package.json&#96; (package.json) - degree 0, 1 nodes",
+    "- community 4: &#96;svc/php/Session.php&#96; (svc/php/Session.php) - degree 3, 4 nodes",
+    "- community 5: &#96;db/schema.sql&#96; (db/schema.sql) - degree 2, 3 nodes",
+    "- comm",
+    "## Reading Order",
+    "1. `backend/api/auth.py` (likely edit surface)",
+    "2. `backend/services/session_service.py` (likely edit surface)",
+    "3. `db/schema.sql` (likely edit surface)",
+    "4. `svc/php/Session.php` (supporting context)",
+    "5. `svc/java/com/app/User.java` (supporting context)",
+    "6. `docs/auth-design.md` (docs/rules support)",
+    "7. `README.md` (docs/rules support)",
+    "8. `svc/go/store.go` (supporting context)",
+    "## Edit Surfaces",
+    "- `backend/api/auth.py`",
+    "- `backend/services/session_service.py`",
+    "- `db/schema.sql`",
+    "## Support Files",
+    "- `svc/php/Session.php`",
+    "- `svc/java/com/app/User.java`",
+    "- `docs/auth-design.md`",
+    "- `README.md`",
+    "- `svc/go/store.go`",
+    "## Risks",
+    "- Do not edit generated/cache files (`.mimry/`, `.git/`, build outputs).",
+    "- Source/tests/build output are truth; MIMRY scores are hints, not proof.",
+    "## Verify With",
+    "- `npm run build`",
+    "- `npm run test`"
+  ],
+  "rankings": {
+    "payment checkout": [
+      {
+        "path": "web/src/app/checkout.tsx",
+        "reason": "graph node label match, graph source file match, graph topology boost 30 across 2 matched nodes (max degree 2; 1 communities); nodes: web/src/app/checkout.tsx, Checkout, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match"
+      },
+      {
+        "path": "web/src/lib/payments.ts",
+        "reason": "graph node label match, graph source file match, graph topology boost 30 across 2 matched nodes (max degree 2; 1 communities); nodes: web/src/lib/payments.ts, redirectToPayment, corroborated by MIMRY content index"
+      },
+      {
+        "path": "docs/auth-design.md",
+        "reason": "semantic adapter-fact match, semantic match"
+      }
+    ],
+    "session login refresh": [
+      {
+        "path": "backend/services/session_service.py",
+        "reason": "graph node label match, graph source file match, graph topology boost 65 across 3 matched nodes (max degree 5; 1 communities); nodes: backend/services/session_service.py, extend_expiry, renew_login, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match"
+      },
+      {
+        "path": "svc/php/Session.php",
+        "reason": "graph node label match, graph source file match, graph topology boost 60 across 4 matched nodes (max degree 3; 1 communities); nodes: svc/php/Session.php, Session, renew, extend, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match"
+      },
+      {
+        "path": "backend/api/auth.py",
+        "reason": "graph node label match, graph topology boost 20 across 1 matched nodes (max degree 3; 1 communities), reached by MIMRY graph relationship; nodes: refresh_session, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match"
+      },
+      {
+        "path": "svc/java/com/app/User.java",
+        "reason": "graph node label match, graph topology boost 15 across 1 matched nodes (max degree 2; 1 communities), reached by MIMRY graph relationship; nodes: refresh, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match"
+      },
+      {
+        "path": "docs/auth-design.md",
+        "reason": "reached by MIMRY graph relationship, corroborated by MIMRY content index, semantic adapter-fact match, semantic match"
+      },
+      {
+        "path": "db/schema.sql",
+        "reason": "graph node label match, graph topology boost 15 across 1 matched nodes (max degree 2; 1 communities), reached by MIMRY graph relationship; nodes: sessions, corroborated by MIMRY content index"
+      },
+      {
+        "path": "README.md",
+        "reason": "semantic adapter-fact match, semantic match, semantic path/symbol match"
+      },
+      {
+        "path": "svc/go/store.go",
+        "reason": "content hint match, token match: session, metadata match, FTS/BM25 match, tree-sitter-go adapter, graph cluster relationship, MIMRY fallback index signal"
+      }
+    ],
+    "sessions table": [
+      {
+        "path": "db/schema.sql",
+        "reason": "graph node label match, graph topology boost 15 across 1 matched nodes (max degree 2; 1 communities), reached by MIMRY graph relationship; nodes: sessions, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match"
+      },
+      {
+        "path": "backend/services/session_service.py",
+        "reason": "reached by MIMRY graph relationship, corroborated by MIMRY content index, semantic adapter-fact match, semantic match"
+      },
+      {
+        "path": "docs/auth-design.md",
+        "reason": "reached by MIMRY graph relationship, corroborated by MIMRY content index, semantic adapter-fact match, semantic match"
+      },
+      {
+        "path": "svc/go/store.go",
+        "reason": "content hint match, token match: sessions, metadata match, FTS/BM25 match, tree-sitter-go adapter, graph cluster relationship, MIMRY fallback index signal, semantic adapter-fact match, semantic match"
+      },
+      {
+        "path": "backend/api/auth.py",
+        "reason": "reached by MIMRY graph relationship, corroborated by MIMRY content index"
+      },
+      {
+        "path": "svc/php/Session.php",
+        "reason": "defines matching symbol: Session, graph cluster relationship, MIMRY fallback index signal"
+      }
+    ],
+    "user model": [
+      {
+        "path": "svc/java/com/app/User.java",
+        "reason": "graph node label match, graph source file match, graph topology boost 60 across 4 matched nodes (max degree 3; 1 communities); nodes: svc/java/com/app/User.java, refresh, getName, User, corroborated by MIMRY content index, semantic adapter-fact match, semantic match, semantic path/symbol match"
+      },
+      {
+        "path": "db/schema.sql",
+        "reason": "graph node label match, graph topology boost 10 across 1 matched nodes (max degree 1; 1 communities), reached by MIMRY graph relationship; nodes: users, corroborated by MIMRY content index"
+      },
+      {
+        "path": "backend/api/auth.py",
+        "reason": "semantic adapter-fact match, semantic match, semantic path/symbol match"
+      }
+    ]
+  },
+  "rankingsDigest": "ac10c968b1ae1fb853d7e07935fc2ea2aa1e364865727dd6ef0e762743683102"
 }
