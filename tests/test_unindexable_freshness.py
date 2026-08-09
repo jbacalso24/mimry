@@ -193,6 +193,54 @@ def test_changed_file_that_becomes_sensitive_is_hidden_from_stale_context(tmp_pa
     assert "app/clean.py" not in context
 
 
+def test_secret_appended_beyond_snapshot_limit_is_stale_and_hidden_from_cached_readers(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "repo"
+    target = root / "app" / "boundary.py"
+    target.parent.mkdir(parents=True)
+    prefix = b"def indexed_boundary_marker():\n    return True\n"
+    target.write_bytes(prefix + b"#" + b"x" * (1_000_000 - len(prefix) - 2) + b"\n")
+    assert target.stat().st_size == 1_000_000
+    ptr = _index(root)
+    assert index_freshness(root, ptr)["state"] == "current"
+    indexed_rows = find_rows(
+        Path(ptr["indexPath"]),
+        "indexed boundary marker",
+        root=root,
+        root_id=ptr.get("rootId"),
+    )
+    assert any(row["path"] == "app/boundary.py" for row in indexed_rows)
+    capsys.readouterr()
+
+    secret_append = b'\nAPI_TOKEN = "ghp_' + b"a" * 32 + b'"\n'
+    target.write_bytes(target.read_bytes() + secret_append)
+    assert target.stat().st_size == 1_000_052
+
+    fresh = index_freshness(root, ptr)
+
+    assert fresh["state"] == "stale"
+    assert fresh["changed"] == ["app/boundary.py"]
+    assert "app/boundary.py" in fresh["excluded_paths"]
+    assert all(record["rel_path"] != "app/boundary.py" for record in fresh["files"])
+
+    rows = find_rows(
+        Path(ptr["indexPath"]),
+        "indexed boundary marker",
+        root=root,
+        root_id=ptr.get("rootId"),
+    )
+    assert all(row["path"] != "app/boundary.py" for row in rows)
+
+    assert cmd_preflight(SimpleNamespace(root=root, task="indexed boundary marker", force_refresh=False)) == 0
+    stdout = capsys.readouterr().out
+    context = context_file(root).read_text(encoding="utf-8")
+    assert "Index: stale" in stdout
+    assert "Index ran: no" in stdout
+    assert "app/boundary.py" not in stdout
+    assert "app/boundary.py" not in context
+
+
 def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

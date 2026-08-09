@@ -25,6 +25,9 @@ from .security import (
 from .ts_ast_adapter import parse_ts_like
 
 
+SCANNER_FILE_SIZE_LIMIT = 1_000_000
+
+
 class FileChangedError(OSError):
     """Raised when a file changes between snapshots during indexing."""
 
@@ -50,7 +53,7 @@ def _within_root(path: Path, root: Path) -> bool:
         return False
 
 
-def read_snapshot(path, limit=1_000_000, *, root=None):
+def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
     """Read a file once and prove it did not change underneath us.
 
     Returns ``(data, stat_result)``. A file can change between stat, read,
@@ -142,7 +145,7 @@ def scan(root, *, inspect_sensitive_content: bool = True):
         if not path.is_file() or path.is_symlink() or ignored:
             continue
         try:
-            if path.stat().st_size > 1_000_000:
+            if path.stat().st_size > SCANNER_FILE_SIZE_LIMIT:
                 continue
             # Windows/macOS can expose locked or ACL-protected files as regular
             # files, then fail only when opened for hashing. Treat unreadable
