@@ -8,7 +8,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from .core.build import GraphEngine
+from .core.build import GraphEngine, canonicalize_edges
 from .core.cluster import assign_communities
 from .core.resolve import (
     resolve_imports,
@@ -230,8 +230,11 @@ def _finalize_graph(graph) -> dict:
     """
     node_ids = {n["id"] for n in graph["nodes"]}
     graph["edges"] = [e for e in graph["edges"] if e.get("source") in node_ids and e.get("target") in node_ids]
+    # (source, target, relation) is not a total key: equal-endpoint edges that
+    # differ only in confidence kept insertion order. canonicalize_edges applies
+    # the documented EXTRACTED-over-INFERRED policy and a total sort key.
+    graph["edges"] = canonicalize_edges(graph["edges"])
     graph["nodes"] = sorted(assign_communities(graph["nodes"], graph["edges"]), key=lambda n: n["id"])
-    graph["edges"] = sorted(graph["edges"], key=lambda e: (e["source"], e["target"], e["relation"]))
     return graph
 
 

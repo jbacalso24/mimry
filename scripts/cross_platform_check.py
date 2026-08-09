@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mimry.core.build import GraphEngine  # noqa: E402
+from mimry.core.build import GraphEngine, canonicalize_edges  # noqa: E402
 from mimry.core.cluster import assign_communities  # noqa: E402
 from mimry.core.report import build_manifest, render_report  # noqa: E402
 from mimry.core.resolve import (  # noqa: E402
@@ -134,9 +134,8 @@ def build() -> dict:
             }
         )
 
-    graph["edges"] = sorted(
-        (e for e in graph["edges"] if e["source"] in node_ids and e["target"] in node_ids),
-        key=lambda e: (e["source"], e["target"], e["relation"]),
+    graph["edges"] = canonicalize_edges(
+        [e for e in graph["edges"] if e["source"] in node_ids and e["target"] in node_ids]
     )
     graph["nodes"] = sorted(assign_communities(graph["nodes"], graph["edges"]), key=lambda n: n["id"])
     return graph
