@@ -149,7 +149,7 @@ def _extract_docx_text(zf: zipfile.ZipFile) -> str:
 
 
 def _safe_xml(data: bytes) -> bytes:
-    upper = data.upper()
+    upper = data.replace(b"\x00", b"").upper()
     if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
         raise UnsafeDocumentXML("DTD and entity declarations are not allowed in Office XML")
     return data

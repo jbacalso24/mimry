@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import zipfile
 
+import pytest
+
 from mimry.core.documents import MAX_XLSX_WORKSHEETS, extract_document_text, is_document
 
 
@@ -16,6 +18,11 @@ def _docx(path, document_xml):
         z.writestr("[Content_Types].xml", "<Types/>")
         z.writestr("word/document.xml", document_xml)
     return path
+
+
+def _utf16_xml(xml: str, byte_order: str) -> bytes:
+    bom = b"\xff\xfe" if byte_order == "le" else b"\xfe\xff"
+    return bom + xml.encode(f"utf-16-{byte_order}")
 
 
 def test_is_document_recognizes_office_formats_only():
@@ -153,3 +160,40 @@ def test_xlsx_rejects_dtd_and_internal_entity_before_xml_parse(tmp_path):
 
     assert text == ""
     assert status == "parse_error:UnsafeXML"
+
+
+@pytest.mark.parametrize("byte_order", ["le", "be"])
+def test_xlsx_rejects_utf16_dtd_and_internal_entity_before_xml_parse(tmp_path, byte_order):
+    path = tmp_path / f"utf16-{byte_order}-entity.xlsx"
+    xml = (
+        '<?xml version="1.0" encoding="UTF-16"?>'
+        '<!DOCTYPE sst [<!ENTITY x "EXPANDED_MARKER">]>'
+        "<sst><si><t>&x;</t></si></sst>"
+    )
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("xl/sharedStrings.xml", _utf16_xml(xml, byte_order))
+
+    text, status = extract_document_text(path)
+
+    assert text == ""
+    assert status == "parse_error:UnsafeXML"
+
+
+@pytest.mark.parametrize("byte_order", ["le", "be"])
+def test_xlsx_extracts_valid_utf16_shared_and_inline_strings(tmp_path, byte_order):
+    path = tmp_path / f"utf16-{byte_order}.xlsx"
+    shared = '<?xml version="1.0" encoding="UTF-16"?><sst><si><t>Shared UTF-16 text</t></si></sst>'
+    worksheet = (
+        '<?xml version="1.0" encoding="UTF-16"?>'
+        '<worksheet><sheetData><row><c t="inlineStr"><is>'
+        "<t>Inline UTF-16 text</t>"
+        "</is></c></row></sheetData></worksheet>"
+    )
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("xl/sharedStrings.xml", _utf16_xml(shared, byte_order))
+        archive.writestr("xl/worksheets/sheet1.xml", _utf16_xml(worksheet, byte_order))
+
+    text, status = extract_document_text(path)
+
+    assert status == "ok"
+    assert text == "Shared UTF-16 text Inline UTF-16 text"
