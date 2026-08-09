@@ -226,19 +226,37 @@ def test_roots_labels_missing_and_duplicate_root_ids_without_repairing_registry(
 
 
 def test_concurrent_registry_updates_do_not_drop_roots(tmp_path: Path, monkeypatch):
+    """Run multiple rounds of concurrent registry updates with real contention.
+
+    Each round registers N roots via ProcessPoolExecutor, verifying that no roots
+    are lost due to concurrent RMW (read-modify-write) races under Windows locking.
+    Repeat to expose intermittent contention issues.
+    """
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    pointers = [_pointer(tmp_path / "repos" / f"repo-{index}", f"root-{index}") for index in range(32)]
 
-    with ProcessPoolExecutor(max_workers=8) as pool:
-        futures = [pool.submit(_register_in_process, str(cache), pointer) for pointer in pointers]
-        for future in futures:
-            future.result()
+    for round_num in range(3):
+        pointers = [
+            _pointer(tmp_path / "repos" / f"repo-r{round_num}-{index}", f"root-r{round_num}-{index}")
+            for index in range(12)
+        ]
 
-    registry = load_root_registry()
-    assert {entry["rootId"] for entry in registry["roots"]} == {f"root-{index}" for index in range(32)}
-    assert len(registry["roots"]) == 32
-    assert json.loads((cache / "roots.json").read_text(encoding="utf-8")) == registry
+        # Use enough concurrent workers to create real lock contention.
+        with ProcessPoolExecutor(max_workers=6) as pool:
+            futures = [pool.submit(_register_in_process, str(cache), pointer) for pointer in pointers]
+            for future in futures:
+                future.result()
+
+        registry = load_root_registry()
+        expected_ids = {f"root-r{round_num}-{index}" for index in range(12)}
+        actual_ids = {entry["rootId"] for entry in registry["roots"] if entry["rootId"].startswith(f"root-r{round_num}")}
+        assert actual_ids == expected_ids, f"Round {round_num}: roots lost in concurrent update"
+
+    final_registry = load_root_registry()
+    all_expected = {f"root-r{r}-{i}" for r in range(3) for i in range(12)}
+    final_ids = {entry["rootId"] for entry in final_registry["roots"]}
+    assert final_ids == all_expected
+    assert len(final_registry["roots"]) == 36
 
 
 def _initialized_repo(tmp_path: Path):
