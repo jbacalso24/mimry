@@ -429,7 +429,7 @@ def file_lock(
                         # Never let a diagnostic read mask the real timeout error.
                         holder = ""
                     raise StateLockTimeoutError(path, timeout, holder) from exc
-                # Jittered backoff: add ±10% random jitter to poll_interval to reduce thundering herd
+                # Jittered backoff: add +/-10% random jitter to poll_interval to reduce thundering herd
                 # under concurrent Windows contention. ponytail: jitter per-poll, add adaptive backoff if perf matters.
                 jitter = random.uniform(0.9, 1.1)
                 sleep_time = min(poll_interval * jitter, max(0.0, deadline - time.monotonic()))

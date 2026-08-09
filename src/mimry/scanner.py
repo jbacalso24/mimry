@@ -236,7 +236,10 @@ def adapt(path, root):
         inherits = result.get("inherits", [])
         f = file_record(path, root, "typescript-ast", status, hint, snapshot)
     elif is_document(path):
-        text, status = extract_document_text(data=data)
+        # The path is still needed for the extension check; only the BYTES
+        # come from the snapshot. Dropping it made every Office document
+        # return parse_error:unsupported_extension.
+        text, status = extract_document_text(path, data=data)
         safe_text = redact_sensitive_text(text) if text else ""
         doc_hint = safe_text[:2000]
         f = file_record(path, root, "office-document", status, doc_hint, snapshot)

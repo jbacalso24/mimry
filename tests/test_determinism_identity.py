@@ -263,13 +263,15 @@ def test_file_changed_during_read_is_not_indexed(tmp_path: Path):
 
     original_enrich = scanner.enrich_framework_facts
 
-    def rewrite_then_enrich(path, root, f, symbols, edges):
+    def rewrite_then_enrich(path, root, f, symbols, edges, source_data=None):
         # Stand in for a real editor writing the file while MIMRY parses it.
+        # Mirrors the real signature, including the snapshot bytes adapters now
+        # receive, so the stub cannot drift from what adapt() actually calls.
         if path.name == "volatile.py":
             path.write_text(
                 "def mutated():" + chr(10) + "    pass" + chr(10) + "# a much longer second version" + chr(10)
             )
-        return original_enrich(path, root, f, symbols, edges)
+        return original_enrich(path, root, f, symbols, edges, source_data=source_data)
 
     with patch.object(scanner, "enrich_framework_facts", rewrite_then_enrich):
         with pytest.raises(scanner.FileChangedError):
