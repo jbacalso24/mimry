@@ -556,7 +556,14 @@ def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 1
     return lines
 
 
-def report_excerpt(root: Path, max_chars: int = 1200) -> str:
+def report_excerpt(root: Path, max_chars: int = 700, *, max_rows_per_section: int = 3) -> str:
+    """Quote the graph report's headline sections, bounded.
+
+    This is secondary evidence in a context pack -- it corroborates the graph
+    relationships already listed above it. The full report can run to hundreds
+    of rows, so each section is capped; the artifact itself stays linked for an
+    agent that needs the rest.
+    """
     path = report_path(root)
     if not path.exists():
         return ""
@@ -579,6 +586,23 @@ def report_excerpt(root: Path, max_chars: int = 1200) -> str:
             capture = False
         if capture:
             keep.append(line)
+    if keep:
+        bounded: list[str] = []
+        rows_in_section = 0
+        for line in keep:
+            if line.startswith("## "):
+                rows_in_section = 0
+                bounded.append(line)
+                continue
+            if not line.strip():
+                bounded.append(line)
+                continue
+            rows_in_section += 1
+            if rows_in_section <= max_rows_per_section:
+                bounded.append(line)
+            elif rows_in_section == max_rows_per_section + 1:
+                bounded.append("- ... (truncated; see `.mimry/mimry-out/graph/GRAPH_REPORT.md` for the full list)")
+        keep = bounded
     excerpt_lines = keep or text[:max_chars].splitlines()
     safe_lines = [
         line if line in {"## Community Hubs", "## God Nodes", "## Surprising Connections"} else markdown_inline(line)
