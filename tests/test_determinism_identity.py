@@ -295,3 +295,42 @@ def test_oversized_and_unreadable_files_still_skipped_gracefully(tmp_path: Path)
             os.chmod(unreadable, 0o644)
         except Exception:
             pass
+
+
+def test_old_identity_schema_index_is_refused_with_an_actionable_error(tmp_path: Path):
+    """An index built before the canonical-ID contract must fail closed, not be reused.
+
+    Its file, symbol, and chunk IDs were derived from the absolute checkout
+    path. Partially reusing it would leave a graph whose edges point at nothing.
+    """
+    from mimry.state import GENERATION_SCHEMA_VERSION, IndexSchemaMigrationError, StateCorruptionError
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _small_repo(repo)
+
+    ptr = _setup_pointer(repo, cache, "legacy-root")
+    result = write_index(repo, ptr)
+    idx = Path(result["index"])
+
+    manifest_path = idx / "generation.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schemaVersion"] == GENERATION_SCHEMA_VERSION
+    # Rewind the generation to the pre-contract layout.
+    manifest["schemaVersion"] = "3"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    from mimry.state import validate_generation
+
+    pointer = {**ptr, "indexPath": str(idx), "generationId": result["generation"]}
+    with pytest.raises(IndexSchemaMigrationError) as excinfo:
+        validate_generation(pointer)
+
+    message = str(excinfo.value)
+    assert "identity schema 3" in message
+    assert "mimry index" in message, "the error must name the command that fixes it"
+    assert "corrupt" not in message.lower(), "a version bump is not damage; do not say corrupt"
+    # Existing handlers catch StateCorruptionError; this must stay inside that net.
+    assert isinstance(excinfo.value, StateCorruptionError)

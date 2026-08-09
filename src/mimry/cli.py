@@ -26,7 +26,7 @@ from .commands import (
     cmd_why,
 )
 from .installer import cmd_hook_check, cmd_install, cmd_uninstall
-from .state import StateCorruptionError, StateLockTimeoutError
+from .state import IndexSchemaMigrationError, StateCorruptionError, StateLockTimeoutError
 from .storage import RootIdentityError
 
 
@@ -179,6 +179,9 @@ def main(argv=None):
     a = build_parser().parse_args(argv)
     try:
         return a.func(a)
+    except IndexSchemaMigrationError as exc:
+        print(f"MIMRY index is out of date: {exc}", file=sys.stderr)
+        return 2
     except StateCorruptionError as exc:
         print(f"MIMRY state error: {exc}", file=sys.stderr)
         return 2
