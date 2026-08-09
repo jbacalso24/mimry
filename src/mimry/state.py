@@ -361,7 +361,13 @@ def validate_generation(pointer: dict[str, Any]) -> None:
 
 def _lock_timeout(timeout: float | None) -> float:
     if timeout is None:
-        raw = os.environ.get("MIMRY_LOCK_TIMEOUT_SECONDS", "10")
+        # 30s, not 10s. The registry lock serializes a read-modify-write across
+        # every concurrent MIMRY process, and Windows file locking is coarser
+        # and slower than POSIX -- 9 CI matrix cells on a shared runner can
+        # legitimately queue past 10s without anything being wrong. Still
+        # bounded, still actionable: a real deadlock fails with the holder's
+        # metadata rather than hanging.
+        raw = os.environ.get("MIMRY_LOCK_TIMEOUT_SECONDS", "30")
         try:
             timeout = float(raw)
         except ValueError as exc:
