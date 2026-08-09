@@ -42,11 +42,25 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
-      # Prints one digest computed from fixed in-memory input. Every OS in the
-      # matrix must print the same value; a divergence means cached indexes are
-      # not portable between machines.
+      # Fast portable check on fixed in-memory input, then the real gate: the
+      # whole pipeline (scanner, parsers, graph, SQLite/FTS, semantic, context
+      # pack) over the frozen fixture, once per permutation of creation order,
+      # checkout root, hash seed, and locale, compared against the committed
+      # golden digest.
       - name: Cross-platform graph identity
         run: uv run python scripts/cross_platform_check.py
+
+      - name: Real end-to-end determinism matrix
+        run: uv run python scripts/determinism_matrix.py --emit digest-${{ matrix.os }}-${{ matrix.python-version }}.json
+
+      # Printing a digest per job proves nothing on its own -- nothing compares
+      # them. Upload each, then the aggregate job below actually diffs them.
+      - name: Upload canonical digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.os }}-${{ matrix.python-version }}
+          path: digest-${{ matrix.os }}-${{ matrix.python-version }}.json
+          if-no-files-found: error
 
       - name: Test unlocked extracted artifact with an empty cache
         shell: bash
@@ -85,3 +99,45 @@ jobs:
           fi
           uv pip install --python "$venv_python" dist/*.whl
           "$mimry_exe" --help >/dev/null
+
+  determinism-aggregate:
+    name: Compare canonical digests across every platform
+    needs: release-floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download every platform digest
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+
+      # The point of the whole exercise. Every OS and Python version must have
+      # produced one canonical digest, and it must be the same one, and it must
+      # equal the value committed in the repository.
+      - name: Assert one digest across the matrix
+        shell: python
+        run: |
+          import json, pathlib, sys
+
+          golden = json.loads(pathlib.Path("tests/fixtures/determinism_golden.json").read_text())["canonicalDigest"]
+          reports = sorted(pathlib.Path("digests").glob("*.json"))
+          if not reports:
+              sys.exit("no digest artifacts were collected; the matrix jobs did not emit any")
+
+          seen = {}
+          for report in reports:
+              payload = json.loads(report.read_text())
+              seen[report.stem] = payload["digest"]
+              print(f"{report.stem:44s} {payload['digest']}")
+
+          distinct = sorted(set(seen.values()))
+          print(f"\n{len(seen)} jobs, {len(distinct)} distinct digest(s)")
+          if len(distinct) != 1:
+              sys.exit(f"canonical digests diverge across platforms: {distinct}")
+          if distinct[0] != golden:
+              sys.exit(f"canonical digest {distinct[0]} does not match committed golden {golden}")
+          print(f"all platforms agree and match the committed golden digest {golden}")

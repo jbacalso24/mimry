@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -141,6 +142,29 @@ def build() -> dict:
     return graph
 
 
+def real_pipeline_gate() -> int:
+    """Run the real end-to-end determinism matrix over the frozen fixture.
+
+    The synthetic digest above proves the graph engine is portable, which is
+    necessary but nowhere near sufficient: it never touches the scanner, the
+    parsers, SQLite, or the context pack. Those layers are where filesystem
+    order, absolute paths, and hash seeds actually leak in, so the real gate
+    lives in scripts/determinism_matrix.py and runs here too.
+
+    This file is deliberately importable with nothing installed. When the parser
+    dependencies are absent the real gate is skipped loudly rather than
+    silently, so a bare-Python run can never be mistaken for a full pass.
+    """
+    try:
+        import tree_sitter_language_pack  # noqa: F401
+    except ImportError:
+        print("REAL GATE   SKIPPED (tree-sitter-language-pack not installed; run `uv sync --locked`)")
+        return 0
+    matrix = Path(__file__).resolve().parent / "determinism_matrix.py"
+    print("REAL GATE   running scripts/determinism_matrix.py ...")
+    return subprocess.run([sys.executable, str(matrix)], check=False).returncode
+
+
 def main() -> int:
     graph = build()
     payload = {
@@ -162,7 +186,7 @@ def main() -> int:
     assert "\r" not in payload["report"], "report must not contain CR"
     assert all("\\" not in n["source_file"] for n in graph["nodes"]), "paths must stay POSIX"
     assert build() == graph, "graph build must be deterministic within a process"
-    return 0
+    return real_pipeline_gate()
 
 
 if __name__ == "__main__":

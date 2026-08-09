@@ -43,9 +43,7 @@ sys.path.insert(0, str(REPO / "src"))
 def fixture_files() -> list[str]:
     """Canonical relative paths of the frozen fixture, in canonical order."""
     return sorted(
-        p.relative_to(FIXTURE).as_posix()
-        for p in FIXTURE.rglob("*")
-        if p.is_file() and p.name != ".gitattributes"
+        p.relative_to(FIXTURE).as_posix() for p in FIXTURE.rglob("*") if p.is_file() and p.name != ".gitattributes"
     )
 
 
@@ -71,7 +69,7 @@ def materialize(target: Path, *, reverse: bool) -> None:
 
 def run_worker(root: str, out: str) -> int:
     """Index ``root`` from scratch and write its canonical outputs to ``out``."""
-    from mimry.commands import cmd_context, cmd_find, cmd_index, cmd_init
+    from mimry.commands import cmd_context, cmd_index, cmd_init
     from mimry.digest import canonical_digest, canonical_state
     from mimry.search import find_rows
     from mimry.storage import load_pointer
@@ -97,9 +95,7 @@ def run_worker(root: str, out: str) -> int:
     # The pack embeds the absolute root and a generation timestamp; both are
     # operational. Compare the evidence ordering, which is not.
     context_lines = [
-        line
-        for line in context.splitlines()
-        if line.strip() and str(root_path) not in line and "Generated" not in line
+        line for line in context.splitlines() if line.strip() and str(root_path) not in line and "Generated" not in line
     ]
 
     payload = {

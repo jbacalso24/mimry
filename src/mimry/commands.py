@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from .adapters import list_adapters
 from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_root_cache_path
 from .constants import SCHEMA_VERSION
+from .digest import canonical_digest, canonical_state
 from .feedback import feedback_payload_from_args, feedback_stats, list_feedback, record_feedback, show_feedback
 from .freshness import index_freshness
 from .core.artifacts import (
@@ -1142,3 +1143,25 @@ def cmd_cache_wipe(a):
     except OSError as e:
         print(f"Cache wipe incomplete: {e}")
         return 2
+
+
+def cmd_digest(a):
+    """Print the canonical semantic digest of the active index generation.
+
+    This hashes normalized semantic state, not raw SQLite bytes or the
+    generation manifest, so two identical repositories checked out at different
+    absolute paths -- or indexed on different platforms -- print the same value.
+    See `mimry.digest` for the canonical/operational split.
+    """
+    root = Path(a.root).resolve()
+    safe_root(root)
+    ptr = load_pointer(root)
+    if not ptr:
+        print("MIMRY is not initialized here. Run `mimry init`.", file=sys.stderr)
+        return 1
+    idx = Path(ptr["indexPath"])
+    if getattr(a, "json", False):
+        print(json.dumps(canonical_state(idx, ptr.get("rootId")), sort_keys=True, indent=2))
+        return 0
+    print(canonical_digest(idx, ptr.get("rootId")))
+    return 0

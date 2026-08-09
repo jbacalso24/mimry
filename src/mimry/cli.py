@@ -7,6 +7,7 @@ from .commands import (
     cmd_brief,
     cmd_cache_wipe,
     cmd_context,
+    cmd_digest,
     cmd_explain,
     cmd_feedback,
     cmd_find,
@@ -134,6 +135,12 @@ def build_parser():
     s.add_argument("--query", required=True)
     s.add_argument("--limit", type=int, default=25)
     s.set_defaults(func=cmd_why)
+    s = sub.add_parser(
+        "digest",
+        help="Print the canonical semantic digest of the active index (reproducible across roots and platforms)",
+    )
+    s.add_argument("--json", action="store_true", help="Print the normalized canonical state instead of its hash")
+    s.set_defaults(func=cmd_digest)
     sub.add_parser("roots").set_defaults(func=cmd_roots)
     i = sub.add_parser(
         "install", help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills"

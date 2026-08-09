@@ -680,3 +680,76 @@ def test_exact_match_outranks_semantic_only_match(tmp_idx):
     # The semantic-only entry should have score <= 80
     assert len(rows) > 0
     assert rows[0]["score"] <= 80, f"Semantic-only score should be capped at 80, got {rows[0]['score']}"
+
+
+def _write_files_jsonl(idx, records):
+    idx.mkdir(parents=True, exist_ok=True)
+    (idx / "files.jsonl").write_text(
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records), encoding="utf-8"
+    )
+    con = connect(idx)
+    with con:
+        for record in records:
+            con.execute(
+                "insert or replace into files values(?,?,?,?,?,?,?,?)",
+                (
+                    record["file_id"],
+                    record["rel_path"],
+                    record["filename"],
+                    record["extension"],
+                    record["adapter"],
+                    record["parse_status"],
+                    record["content_hint"],
+                    record["metadata_text"],
+                ),
+            )
+            con.execute(
+                "insert into files_fts values(?,?,?,?,?,?)",
+                (
+                    record["file_id"],
+                    record["rel_path"],
+                    record["filename"],
+                    record["extension"],
+                    record["content_hint"],
+                    record["metadata_text"],
+                ),
+            )
+    con.close()
+
+
+def test_search_reason_strings_are_deterministic(tmp_path):
+    """Reason strings must be byte-identical across repeat runs and reversed record order.
+
+    A reason is what an agent actually reads to decide whether to open a file.
+    If a set iteration or a tied cutoff reaches it, the explanation changes
+    between runs even though the ranking looks stable.
+    """
+    from mimry.search import find_rows
+
+    records = [
+        {
+            "file_id": f"id{i:03d}",
+            "rel_path": f"src/session/module_{i:03d}.py",
+            "filename": f"module_{i:03d}.py",
+            "extension": ".py",
+            "adapter": "python-ast",
+            "parse_status": "ok",
+            "content_hint": "session login refresh handler",
+            "metadata_text": f"src/session/module_{i:03d}.py session login refresh",
+        }
+        # More tied rows than the FTS cutoff of 80, so the cutoff is actually exercised.
+        for i in range(120)
+    ]
+
+    forward = tmp_path / "forward"
+    reverse = tmp_path / "reverse"
+    _write_files_jsonl(forward, records)
+    _write_files_jsonl(reverse, list(reversed(records)))
+
+    query = "session login"
+    forward_rows = find_rows(forward, query, limit=10)
+    reverse_rows = find_rows(reverse, query, limit=10)
+
+    assert [(r["path"], r["reason"]) for r in forward_rows] == [(r["path"], r["reason"]) for r in reverse_rows]
+    # And stable when the very same index is queried twice.
+    assert forward_rows == find_rows(forward, query, limit=10)
