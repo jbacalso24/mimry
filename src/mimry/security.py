@@ -121,12 +121,9 @@ YAML_BLOCK_ASSIGNMENT_RE = re.compile(
     r"(?P<header>\s*:\s*[|>][+-]?[^\r\n]*\r?\n)"
     r"(?P<body>(?:(?P=indent)[ \t]+[^\r\n]*(?:\r?\n|$)|[ \t]*\r?\n)*)"
 )
-YAML_QUOTED_MULTILINE_ASSIGNMENT_RE = re.compile(
-    r"(?m)^(?P<indent>[ \t]*)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)"
+YAML_QUOTED_MULTILINE_ASSIGNMENT_START_RE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)"
     r"(?P<header>[ \t]*:[ \t]*)(?P<quote>['\"])"
-    r"(?P<first>[^\r\n]*\r?\n)"
-    r"(?P<continuation>(?:(?P=indent)[ \t]+[^\r\n]*\r?\n)*?(?P=indent)[ \t]+[^\r\n]*?)"
-    r"(?P=quote)(?P<trailer>[ \t]*(?:#[^\r\n]*)?)(?P<newline>\r?\n|$)"
 )
 PRIVATE_KEY_BLOCK_RE = re.compile(
     r"(?is)-----BEGIN (?P<label>(?:RSA |EC |OPENSSH |DSA |ENCRYPTED |)PRIVATE KEY)-----"
@@ -175,7 +172,9 @@ def contains_sensitive_text(text: str) -> bool:
         return True
     if any(_is_sensitive_label(match.group("label")) for match in YAML_BLOCK_ASSIGNMENT_RE.finditer(text)):
         return True
-    if any(_is_sensitive_label(match.group("label")) for match in YAML_QUOTED_MULTILINE_ASSIGNMENT_RE.finditer(text)):
+    if any(
+        _is_sensitive_label(label) for _start, _end, label, _replacement in _yaml_quoted_multiline_assignments(text)
+    ):
         return True
     if any(_is_sensitive_label(match.group("label")) for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)):
         return True
@@ -190,7 +189,7 @@ def redact_sensitive_text(text: str) -> str:
     redacted = SENSITIVE_VALUE_RE.sub(REDACTED, redacted)
     redacted = SPACED_SENSITIVE_ASSIGNMENT_RE.sub(_redact_spaced_assignment, redacted)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
-    redacted = YAML_QUOTED_MULTILINE_ASSIGNMENT_RE.sub(_redact_yaml_quoted_multiline, redacted)
+    redacted = _redact_yaml_quoted_multiline(redacted)
     redacted = ASSIGNMENT_RE.sub(_redact_assignment, redacted)
     redacted = UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE.sub(_redact_unclosed_multiline_assignment, redacted)
     return redacted
@@ -267,14 +266,103 @@ def _redact_yaml_block(match: re.Match[str]) -> str:
     return f"{match.group('indent')}{match.group('label')}{match.group('header')}{match.group('indent')}  {REDACTED}{newline}"
 
 
-def _redact_yaml_quoted_multiline(match: re.Match[str]) -> str:
-    if not _is_sensitive_label(match.group("label")):
-        return match.group(0)
-    return (
-        f"{match.group('indent')}{match.group('label')}{match.group('header')}"
-        f"{match.group('quote')}{REDACTED}{match.group('quote')}"
-        f"{match.group('trailer')}{match.group('newline')}"
-    )
+def _split_line_ending(line: str) -> tuple[str, str]:
+    if line.endswith("\r\n"):
+        return line[:-2], "\r\n"
+    if line.endswith("\n") or line.endswith("\r"):
+        return line[:-1], line[-1]
+    return line, ""
+
+
+def _yaml_quote_on_line(content: str, start: int, quote: str, *, require_trailer: bool) -> tuple[int | None, bool]:
+    """Scan one physical line once for an unescaped quote and YAML trailer."""
+
+    index = start
+    saw_unescaped_quote = False
+    while index < len(content):
+        char = content[index]
+        if quote == '"' and char == "\\":
+            index += 2
+            continue
+        if char != quote:
+            index += 1
+            continue
+        if quote == "'" and index + 1 < len(content) and content[index + 1] == quote:
+            index += 2
+            continue
+
+        saw_unescaped_quote = True
+        if not require_trailer:
+            return index, True
+
+        trailer = index + 1
+        while trailer < len(content) and content[trailer] in " \t":
+            trailer += 1
+        if trailer == len(content) or content[trailer] == "#":
+            return index, True
+        index += 1
+    return None, saw_unescaped_quote
+
+
+def _yaml_quoted_multiline_assignments(text: str):
+    """Yield sensitive quoted YAML scalar spans in linear time."""
+
+    lines = text.splitlines(keepends=True)
+    offsets: list[int] = []
+    offset = 0
+    for line in lines:
+        offsets.append(offset)
+        offset += len(line)
+
+    index = 0
+    while index < len(lines):
+        first, _first_newline = _split_line_ending(lines[index])
+        match = YAML_QUOTED_MULTILINE_ASSIGNMENT_START_RE.match(first)
+        if match is None or not _is_sensitive_label(match.group("label")):
+            index += 1
+            continue
+
+        quote = match.group("quote")
+        opening_end = match.end("quote")
+        closing, saw_quote = _yaml_quote_on_line(first, opening_end, quote, require_trailer=True)
+        if closing is not None:
+            index += 1
+            continue
+        if saw_quote:
+            # A same-line quote with a non-YAML trailer (notably a TSX/object
+            # comma) is not a YAML multiline scalar. Do not consume following
+            # independent assignments while trying to reinterpret it.
+            index += 1
+            continue
+
+        cursor = index + 1
+        while cursor < len(lines):
+            body, newline = _split_line_ending(lines[cursor])
+            closing, _saw_quote = _yaml_quote_on_line(body, 0, quote, require_trailer=True)
+            if closing is not None:
+                trailer = body[closing + 1 :]
+                replacement = f"{first[:opening_end]}{REDACTED}{quote}{trailer}{newline}"
+                yield offsets[index], offsets[cursor] + len(lines[cursor]), match.group("label"), replacement
+                cursor += 1
+                break
+            cursor += 1
+        else:
+            replacement = f"{first[:opening_end]}{REDACTED}{quote}"
+            yield offsets[index], len(text), match.group("label"), replacement
+        index = cursor
+
+
+def _redact_yaml_quoted_multiline(text: str) -> str:
+    matches = [match for match in _yaml_quoted_multiline_assignments(text) if _is_sensitive_label(match[2])]
+    if not matches:
+        return text
+    parts: list[str] = []
+    cursor = 0
+    for start, end, _label, replacement in matches:
+        parts.extend((text[cursor:start], replacement))
+        cursor = end
+    parts.append(text[cursor:])
+    return "".join(parts)
 
 
 def _redact_unclosed_multiline_assignment(match: re.Match[str]) -> str:

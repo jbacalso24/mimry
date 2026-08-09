@@ -248,6 +248,120 @@ def test_line_leading_javascript_declarations_and_yaml_quoted_multiline_scalars_
     assert redact_sensitive_text(samples[4]) == "credentials: '[REDACTED]'\npublic: retained\n"
 
 
+def test_yaml_quoted_multiline_scalars_accept_blank_and_same_indent_lines_without_leaking():
+    yaml = pytest.importorskip("yaml")
+    samples = (
+        (
+            f'root:\n  password: "first\n\n    {DEFENSIVE_MARKER}\n    last" # retained\n  public: retained\n',
+            'root:\n  password: "[REDACTED]" # retained\n  public: retained\n',
+        ),
+        (
+            f'password: "first\n\n{DEFENSIVE_MARKER}\nlast"\npublic: retained\n',
+            'password: "[REDACTED]"\npublic: retained\n',
+        ),
+    )
+    for lf_text, expected_lf in samples:
+        assert DEFENSIVE_MARKER in str(yaml.safe_load(lf_text))
+        for text, expected in (
+            (lf_text, expected_lf),
+            (lf_text.replace("\n", "\r\n"), expected_lf.replace("\n", "\r\n")),
+        ):
+            assert contains_sensitive_text(text)
+            assert redact_sensitive_text(text) == expected
+
+
+def test_yaml_quoted_multiline_scalars_handle_escapes_doubling_comments_and_unclosed_values():
+    yaml = pytest.importorskip("yaml")
+    closed_samples = (
+        f'password: "first \\"quoted\\"\n{DEFENSIVE_MARKER}\nlast" # retained\npublic: retained\n',
+        f"credentials: 'first ''quoted''\n{DEFENSIVE_MARKER}\nlast' # retained\npublic: retained\n",
+    )
+    for text in closed_samples:
+        assert DEFENSIVE_MARKER in str(yaml.safe_load(text))
+        assert contains_sensitive_text(text)
+        redacted = redact_sensitive_text(text)
+        assert redacted.splitlines()[0].endswith('[REDACTED]" # retained') or redacted.splitlines()[0].endswith(
+            "[REDACTED]' # retained"
+        )
+        assert DEFENSIVE_MARKER not in redacted
+        assert "public: retained" in redacted
+
+    unclosed = f'password: "first\n\n{DEFENSIVE_MARKER}\npublic: retained\n'
+    assert contains_sensitive_text(unclosed)
+    assert redact_sensitive_text(unclosed) == 'password: "[REDACTED]"'
+
+
+def test_non_sensitive_multiline_object_member_does_not_hide_later_sensitive_yaml():
+    text = (
+        'root:\n  description: "first\n    second",\n'
+        f'  password: "first\n\n  {DEFENSIVE_MARKER}\n  last"\n  public: retained\n'
+    )
+    assert contains_sensitive_text(text)
+    redacted = redact_sensitive_text(text)
+    assert 'description: "first\n    second",' in redacted
+    assert DEFENSIVE_MARKER not in redacted
+    assert 'password: "[REDACTED]"' in redacted
+    assert "public: retained" in redacted
+
+
+def test_quote_dense_yaml_multiline_secret_scan_is_bounded():
+    script = """
+import json
+import time
+from mimry.security import contains_sensitive_text, redact_sensitive_text
+
+timings = []
+for size in (128 * 1024, 256 * 1024, 512 * 1024):
+    quote_dense = '\"x' * (size // 2)
+    text = 'password: \"first\\n  ' + quote_dense + ',\\npublic: retained\\n'
+    started = time.perf_counter()
+    assert contains_sensitive_text(text)
+    redacted = redact_sensitive_text(text)
+    assert quote_dense not in redacted
+    timings.append(time.perf_counter() - started)
+print(json.dumps(timings))
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=8,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    timings = json.loads(result.stdout)
+    # Ratios against the smallest wall-clock sample are noisy across CI hosts.
+    assert timings[-1] <= 3.0, timings
+
+
+def test_nested_typescript_object_secret_scan_is_bounded():
+    script = """
+from mimry.security import contains_sensitive_text, redact_sensitive_text
+
+text = "const fixture = {\\n  label: 'ordinary',\\n" + "".join(
+    "    item: 'ordinary',\\n      nested: 'ordinary',\\n        value: 'ordinary',\\n" for _ in range(12)
+) + "};\\n"
+assert not contains_sensitive_text(text)
+assert redact_sensitive_text(text) == text
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=2,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_generated_outputs(
     tmp_path: Path, monkeypatch
 ):
