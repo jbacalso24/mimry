@@ -148,7 +148,11 @@ def apply_intent_adjustment(
             reasons.append("doc downrank for edit intent")
         if is_test_file(rel_path):
             if set(terms) & TEST_TERMS:
-                score += 25
+                # Match the source boost. When the query names tests explicitly
+                # ("tests for checkout redirect"), the test file IS the primary
+                # edit surface; giving source +100 and tests +25 put the module
+                # under test above the test the user asked for.
+                score += 100
                 reasons.append("test intent boost")
             else:
                 score = int(score * 0.75)

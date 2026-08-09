@@ -107,10 +107,35 @@ def _env(sandbox: Path) -> dict[str, str]:
     )
     for key in ("HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "MIMRY_CACHE_HOME", "TMPDIR"):
         Path(env[key]).mkdir(parents=True, exist_ok=True)
+
+    # tree-sitter-language-pack resolves its grammar cache through the platform
+    # cache directory. The allowlist above strips the Windows variables that
+    # feed it, and the sandbox HOME has no AppData tree, so the lookup failed
+    # with "Could not determine system cache directory". That surfaced as
+    # parse_error:RuntimeError on every .ts/.tsx file: the benchmark kept
+    # running and scored an index with zero TypeScript symbols.
+    #
+    # Give the sandbox its own AppData tree instead of reaching for the real
+    # one. Isolation holds -- nothing here points outside the sandbox.
+    local_appdata = Path(env["HOME"]) / "AppData" / "Local"
+    roaming_appdata = Path(env["HOME"]) / "AppData" / "Roaming"
+    local_appdata.mkdir(parents=True, exist_ok=True)
+    roaming_appdata.mkdir(parents=True, exist_ok=True)
+    env["LOCALAPPDATA"] = str(local_appdata)
+    env["APPDATA"] = str(roaming_appdata)
     return env
 
 
-def _run(repo: Path, env: dict[str, str], *args: str, timeout: int = 5) -> tuple[str, str, float]:
+# A crash guard, not the quality bar. Retrieval speed is judged by the
+# find_p95_ms / context_p95_ms thresholds (1000ms / 1500ms), which are frozen
+# and still fail a slow run. This ceiling only stops one transient stall on a
+# contended machine from voiding every measured case, which is strictly worse
+# information than a recorded latency failure.
+_COMMAND_TIMEOUT_SECONDS = int(os.environ.get("MIMRY_BENCHMARK_COMMAND_TIMEOUT", "60"))
+
+
+def _run(repo: Path, env: dict[str, str], *args: str, timeout: int | None = None) -> tuple[str, str, float]:
+    timeout = _COMMAND_TIMEOUT_SECONDS if timeout is None else timeout
     started = time.perf_counter_ns()
     result = subprocess.run(
         [sys.executable, "-m", "mimry.cli", "--root", str(repo), *args],
@@ -188,7 +213,7 @@ def evaluate(
         graph_status_out = ""
         graph_status_err = ""
         graph_nodes, graph_edges = 0, 0
-        init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graph", timeout=60)
+        init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graph")
         index_out, index_err, index_ms = _run(repo, env, "index", timeout=300)
         # The native engine always builds the graph inside `index`. `graph` is
         # retained as a public runner argument, but report what actually ran
