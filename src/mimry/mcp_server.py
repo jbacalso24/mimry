@@ -23,6 +23,7 @@ from mimry.commands import (
     cmd_why,
     require,
 )
+from mimry.digest import canonical_digest
 from mimry.freshness import index_freshness
 from mimry.core.artifacts import graph_health
 from mimry.indexer import write_index
@@ -31,7 +32,7 @@ from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
 from mimry.security import filter_index_records, redact_sensitive_text, safe_root, sanitize_data, sanitize_query
-from mimry.state import StateCorruptionError, StateLockTimeoutError, IndexSchemaMigrationError
+from mimry.state import StateCorruptionError, StateLockTimeoutError, IndexSchemaMigrationError, GENERATION_SCHEMA_VERSION
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import RootIdentityError, active_index_pointer, load_jsonl, load_pointer
 
@@ -481,6 +482,58 @@ def mimry_feedback(
         return {"returncode": 2, "error": "Feedback requires query."}
     row = record_feedback(idx, ptr["rootId"], payload, lock=False)
     return {"returncode": 0, "root": str(root_path), "feedback": row}
+
+
+def _digest_payload_unchecked(root_path: Path) -> dict[str, Any]:
+    """Compute canonical digest for a root's active index generation."""
+    ptr = load_pointer(root_path)
+    if not ptr:
+        return {
+            "returncode": 2,
+            "initialized": False,
+            "root": str(root_path),
+            "error": {
+                "code": "uninitialized",
+                "message": "MIMRY is not initialized here. Run `mimry init` first.",
+            },
+            "recommended": "Run `mimry init` to initialize MIMRY.",
+        }
+    idx = Path(ptr["indexPath"])
+    root_id = ptr.get("rootId")
+    digest = canonical_digest(idx, root_id)
+    return {
+        "returncode": 0,
+        "root": str(root_path),
+        "canonical_state": {
+            "digest": digest,
+            "schema_version": GENERATION_SCHEMA_VERSION,
+            "note": "These fields are deterministic and reproducible across repositories with identical content.",
+        },
+        "operational_metadata": {
+            "generation_id": ptr.get("generationId"),
+            "root_id": root_id,
+            "index_path": str(idx),
+            "note": "These fields vary between runs and are not part of the canonical digest.",
+        },
+    }
+
+
+def _digest_payload(root_path: Path) -> dict[str, Any]:
+    """Compute digest with error handling for missing, outdated, or corrupt indexes."""
+    try:
+        with active_index_pointer(root_path):
+            return _digest_payload_unchecked(root_path)
+    except IndexSchemaMigrationError as exc:
+        return _schema_upgrade_error_payload(exc, root=root_path)
+    except StateCorruptionError as exc:
+        return _state_error_payload(exc, root=root_path)
+
+
+@mcp.tool
+@_state_guard
+def mimry_digest(root: str | None = None) -> dict[str, Any]:
+    """Return the canonical semantic digest and state metadata for an index generation."""
+    return _digest_payload(_root(root))
 
 
 def main(argv: list[str] | None = None) -> None:

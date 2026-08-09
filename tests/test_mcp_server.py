@@ -351,8 +351,8 @@ def test_mcp_still_reports_real_corruption_as_corruption(tmp_path: Path, monkeyp
 
 
 def test_mcp_tool_list_is_backward_compatible(tmp_path: Path):
-    """Every existing tool must still be registered."""
-    from mimry.mcp_server import mimry_symbol, mimry_semantic
+    """Every existing tool must still be registered, plus new digest tool."""
+    from mimry.mcp_server import mimry_symbol, mimry_semantic, mimry_digest
 
     assert callable(mimry_status)
     assert callable(mimry_find)
@@ -368,3 +368,134 @@ def test_mcp_tool_list_is_backward_compatible(tmp_path: Path):
     assert callable(mimry_route)
     assert callable(mimry_brief)
     assert callable(mimry_context)
+    assert callable(mimry_digest)
+
+
+def test_mcp_digest_tool_matches_cli_digest(tmp_path: Path, monkeypatch):
+    """MCP digest tool must return same digest as CLI 'mimry digest'."""
+    from mimry.mcp_server import mimry_digest
+    from mimry.digest import canonical_digest
+
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+
+    actual_ptr = load_pointer(repo)
+    mcp_payload = mimry_digest(str(repo))
+    cli_digest = canonical_digest(Path(actual_ptr["indexPath"]), actual_ptr.get("rootId"))
+
+    assert mcp_payload["returncode"] == 0
+    assert mcp_payload["canonical_state"]["digest"] == cli_digest
+    assert mcp_payload["canonical_state"]["schema_version"] == "4"
+    assert mcp_payload["operational_metadata"]["root_id"] == actual_ptr["rootId"]
+
+
+def test_mcp_digest_tool_declares_canonical_and_operational_fields(tmp_path: Path, monkeypatch):
+    """Digest tool must clearly label canonical vs operational fields."""
+    from mimry.mcp_server import mimry_digest
+
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+
+    payload = mimry_digest(str(repo))
+
+    assert payload["returncode"] == 0
+    assert "canonical_state" in payload
+    assert payload["canonical_state"]["digest"]
+    assert payload["canonical_state"]["schema_version"]
+    assert "operational_metadata" in payload
+    assert payload["operational_metadata"]["root_id"]
+    assert payload["operational_metadata"]["generation_id"]
+
+
+def test_mcp_digest_tool_structured_errors(tmp_path: Path, monkeypatch):
+    """Digest tool must return structured errors for missing, outdated, and corrupt indexes."""
+    from mimry.mcp_server import mimry_digest
+
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+
+    # Test missing index
+    missing_payload = mimry_digest(str(repo))
+    assert missing_payload["returncode"] == 2
+    assert missing_payload["error"]["code"] == "uninitialized"
+
+    # Test outdated schema
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+
+    actual_ptr = load_pointer(repo)
+    generation_id = actual_ptr["generationId"]
+    from mimry.state import GENERATION_MANIFEST
+    generation_path = Path(actual_ptr["indexPath"]) / GENERATION_MANIFEST
+    gen_data = {
+        "schemaVersion": "2",
+        "generationId": generation_id,
+        "createdAt": "test",
+        "artifacts": {},
+    }
+    generation_path.write_text(__import__("json").dumps(gen_data), encoding="utf-8")
+
+    outdated_payload = mimry_digest(str(repo))
+    assert outdated_payload["returncode"] == 2
+    assert outdated_payload["error"]["code"] == "index_schema_outdated"
+
+    # Test corrupt index
+    repo2 = tmp_path / "repo2"
+    shutil.copytree(FIXTURE, repo2)
+    root_id2 = str(uuid.uuid4())
+    ptr2 = {
+        "rootId": root_id2,
+        "rootPath": str(repo2),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id2)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo2, ptr2)
+    write_index(repo2, ptr2)
+
+    actual_ptr2 = load_pointer(repo2)
+    files_path = Path(actual_ptr2["indexPath"]) / "files.jsonl"
+    files_path.write_bytes(b"corrupted")
+
+    corrupt_payload = mimry_digest(str(repo2))
+    assert corrupt_payload["returncode"] == 2
+    assert corrupt_payload["error"]["code"] == "state_corruption"
