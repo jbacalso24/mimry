@@ -10,3 +10,5 @@ build/
 *.egg-info/
 .mimry/
 mimry-out/
+# Transient subagent git worktrees.
+.claude/
