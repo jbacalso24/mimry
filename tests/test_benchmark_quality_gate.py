@@ -10,7 +10,15 @@ import json
 import shutil
 from pathlib import Path
 
-from mimry.benchmark import DEFAULT_THRESHOLDS, SCHEMA_VERSION, benchmark_input_digests
+import pytest
+
+from mimry.benchmark import (
+    DEFAULT_THRESHOLDS,
+    SCHEMA_VERSION,
+    benchmark_input_digests,
+    deterministic_projection,
+    validate_report,
+)
 
 
 def test_benchmark_result_is_passing_and_stable():
@@ -22,6 +30,7 @@ def test_benchmark_result_is_passing_and_stable():
 
     assert result_path.exists(), f"Benchmark result missing: {result_path}"
     report = json.loads(result_path.read_text(encoding="utf-8"))
+    validate_report(report, cases_path, fixture_path)
 
     # Schema version must be current
     assert report.get("schema_version") == SCHEMA_VERSION, (
@@ -62,6 +71,8 @@ def test_ci_validates_committed_evidence_before_writing_fresh_artifact():
     assert "--out /tmp/artifact/result.core.json" in workflow
     assert "path: /tmp/artifact/result.core.json" in workflow
     assert "--out benchmarks/result.core.json" not in workflow
+    assert "--validate-report benchmarks/result.core.json" in workflow
+    assert "--deterministic-against benchmarks/result.core.json" in workflow
 
 
 def test_benchmark_provenance_changes_with_fixture_cases_and_source(tmp_path):
@@ -94,3 +105,49 @@ def test_frozen_fixture_disables_checkout_eol_conversion():
     project = Path(__file__).resolve().parents[1]
     attributes = project / "benchmarks" / "fixtures" / "agent_repo" / ".gitattributes"
     assert attributes.read_text(encoding="utf-8").splitlines()[-1] == "* -text"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        (lambda report: report["cases"][0]["paths"].reverse(), "paths"),
+        (lambda report: report["cases"][0].__setitem__("ndcg_at_5", 1.0), "ndcg_at_5"),
+        (lambda report: report["aggregates"].__setitem__("recall_at_5", 0.99), "aggregate"),
+        (lambda report: report["checks"].__setitem__("ndcg_at_5", False), "check"),
+        (lambda report: report.__setitem__("state", "FAIL"), "state"),
+    ],
+)
+def test_report_validator_rejects_tampered_deterministic_evidence(mutation, expected):
+    project = Path(__file__).resolve().parents[1]
+    report = json.loads((project / "benchmarks" / "result.core.json").read_text(encoding="utf-8"))
+    report.update(
+        benchmark_input_digests(
+            project / "benchmarks" / "cases.v1.json", project / "benchmarks" / "fixtures" / "agent_repo"
+        )
+    )
+    mutation(report)
+    with pytest.raises(ValueError, match=expected):
+        validate_report(
+            report,
+            project / "benchmarks" / "cases.v1.json",
+            project / "benchmarks" / "fixtures" / "agent_repo",
+        )
+
+
+def test_deterministic_projection_tolerates_latency_and_platform_metadata():
+    project = Path(__file__).resolve().parents[1]
+    report = json.loads((project / "benchmarks" / "result.core.json").read_text(encoding="utf-8"))
+    changed = json.loads(json.dumps(report))
+    changed["platform"] = "DifferentOS"
+    changed["python"] = "9.9.9"
+    changed["setup_ms"] = {"init": 9999, "index": 9999}
+    changed["setup_total_ms"] = 99999
+    changed["aggregates"]["find_p95_ms"] = 999
+    changed["aggregates"]["context_p95_ms"] = 999
+    changed["checks"]["find_p95_ms"] = True
+    changed["checks"]["context_p95_ms"] = True
+    for case in changed["cases"]:
+        case["find_median_ms"] = 999
+        case["context_ms"] = 999
+
+    assert deterministic_projection(changed) == deterministic_projection(report)

@@ -396,7 +396,7 @@ def test_mixed_generation_sidecar_is_corrupt_and_all_direct_mcp_tools_structure_
     assert payload["error"]["path"].endswith("files.jsonl")
 
 
-def test_future_generation_schema_fails_closed_as_unsupported_state(tmp_path: Path, monkeypatch):
+def test_future_generation_schema_fails_closed_as_newer_client_required(tmp_path: Path, monkeypatch):
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     pointer = load_pointer(repo)
@@ -405,12 +405,15 @@ def test_future_generation_schema_fails_closed_as_unsupported_state(tmp_path: Pa
     manifest["schemaVersion"] = "999"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    with pytest.raises(state.StateCorruptionError, match="unsupported generation schema '999'") as raised:
+    with pytest.raises(state.UnsupportedIndexSchemaError, match="newer MIMRY client") as raised:
         state.validate_generation(pointer)
     assert not isinstance(raised.value, state.IndexSchemaMigrationError)
+    assert not isinstance(raised.value, state.StateCorruptionError)
 
     payload = mimry_find("auth", str(repo))
-    assert payload["error"]["code"] == "state_corruption"
+    assert payload["initialized"] is True
+    assert payload["error"]["code"] == "index_schema_unsupported"
+    assert "newer" in payload["recommended"].lower()
 
 
 def test_mixed_generation_sqlite_is_never_reported_current(tmp_path: Path, monkeypatch):

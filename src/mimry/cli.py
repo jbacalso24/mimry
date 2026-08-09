@@ -26,7 +26,7 @@ from .commands import (
     cmd_why,
 )
 from .installer import cmd_hook_check, cmd_install, cmd_uninstall
-from .state import IndexSchemaMigrationError, StateCorruptionError, StateLockTimeoutError
+from .state import IndexSchemaMigrationError, StateCorruptionError, StateLockTimeoutError, UnsupportedIndexSchemaError
 from .storage import RootIdentityError
 
 
@@ -189,6 +189,9 @@ def main(argv=None):
     a = build_parser().parse_args(argv)
     try:
         return a.func(a)
+    except UnsupportedIndexSchemaError as exc:
+        print(f"MIMRY index requires a newer MIMRY client: {exc}", file=sys.stderr)
+        return 2
     except IndexSchemaMigrationError as exc:
         print(f"MIMRY index is out of date: {exc}", file=sys.stderr)
         return 2

@@ -10,6 +10,17 @@ from pathlib import Path
 # Extensions for office document files that MIMRY can extract text from.
 DOCUMENT_EXTENSIONS = {".docx", ".xlsx"}
 MAX_MEMBER_BYTES = 5 * 1024 * 1024
+MAX_XLSX_WORKSHEETS = 64
+MAX_XLSX_TOTAL_BYTES = 20 * 1024 * 1024
+MAX_XLSX_COMPRESSION_RATIO = 100
+
+
+class DocumentResourceLimit(ValueError):
+    pass
+
+
+class UnsafeDocumentXML(ValueError):
+    pass
 
 
 def is_document(path: str | Path) -> bool:
@@ -59,7 +70,7 @@ def extract_document_text(
                 if ext == ".docx":
                     text = _extract_docx_text(zf)
                 elif ext == ".xlsx":
-                    text = _extract_xlsx_text(zf)
+                    text = _extract_xlsx_text(zf, limit=limit)
                 else:
                     return ("", "parse_error:unsupported_extension")
 
@@ -74,7 +85,7 @@ def extract_document_text(
                 if ext == ".docx":
                     text = _extract_docx_text(zf)
                 elif ext == ".xlsx":
-                    text = _extract_xlsx_text(zf)
+                    text = _extract_xlsx_text(zf, limit=limit)
                 else:
                     return ("", "parse_error:unsupported_extension")
 
@@ -85,6 +96,10 @@ def extract_document_text(
                 collapsed = " ".join(text.split())[:limit]
                 return (collapsed, "ok")
 
+    except DocumentResourceLimit:
+        return ("", "parse_error:ResourceLimit")
+    except UnsafeDocumentXML:
+        return ("", "parse_error:UnsafeXML")
     except zipfile.BadZipFile as e:
         return ("", f"parse_error:{e.__class__.__name__}")
     except OSError as e:
@@ -133,47 +148,78 @@ def _extract_docx_text(zf: zipfile.ZipFile) -> str:
     return " ".join(html.unescape(t) for t in texts)
 
 
-def _extract_xlsx_text(zf: zipfile.ZipFile) -> str:
-    """Extract shared and inline strings from bounded XLSX XML members."""
+def _safe_xml(data: bytes) -> bytes:
+    upper = data.upper()
+    if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
+        raise UnsafeDocumentXML("DTD and entity declarations are not allowed in Office XML")
+    return data
+
+
+def _extract_xlsx_text(zf: zipfile.ZipFile, *, limit: int) -> str:
+    """Extract shared and inline strings with aggregate archive/XML bounds."""
 
     def local_name(tag: str) -> str:
         return tag.rsplit("}", 1)[-1]
 
+    worksheets = sorted(
+        (
+            info
+            for info in zf.infolist()
+            if info.filename.startswith("xl/worksheets/")
+            and info.filename.endswith(".xml")
+            and ".." not in info.filename
+            and not info.filename.startswith("/")
+        ),
+        key=lambda info: info.filename,
+    )
+    if len(worksheets) > MAX_XLSX_WORKSHEETS:
+        raise DocumentResourceLimit("too many worksheet XML members")
+    candidates = [info for info in zf.infolist() if info.filename == "xl/sharedStrings.xml"] + worksheets
+    if sum(info.file_size for info in candidates) > MAX_XLSX_TOTAL_BYTES:
+        raise DocumentResourceLimit("cumulative XLSX XML size exceeds limit")
+    if any(info.file_size / max(1, info.compress_size) > MAX_XLSX_COMPRESSION_RATIO for info in candidates):
+        raise DocumentResourceLimit("XLSX XML compression ratio exceeds limit")
+
     texts: list[str] = []
+    extracted_chars = 0
+
+    def append(value: str) -> bool:
+        nonlocal extracted_chars
+        if not value or extracted_chars >= limit:
+            return extracted_chars >= limit
+        value = value[: limit - extracted_chars]
+        texts.append(value)
+        extracted_chars += len(value)
+        return extracted_chars >= limit
+
     shared = _read_member(zf, "xl/sharedStrings.xml")
     if shared is not None:
         try:
-            root = ElementTree.fromstring(shared)
+            root = ElementTree.fromstring(_safe_xml(shared))
             items = [node for node in root.iter() if local_name(node.tag) == "si"]
             for item in items:
                 value = "".join(node.text or "" for node in item.iter() if local_name(node.tag) == "t")
-                if value:
-                    texts.append(value)
+                if append(value):
+                    return " ".join(texts)
             # Some minimal producers/tests omit the sst/si wrappers while still
             # placing text nodes in the standard sharedStrings member.
             if not items:
-                texts.extend(node.text for node in root.iter() if local_name(node.tag) == "t" and node.text)
+                for node in root.iter():
+                    if local_name(node.tag) == "t" and node.text and append(node.text):
+                        return " ".join(texts)
         except ElementTree.ParseError:
             pass
 
-    worksheets = sorted(
-        info.filename
-        for info in zf.infolist()
-        if info.filename.startswith("xl/worksheets/")
-        and info.filename.endswith(".xml")
-        and ".." not in info.filename
-        and not info.filename.startswith("/")
-    )
-    for member_name in worksheets:
-        data = _read_member(zf, member_name)
+    for info in worksheets:
+        data = _read_member(zf, info.filename)
         if data is None:
             continue
         try:
-            root = ElementTree.fromstring(data)
+            root = ElementTree.fromstring(_safe_xml(data))
         except ElementTree.ParseError:
             continue
         for cell in (node for node in root.iter() if local_name(node.tag) == "c" and node.get("t") == "inlineStr"):
             value = "".join(node.text or "" for node in cell.iter() if local_name(node.tag) == "t")
-            if value:
-                texts.append(value)
+            if append(value):
+                return " ".join(texts)
     return " ".join(texts)

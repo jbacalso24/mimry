@@ -161,7 +161,9 @@ jobs:
       # The committed report is independent review evidence. Validate it before
       # a fresh run so CI cannot make stale evidence look current by overwriting it.
       - name: Assert the committed report is current and PASS
-        run: uv run pytest -q tests/test_benchmark_quality_gate.py
+        run: |
+          uv run pytest -q tests/test_benchmark_quality_gate.py
+          uv run python scripts/agent_usefulness_benchmark.py --validate-report benchmarks/result.core.json
 
       # One required job, locked environment, real thresholds. The benchmark is
       # too slow for every matrix cell but must not be informational-only: a
@@ -171,6 +173,9 @@ jobs:
         run: |
           mkdir -p /tmp/artifact
           uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph --out /tmp/artifact/result.core.json
+          uv run python scripts/agent_usefulness_benchmark.py \
+            --validate-report /tmp/artifact/result.core.json \
+            --deterministic-against benchmarks/result.core.json
 
       # Without --out the runner prints fresh JSON to stdout and leaves the
       # tracked file untouched, so a stale committed result reads as current.

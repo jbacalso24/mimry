@@ -37,6 +37,7 @@ from mimry.state import (
     StateLockTimeoutError,
     IndexSchemaMigrationError,
     GENERATION_SCHEMA_VERSION,
+    UnsupportedIndexSchemaError,
 )
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import RootIdentityError, active_index_pointer, load_jsonl, load_pointer
@@ -61,6 +62,25 @@ def _schema_upgrade_error_payload(exc: IndexSchemaMigrationError, *, root: Path 
             "schema_version": exc.schema_version,
         },
         "recommended": "Run `mimry index` to rebuild the index. Source files are unaffected.",
+    }
+
+
+def _unsupported_schema_error_payload(exc: UnsupportedIndexSchemaError, *, root: Path | None = None) -> dict[str, Any]:
+    message = str(exc)
+    return {
+        "returncode": 2,
+        "initialized": True,
+        **({"root": str(root)} if root is not None else {}),
+        "state_error": message,
+        "error": {
+            "code": "index_schema_unsupported",
+            "message": message,
+            "path": str(exc.path),
+            "detail": exc.detail,
+            "generation_id": exc.generation_id,
+            "schema_version": exc.schema_version,
+        },
+        "recommended": "Upgrade to a newer MIMRY client before reading or rebuilding this index.",
     }
 
 
@@ -89,6 +109,11 @@ def _state_guard(func):
     def guarded(*args, **kwargs):
         try:
             return sanitize_data(func(*args, **kwargs))
+        except UnsupportedIndexSchemaError as exc:
+            root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
+            return sanitize_data(
+                _unsupported_schema_error_payload(exc, root=_root(root) if isinstance(root, str) else None)
+            )
         except IndexSchemaMigrationError as exc:
             # Must catch before StateCorruptionError since it's a subclass
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
@@ -135,6 +160,11 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         try:
             code = func(args)
+        except UnsupportedIndexSchemaError as exc:
+            print(f"MIMRY index requires a newer MIMRY client: {exc}", file=sys.stderr)
+            payload = _unsupported_schema_error_payload(exc, root=_root(getattr(args, "root", None)))
+            payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
+            return sanitize_data(payload)
         except IndexSchemaMigrationError as exc:
             # Must catch before StateCorruptionError since it's a subclass
             print(f"MIMRY index schema outdated: {exc}", file=sys.stderr)
@@ -220,6 +250,8 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
     try:
         with active_index_pointer(root_path):
             return _status_payload_unchecked(root_path)
+    except UnsupportedIndexSchemaError as exc:
+        return _unsupported_schema_error_payload(exc, root=root_path)
     except IndexSchemaMigrationError as exc:
         # Must precede StateCorruptionError: it is a subclass, and this inner
         # handler runs before _state_guard ever sees the exception. Status is
@@ -536,6 +568,8 @@ def _digest_payload(root_path: Path) -> dict[str, Any]:
     try:
         with active_index_pointer(root_path):
             return _digest_payload_unchecked(root_path)
+    except UnsupportedIndexSchemaError as exc:
+        return _unsupported_schema_error_payload(exc, root=root_path)
     except IndexSchemaMigrationError as exc:
         return _schema_upgrade_error_payload(exc, root=root_path)
     except StateCorruptionError as exc:
