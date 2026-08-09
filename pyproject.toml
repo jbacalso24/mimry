@@ -44,6 +44,10 @@ include = [
     "/tests",
     "/scripts/agent_integration_smoke.py",
     "/scripts/agent_usefulness_benchmark.py",
+    # The determinism gate ships with the source so a released artifact can be
+    # re-verified, not just the working checkout.
+    "/scripts/cross_platform_check.py",
+    "/scripts/determinism_matrix.py",
     "/benchmarks",
     "/docs",
     "/assets/banner.svg",
