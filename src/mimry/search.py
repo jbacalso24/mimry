@@ -88,11 +88,44 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
     files, _ = filter_index_records(load_jsonl(idx / "files.jsonl"))
     fts_scores = _fts_scores(idx, q)
     known_paths = {f["rel_path"] for f in files}
+
+    # Load symbols and build file_id -> symbols mapping for definition boost
+    symbols_by_file_id = {}
+    try:
+        symbols, _ = filter_index_records(load_jsonl(idx / "symbols.jsonl"))
+        for sym in symbols:
+            fid = sym.get("file_id")
+            if fid:
+                if fid not in symbols_by_file_id:
+                    symbols_by_file_id[fid] = []
+                symbols_by_file_id[fid].append(sym.get("name", "").lower())
+    except (FileNotFoundError, Exception):
+        symbols_by_file_id = {}
+
+    terms = query_terms(q)
+    term_set = set(t.lower() for t in terms if t)
+
     clusters = {}
     if graph and (idx / "graph.json").exists():
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
     for f in files:
         s, rs = score(f, q, fts_scores.get(f["file_id"]))
+
+        # Add definition boost: files that define matching symbols rank higher than files that mention them
+        # Check if any term is a substring of any symbol name (handles plural variants, camelCase splits, etc.)
+        file_id = f.get("file_id")
+        if file_id and file_id in symbols_by_file_id and term_set:
+            defined_symbols = symbols_by_file_id[file_id]
+            # Match if term substring is in symbol or symbol substring is in term (handles plurals)
+            matching_symbols = [
+                sym for sym in defined_symbols if any((term in sym or sym in term) for term in term_set)
+            ]
+            if matching_symbols:
+                # Strong boost: definition sites significantly outrank mere mentions.
+                # Exceed path/filename match (+20) but stay at or below exact filename match (+30).
+                s += 25
+                rs.append(f"defines matching symbol: {', '.join(set(matching_symbols[:2]))}")
+
         if s:
             folder = f["rel_path"].rsplit("/", 1)[0] if "/" in f["rel_path"] else "."
             if graph and folder in clusters:
