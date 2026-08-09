@@ -5,12 +5,12 @@ Ensures that:
 2. Adapters never reopen the live file during indexing
 3. Hash and symbols derive from the same bytes
 """
+
 from __future__ import annotations
 
 import hashlib
 import os
 import tempfile
-import unicodedata
 from pathlib import Path
 from unittest.mock import patch
 
@@ -114,46 +114,52 @@ def test_mutation_during_parsing_does_not_mix_evidence():
 
 
 def test_adapter_never_reopens_live_path():
-    """Monkeypatch Path.read_text/read_bytes to raise after snapshot.
+    """Adapters must parse the captured bytes, never re-read the path.
 
-    Assert adapt() succeeds when passed pre-captured data.
-    Direct proof that adapters use the snapshot data, not the live path.
+    The snapshot layer itself legitimately opens the file -- once to read, and
+    again to prove the content did not change underneath. That is bounded and
+    is the whole point. What must never happen is an adapter going back to the
+    filesystem afterwards, because by then the bytes it gets may be a different
+    version than the one that was hashed.
+
+    So: `Path.open` is counted and bounded, while `read_text`/`read_bytes` --
+    which only adapters use -- must not be called at all.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         test_file = root / "test.py"
+        test_file.write_bytes(b"def foo():\n    pass\n")
 
-        content = b"def foo():\n    pass\n"
-        test_file.write_bytes(content)
+        opens: list[str] = []
+        reopens: list[tuple[str, str]] = []
+        real_open = Path.open
 
-        # Track calls
-        read_calls = []
-        original_read_text = Path.read_text
-        original_read_bytes = Path.read_bytes
+        def counting_open(self, *args, **kwargs):
+            if Path(self) == test_file:
+                opens.append(str(self))
+            return real_open(self, *args, **kwargs)
 
-        def tracked_read_text(self, *args, **kwargs):
-            read_calls.append(("read_text", str(self)))
-            raise RuntimeError(f"Attempted to reopen file during indexing: {self}")
+        def forbidden_read_text(self, *args, **kwargs):
+            reopens.append(("read_text", str(self)))
+            raise AssertionError(f"adapter re-read {self} via read_text instead of using the snapshot")
 
-        def tracked_read_bytes(self, *args, **kwargs):
-            read_calls.append(("read_bytes", str(self)))
-            raise RuntimeError(f"Attempted to reopen file during indexing: {self}")
+        def forbidden_read_bytes(self, *args, **kwargs):
+            reopens.append(("read_bytes", str(self)))
+            raise AssertionError(f"adapter re-read {self} via read_bytes instead of using the snapshot")
 
-        with patch.object(Path, "read_text", tracked_read_text):
-            with patch.object(Path, "read_bytes", tracked_read_bytes):
-                # adapt() should succeed without calling read_text/read_bytes
-                # because it uses the snapshot data
-                try:
-                    f, symbols, edges, imports, exports, calls, references = adapt(test_file, root)
-                    # Success: no reopens after initial snapshot
-                    assert f is not None
-                except RuntimeError as e:
-                    # If we get a RuntimeError, check if it was from our patched functions
-                    # Some adapters might legitimately need to reopen for config files
-                    # but the main adapt() path should use snapshots
-                    if "Attempted to reopen" in str(e):
-                        pytest.fail(f"adapt() reopened the live file: {e}")
-                    raise
+        with (
+            patch.object(Path, "open", counting_open),
+            patch.object(Path, "read_text", forbidden_read_text),
+            patch.object(Path, "read_bytes", forbidden_read_bytes),
+        ):
+            record, symbols, _edges, _imports, _exports, _calls, _references = adapt(test_file, root)
+
+        assert record is not None
+        assert reopens == [], f"adapt() re-read the live path: {reopens}"
+        # Bounded: the snapshot reads, plus its verification re-read. Anything
+        # beyond the retry ceiling means something is reading per-adapter.
+        assert len(opens) <= 4, f"snapshot layer opened {test_file.name} {len(opens)} times: {opens}"
+        assert [s["name"] for s in symbols] == ["foo"]
 
 
 def test_hash_and_symbols_derive_from_same_bytes():
@@ -213,6 +219,7 @@ def test_bounded_retry_then_fail_closed():
                         self.st_ino = real.st_ino
                         self.st_dev = real.st_dev
                         self.st_atime_ns = real.st_atime_ns
+
                 return ChangingResult(result)
             return result
 

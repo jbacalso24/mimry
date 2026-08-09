@@ -587,16 +587,12 @@ def test_cli_and_mcp_agree_on_index_state(
     if expect_mcp_code is None:
         assert "error" not in mcp_payload or mcp_payload.get("error", {}).get("code") != "index_schema_outdated"
     else:
-        assert mcp_payload["error"]["code"] == expect_mcp_code, (
-            f"{state}: MCP returned {mcp_payload.get('error')}"
-        )
+        assert mcp_payload["error"]["code"] == expect_mcp_code, f"{state}: MCP returned {mcp_payload.get('error')}"
 
     if cli_must_mention:
         assert cli_must_mention in cli_lower, f"{state}: CLI output missing {cli_must_mention!r}: {cli_text}"
     if cli_must_not_mention:
-        assert cli_must_not_mention not in cli_lower, (
-            f"{state}: CLI wrongly said {cli_must_not_mention!r}: {cli_text}"
-        )
+        assert cli_must_not_mention not in cli_lower, f"{state}: CLI wrongly said {cli_must_not_mention!r}: {cli_text}"
 
     if state == "old_schema":
         # Both surfaces must point at the same remedy and neither may call it corruption.
