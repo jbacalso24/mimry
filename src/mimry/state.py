@@ -4,6 +4,7 @@ import errno
 import hashlib
 import json
 import os
+import random
 import sqlite3
 import tempfile
 import time
@@ -42,6 +43,23 @@ GENERATION_ARTIFACTS = (
 )
 
 
+def _restore_state_corruption_error(path: Path, detail: str, backup: Path | None) -> StateCorruptionError:
+    """Pickle helper to reconstruct StateCorruptionError with keyword argument."""
+    return StateCorruptionError(path, detail, backup=backup)
+
+
+def _restore_index_schema_migration_error(
+    path: Path, generation_id: str, schema_version: str
+) -> IndexSchemaMigrationError:
+    """Pickle helper to reconstruct IndexSchemaMigrationError."""
+    return IndexSchemaMigrationError(path, generation_id, schema_version)
+
+
+def _restore_state_lock_timeout_error(path: Path, timeout: float, holder: str) -> StateLockTimeoutError:
+    """Pickle helper to reconstruct StateLockTimeoutError."""
+    return StateLockTimeoutError(path, timeout, holder)
+
+
 class StateCorruptionError(RuntimeError):
     """Raised when MIMRY-owned state cannot be parsed safely."""
 
@@ -55,6 +73,9 @@ class StateCorruptionError(RuntimeError):
             "Preserve the corrupt file before moving it aside. Then rerun `mimry init --skip-graph` "
             "for pointer state, or rerun `mimry index` to rebuild index sidecars."
         )
+
+    def __reduce__(self):
+        return (_restore_state_corruption_error, (self.path, self.detail, self.backup))
 
 
 class IndexSchemaMigrationError(StateCorruptionError):
@@ -82,6 +103,9 @@ class IndexSchemaMigrationError(StateCorruptionError):
             "Nothing is damaged and no source file is affected.",
         )
 
+    def __reduce__(self):
+        return (_restore_index_schema_migration_error, (self.path, self.generation_id, self.schema_version))
+
 
 class StateLockTimeoutError(RuntimeError):
     """Raised when a MIMRY state lock cannot be acquired in bounded time."""
@@ -96,6 +120,9 @@ class StateLockTimeoutError(RuntimeError):
             f"{detail} Check for another running `mimry` process; if none exists, preserve the lock file "
             "for diagnosis and retry."
         )
+
+    def __reduce__(self):
+        return (_restore_state_lock_timeout_error, (self.path, self.timeout, self.holder))
 
 
 def _directory_fsync_unsupported(exc: OSError) -> bool:
@@ -396,7 +423,11 @@ def file_lock(
                         # Never let a diagnostic read mask the real timeout error.
                         holder = ""
                     raise StateLockTimeoutError(path, timeout, holder) from exc
-                time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
+                # Jittered backoff: add ±10% random jitter to poll_interval to reduce thundering herd
+                # under concurrent Windows contention. ponytail: jitter per-poll, add adaptive backoff if perf matters.
+                jitter = random.uniform(0.9, 1.1)
+                sleep_time = min(poll_interval * jitter, max(0.0, deadline - time.monotonic()))
+                time.sleep(sleep_time)
         if not effective_shared:
             # Truncate to the lock byte, not to zero, so the byte Windows has
             # locked survives and holder metadata is rewritten after it.
