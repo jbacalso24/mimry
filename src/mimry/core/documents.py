@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import io
 import re
 import zipfile
 from pathlib import Path
@@ -17,7 +18,9 @@ def is_document(path: str | Path) -> bool:
     return path.suffix.lower() in DOCUMENT_EXTENSIONS
 
 
-def extract_document_text(path: str | Path, *, limit: int = 20000) -> tuple[str, str]:
+def extract_document_text(
+    path: str | Path | None = None, *, data: bytes | None = None, limit: int = 20000
+) -> tuple[str, str]:
     """Return (text, status) for an Office container.
 
     status is "ok" or "parse_error:<Reason>", mirroring core/languages.py.
@@ -29,6 +32,9 @@ def extract_document_text(path: str | Path, *, limit: int = 20000) -> tuple[str,
     Uses regex instead of an XML parser to avoid entity-expansion vulnerabilities
     on untrusted input. We only want text runs, so regex over <w:t[^>]*>(.*?)</w:t>
     and <t[^>]*>(.*?)</t> is both sufficient and safer.
+
+    Pass `data` (bytes) to parse already-captured bytes without reopening the file.
+    If data is None and path is provided, will open and read the path.
 
     Hard safety limits:
     - Opens with zipfile.ZipFile; BadZipFile or OSError returns error status
@@ -42,25 +48,42 @@ def extract_document_text(path: str | Path, *, limit: int = 20000) -> tuple[str,
     if isinstance(path, str):
         path = Path(path)
 
-    ext = path.suffix.lower()
+    ext = path.suffix.lower() if path else None
     if ext not in DOCUMENT_EXTENSIONS:
         return ("", "parse_error:unsupported_extension")
 
     try:
-        with zipfile.ZipFile(path, "r") as zf:
-            if ext == ".docx":
-                text = _extract_docx_text(zf)
-            elif ext == ".xlsx":
-                text = _extract_xlsx_text(zf)
-            else:
-                return ("", "parse_error:unsupported_extension")
+        if data is not None:
+            zf_file = io.BytesIO(data)
+            with zipfile.ZipFile(zf_file, "r") as zf:
+                if ext == ".docx":
+                    text = _extract_docx_text(zf)
+                elif ext == ".xlsx":
+                    text = _extract_xlsx_text(zf)
+                else:
+                    return ("", "parse_error:unsupported_extension")
 
-            if not text.strip():
-                return ("", "parse_error:empty")
+                if not text.strip():
+                    return ("", "parse_error:empty")
 
-            # Collapse whitespace to single line and truncate
-            collapsed = " ".join(text.split())[:limit]
-            return (collapsed, "ok")
+                # Collapse whitespace to single line and truncate
+                collapsed = " ".join(text.split())[:limit]
+                return (collapsed, "ok")
+        else:
+            with zipfile.ZipFile(path, "r") as zf:
+                if ext == ".docx":
+                    text = _extract_docx_text(zf)
+                elif ext == ".xlsx":
+                    text = _extract_xlsx_text(zf)
+                else:
+                    return ("", "parse_error:unsupported_extension")
+
+                if not text.strip():
+                    return ("", "parse_error:empty")
+
+                # Collapse whitespace to single line and truncate
+                collapsed = " ".join(text.split())[:limit]
+                return (collapsed, "ok")
 
     except zipfile.BadZipFile as e:
         return ("", f"parse_error:{e.__class__.__name__}")

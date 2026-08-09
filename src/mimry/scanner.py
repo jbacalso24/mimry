@@ -38,8 +38,13 @@ def read_snapshot(path, limit=1_000_000):
 
     Returns ``(data, stat_result)``. A file can change between stat, read,
     parse, and hash; combining metadata from one version with content from
-    another persists evidence that never existed. Stat before, read once, stat
-    after, and only accept the pair when the identity is unchanged.
+    another persists evidence that never existed. Stat before, read once, compute
+    hash, re-read to verify hash, stat after, and only accept when both metadata
+    and content hash are unchanged.
+
+    Metadata equality alone is NOT proof that content did not change: a same-size
+    rewrite on the same inode with mtime restored passes metadata checks but has
+    different bytes. Hash verification is the authoritative check.
 
     Raises FileChangedError after bounded retries, so the caller marks the file
     unindexable rather than recording a mixed-version record.
@@ -49,11 +54,25 @@ def read_snapshot(path, limit=1_000_000):
         before = path.stat()
         with path.open("rb") as fh:
             data = fh.read(limit)
+        # Hash the first read
+        first_hash = hashlib.sha256(data).hexdigest()
+        # Re-read to verify content didn't change
+        with path.open("rb") as fh:
+            data_verify = fh.read(limit)
+        second_hash = hashlib.sha256(data_verify).hexdigest()
         after = path.stat()
-        if _identity(before) == _identity(after):
+
+        # Both identity and content hash must match
+        if _identity(before) == _identity(after) and first_hash == second_hash:
             return data, before
         if attempt == 2:
-            raise FileChangedError(f"{path} kept changing while MIMRY was reading it; not indexed this run")
+            if first_hash != second_hash:
+                raise FileChangedError(
+                    f"{path} kept changing while MIMRY was reading it (content changed); not indexed this run"
+                )
+            raise FileChangedError(
+                f"{path} kept changing while MIMRY was reading it (metadata changed); not indexed this run"
+            )
     raise FileChangedError(f"{path} changed while MIMRY was reading it")
 
 
@@ -112,12 +131,15 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     data, st = read_snapshot(path) if snapshot is None else snapshot
     rel = canonical_rel_path(path, root)
     fid = stable_id(SCHEMA_VERSION, rel)
+    # Extract filename and extension from canonical path (NFC-normalized)
+    canonical_filename = Path(rel).name
+    canonical_extension = Path(rel).suffix.lower()
     return {
         "file_id": fid,
         "path": str(path.resolve()),
         "rel_path": rel,
-        "filename": path.name,
-        "extension": path.suffix.lower(),
+        "filename": canonical_filename,
+        "extension": canonical_extension,
         "size": st.st_size,
         "mtime": st.st_mtime,
         # Hashed from the same bytes the parsers below are handed.
@@ -125,21 +147,21 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
         "adapter": adapter,
         "parse_status": status,
         "content_hint": hint,
-        "metadata_text": f"{rel} {path.name} {path.suffix.lower()} {hint}",
+        "metadata_text": f"{rel} {canonical_filename} {canonical_extension} {hint}",
     }
 
 
 def adapt(path, root):
-    # Recheck immediately before adapters read content to close the scan/adapt
-    # boundary and fail closed if a file changed after discovery.
-    if has_sensitive_content(path):
-        raise ValueError("secret-bearing content is not indexable")
     ext = path.suffix.lower()
     # One read for the whole adapter chain. Everything below derives from these
     # bytes, and verify_unchanged() at the end proves nothing shifted meanwhile.
     snapshot = read_snapshot(path)
     data, _st = snapshot
-    hint = safe_hint(path) if is_config_manifest(path) else text_hint(path, data=data)
+    # Check sensitivity using the captured bytes (not a separate file read)
+    # to ensure hash and security classification derive from the same content.
+    if has_sensitive_content(path, data=data):
+        raise ValueError("secret-bearing content is not indexable")
+    hint = safe_hint(path, data=data) if is_config_manifest(path) else text_hint(path, data=data)
     f = file_record(path, root, "generic", "ok", hint, snapshot)
     symbols = []
     edges = []
@@ -149,7 +171,7 @@ def adapt(path, root):
     inherits = []
     references = {"doc_links": [], "table_refs": []}
     if is_config_manifest(path):
-        metadata = extract_config_metadata(path, root)
+        metadata = extract_config_metadata(path, root, data=data)
         f = file_record(path, root, "config-manifest", "ok", hint, snapshot)
         f["metadata_text"] = metadata
     elif ext == ".py":
@@ -207,14 +229,14 @@ def adapt(path, root):
             f = file_record(path, root, "python-ast", f"parse_error:{e.__class__.__name__}", hint, snapshot)
     elif ext in {".js", ".jsx", ".ts", ".tsx"}:
         f = file_record(path, root, "typescript-ast", "ok", hint, snapshot)
-        symbols, edges, imports, exports, status = parse_ts_like(path, root, f)
         source = data.decode("utf-8", errors="ignore")
+        symbols, edges, imports, exports, status = parse_ts_like(path, root, f, source=source)
         result = extract_language(path, source)
         calls = result.get("calls", [])
         inherits = result.get("inherits", [])
         f = file_record(path, root, "typescript-ast", status, hint, snapshot)
     elif is_document(path):
-        text, status = extract_document_text(path)
+        text, status = extract_document_text(data=data)
         safe_text = redact_sensitive_text(text) if text else ""
         doc_hint = safe_text[:2000]
         f = file_record(path, root, "office-document", status, doc_hint, snapshot)
@@ -269,7 +291,8 @@ def adapt(path, root):
                 pass
     # Populate references for markdown and SQL
     if ext in {".md", ".mdx"}:
-        doc_links = markdown_link_targets(path, root)
+        source = data.decode("utf-8", errors="ignore")
+        doc_links = markdown_link_targets(path, root, source=source)
         if doc_links:
             references["doc_links"] = doc_links
 
@@ -286,7 +309,7 @@ def adapt(path, root):
     if inherits:
         references["inherits"] = inherits
 
-    f = enrich_framework_facts(path, root, f, symbols, edges)
+    f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
     verify_unchanged(path, _st)
     if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references)):
         raise ValueError("adapter output contained sensitive data")
