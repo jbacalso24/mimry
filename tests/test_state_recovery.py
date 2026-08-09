@@ -249,7 +249,9 @@ def test_concurrent_registry_updates_do_not_drop_roots(tmp_path: Path, monkeypat
 
         registry = load_root_registry()
         expected_ids = {f"root-r{round_num}-{index}" for index in range(12)}
-        actual_ids = {entry["rootId"] for entry in registry["roots"] if entry["rootId"].startswith(f"root-r{round_num}")}
+        actual_ids = {
+            entry["rootId"] for entry in registry["roots"] if entry["rootId"].startswith(f"root-r{round_num}")
+        }
         assert actual_ids == expected_ids, f"Round {round_num}: roots lost in concurrent update"
 
     final_registry = load_root_registry()

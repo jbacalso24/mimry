@@ -32,7 +32,12 @@ from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
 from mimry.security import filter_index_records, redact_sensitive_text, safe_root, sanitize_data, sanitize_query
-from mimry.state import StateCorruptionError, StateLockTimeoutError, IndexSchemaMigrationError, GENERATION_SCHEMA_VERSION
+from mimry.state import (
+    StateCorruptionError,
+    StateLockTimeoutError,
+    IndexSchemaMigrationError,
+    GENERATION_SCHEMA_VERSION,
+)
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import RootIdentityError, active_index_pointer, load_jsonl, load_pointer
 
@@ -87,7 +92,9 @@ def _state_guard(func):
         except IndexSchemaMigrationError as exc:
             # Must catch before StateCorruptionError since it's a subclass
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
-            return sanitize_data(_schema_upgrade_error_payload(exc, root=_root(root) if isinstance(root, str) else None))
+            return sanitize_data(
+                _schema_upgrade_error_payload(exc, root=_root(root) if isinstance(root, str) else None)
+            )
         except StateCorruptionError as exc:
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
             return sanitize_data(_state_error_payload(exc, root=_root(root) if isinstance(root, str) else None))

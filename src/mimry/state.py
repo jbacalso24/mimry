@@ -48,7 +48,9 @@ def _restore_state_corruption_error(path: Path, detail: str, backup: Path | None
     return StateCorruptionError(path, detail, backup=backup)
 
 
-def _restore_index_schema_migration_error(path: Path, generation_id: str, schema_version: str) -> IndexSchemaMigrationError:
+def _restore_index_schema_migration_error(
+    path: Path, generation_id: str, schema_version: str
+) -> IndexSchemaMigrationError:
     """Pickle helper to reconstruct IndexSchemaMigrationError."""
     return IndexSchemaMigrationError(path, generation_id, schema_version)
 
