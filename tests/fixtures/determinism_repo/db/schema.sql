@@ -1,0 +1,8 @@
+CREATE TABLE sessions (
+  id INTEGER PRIMARY KEY,
+  active INTEGER NOT NULL
+);
+
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
