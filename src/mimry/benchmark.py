@@ -188,8 +188,8 @@ def evaluate(
         graph_status_out = ""
         graph_status_err = ""
         graph_nodes, graph_edges = 0, 0
-        init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graph")
-        index_out, index_err, index_ms = _run(repo, env, "index")
+        init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graph", timeout=60)
+        index_out, index_err, index_ms = _run(repo, env, "index", timeout=300)
         # The native engine always builds the graph inside `index`. `graph` is
         # retained as a public runner argument, but report what actually ran
         # rather than claiming a no-graph run that never happened.
