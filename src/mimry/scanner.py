@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import os
+import stat
 from pathlib import Path
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
@@ -39,7 +41,15 @@ def _identity(st) -> tuple:
     return (st.st_size, st.st_mtime_ns, st.st_ino, st.st_dev)
 
 
-def read_snapshot(path, limit=1_000_000):
+def _within_root(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def read_snapshot(path, limit=1_000_000, *, root=None):
     """Read a file once and prove it did not change underneath us.
 
     Returns ``(data, stat_result)``. A file can change between stat, read,
@@ -56,21 +66,40 @@ def read_snapshot(path, limit=1_000_000):
     unindexable rather than recording a mixed-version record.
     """
     path = Path(path)
+    approved_root = Path(root).resolve(strict=True) if root is not None else None
     for attempt in range(3):
-        before = path.stat()
-        with path.open("rb") as fh:
-            data = fh.read(limit)
-        # Hash the first read
-        first_hash = hashlib.sha256(data).hexdigest()
-        # Re-read to verify content didn't change
-        with path.open("rb") as fh:
-            data_verify = fh.read(limit)
-        second_hash = hashlib.sha256(data_verify).hexdigest()
-        after = path.stat()
+        before = path.lstat()
+        if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+            raise FileChangedError(f"{path} is not a regular non-symlink file; not indexed this run")
+        if approved_root is not None and not _within_root(path.resolve(strict=True), approved_root):
+            raise FileChangedError(f"{path} resolves outside the approved root; not indexed this run")
 
-        # Both identity and content hash must match
-        if _identity(before) == _identity(after) and first_hash == second_hash:
-            return data, before
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(path, flags)
+        except OSError as exc:
+            raise FileChangedError(f"{path} could not be opened safely; not indexed this run") from exc
+        try:
+            descriptor_stat = os.fstat(fd)
+            with os.fdopen(fd, "rb", closefd=False) as fh:
+                data = fh.read(limit)
+                first_hash = hashlib.sha256(data).hexdigest()
+                fh.seek(0)
+                data_verify = fh.read(limit)
+                second_hash = hashlib.sha256(data_verify).hexdigest()
+        finally:
+            os.close(fd)
+
+        after = path.lstat()
+        if stat.S_ISLNK(after.st_mode) or not stat.S_ISREG(after.st_mode):
+            raise FileChangedError(f"{path} became a symlink or non-regular file; not indexed this run")
+        if approved_root is not None and not _within_root(path.resolve(strict=True), approved_root):
+            raise FileChangedError(f"{path} resolved outside the approved root; not indexed this run")
+
+        # The descriptor and final path must still identify the same file. This
+        # closes the discovery/open and open/publication symlink-swap windows.
+        if _identity(before) == _identity(descriptor_stat) == _identity(after) and first_hash == second_hash:
+            return data, descriptor_stat
         if attempt == 2:
             if first_hash != second_hash:
                 raise FileChangedError(
@@ -82,11 +111,11 @@ def read_snapshot(path, limit=1_000_000):
     raise FileChangedError(f"{path} changed while MIMRY was reading it")
 
 
-def verify_unchanged(path, st, expected_hash: str) -> None:
+def verify_unchanged(path, st, expected_hash: str, *, root=None) -> None:
     """Fail closed if live bytes differ from the immutable acquired snapshot."""
     path = Path(path)
     try:
-        current, current_stat = read_snapshot(path)
+        current, current_stat = read_snapshot(path, root=root)
     except OSError as exc:
         raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run") from exc
     if _identity(current_stat) != _identity(st) or hashlib.sha256(current).hexdigest() != expected_hash:
@@ -145,7 +174,7 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     and hash all come from it, so they can never describe different versions of
     the file. Callers outside adapt() may omit it and take their own.
     """
-    data, st = read_snapshot(path) if snapshot is None else snapshot
+    data, st = read_snapshot(path, root=root) if snapshot is None else snapshot
     rel = canonical_rel_path(path, root)
     fid = stable_id(SCHEMA_VERSION, rel)
     # Extract filename and extension from canonical path (NFC-normalized)
@@ -153,7 +182,9 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     canonical_extension = Path(rel).suffix.lower()
     return {
         "file_id": fid,
-        "path": str(path.resolve()),
+        # Preserve the lexical absolute path. Resolving here would follow a
+        # post-acquisition symlink swap and publish an outside-root path.
+        "path": str(path.absolute()),
         "rel_path": rel,
         "filename": canonical_filename,
         "extension": canonical_extension,
@@ -172,7 +203,7 @@ def adapt(path, root):
     ext = path.suffix.lower()
     # One read for the whole adapter chain. Everything below derives from these
     # bytes, and verify_unchanged() at the end proves nothing shifted meanwhile.
-    snapshot = read_snapshot(path)
+    snapshot = read_snapshot(path, root=root)
     data, _st = snapshot
     # Check sensitivity using the captured bytes (not a separate file read)
     # to ensure hash and security classification derive from the same content.
@@ -330,7 +361,7 @@ def adapt(path, root):
         references["inherits"] = inherits
 
     f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
-    verify_unchanged(path, _st, f["hash"])
+    verify_unchanged(path, _st, f["hash"], root=root)
     if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references)):
         raise ValueError("adapter output contained sensitive data")
     return f, symbols, edges, sorted(set(imports)), sorted(set(exports)), calls, references

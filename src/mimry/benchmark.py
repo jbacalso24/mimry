@@ -339,6 +339,123 @@ def evaluate(
     }
 
 
+_LATENCY_AGGREGATES = {"find_p95_ms", "context_p95_ms"}
+_LATENCY_CASE_FIELDS = {"find_median_ms", "context_ms"}
+
+
+def _equal_metric(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, float):
+        return isinstance(actual, (int, float)) and math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-12)
+    return actual == expected
+
+
+def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> None:
+    """Recompute report evidence from frozen cases and reject inconsistent state."""
+    if report.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("report schema_version is unsupported")
+    if report.get("thresholds") != DEFAULT_THRESHOLDS:
+        raise ValueError("report thresholds differ from frozen defaults")
+    for key, digest in benchmark_input_digests(cases_path, fixture).items():
+        if report.get(key) != digest:
+            raise ValueError(f"report provenance mismatch for {key}")
+
+    expected_cases = load_cases(cases_path, fixture)
+    stored_cases = report.get("cases")
+    if not isinstance(stored_cases, list) or len(stored_cases) != len(expected_cases):
+        raise ValueError("report cases do not match frozen cases")
+    fixture_files = {path.relative_to(fixture).as_posix() for path in fixture.rglob("*") if path.is_file()}
+    for expected, stored in zip(expected_cases, stored_cases, strict=True):
+        if not isinstance(stored, dict) or stored.get("id") != expected["id"]:
+            raise ValueError("report case IDs do not match frozen cases")
+        if stored.get("query") != expected["query"] or bool(stored.get("expect_empty")) != bool(
+            expected.get("expect_empty")
+        ):
+            raise ValueError(f"case {expected['id']} query/expect_empty mismatch")
+        paths = stored.get("paths")
+        if not isinstance(paths, list) or any(not isinstance(path, str) or path not in fixture_files for path in paths):
+            raise ValueError(f"case {expected['id']} paths are invalid")
+        grades, decoys = expected["grades"], set(expected.get("decoys", []))
+        recomputed = {
+            "ndcg_at_5": ndcg_at_k(paths, grades),
+            "recall_at_5": recall_at_k(paths, grades),
+            "primary_hit_at_3": any(grades.get(path) == 3 for path in paths[:3]),
+            "decoys_at_5": len(decoys.intersection(paths[:5])),
+            "abstained": (not paths) if expected.get("expect_empty") else None,
+        }
+        for metric, value in recomputed.items():
+            if not _equal_metric(stored.get(metric), value):
+                raise ValueError(f"case {expected['id']} {metric} is inconsistent with paths")
+
+    positive = [case for case in stored_cases if not case["expect_empty"]]
+    abstention = [case for case in stored_cases if case["expect_empty"]]
+    retrieved_slots = sum(min(5, len(case["paths"])) for case in positive)
+    recomputed_aggregates = {
+        "ndcg_at_5": sum(case["ndcg_at_5"] for case in positive) / len(positive),
+        "recall_at_5": sum(case["recall_at_5"] for case in positive) / len(positive),
+        "primary_hit_at_3": sum(case["primary_hit_at_3"] for case in positive) / len(positive),
+        "decoy_rate_at_5": sum(case["decoys_at_5"] for case in positive) / max(1, retrieved_slots),
+        "abstention_accuracy": sum(bool(case["abstained"]) for case in abstention) / max(1, len(abstention)),
+        "context_token_proxy_max": max(case["context_token_proxy"] for case in stored_cases),
+    }
+    aggregates = report.get("aggregates")
+    expected_aggregate_keys = set(recomputed_aggregates) | _LATENCY_AGGREGATES
+    if not isinstance(aggregates, dict) or set(aggregates) != expected_aggregate_keys:
+        raise ValueError("report aggregate fields are incomplete or unexpected")
+    for metric, value in recomputed_aggregates.items():
+        if not _equal_metric(aggregates.get(metric), value):
+            raise ValueError(f"report aggregate {metric} is inconsistent with cases")
+    if any(not isinstance(aggregates.get(metric), (int, float)) for metric in _LATENCY_AGGREGATES):
+        raise ValueError("report latency aggregates must be numeric")
+
+    recomputed_checks = {
+        "ndcg_at_5": aggregates["ndcg_at_5"] >= DEFAULT_THRESHOLDS["ndcg_at_5_min"],
+        "recall_at_5": aggregates["recall_at_5"] >= DEFAULT_THRESHOLDS["recall_at_5_min"],
+        "primary_hit_at_3": aggregates["primary_hit_at_3"] >= DEFAULT_THRESHOLDS["primary_hit_at_3_min"],
+        "decoy_rate_at_5": aggregates["decoy_rate_at_5"] <= DEFAULT_THRESHOLDS["decoy_rate_at_5_max"],
+        "abstention_accuracy": aggregates["abstention_accuracy"] >= DEFAULT_THRESHOLDS["abstention_accuracy_min"],
+        "find_p95_ms": aggregates["find_p95_ms"] <= DEFAULT_THRESHOLDS["find_p95_ms_max"],
+        "context_p95_ms": aggregates["context_p95_ms"] <= DEFAULT_THRESHOLDS["context_p95_ms_max"],
+        "context_token_proxy_max": aggregates["context_token_proxy_max"]
+        <= DEFAULT_THRESHOLDS["context_token_proxy_max"],
+    }
+    if report.get("checks") != recomputed_checks:
+        raise ValueError("report check booleans are inconsistent with aggregates and thresholds")
+    expected_state = "PASS" if all(recomputed_checks.values()) else "FAIL"
+    if report.get("state") != expected_state:
+        raise ValueError("report state is inconsistent with checks")
+
+
+def deterministic_projection(report: dict[str, Any]) -> dict[str, Any]:
+    """Return only quality evidence expected to match across platforms/runs."""
+    top_fields = (
+        "schema_version",
+        "profile",
+        "claim_boundary",
+        "fixture_sha256",
+        "cases_sha256",
+        "retrieval_source_sha256",
+        "repeat",
+        "thresholds",
+        "state",
+        "engine",
+        "graph_enabled",
+        "graph_nodes",
+        "graph_edges",
+    )
+    projection = {field: report.get(field) for field in top_fields}
+    projection["aggregates"] = {
+        key: value for key, value in report.get("aggregates", {}).items() if key not in _LATENCY_AGGREGATES
+    }
+    projection["checks"] = {
+        key: value for key, value in report.get("checks", {}).items() if key not in _LATENCY_AGGREGATES
+    }
+    projection["cases"] = [
+        {key: value for key, value in case.items() if key not in _LATENCY_CASE_FIELDS}
+        for case in report.get("cases", [])
+    ]
+    return projection
+
+
 COMPARE_METRICS = ("ndcg_at_5", "recall_at_5", "primary_hit_at_3")
 
 
@@ -398,8 +515,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--graph", action="store_true", help="Explicitly select native graph mode (enabled by default)")
     parser.add_argument("--engine", type=str, default="core", help="Engine label for the report")
     parser.add_argument("--compare", type=Path, help="Path to baseline JSON for comparison")
+    parser.add_argument("--validate-report", type=Path, help="Validate an existing report instead of running benchmark")
+    parser.add_argument(
+        "--deterministic-against",
+        type=Path,
+        help="Require --validate-report deterministic evidence to equal this report, ignoring latency/platform metadata",
+    )
     args = parser.parse_args(argv)
     output_path = args.out or args.json_output
+    if args.validate_report:
+        try:
+            report = json.loads(args.validate_report.read_text(encoding="utf-8"))
+            validate_report(report, args.cases.resolve(), args.fixture.resolve())
+            if args.deterministic_against:
+                baseline = json.loads(args.deterministic_against.read_text(encoding="utf-8"))
+                validate_report(baseline, args.cases.resolve(), args.fixture.resolve())
+                if deterministic_projection(report) != deterministic_projection(baseline):
+                    raise ValueError("deterministic benchmark projection differs from baseline")
+            print("Benchmark report validation: PASS")
+            return 0
+        except Exception as exc:
+            print(f"Benchmark report validation: FAIL: {exc}", file=sys.stderr)
+            return 2
     try:
         report = evaluate(
             args.cases.resolve(),

@@ -55,6 +55,12 @@ def _restore_index_schema_migration_error(
     return IndexSchemaMigrationError(path, generation_id, schema_version)
 
 
+def _restore_unsupported_index_schema_error(
+    path: Path, generation_id: str, schema_version: str
+) -> UnsupportedIndexSchemaError:
+    return UnsupportedIndexSchemaError(path, generation_id, schema_version)
+
+
 def _restore_state_lock_timeout_error(path: Path, timeout: float, holder: str) -> StateLockTimeoutError:
     """Pickle helper to reconstruct StateLockTimeoutError."""
     return StateLockTimeoutError(path, timeout, holder)
@@ -105,6 +111,23 @@ class IndexSchemaMigrationError(StateCorruptionError):
 
     def __reduce__(self):
         return (_restore_index_schema_migration_error, (self.path, self.generation_id, self.schema_version))
+
+
+class UnsupportedIndexSchemaError(RuntimeError):
+    """Raised for coherent state written by a newer MIMRY client."""
+
+    def __init__(self, path: Path, generation_id: str, schema_version: str):
+        self.path = Path(path)
+        self.generation_id = generation_id
+        self.schema_version = schema_version
+        self.detail = f"index generation {generation_id} uses newer schema {schema_version}"
+        super().__init__(
+            f"MIMRY index generation {generation_id} uses schema {schema_version}, but this client supports only "
+            f"schema {GENERATION_SCHEMA_VERSION}. Open it with a newer MIMRY client; source files are unaffected."
+        )
+
+    def __reduce__(self):
+        return (_restore_unsupported_index_schema_error, (self.path, self.generation_id, self.schema_version))
 
 
 class StateLockTimeoutError(RuntimeError):
@@ -307,6 +330,12 @@ def validate_generation(pointer: dict[str, Any]) -> None:
     if schema_version in INCOMPATIBLE_IDENTITY_SCHEMAS:
         raise IndexSchemaMigrationError(manifest_path, generation_id, schema_version)
     if schema_version != GENERATION_SCHEMA_VERSION:
+        try:
+            is_future = int(schema_version) > int(GENERATION_SCHEMA_VERSION)
+        except ValueError:
+            is_future = False
+        if is_future:
+            raise UnsupportedIndexSchemaError(manifest_path, generation_id, schema_version)
         raise StateCorruptionError(
             manifest_path,
             f"unsupported generation schema {schema_version!r}; this build supports only {GENERATION_SCHEMA_VERSION}",

@@ -487,6 +487,14 @@ def test_mcp_digest_tool_structured_errors(tmp_path: Path, monkeypatch):
     assert outdated_payload["returncode"] == 2
     assert outdated_payload["error"]["code"] == "index_schema_outdated"
 
+    gen_data["schemaVersion"] = "999"
+    generation_path.write_text(json.dumps(gen_data), encoding="utf-8")
+    future_payload = mimry_digest(str(repo))
+    assert future_payload["returncode"] == 2
+    assert future_payload["initialized"] is True
+    assert future_payload["error"]["code"] == "index_schema_unsupported"
+    assert "newer" in future_payload["recommended"].lower()
+
     # Test corrupt index
     repo2 = tmp_path / "repo2"
     shutil.copytree(FIXTURE, repo2)
@@ -556,6 +564,7 @@ def _cli_status(repo: Path) -> tuple[int, str]:
     "state,expect_mcp_code,cli_must_mention,cli_must_not_mention",
     [
         ("old_schema", "index_schema_outdated", "rebuild", "corrupt"),
+        ("future_schema", "index_schema_unsupported", "newer mimry client", "corrupt"),
         ("corruption", "state_corruption", "corrupt", None),
         ("missing", None, "init", None),
         ("healthy", None, None, "corrupt"),
@@ -577,6 +586,8 @@ def test_cli_and_mcp_agree_on_index_state(
         repo = _indexed_repo(tmp_path, monkeypatch)
         if state == "old_schema":
             _degrade_schema(repo, "2")
+        elif state == "future_schema":
+            _degrade_schema(repo, "999")
         elif state == "corruption":
             ptr = load_pointer(repo)
             (Path(ptr["indexPath"]) / "files.jsonl").write_text("{ not json", encoding="utf-8")

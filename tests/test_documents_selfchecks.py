@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import zipfile
 
-from mimry.core.documents import extract_document_text, is_document
+from mimry.core.documents import MAX_XLSX_WORKSHEETS, extract_document_text, is_document
 
 
 def _docx(path, document_xml):
@@ -117,3 +117,39 @@ def test_xlsx_without_shared_strings_is_reported_as_empty(tmp_path):
 
     assert status == "parse_error:empty", f"xlsx without strings not detected: {status}"
     assert text == "", f"xlsx without strings returned text: {text}"
+
+
+def test_xlsx_rejects_excessive_worksheet_count(tmp_path):
+    path = tmp_path / "too-many-sheets.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        for number in range(MAX_XLSX_WORKSHEETS + 1):
+            archive.writestr(f"xl/worksheets/sheet{number}.xml", "<worksheet/>")
+
+    text, status = extract_document_text(path)
+
+    assert text == ""
+    assert status == "parse_error:ResourceLimit"
+
+
+def test_xlsx_rejects_high_compression_ratio_member(tmp_path):
+    path = tmp_path / "ratio.xlsx"
+    xml = "<sst><si><t>" + ("A" * 200_000) + "</t></si></sst>"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("xl/sharedStrings.xml", xml)
+
+    text, status = extract_document_text(path)
+
+    assert text == ""
+    assert status == "parse_error:ResourceLimit"
+
+
+def test_xlsx_rejects_dtd_and_internal_entity_before_xml_parse(tmp_path):
+    path = tmp_path / "entity.xlsx"
+    xml = '<!DOCTYPE sst [<!ENTITY x "expanded">]><sst><si><t>&x;</t></si></sst>'
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("xl/sharedStrings.xml", xml)
+
+    text, status = extract_document_text(path)
+
+    assert text == ""
+    assert status == "parse_error:UnsafeXML"

@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import builtins
+import json
+import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -22,6 +25,9 @@ from mimry.scanner import (
     file_record,
     read_snapshot,
 )
+from mimry.commands import cmd_init
+from mimry.indexer import write_index
+from mimry.storage import load_pointer
 
 
 def test_same_size_rewrite_during_snapshot_acquisition_is_rejected():
@@ -32,40 +38,47 @@ def test_same_size_rewrite_during_snapshot_acquisition_is_rejected():
         original = b"def foo(): pass  "  # 16 bytes
         replaced = b"def bar(): pass  "  # Also 16 bytes
         test_file.write_bytes(original)
-        real_open = Path.open
+        real_fdopen = os.fdopen
         acquisition_reads = 0
+        acquisition_attempts = 0
 
         class MutatingReader:
             def __init__(self, handle, next_bytes):
                 self.handle = handle
                 self.next_bytes = next_bytes
+                self.mutated = False
 
             def __enter__(self):
                 return self
 
             def __exit__(self, *args):
-                self.handle.close()
+                return self.handle.__exit__(*args)
 
             def read(self, *args):
+                nonlocal acquisition_reads
                 data = self.handle.read(*args)
-                with builtins.open(test_file, "wb") as writer:
-                    writer.write(self.next_bytes)
+                acquisition_reads += 1
+                if not self.mutated:
+                    with builtins.open(test_file, "wb") as writer:
+                        writer.write(self.next_bytes)
+                    self.mutated = True
                 return data
 
-        def mutating_open(self, *args, **kwargs):
-            nonlocal acquisition_reads
-            handle = real_open(self, *args, **kwargs)
-            if Path(self) == test_file and args and args[0] == "rb":
-                acquisition_reads += 1
-                if acquisition_reads % 2:
-                    next_bytes = replaced if acquisition_reads % 4 == 1 else original
-                    return MutatingReader(handle, next_bytes)
-            return handle
+            def seek(self, *args):
+                return self.handle.seek(*args)
 
-        with patch.object(Path, "open", mutating_open), pytest.raises(FileChangedError):
+        def mutating_fdopen(fd, *args, **kwargs):
+            nonlocal acquisition_attempts
+            handle = real_fdopen(fd, *args, **kwargs)
+            acquisition_attempts += 1
+            next_bytes = replaced if acquisition_attempts % 2 else original
+            return MutatingReader(handle, next_bytes)
+
+        with patch("mimry.scanner.os.fdopen", mutating_fdopen), pytest.raises(FileChangedError):
             read_snapshot(test_file)
 
-        assert acquisition_reads == 6, "three bounded attempts must each observe a mid-acquisition rewrite"
+        assert acquisition_attempts == 3, "snapshot acquisition must stop after three attempts"
+        assert acquisition_reads == 6, "each attempt must compare two descriptor reads"
 
 
 def test_same_inode_replacement_detected():
@@ -215,15 +228,17 @@ def test_bounded_retry_then_fail_closed():
         call_count = [0]
         original_stat = Path.stat
 
-        def changing_stat(self):
+        def changing_stat(self, *args, **kwargs):
             call_count[0] += 1
             # Make it look like the file is changing
-            result = original_stat(self)
+            result = original_stat(self, *args, **kwargs)
             if call_count[0] % 2 == 0:
                 # Return a different st_mtime_ns on even calls
                 class ChangingResult:
                     def __init__(self, real):
+                        self.st_mode = real.st_mode
                         self.st_size = real.st_size
+                        self.st_mtime = real.st_mtime
                         self.st_mtime_ns = real.st_mtime_ns + 1  # Different
                         self.st_ino = real.st_ino
                         self.st_dev = real.st_dev
@@ -232,13 +247,10 @@ def test_bounded_retry_then_fail_closed():
                 return ChangingResult(result)
             return result
 
-        with patch.object(Path, "stat", changing_stat):
-            try:
-                read_snapshot(test_file)
-                # If we got here, the file didn't change
-            except FileChangedError:
-                # Expected: bounded retries then fail
-                assert call_count[0] <= 10  # Reasonable upper bound (3 attempts = 6-9 calls)
+        with patch.object(Path, "stat", changing_stat), pytest.raises(FileChangedError):
+            read_snapshot(test_file)
+
+        assert call_count[0] == 6, "three attempts must perform exactly two path-stat checks each"
 
 
 def test_oversized_unreadable_and_deleted_files_still_skipped():
@@ -259,3 +271,41 @@ def test_oversized_unreadable_and_deleted_files_still_skipped():
 
         with pytest.raises(FileNotFoundError):
             read_snapshot(deleted)
+
+
+def test_pipeline_rejects_file_swapped_to_outside_symlink_before_adaptation(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    root.mkdir()
+    target = root / "safe.txt"
+    target.write_text("safe local text", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    marker = "EXTERNAL_MARKER_MUST_NOT_BE_PUBLISHED"
+    outside.write_text(marker, encoding="utf-8")
+    try:
+        probe = tmp_path / "probe-link"
+        probe.symlink_to(outside)
+        probe.unlink()
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(root)
+
+    from mimry import indexer
+
+    real_scan = indexer.scan
+
+    def swapping_scan(scan_root):
+        discovered = list(real_scan(scan_root))
+        target.unlink()
+        target.symlink_to(outside)
+        yield from discovered
+
+    monkeypatch.setattr(indexer, "scan", swapping_scan)
+    stats = write_index(root, pointer)
+    published = Path(stats["index"])
+    persisted = b"".join(path.read_bytes() for path in published.iterdir() if path.is_file())
+    assert marker.encode() not in persisted
+    records = [json.loads(line) for line in (published / "files.jsonl").read_text().splitlines() if line]
+    assert "safe.txt" not in {record["rel_path"] for record in records}
