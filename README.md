@@ -105,7 +105,8 @@ Specific things that are handled rather than assumed, because each one was a rea
 - `fsync` needs a writable descriptor on Windows; `st_ctime` there is *creation* time
   and differs between `os.fstat` and `Path.lstat` for the same file
 - `os.utime(follow_symlinks=False)` and byte-range lock semantics are capability-guarded
-- CLI output is ASCII, so a cp1252 console cannot fail to encode it
+- human CLI streams use `backslashreplace`, so Unicode paths degrade safely on strict
+  cp1252 consoles while JSON, Markdown, and index artifacts remain UTF-8
 - subprocesses never inherit stdin, which under the MCP stdio server is the JSON-RPC channel
 - paths are POSIX-normalized internally; only display strings use native separators
 
@@ -525,7 +526,8 @@ MIMRY targets Python 3.11–3.13 on Windows, Linux, and macOS. That matrix is co
 extracted-sdist parser suite, and a clean-wheel smoke test; a `determinism-aggregate` job that
 requires evidence from all 9 cells and compares the canonical digest, retrieval rankings, and
 context pack across them and against committed golden values; and a `benchmark-gate` job that
-requires the frozen agent-usefulness floors to pass.
+first validates that the committed PASS still matches the fixture, cases, retrieval
+source, and frozen thresholds, then writes a fresh measured report only to a CI artifact.
 
 A green CI run is required for a release but does not replace review. Releases are manual
 internal direct artifacts and there is no automated publishing step.

@@ -76,11 +76,13 @@ def validate_edge_identity(edges: list[dict]) -> list[dict]:
     groups: dict[str, list[dict]] = defaultdict(list)
     passthrough: list[dict] = []
     for edge in edges:
-        edge_id = edge.get("edge_id")
-        if edge_id:
-            groups[str(edge_id)].append(edge)
-        else:
+        if "edge_id" not in edge:
             passthrough.append(edge)
+            continue
+        edge_id = edge["edge_id"]
+        if not isinstance(edge_id, str) or not edge_id.strip():
+            raise DuplicateIdentityError("An explicit edge_id must be a non-empty string; MIMRY will not persist it.")
+        groups[edge_id].append(edge)
 
     survivors: list[dict] = []
     for edge_id in sorted(groups):

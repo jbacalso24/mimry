@@ -69,3 +69,11 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
     assert not any(forbidden_parts.intersection(path.parts[1:]) for path in payload_paths)
     assert not any(path.name == ".env" for path in payload_paths)
     assert any(path.as_posix().endswith("scripts/agent_integration_smoke.py") for path in payload_paths)
+    assert any(path.as_posix().endswith("scripts/determinism_aggregate.py") for path in payload_paths)
+    assert any(path.as_posix().endswith("scripts/determinism_matrix.py") for path in payload_paths)
+
+
+def test_unlocked_ci_matrix_invokes_only_the_extracted_artifact_script():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert '"$GITHUB_WORKSPACE/$artifact_root/scripts/determinism_matrix.py"' in workflow
+    assert '"$GITHUB_WORKSPACE/scripts/determinism_matrix.py"' not in workflow

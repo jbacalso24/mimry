@@ -11,10 +11,10 @@ Run from a source checkout or extracted sdist: `uv run python scripts/agent_usef
 - context output <= 2,500 token-proxy units, where proxy = ceil(UTF-8 bytes / 4) and is **not** an exact tokenizer
 - Linux/Python 3.11 dedicated gate: find p95 <= 1,000 ms; context p95 <= 1,500 ms
 
-Threshold changes require a schema/version bump and a before/after case report. The harness exits nonzero until every floor passes. Add a dedicated Ubuntu/Python 3.11 CI gate only after the frozen corpus passes without weakening these floors; other support-matrix jobs must not gate noisy timing.
+Threshold changes require a schema/version bump and a before/after case report. The harness exits nonzero until every floor passes. The dedicated Ubuntu gate validates the committed report before running the benchmark fresh; fresh evidence is uploaded from `/tmp/artifact` and never overwrites the tracked report. Other support-matrix jobs do not gate noisy timing.
 
-The current Linux native-graph run is expected to exit 1: nDCG@5, primary-hit@3,
-and the context token-proxy ceiling remain below/above their frozen floors. This is
-an honest failing quality gate, not a benchmark PASS. Historical Graphify and
-no-graph measurements remain attributed in `baseline.graphify.json` and
-`baseline.nograph.json`; they are comparisons, not current-run claims.
+The committed native-graph report is a PASS whose provenance binds the portable fixture
+bytes, canonical cases manifest, retrieval implementation, and exact frozen thresholds.
+Historical Graphify and no-graph measurements remain attributed in
+`baseline.graphify.json` and `baseline.nograph.json`; they are comparisons, not
+current-run claims.

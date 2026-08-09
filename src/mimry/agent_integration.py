@@ -51,7 +51,10 @@ def _client_env(sandbox: Path, *, client: str) -> dict[str, str]:
     home = sandbox / f"{client}-home"
     config = sandbox / f"{client}-config"
     cache = sandbox / f"{client}-cache"
-    for path in (home, config, cache):
+    data = sandbox / f"{client}-data"
+    appdata = home / "AppData" / "Roaming"
+    localappdata = home / "AppData" / "Local"
+    for path in (home, config, cache, data, appdata, localappdata):
         path.mkdir(parents=True, exist_ok=True)
     env.update(
         {
@@ -66,6 +69,9 @@ def _client_env(sandbox: Path, *, client: str) -> dict[str, str]:
             "HOMEPATH": str(home)[len(home.drive) :],
             "XDG_CONFIG_HOME": str(config),
             "XDG_CACHE_HOME": str(cache),
+            "XDG_DATA_HOME": str(data),
+            "APPDATA": str(appdata),
+            "LOCALAPPDATA": str(localappdata),
             "FASTMCP_HOME": str(sandbox / f"{client}-fastmcp"),
             "MIMRY_CACHE_HOME": str(sandbox / "mimry-cache"),
             "NO_COLOR": "1",

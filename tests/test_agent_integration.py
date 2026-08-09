@@ -40,6 +40,9 @@ def test_external_client_environment_is_credential_free_and_sandboxed(tmp_path: 
         assert env["MIMRY_CACHE_HOME"].startswith(str(tmp_path))
         assert env["FASTMCP_HOME"].startswith(str(tmp_path))
         assert env["HOME"].startswith(str(tmp_path))
+        assert env["APPDATA"].startswith(str(tmp_path))
+        assert env["LOCALAPPDATA"].startswith(str(tmp_path))
+        assert env["XDG_DATA_HOME"].startswith(str(tmp_path))
         assert not any("privacy-canary" in value for value in env.values())
     assert claude["CLAUDE_CONFIG_DIR"].startswith(str(tmp_path))
     assert "CODEX_HOME" not in claude

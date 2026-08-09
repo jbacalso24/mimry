@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from mimry.indexer import write_index, _collect
-from mimry.scanner import scan
+from mimry.scanner import CanonicalPathCollisionError, scan
 from mimry.storage import register_root, save_pointer
 
 
@@ -105,6 +105,27 @@ def test_scan_order_independent_of_creation_order(tmp_path: Path):
     scan_b = [p.relative_to(repo_b).as_posix() for p in scan(repo_b)]
 
     assert scan_a == scan_b == _CANONICAL_ORDER
+
+
+def test_nfc_nfd_collision_fails_before_publication_and_names_both_paths(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    nfc = "caf\u00e9.py"
+    nfd = "cafe\u0301.py"
+    (repo / nfc).write_text("NFC = True\n", encoding="utf-8")
+    (repo / nfd).write_text("NFD = True\n", encoding="utf-8")
+    if len(list(repo.iterdir())) != 2:
+        pytest.skip("filesystem does not permit distinct NFC/NFD names")
+    cache = tmp_path / "cache"
+    ptr = _setup_pointer(repo, cache, "unicode-collision")
+
+    with pytest.raises(CanonicalPathCollisionError) as raised:
+        write_index(repo, ptr)
+
+    message = str(raised.value)
+    assert nfc in message and nfd in message
+    generations = cache / "indexes" / "unicode-collision" / "generations"
+    assert not generations.exists() or list(generations.iterdir()) == []
 
 
 def test_full_index_identical_across_creation_order(tmp_path: Path):

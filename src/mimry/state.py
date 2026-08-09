@@ -306,11 +306,12 @@ def validate_generation(pointer: dict[str, Any]) -> None:
     schema_version = str(manifest.get("schemaVersion") or "1")
     if schema_version in INCOMPATIBLE_IDENTITY_SCHEMAS:
         raise IndexSchemaMigrationError(manifest_path, generation_id, schema_version)
-    required_artifacts = (
-        GENERATION_ARTIFACTS
-        if schema_version not in {"1", "2"}
-        else tuple(name for name in GENERATION_ARTIFACTS if name != UNINDEXABLE_FILE)
-    )
+    if schema_version != GENERATION_SCHEMA_VERSION:
+        raise StateCorruptionError(
+            manifest_path,
+            f"unsupported generation schema {schema_version!r}; this build supports only {GENERATION_SCHEMA_VERSION}",
+        )
+    required_artifacts = GENERATION_ARTIFACTS
     for name in required_artifacts:
         artifact = idx / name
         expected = artifacts.get(name)

@@ -396,6 +396,23 @@ def test_mixed_generation_sidecar_is_corrupt_and_all_direct_mcp_tools_structure_
     assert payload["error"]["path"].endswith("files.jsonl")
 
 
+def test_future_generation_schema_fails_closed_as_unsupported_state(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    pointer = load_pointer(repo)
+    manifest_path = Path(pointer["indexPath"]) / state.GENERATION_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schemaVersion"] = "999"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(state.StateCorruptionError, match="unsupported generation schema '999'") as raised:
+        state.validate_generation(pointer)
+    assert not isinstance(raised.value, state.IndexSchemaMigrationError)
+
+    payload = mimry_find("auth", str(repo))
+    assert payload["error"]["code"] == "state_corruption"
+
+
 def test_mixed_generation_sqlite_is_never_reported_current(tmp_path: Path, monkeypatch):
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))

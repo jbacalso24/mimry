@@ -323,6 +323,7 @@ def test_mcp_reports_outdated_schema_as_upgrade_not_corruption(tmp_path: Path, m
     payload = mimry_find("auth", str(repo))
 
     assert payload["returncode"] == 2
+    assert payload["initialized"] is True
     assert payload["error"]["code"] == "index_schema_outdated"
     assert "outdated" in payload["error"]["message"].lower() or "rebuild" in payload["error"]["message"].lower()
     assert "corrupt" not in payload["error"]["message"].lower()

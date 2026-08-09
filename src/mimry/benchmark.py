@@ -188,6 +188,25 @@ def _digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def benchmark_input_digests(cases_path: Path, fixture: Path, *, source_root: Path | None = None) -> dict[str, str]:
+    """Bind benchmark evidence to fixture, cases, and retrieval source bytes."""
+    source_root = Path(__file__).resolve().parent if source_root is None else source_root
+    source = hashlib.sha256()
+    for path in sorted(source_root.rglob("*.py")):
+        source.update(path.relative_to(source_root).as_posix().encode("utf-8"))
+        # Git may materialize text with native line endings. Provenance is about
+        # source content, not checkout EOL policy, so hash normalized text.
+        source.update(path.read_text(encoding="utf-8").encode("utf-8"))
+    cases = json.loads(cases_path.read_text(encoding="utf-8"))
+    return {
+        "fixture_sha256": _digest(fixture),
+        "cases_sha256": hashlib.sha256(
+            json.dumps(cases, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "retrieval_source_sha256": source.hexdigest(),
+    }
+
+
 def evaluate(
     cases_path: Path,
     fixture: Path,
@@ -298,7 +317,7 @@ def evaluate(
         "schema_version": SCHEMA_VERSION,
         "profile": "quick-local-index",
         "claim_boundary": "retrieval usefulness proxy; not agent task completion or model-token savings",
-        "fixture_sha256": _digest(fixture),
+        **benchmark_input_digests(cases_path, fixture),
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "repeat": repeat,

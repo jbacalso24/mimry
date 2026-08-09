@@ -58,6 +58,37 @@ def test_xlsx_shared_strings_are_extracted_unescaped(tmp_path):
     assert "[" not in text, f"xml brackets not stripped: {text}"
 
 
+def test_xlsx_minimal_shared_string_member_is_extracted(tmp_path):
+    xlsx_path = tmp_path / "minimal-shared-string.xlsx"
+    with zipfile.ZipFile(xlsx_path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("xl/sharedStrings.xml", "<t>Safe searchable text</t>")
+
+    text, status = extract_document_text(xlsx_path)
+
+    assert status == "ok"
+    assert text == "Safe searchable text"
+
+
+def test_xlsx_standards_valid_inline_strings_and_rich_runs_are_extracted(tmp_path):
+    xlsx_path = tmp_path / "inline.xlsx"
+    worksheet = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+      <sheetData><row r="1">
+        <c r="A1" t="inlineStr"><is><t xml:space="preserve">Inline cell</t></is></c>
+        <c r="B1" t="inlineStr"><is><r><t>Rich </t></r><r><t>text</t></r></is></c>
+      </row></sheetData>
+    </worksheet>"""
+    with zipfile.ZipFile(xlsx_path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("xl/worksheets/sheet1.xml", worksheet)
+
+    text, status = extract_document_text(xlsx_path)
+
+    assert status == "ok"
+    assert text == "Inline cell Rich text"
+
+
 def test_corrupt_document_is_reported_and_yields_no_text(tmp_path):
     corrupt_path = tmp_path / "corrupt.docx"
     corrupt_path.write_bytes(b"not a zip file")
