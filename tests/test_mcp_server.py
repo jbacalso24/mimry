@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import os
+import contextlib
+import io
+import json
 import shutil
 import subprocess
 import sys
 import uuid
 from pathlib import Path
+
+import pytest
 
 from mimry import mcp_server
 from mimry.indexer import write_index
@@ -56,7 +61,11 @@ def test_mimry_mcp_help_does_not_start_server():
         env=env,
         text=True,
         capture_output=True,
-        timeout=10,
+        # A safety net so a regression that starts the server hangs the suite
+        # instead of the machine -- not a performance assertion. Importing
+        # fastmcp and tree-sitter-language-pack already costs ~9s on a cold
+        # Windows runner, so 10s flaked under parallel load.
+        timeout=60,
         check=False,
     )
     assert res.returncode == 0, res.stderr
@@ -500,3 +509,114 @@ def test_mcp_digest_tool_structured_errors(tmp_path: Path, monkeypatch):
     corrupt_payload = mimry_digest(str(repo2))
     assert corrupt_payload["returncode"] == 2
     assert corrupt_payload["error"]["code"] == "state_corruption"
+
+
+def _degrade_schema(repo: Path, version: str) -> None:
+    """Rewrite the active generation manifest to an older schema version."""
+    from mimry.state import GENERATION_MANIFEST
+
+    ptr = load_pointer(repo)
+    manifest_path = Path(ptr["indexPath"]) / GENERATION_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schemaVersion"] = version
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def _indexed_repo(tmp_path: Path, monkeypatch) -> Path:
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+    return repo
+
+
+def _cli_status(repo: Path) -> tuple[int, str]:
+    """Run the CLI status path and return (exit code, combined output)."""
+    from mimry.cli import main as cli_main
+
+    buf_out, buf_err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+        code = cli_main(["--root", str(repo), "status"])
+    return code, buf_out.getvalue() + buf_err.getvalue()
+
+
+@pytest.mark.parametrize(
+    "state,expect_mcp_code,cli_must_mention,cli_must_not_mention",
+    [
+        ("old_schema", "index_schema_outdated", "rebuild", "corrupt"),
+        ("corruption", "state_corruption", "corrupt", None),
+        ("missing", None, "init", None),
+        ("healthy", None, None, "corrupt"),
+    ],
+)
+def test_cli_and_mcp_agree_on_index_state(
+    tmp_path: Path, monkeypatch, state, expect_mcp_code, cli_must_mention, cli_must_not_mention
+):
+    """CLI and MCP must classify the same four index states the same way.
+
+    A schema upgrade is not corruption. Telling an agent its state is corrupt
+    invites it to preserve and diagnose an index that only needs rebuilding.
+    """
+    if state == "missing":
+        repo = tmp_path / "repo"
+        shutil.copytree(FIXTURE, repo)
+        monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    else:
+        repo = _indexed_repo(tmp_path, monkeypatch)
+        if state == "old_schema":
+            _degrade_schema(repo, "2")
+        elif state == "corruption":
+            ptr = load_pointer(repo)
+            (Path(ptr["indexPath"]) / "files.jsonl").write_text("{ not json", encoding="utf-8")
+
+    mcp_payload = mimry_status(str(repo))
+    cli_code, cli_text = _cli_status(repo)
+    cli_lower = cli_text.lower()
+
+    if expect_mcp_code is None:
+        assert "error" not in mcp_payload or mcp_payload.get("error", {}).get("code") != "index_schema_outdated"
+    else:
+        assert mcp_payload["error"]["code"] == expect_mcp_code, (
+            f"{state}: MCP returned {mcp_payload.get('error')}"
+        )
+
+    if cli_must_mention:
+        assert cli_must_mention in cli_lower, f"{state}: CLI output missing {cli_must_mention!r}: {cli_text}"
+    if cli_must_not_mention:
+        assert cli_must_not_mention not in cli_lower, (
+            f"{state}: CLI wrongly said {cli_must_not_mention!r}: {cli_text}"
+        )
+
+    if state == "old_schema":
+        # Both surfaces must point at the same remedy and neither may call it corruption.
+        assert "corrupt" not in mcp_payload["error"]["message"].lower()
+        assert "mimry index" in mcp_payload["recommended"].lower()
+        assert cli_code != 0
+
+
+def test_successful_rebuild_clears_the_outdated_schema_state(tmp_path: Path, monkeypatch):
+    """The recommended remedy must actually work on both surfaces."""
+    repo = _indexed_repo(tmp_path, monkeypatch)
+    _degrade_schema(repo, "2")
+    assert mimry_status(str(repo))["error"]["code"] == "index_schema_outdated"
+
+    from mimry.cli import main as cli_main
+
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        assert cli_main(["--root", str(repo), "index"]) == 0
+
+    healed = mimry_status(str(repo))
+    assert "error" not in healed or healed.get("error", {}).get("code") != "index_schema_outdated"
+    code, text = _cli_status(repo)
+    assert code == 0 and "corrupt" not in text.lower()

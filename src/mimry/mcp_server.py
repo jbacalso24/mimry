@@ -220,6 +220,12 @@ def _status_payload(root_path: Path) -> dict[str, Any]:
     try:
         with active_index_pointer(root_path):
             return _status_payload_unchecked(root_path)
+    except IndexSchemaMigrationError as exc:
+        # Must precede StateCorruptionError: it is a subclass, and this inner
+        # handler runs before _state_guard ever sees the exception. Status is
+        # the tool agents call first, so misreporting a routine schema upgrade
+        # as corruption here is what sends them off preserving a healthy index.
+        return _schema_upgrade_error_payload(exc, root=root_path)
     except StateCorruptionError as exc:
         return _state_error_payload(exc, root=root_path)
 
