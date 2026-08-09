@@ -70,11 +70,15 @@ can point at `path:line` instead of just a path.
 
 - Do not carry forward fixed test counts: report the exact `pytest` result from the
   commit being handed off.
-- This checkout has no committed CI workflow; do not claim a Windows/Linux/macOS
-  matrix passed. Record real per-platform runs when they happen.
-- The frozen native-graph benchmark is not passing. Current Linux verification
-  fails nDCG@5, primary-hit@3, and context-token floors; do not weaken the gates or
-  turn the historical Graphify baseline into a current PASS claim.
+- CI is committed (`.github/workflows/ci.yml`): 3 OS x Python 3.11/3.12/3.13, plus
+  `determinism-aggregate` (requires evidence from all 9 cells and compares canonical
+  digest, retrieval rankings, and context pack against committed golden values) and
+  `benchmark-gate` (requires the frozen usefulness floors to pass). Cite the actual run
+  URL and its conclusion; a green run is required but does not replace review.
+- The frozen native-graph benchmark is enforced by the required `benchmark-gate` job and
+  by `tests/test_benchmark_quality_gate.py`, which also asserts the committed thresholds
+  still equal `DEFAULT_THRESHOLDS`. Never weaken a floor to get green, and never turn the
+  historical Graphify baseline into a current PASS claim -- report the real numbers.
 - Run `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest -q`
   before handoff, then include their exact outputs.
 

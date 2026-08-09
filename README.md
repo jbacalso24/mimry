@@ -519,7 +519,16 @@ Artifacts land in `.mimry/mimry-out/graph/`: `graph.json`, `GRAPH_REPORT.md`, an
 
 ## Support and releases
 
-MIMRY targets Python 3.11–3.13 on Windows, Linux, and macOS. This checkout currently has no committed CI workflow, so release evidence must record the clean-checkout, extracted-sdist, and clean-wheel checks on every platform being claimed. Releases are manual internal direct artifacts and there is no automated publishing step.
+MIMRY targets Python 3.11–3.13 on Windows, Linux, and macOS. That matrix is committed in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every push and pull request:
+9 matrix cells running lint, tests, the real end-to-end determinism matrix, the unlocked
+extracted-sdist parser suite, and a clean-wheel smoke test; a `determinism-aggregate` job that
+requires evidence from all 9 cells and compares the canonical digest, retrieval rankings, and
+context pack across them and against committed golden values; and a `benchmark-gate` job that
+requires the frozen agent-usefulness floors to pass.
+
+A green CI run is required for a release but does not replace review. Releases are manual
+internal direct artifacts and there is no automated publishing step.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the exact artifact and clean-wheel checks.
 

@@ -62,6 +62,10 @@ jobs:
           path: digest-${{ matrix.os }}-${{ matrix.python-version }}.json
           if-no-files-found: error
 
+      # The sdist ships no uv.lock, so this lane resolves dependencies fresh --
+      # it is the only place a newer parser release would first show up. One
+      # TSX test was not enough: a grammar can import fine and still parse
+      # differently. Run the whole parser and determinism surface here.
       - name: Test unlocked extracted artifact with an empty cache
         shell: bash
         run: |
@@ -77,14 +81,26 @@ jobs:
           [ -x ".artifact-venv/Scripts/python.exe" ] && venv_python=".artifact-venv/Scripts/python.exe"
           UV_CACHE_DIR="$PWD/.artifact-uv-cache" uv --no-cache pip install \
             --python "$venv_python" "$artifact_root" pytest
+          "$venv_python" -c "from importlib.metadata import version; print('unlocked tree-sitter', version('tree-sitter')); print('unlocked language-pack', version('tree-sitter-language-pack'))"
           # Run from outside the checkout so the installed artifact is exercised
           # rather than the working tree. TMPDIR is portable; /tmp is not.
           scratch="$(mktemp -d)"
           (
             cd "$scratch"
             "$GITHUB_WORKSPACE/$venv_python" -m pytest -q \
-              "$GITHUB_WORKSPACE/$artifact_root/tests/test_mimry_cli.py::test_typescript_ast_extracts_tsx_symbols"
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_mimry_cli.py" \
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_languages_selfchecks.py" \
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_adapters.py" \
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_symbol_text_offsets.py" \
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_graph_correctness_regressions.py" \
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_determinism_identity.py" \
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_determinism_graph.py" \
+              "$GITHUB_WORKSPACE/$artifact_root/tests/test_determinism_retrieval.py"
           )
+          # Canonical digest under unlocked resolution must equal the golden
+          # value: a parser change that moves symbols or line pointers lands here.
+          PYTHONPATH="$GITHUB_WORKSPACE/$artifact_root/src" "$venv_python" \
+            "$GITHUB_WORKSPACE/scripts/determinism_matrix.py"
 
       - name: Install and smoke-test the wheel
         shell: bash
@@ -101,43 +117,53 @@ jobs:
           "$mimry_exe" --help >/dev/null
 
   determinism-aggregate:
-    name: Compare canonical digests across every platform
+    name: Compare canonical evidence across every platform
     needs: release-floor
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download every platform digest
+      - name: Download every platform artifact
         uses: actions/download-artifact@v4
         with:
           pattern: digest-*
           path: digests
           merge-multiple: true
 
-      # The point of the whole exercise. Every OS and Python version must have
-      # produced one canonical digest, and it must be the same one, and it must
-      # equal the value committed in the repository.
-      - name: Assert one digest across the matrix
-        shell: python
+      # The point of the whole exercise. Every OS/Python cell must have produced
+      # evidence; all of them must agree on the structural digest AND on the
+      # retrieval ranking AND on the context pack; and all three must equal the
+      # values committed in the repository. A missing artifact is a failure, not
+      # silent agreement.
+      - name: Compare digest, rankings, and context across the matrix
         run: |
-          import json, pathlib, sys
+          python scripts/determinism_aggregate.py \
+            --artifacts digests \
+            --expect-os ubuntu-latest,macos-latest,windows-latest \
+            --expect-python 3.11,3.12,3.13
 
-          golden = json.loads(pathlib.Path("tests/fixtures/determinism_golden.json").read_text())["canonicalDigest"]
-          reports = sorted(pathlib.Path("digests").glob("*.json"))
-          if not reports:
-              sys.exit("no digest artifacts were collected; the matrix jobs did not emit any")
+  benchmark-gate:
+    name: Agent usefulness benchmark (frozen quality floors)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
 
-          seen = {}
-          for report in reports:
-              payload = json.loads(report.read_text())
-              seen[report.stem] = payload["digest"]
-              print(f"{report.stem:44s} {payload['digest']}")
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
-          distinct = sorted(set(seen.values()))
-          print(f"\n{len(seen)} jobs, {len(distinct)} distinct digest(s)")
-          if len(distinct) != 1:
-              sys.exit(f"canonical digests diverge across platforms: {distinct}")
-          if distinct[0] != golden:
-              sys.exit(f"canonical digest {distinct[0]} does not match committed golden {golden}")
-          print(f"all platforms agree and match the committed golden digest {golden}")
+      - name: Sync locked environment
+        run: uv sync --locked
+
+      # One required job, locked environment, real thresholds. The benchmark is
+      # too slow for every matrix cell but must not be informational-only: a
+      # ranking or context-pack regression that clears the determinism gate
+      # still has to fail here.
+      - name: Run the benchmark and require PASS
+        run: uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph
+
+      - name: Assert the committed report is PASS on the current fixture
+        run: uv run pytest -q tests/test_benchmark_quality_gate.py
