@@ -25,21 +25,24 @@ def is_config_manifest(path: Path) -> bool:
     )
 
 
-def safe_hint(path: Path) -> str:
-    metadata = extract_config_metadata(path, path.parent)
+def safe_hint(path: Path, data: bytes | None = None) -> str:
+    metadata = extract_config_metadata(path, path.parent, data=data)
     return metadata.replace("\n", " ")[:2000]
 
 
-def extract_config_metadata(path: Path, root: Path) -> str:
+def extract_config_metadata(path: Path, root: Path, data: bytes | None = None) -> str:
     try:
         rel = path.relative_to(root).as_posix()
     except ValueError:
         rel = path.name
     name = path.name
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        text = ""
+    if data is not None:
+        text = data.decode("utf-8", errors="ignore")
+    else:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            text = ""
 
     parts = ["config-manifest", f"file {rel}"]
     try:
