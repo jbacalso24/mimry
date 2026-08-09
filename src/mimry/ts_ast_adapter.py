@@ -78,12 +78,17 @@ def _fallback_imports_exports(source: str) -> tuple[list[str], list[str]]:
 
 
 def parse_ts_like(
-    path: Path, root: Path, file_record: dict[str, Any]
+    path: Path, root: Path, file_record: dict[str, Any], source: str | None = None
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str], str]:
-    """Parse JS/TS/JSX/TSX with tree-sitter and return symbols/edges/imports/exports/status."""
+    """Parse JS/TS/JSX/TSX with tree-sitter and return symbols/edges/imports/exports/status.
+
+    Pass `source` (decoded text) to avoid reopening the file during indexing.
+    If source is None, will read from path (for non-indexing use).
+    """
     if not is_text(path):
         return [], [], [], [], "parse_error:non_text"
-    source = path.read_text(encoding="utf-8", errors="ignore")
+    if source is None:
+        source = path.read_text(encoding="utf-8", errors="ignore")
     imports, exports = _fallback_imports_exports(source)
     symbols: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
