@@ -24,7 +24,7 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
         con = connect(idx)
         rows = con.execute(
             "select file_id, bm25(files_fts, 1.0, 1.4, 0.4, 0.8, 0.8) as rank "
-            "from files_fts where files_fts match ? order by rank limit 80",
+            "from files_fts where files_fts match ? order by rank, rel_path, file_id limit 80",
             (match,),
         ).fetchall()
         con.close()

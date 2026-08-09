@@ -285,7 +285,8 @@ def list_feedback(idx: Path, root_id: str, limit: int = 10) -> list[dict[str, An
     try:
         ensure_feedback_schema(con)
         rows = con.execute(
-            "select * from feedback where root_id = ? order by created_at desc limit ?", (root_id, max(1, limit))
+            "select * from feedback where root_id = ? order by created_at desc, feedback_id desc limit ?",
+            (root_id, max(1, limit)),
         ).fetchall()
         return [_decode_row(row) for row in rows]
     finally:
