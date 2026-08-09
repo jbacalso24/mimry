@@ -7,6 +7,10 @@ CONCEPT_INTENT_TERMS = {"overview", "explain", "spec", "design", "plan", "docs",
 EDIT_ACTION_TERMS = {"edit", "fix", "implement", "change", "wire", "build", "debug", "update"}
 DOC_SEGMENTS = {"docs", "doc", "spec", "specs", "design", "designs", ".claude", ".codex", ".superpowers", "superpowers"}
 MIGRATION_SEGMENTS = {"migrations", "migration", "versions", "alembic"}
+# Retired code. Still indexed -- an agent may legitimately need to read it --
+# but it is weaker evidence than live source for any intent, because by
+# definition nothing depends on it any more.
+RETIRED_SEGMENTS = {"archive", "archived", "legacy", "deprecated", "old", "attic", "graveyard"}
 SOURCE_SEGMENTS = {"src", "app", "services", "store", "features", "components", "backend", "lib", "ios"}
 SOURCE_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx", ".swift", ".kt", ".java", ".go", ".rs"}
 TEST_SEGMENTS = {"tests", "test", "__tests__"}
@@ -96,8 +100,13 @@ def is_migration(rel_path: str) -> bool:
     return bool(parts & MIGRATION_SEGMENTS) or name.startswith("migration_")
 
 
+def is_retired(rel_path: str) -> bool:
+    """True when a path lives under an archive/legacy/deprecated directory."""
+    return bool({part.lower() for part in path_parts(rel_path)} & RETIRED_SEGMENTS)
+
+
 def is_source_file(rel_path: str) -> bool:
-    if is_doc_or_plan(rel_path) or is_migration(rel_path) or is_test_file(rel_path):
+    if is_doc_or_plan(rel_path) or is_migration(rel_path) or is_test_file(rel_path) or is_retired(rel_path):
         return False
     p = PurePosixPath(rel_path)
     parts = set(p.parts)
@@ -122,6 +131,12 @@ def apply_intent_adjustment(
     reasons: list[str] = []
     if score <= 0:
         return score, reasons
+
+    # Applies to every intent, not just edit: retired code is never the best
+    # answer when a live equivalent exists.
+    if is_retired(rel_path):
+        score = int(score * 0.5)
+        reasons.append("retired path downrank")
 
     if is_edit_intent(terms):
         if is_source_file(rel_path):

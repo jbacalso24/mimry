@@ -10,6 +10,24 @@ from .security import filter_index_records, redact_sensitive_text
 from .storage import connect, load_jsonl
 
 
+# Flat, not per-match: rewarding a file once per matching symbol would rank a
+# component named for two query words above the module that defines the one
+# word the query is actually about.
+DEFINITION_BOOST = 40
+
+
+def _singular(token: str) -> str:
+    """Fold a trailing plural so `session` matches a table named `sessions`.
+
+    Deliberately minimal -- MIMRY ships no stemmer and a real one would make
+    ranking depend on a language model of English. This handles the one case
+    that matters for identifiers: a plural collection name.
+    """
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
 def _fts_match_query(terms: list[str]) -> str:
     # Prefix each normalized token for identifier/path fragments; quote to keep FTS syntax safe.
     return " OR ".join(f'"{term}"*' for term in terms if term)
@@ -89,21 +107,23 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
     fts_scores = _fts_scores(idx, q)
     known_paths = {f["rel_path"] for f in files}
 
-    # Load symbols and build file_id -> symbols mapping for definition boost
-    symbols_by_file_id = {}
+    # file_id -> {token} over every symbol the file DEFINES. Tokenized with the
+    # same splitter used on the query, so redirectToPayment contributes
+    # "redirect"/"payment" and matching is term-to-term rather than substring.
+    symbols_by_file_id: dict[str, dict[str, set[str]]] = {}
     try:
-        symbols, _ = filter_index_records(load_jsonl(idx / "symbols.jsonl"))
-        for sym in symbols:
-            fid = sym.get("file_id")
-            if fid:
-                if fid not in symbols_by_file_id:
-                    symbols_by_file_id[fid] = []
-                symbols_by_file_id[fid].append(sym.get("name", "").lower())
-    except (FileNotFoundError, Exception):
-        symbols_by_file_id = {}
+        indexed_symbols, _ = filter_index_records(load_jsonl(idx / "symbols.jsonl"))
+    except (OSError, ValueError):
+        indexed_symbols = []
+    for sym in indexed_symbols:
+        fid = sym.get("file_id")
+        name = sym.get("name") or ""
+        if not fid or not name:
+            continue
+        entry = symbols_by_file_id.setdefault(fid, {})
+        entry[name] = {_singular(token) for token in query_terms(name)}
 
-    terms = query_terms(q)
-    term_set = set(t.lower() for t in terms if t)
+    term_set = {_singular(t) for t in query_terms(q) if t}
 
     clusters = {}
     if graph and (idx / "graph.json").exists():
@@ -111,20 +131,21 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
     for f in files:
         s, rs = score(f, q, fts_scores.get(f["file_id"]))
 
-        # Add definition boost: files that define matching symbols rank higher than files that mention them
-        # Check if any term is a substring of any symbol name (handles plural variants, camelCase splits, etc.)
+        # Definition sites outrank reference sites. A file that merely mentions
+        # a name scored the same as the file that defines it, which is why
+        # db/schema.sql -- the file that actually declares the sessions table --
+        # lost to every module that queries it.
         file_id = f.get("file_id")
-        if file_id and file_id in symbols_by_file_id and term_set:
-            defined_symbols = symbols_by_file_id[file_id]
-            # Match if term substring is in symbol or symbol substring is in term (handles plurals)
-            matching_symbols = [
-                sym for sym in defined_symbols if any((term in sym or sym in term) for term in term_set)
-            ]
+        if file_id and term_set:
+            matching_symbols = sorted(
+                name for name, tokens in symbols_by_file_id.get(file_id, {}).items() if tokens & term_set
+            )
             if matching_symbols:
-                # Strong boost: definition sites significantly outrank mere mentions.
-                # Exceed path/filename match (+20) but stay at or below exact filename match (+30).
-                s += 25
-                rs.append(f"defines matching symbol: {', '.join(set(matching_symbols[:2]))}")
+                s += DEFINITION_BOOST
+                # sorted(), not set(): set iteration order varies with
+                # PYTHONHASHSEED and this string is compared byte-for-byte by
+                # the cross-platform determinism gate.
+                rs.append(f"defines matching symbol: {', '.join(matching_symbols[:2])}")
 
         if s:
             folder = f["rel_path"].rsplit("/", 1)[0] if "/" in f["rel_path"] else "."
