@@ -48,6 +48,12 @@ def test_end_to_end_report_is_schema_versioned_and_isolated():
     assert report["graph_enabled"] is True
     assert report["graph_nodes"] > 0
     assert report["graph_edges"] > 0
+    # Core retrieval quality checks must pass (latency gates disabled for this ad-hoc run)
+    assert report["checks"]["ndcg_at_5"]
+    assert report["checks"]["recall_at_5"]
+    assert report["checks"]["primary_hit_at_3"]
+    assert report["checks"]["decoy_rate_at_5"]
+    assert report["checks"]["abstention_accuracy"]
 
 
 def test_failed_command_redacts_canary_before_raising(monkeypatch, tmp_path):
