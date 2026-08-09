@@ -8,6 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .constants import SCHEMA_VERSION
 from .intent import query_terms
 from .paths import now, stable_id
 from .security import contains_sensitive_text, path_has_ignored_part, redact_sensitive_text
@@ -118,7 +119,10 @@ def _chunk(root_id: str, file_id: str, rel_path: str, kind: str, text: str, crea
     if not preview or not vector:
         return None
     return {
-        "chunk_id": stable_id(root_id, rel_path, kind, _chunk_text_hash(text)),
+        # Canonical semantic identity, so it must not carry root_id: that is a
+        # uuid4 minted by `mimry init`, and two identical checkouts would then
+        # disagree on every chunk id. Same rule as file_id and the checkout path.
+        "chunk_id": stable_id(SCHEMA_VERSION, rel_path, kind, _chunk_text_hash(text)),
         "root_id": root_id,
         "file_id": file_id,
         "rel_path": rel_path,
