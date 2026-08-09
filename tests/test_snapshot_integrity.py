@@ -9,7 +9,7 @@ Ensures that:
 from __future__ import annotations
 
 import hashlib
-import os
+import builtins
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -24,39 +24,48 @@ from mimry.scanner import (
 )
 
 
-def test_same_size_rewrite_with_restored_mtime_is_rejected():
-    """Replace content with DIFFERENT bytes of the SAME length, then restore mtime.
-
-    Assert FileChangedError / non-indexed, not a mixed record.
-    MUST fail before the fix that adds hash verification.
-    """
+def test_same_size_rewrite_during_snapshot_acquisition_is_rejected():
+    """A real rewrite between the two acquisition reads must fail closed."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         test_file = root / "test.py"
-
-        # Write original content
         original = b"def foo(): pass  "  # 16 bytes
-        test_file.write_bytes(original)
-
-        # Get original stat
-        original_stat = test_file.stat()
-        original_mtime_ns = original_stat.st_mtime_ns
-
-        # Replace with same-size content
         replaced = b"def bar(): pass  "  # Also 16 bytes
-        test_file.write_bytes(replaced)
+        test_file.write_bytes(original)
+        real_open = Path.open
+        acquisition_reads = 0
 
-        # Restore mtime so metadata matches
-        os.utime(test_file, ns=(original_stat.st_atime_ns, original_mtime_ns))
+        class MutatingReader:
+            def __init__(self, handle, next_bytes):
+                self.handle = handle
+                self.next_bytes = next_bytes
 
-        # Attempting to read should detect the change via hash
-        data, st = read_snapshot(test_file)
-        assert data == replaced  # Got the new content
+            def __enter__(self):
+                return self
 
-        # Now verify hash doesn't match original
-        original_hash = hashlib.sha256(original).hexdigest()
-        new_hash = hashlib.sha256(data).hexdigest()
-        assert original_hash != new_hash
+            def __exit__(self, *args):
+                self.handle.close()
+
+            def read(self, *args):
+                data = self.handle.read(*args)
+                with builtins.open(test_file, "wb") as writer:
+                    writer.write(self.next_bytes)
+                return data
+
+        def mutating_open(self, *args, **kwargs):
+            nonlocal acquisition_reads
+            handle = real_open(self, *args, **kwargs)
+            if Path(self) == test_file and args and args[0] == "rb":
+                acquisition_reads += 1
+                if acquisition_reads % 2:
+                    next_bytes = replaced if acquisition_reads % 4 == 1 else original
+                    return MutatingReader(handle, next_bytes)
+            return handle
+
+        with patch.object(Path, "open", mutating_open), pytest.raises(FileChangedError):
+            read_snapshot(test_file)
+
+        assert acquisition_reads == 6, "three bounded attempts must each observe a mid-acquisition rewrite"
 
 
 def test_same_inode_replacement_detected():

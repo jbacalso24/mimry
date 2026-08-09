@@ -55,6 +55,11 @@ def _setup_pointer(root: Path, cache: Path, root_id: str) -> dict:
 
 
 class TestEdgeIdentityPolicy:
+    @pytest.mark.parametrize("edge_id", [None, "", "   "])
+    def test_explicit_empty_edge_ids_are_rejected(self, edge_id):
+        with pytest.raises(DuplicateIdentityError, match="non-empty string"):
+            validate_edge_identity([_edge(edge_id=edge_id)])
+
     def test_conflicting_edge_ids_are_rejected(self):
         edges = [_edge(target_id="s1"), _edge(target_id="s2")]
         with pytest.raises(DuplicateIdentityError) as exc:
@@ -171,6 +176,23 @@ class TestEdgeIdentityThroughRealPipeline:
         with pytest.raises(DuplicateIdentityError) as exc:
             write_index(repo, ptr)
         assert "collision" in str(exc.value)
+
+    def test_whitespace_edge_id_is_rejected_at_persistence_boundary(self, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path)
+        ptr = _setup_pointer(repo, tmp_path / "cache", "root-empty-edge")
+        import mimry.scanner as scanner_module
+
+        real_adapt = scanner_module.adapt
+
+        def empty_edge_adapt(path, root):
+            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root)
+            if edges:
+                edges[0]["edge_id"] = "  "
+            return f, symbols, edges, imports, exports, calls, references
+
+        monkeypatch.setattr("mimry.indexer.adapt", empty_edge_adapt)
+        with pytest.raises(DuplicateIdentityError, match="non-empty string"):
+            write_index(repo, ptr)
 
     def test_no_generation_is_published_when_edges_conflict(self, tmp_path, monkeypatch):
         repo = self._repo(tmp_path)

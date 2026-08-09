@@ -28,6 +28,12 @@ class FileChangedError(OSError):
     pass
 
 
+class CanonicalPathCollisionError(ValueError):
+    """Raised when distinct native paths collapse to one canonical identity."""
+
+    pass
+
+
 def _identity(st) -> tuple:
     """The parts of a stat result that change when a file's content changes."""
     return (st.st_size, st.st_mtime_ns, st.st_ino, st.st_dev)
@@ -76,14 +82,14 @@ def read_snapshot(path, limit=1_000_000):
     raise FileChangedError(f"{path} changed while MIMRY was reading it")
 
 
-def verify_unchanged(path, st) -> None:
-    """Re-stat after every adapter has run and fail closed if the file moved on.
-
-    Adapters below this one legitimately re-open the file for their own
-    purposes. Rather than thread the bytes through every one of them, prove at
-    the end that they all saw the same version the hash was taken from.
-    """
-    if _identity(Path(path).stat()) != _identity(st):
+def verify_unchanged(path, st, expected_hash: str) -> None:
+    """Fail closed if live bytes differ from the immutable acquired snapshot."""
+    path = Path(path)
+    try:
+        current, current_stat = read_snapshot(path)
+    except OSError as exc:
+        raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run") from exc
+    if _identity(current_stat) != _identity(st) or hashlib.sha256(current).hexdigest() != expected_hash:
         raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run")
 
 
@@ -116,8 +122,19 @@ def scan(root):
         except OSError:
             continue
         paths.append(path)
-    # Sort deterministically by canonical path to ensure filesystem order doesn't leak into results
-    for path in sorted(paths, key=lambda p: canonical_rel_path(p, root)):
+    # Distinct native names may normalize to one canonical path/file ID. Reject
+    # that ambiguity before adaptation or publication rather than picking a winner.
+    canonical_paths: dict[str, Path] = {}
+    for path in sorted(paths, key=lambda p: (canonical_rel_path(p, root), p.relative_to(root).as_posix())):
+        canonical = canonical_rel_path(path, root)
+        previous = canonical_paths.get(canonical)
+        if previous is not None and previous != path:
+            raise CanonicalPathCollisionError(
+                f"Canonical path collision for {canonical!r}: "
+                f"{previous.relative_to(root).as_posix()!r} and {path.relative_to(root).as_posix()!r}. "
+                "Rename one file; MIMRY will not publish ambiguous file IDs."
+            )
+        canonical_paths[canonical] = path
         yield path
 
 
@@ -313,7 +330,7 @@ def adapt(path, root):
         references["inherits"] = inherits
 
     f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
-    verify_unchanged(path, _st)
+    verify_unchanged(path, _st, f["hash"])
     if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references)):
         raise ValueError("adapter output contained sensitive data")
     return f, symbols, edges, sorted(set(imports)), sorted(set(exports)), calls, references

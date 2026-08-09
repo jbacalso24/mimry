@@ -28,7 +28,7 @@ src/mimry/core/
   resolve.py    resolve_imports / resolve_calls / resolve_doc_links / resolve_table_refs
   cluster.py    deterministic label propagation
   report.py     GRAPH_REPORT.md + manifest.json
-  documents.py  .docx/.xlsx text extraction (zipfile + regex, no XML parser)
+  documents.py  bounded .docx regex and stdlib XML parsing for XLSX shared/inline strings
   artifacts.py  readers/queries (was graphify_artifacts.py)
 ```
 
@@ -61,8 +61,8 @@ can point at `path:line` instead of just a path.
    probes only `mimry/core/build.py`. Letting it fall through to rule 4's suffix
    match does resolve it, and the edge is correct — but the extra graph evidence
    changes which reason four CLI/MCP tests report. Decide that one deliberately.
-6. **All source is ASCII** — `tests/test_encoding.py` enforces it and a cp1252 Windows
-   console raises on non-ASCII output.
+6. **Human output is code-page safe; artifacts are UTF-8.** CLI streams use
+   `backslashreplace` on strict consoles without changing UTF-8 JSON/Markdown/index writers.
 7. **Use `posixpath`, never `os.path`,** for `rel_path` joins. `os.path.normpath`
    returns backslashes on Windows and would resolve nothing there while passing on Linux.
 
@@ -76,39 +76,18 @@ can point at `path:line` instead of just a path.
   `benchmark-gate` (requires the frozen usefulness floors to pass). Cite the actual run
   URL and its conclusion; a green run is required but does not replace review.
 - The frozen native-graph benchmark is enforced by the required `benchmark-gate` job and
-  by `tests/test_benchmark_quality_gate.py`, which also asserts the committed thresholds
-  still equal `DEFAULT_THRESHOLDS`. Never weaken a floor to get green, and never turn the
+  by `tests/test_benchmark_quality_gate.py`, which binds the committed PASS to fixture,
+  cases, retrieval source, and exact `DEFAULT_THRESHOLDS`. CI validates it before writing
+  a fresh report to `/tmp/artifact`. Never weaken a floor to get green, and never turn the
   historical Graphify baseline into a current PASS claim -- report the real numbers.
 - Run `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest -q`
   before handoff, then include their exact outputs.
 
-## Linux and macOS status
+## Platform verification
 
-**Partially verified on real Linux** (WSL Ubuntu 24.04.4, Python 3.12.3), no
-installation required because these modules are pure stdlib:
-
-- `core/build.py`, `core/cluster.py`, `core/resolve.py`, `core/report.py`,
-  `core/documents.py` self-checks all print `OK` on Linux.
-- `scripts/cross_platform_check.py` builds a graph from fixed in-memory input and
-  prints a digest. Windows prints
-  `425a722173ccb7c7eeabe0189feabec7f88c1a484891e622d8224cc246a897af`, and it is
-  stable across `PYTHONHASHSEED` values. (It was
-  `76f2e5c39d5ab85a39c48036dbadcfd6220b0ea0c42684137c8947ba8688b8c9` before nodes
-  gained `line` and the report gained surprise scores; **Linux needs re-running to
-  confirm it still agrees.**) That means the engine computes
-  byte-identically across platforms, so a cached index is portable between machines.
-
-**Still unverified:** the full suite on Linux/macOS (CLI, MCP, state recovery,
-privacy hardening). Those need `tree-sitter` and `fastmcp` installed. WSL here has
-no `pip`/`ensurepip` and no passwordless sudo, so local install needs either
-`sudo apt install python3-venv python3-pip` or fetching `uv` — both need the
-operator.
-
-To repeat the Linux check:
-
-```
-wsl -d Ubuntu -e bash -lc "cd ~/mimry-linux && python3 scripts/cross_platform_check.py"
-```
+Use the current commit's CI run as platform evidence. Every Windows/Linux/macOS and
+Python 3.11-3.13 cell runs the suite and determinism matrix; the aggregate job requires
+all nine artifacts and compares digest, rankings, and context against committed goldens.
 
 Windows fixes made, each of which must stay POSIX-neutral:
 
@@ -120,8 +99,8 @@ Windows fixes made, each of which must stay POSIX-neutral:
 | `security.py::stat_identity` | drop `st_ctime_ns` on nt only — Windows reports creation time at different precision from `fstat` vs `lstat`; **POSIX keeps it** |
 | `commands.py`, `indexer.py` | `stdin=subprocess.DEVNULL` on git calls — under MCP stdio, stdin IS the JSON-RPC channel |
 | `installer.py::_is_mimry_hook` | match the marker, not the literal `"mimry hook-check"` (Windows resolves `mimry.EXE`) |
-| `agent_integration.py::_client_env` | set `USERPROFILE`/`HOMEDRIVE`/`HOMEPATH`; `ntpath.expanduser` ignores `HOME` |
-| all of `src/mimry` | ASCII-only output |
+| `agent_integration.py::_client_env` | isolate `USERPROFILE`/`HOMEDRIVE`/`HOMEPATH`, `APPDATA`/`LOCALAPPDATA`, and `XDG_DATA_HOME` |
+| `cli.py` | code-page-safe human output with `backslashreplace`; UTF-8 artifact writers are unchanged |
 
 For the latest verification state, use the commit's test output or release record;
 this handoff intentionally does not freeze ephemeral branch, machine, or test-count

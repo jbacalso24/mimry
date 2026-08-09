@@ -175,7 +175,17 @@ def build_parser():
     return p
 
 
+def _configure_console() -> None:
+    # Human output must not crash on strict Windows code pages. Structured
+    # artifacts keep their explicit UTF-8 writers and remain untouched.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(errors="backslashreplace")
+
+
 def main(argv=None):
+    _configure_console()
     a = build_parser().parse_args(argv)
     try:
         return a.func(a)

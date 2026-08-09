@@ -4,6 +4,7 @@ import html
 import io
 import re
 import zipfile
+from xml.etree import ElementTree
 from pathlib import Path
 
 # Extensions for office document files that MIMRY can extract text from.
@@ -27,11 +28,10 @@ def extract_document_text(
 
     Extracts text from:
     - .docx: word/document.xml, <w:t> elements
-    - .xlsx: xl/sharedStrings.xml, <t> elements
+    - .xlsx: shared strings and worksheet inline strings
 
-    Uses regex instead of an XML parser to avoid entity-expansion vulnerabilities
-    on untrusted input. We only want text runs, so regex over <w:t[^>]*>(.*?)</w:t>
-    and <t[^>]*>(.*?)</t> is both sufficient and safer.
+    DOCX uses bounded regex extraction. XLSX uses the stdlib XML parser over
+    bounded ZIP members; ElementTree does not resolve external entities.
 
     Pass `data` (bytes) to parse already-captured bytes without reopening the file.
     If data is None and path is provided, will open and read the path.
@@ -134,24 +134,46 @@ def _extract_docx_text(zf: zipfile.ZipFile) -> str:
 
 
 def _extract_xlsx_text(zf: zipfile.ZipFile) -> str:
-    """Extract text from an .xlsx file's xl/sharedStrings.xml."""
-    member_name = "xl/sharedStrings.xml"
+    """Extract shared and inline strings from bounded XLSX XML members."""
 
-    # Validate member name (no path traversal)
-    if ".." in member_name or member_name.startswith("/"):
-        return ""
+    def local_name(tag: str) -> str:
+        return tag.rsplit("}", 1)[-1]
 
-    data = _read_member(zf, member_name)
-    if data is None:
-        return ""
+    texts: list[str] = []
+    shared = _read_member(zf, "xl/sharedStrings.xml")
+    if shared is not None:
+        try:
+            root = ElementTree.fromstring(shared)
+            items = [node for node in root.iter() if local_name(node.tag) == "si"]
+            for item in items:
+                value = "".join(node.text or "" for node in item.iter() if local_name(node.tag) == "t")
+                if value:
+                    texts.append(value)
+            # Some minimal producers/tests omit the sst/si wrappers while still
+            # placing text nodes in the standard sharedStrings member.
+            if not items:
+                texts.extend(node.text for node in root.iter() if local_name(node.tag) == "t" and node.text)
+        except ElementTree.ParseError:
+            pass
 
-    # Decode as UTF-8, ignoring errors
-    xml_text = data.decode("utf-8", errors="ignore")
-
-    # Extract text from <t> elements using regex
-    # Pattern: <t[^>]*>(.*?)</t>
-    # Use negative lookahead to avoid matching closing tags of other elements
-    texts = re.findall(r"<t[^>]*>(.*?)</t>", xml_text)
-
-    # Unescape HTML entities
-    return " ".join(html.unescape(t) for t in texts)
+    worksheets = sorted(
+        info.filename
+        for info in zf.infolist()
+        if info.filename.startswith("xl/worksheets/")
+        and info.filename.endswith(".xml")
+        and ".." not in info.filename
+        and not info.filename.startswith("/")
+    )
+    for member_name in worksheets:
+        data = _read_member(zf, member_name)
+        if data is None:
+            continue
+        try:
+            root = ElementTree.fromstring(data)
+        except ElementTree.ParseError:
+            continue
+        for cell in (node for node in root.iter() if local_name(node.tag) == "c" and node.get("t") == "inlineStr"):
+            value = "".join(node.text or "" for node in cell.iter() if local_name(node.tag) == "t")
+            if value:
+                texts.append(value)
+    return " ".join(texts)

@@ -16,7 +16,7 @@ what they encode.
 | --- | --- | --- |
 | `release-floor` | 3 OS x Python 3.11/3.12/3.13 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix, unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
 | `determinism-aggregate` | ubuntu-latest, needs `release-floor` | Every one of the 9 matrix cells emitted evidence, and all of them agree with each other and with the committed golden values on the canonical digest, the retrieval rankings, and the context pack |
-| `benchmark-gate` | ubuntu-latest, locked env | The frozen agent-usefulness floors still pass (`state == "PASS"`), on the current fixture hash |
+| `benchmark-gate` | ubuntu-latest, locked env | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
 
 ### Canonical versus operational evidence
 
@@ -69,13 +69,15 @@ uv pip install --python /tmp/mimry-wheel-venv/bin/python dist/*.whl
 /tmp/mimry-wheel-venv/bin/mimry status
 ```
 
-The packaging tests verify the wheel's `Requires-Dist` entries and the sdist allow-list.
+The packaging tests verify the wheel's `Requires-Dist` entries and the sdist allow-list,
+including both determinism matrix and aggregate scripts.
 
 CI additionally extracts the sdist and, with an empty uv cache and no lockfile use, installs
 its dependencies and runs the full parser and determinism surface against that unlocked
 resolution: Python, TS/TSX, Java, PHP, Go, SQL and Markdown extraction, symbols and line
 pointers, imports, calls, references, and the canonical digest. The sdist ships no `uv.lock`,
-so this lane is the first place a newer parser release would appear. Import success is not
+so this lane is the first place a newer parser release would appear. It invokes the matrix
+script and source from the extracted artifact, never from the checkout. Import success is not
 evidence of parser compatibility, which is why `tree-sitter` carries an upper bound
 (`>=0.25.2,<0.26`) alongside the exact `tree-sitter-language-pack` pin.
 

@@ -49,7 +49,7 @@ def _schema_upgrade_error_payload(exc: IndexSchemaMigrationError, *, root: Path 
     message = str(exc)
     return {
         "returncode": 2,
-        "initialized": False,
+        "initialized": True,
         **({"root": str(root)} if root is not None else {}),
         "state_error": message,
         "error": {
