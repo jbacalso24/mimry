@@ -776,3 +776,54 @@ def test_cache_wipe_reports_incomplete_removal_nonzero(tmp_path: Path, monkeypat
     assert result == 2
     assert "Cache wipe incomplete" in output
     assert "injected removal failure" in output
+
+
+def test_generation_publication_retries_transient_windows_permission_error(tmp_path: Path, monkeypatch):
+    """A held handle must not lose a fully written generation.
+
+    POSIX renames a directory atomically whatever handles are open. Windows
+    raises WinError 5 while an antivirus or Search indexer still has the
+    freshly written tree open, which surfaced as three unrelated-looking test
+    failures all pointing at os.replace in write_index.
+    """
+    from mimry import indexer
+
+    calls = {"n": 0}
+    real_replace = os.replace
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError(5, "Access is denied")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(indexer.os, "replace", flaky_replace)
+    staging = tmp_path / ".stage"
+    staging.mkdir()
+    (staging / "artifact").write_text("payload", encoding="utf-8")
+    final = tmp_path / "final"
+
+    indexer._publish_generation(staging, final, attempts=5, delay=0.001)
+
+    assert calls["n"] == 3, "publication should have retried twice before succeeding"
+    assert (final / "artifact").read_text(encoding="utf-8") == "payload"
+    assert not staging.exists()
+
+
+def test_generation_publication_fails_closed_after_bounded_retries(tmp_path: Path, monkeypatch):
+    """Retrying is bounded; a genuinely stuck handle must surface, not hang."""
+    from mimry import indexer
+
+    calls = {"n": 0}
+
+    def always_denied(src, dst):
+        calls["n"] += 1
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(indexer.os, "replace", always_denied)
+    staging = tmp_path / ".stage2"
+    staging.mkdir()
+
+    with pytest.raises(PermissionError):
+        indexer._publish_generation(staging, tmp_path / "final2", attempts=4, delay=0.001)
+    assert calls["n"] == 4, "retry count must be bounded by attempts"
