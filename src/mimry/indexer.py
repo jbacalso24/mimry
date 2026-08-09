@@ -8,7 +8,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from .core.build import GraphEngine, canonicalize_edges
+from .core.build import GraphEngine, validate_edge_identity, canonicalize_edges
 from .core.cluster import assign_communities
 from .core.resolve import (
     resolve_imports,
@@ -154,6 +154,11 @@ def _collect(root: Path):
     calls = dict(calls_items)
     symbols_by_file = dict(sorted(symbols_by_file.items()))
     references = dict(sorted(references.items()))
+
+    # The persistence boundary, not just graph construction. Enforcing this only
+    # inside build_graph would leave every other consumer of _collect -- and any
+    # future writer -- free to persist an ambiguous edge ID.
+    edges = validate_edge_identity(edges)
 
     return files, symbols, edges, imports, exports, calls, symbols_by_file, references, sorted(set(unindexable))
 
