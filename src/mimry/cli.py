@@ -15,6 +15,12 @@ from .commands import (
     cmd_adapters,
     cmd_init,
     cmd_path,
+    cmd_plan_check,
+    cmd_plan_digest,
+    cmd_plan_list,
+    cmd_plan_new,
+    cmd_plan_split,
+    cmd_plan_tree,
     cmd_preflight,
     cmd_related,
     cmd_refresh,
@@ -26,6 +32,7 @@ from .commands import (
     cmd_why,
 )
 from .installer import cmd_hook_check, cmd_install, cmd_uninstall
+from .plan import PlanError
 from .state import IndexSchemaMigrationError, StateCorruptionError, StateLockTimeoutError, UnsupportedIndexSchemaError
 from .storage import RootIdentityError
 
@@ -141,6 +148,30 @@ def build_parser():
     )
     s.add_argument("--json", action="store_true", help="Print the normalized canonical state instead of its hash")
     s.set_defaults(func=cmd_digest)
+    plan = sub.add_parser("plan", help="Store and render deterministic recursive plan trees")
+    plan_sub = plan.add_subparsers(dest="plan_command", required=True)
+    s = plan_sub.add_parser("new", help="Create a repo-scoped plan tree")
+    s.add_argument("root_plan", help="Root plan text")
+    s.add_argument("--name", help="Stable human-readable slug (normalized deterministically)")
+    s.set_defaults(func=cmd_plan_new)
+    s = plan_sub.add_parser("split", help="Split a leaf into ordered child subplans")
+    s.add_argument("plan_id")
+    s.add_argument("node_id")
+    s.add_argument("--child", action="append", required=True, help="Child subplan; repeat to define sibling order")
+    s.set_defaults(func=cmd_plan_split)
+    s = plan_sub.add_parser("tree", help="Render a plan tree")
+    s.add_argument("plan_id")
+    projection = s.add_mutually_exclusive_group()
+    projection.add_argument("--json", action="store_true", help="Print canonical JSON")
+    projection.add_argument("--md", action="store_true", help="Print Markdown")
+    s.set_defaults(func=cmd_plan_tree)
+    s = plan_sub.add_parser("check", help="Validate plan structure without changing it")
+    s.add_argument("plan_id")
+    s.set_defaults(func=cmd_plan_check)
+    s = plan_sub.add_parser("digest", help="Print the plan's canonical semantic SHA-256")
+    s.add_argument("plan_id")
+    s.set_defaults(func=cmd_plan_digest)
+    plan_sub.add_parser("list", help="List local plan trees deterministically").set_defaults(func=cmd_plan_list)
     sub.add_parser("roots").set_defaults(func=cmd_roots)
     i = sub.add_parser(
         "install", help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills"
@@ -203,6 +234,9 @@ def main(argv=None):
         return 2
     except RootIdentityError as exc:
         print(f"MIMRY root identity error: {exc}", file=sys.stderr)
+        return 2
+    except PlanError as exc:
+        print(f"MIMRY plan error: {exc}", file=sys.stderr)
         return 2
 
 

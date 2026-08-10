@@ -25,6 +25,15 @@ from .core.artifacts import (
 )
 from .indexer import write_index
 from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir
+from .plan import (
+    PlanStore,
+    canonical_plan,
+    plan_digest,
+    render_markdown,
+    render_terminal,
+    validate_plan,
+    write_plan_output,
+)
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows, print_rows
 from .security import filter_index_records, markdown_inline, safe_root, sanitize_query
@@ -163,6 +172,57 @@ def require(root, *, validate: bool = True):
     if not ptr:
         raise SystemExit("MIMRY is not initialized here. Run `mimry init` first.")
     return ptr
+
+
+def cmd_plan_new(a):
+    plan = PlanStore(Path(a.root)).create(a.root_plan, a.name)
+    write_plan_output(f"Plan ID: {plan['planId']}\nRoot node ID: {plan['root']}\n")
+    return 0
+
+
+def cmd_plan_split(a):
+    _, child_ids = PlanStore(Path(a.root)).split(a.plan_id, a.node_id, a.child)
+    lines = [f"Split node: {a.node_id}"]
+    lines.extend(f"Child {index}: {child_id}" for index, child_id in enumerate(child_ids, start=1))
+    write_plan_output("\n".join(lines) + "\n")
+    return 0
+
+
+def cmd_plan_tree(a):
+    plan = PlanStore(Path(a.root)).load(a.plan_id)
+    if a.json:
+        output = json.dumps(canonical_plan(plan), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    elif a.md:
+        output = render_markdown(plan)
+    else:
+        output = render_terminal(plan)
+    write_plan_output(output)
+    return 0
+
+
+def cmd_plan_check(a):
+    plan = PlanStore(Path(a.root)).load(a.plan_id)
+    errors = validate_plan(plan)
+    if errors:
+        for error in errors:
+            print(f"{error.code}: {error.message}", file=sys.stderr)
+        return 2
+    write_plan_output(f"OK {a.plan_id}\n")
+    return 0
+
+
+def cmd_plan_digest(a):
+    write_plan_output(plan_digest(PlanStore(Path(a.root)).load(a.plan_id)) + "\n")
+    return 0
+
+
+def cmd_plan_list(a):
+    inventory = PlanStore(Path(a.root)).list()
+    if not inventory:
+        write_plan_output("No plans.\n")
+        return 0
+    write_plan_output("".join(f"{item['planId']}\t{item['name']}\t{item['rootText']}\n" for item in inventory))
+    return 0
 
 
 def _index_reader(command):
