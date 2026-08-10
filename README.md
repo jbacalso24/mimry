@@ -264,6 +264,59 @@ Target another root explicitly:
 mimry --root /path/to/repo status
 ```
 
+## Recursive plan trees
+
+`mimry plan` is a narrow deterministic decomposer for explicit, user-authored
+plan structure. A plan has one root and ordered children; every child can be
+split again to arbitrary depth. It stores and renders the tree only. It does
+not generate plans with an LLM, execute work, schedule it, track evidence, or
+act as a board, goal, or todo system.
+
+Initialize MIMRY in the repository, then create and decompose a tree:
+
+```bash
+mimry plan new "Ship feature" --name ship-feature
+# prints Plan ID and Root node ID
+
+mimry plan split <plan-id> <root-node-id> \
+  --child "Design" \
+  --child "Implement"
+mimry plan split <plan-id> <design-node-id> \
+  --child "Data shape" \
+  --child "User flow"
+
+mimry plan tree <plan-id>
+mimry plan tree <plan-id> --json
+mimry plan tree <plan-id> --md
+mimry plan check <plan-id>
+mimry plan digest <plan-id>
+mimry plan list
+```
+
+Example default projection:
+
+```text
+Ship feature [node-...]
+|-- Design [node-...]
+|   |-- Data shape [node-...]
+|   `-- User flow [node-...]
+`-- Implement [node-...]
+```
+
+`split` is intentionally leaf-only. Repeated `--child` arguments define sibling
+order, and splitting a non-leaf is rejected rather than ambiguously replacing
+or appending children. Trees are stored as canonical versioned JSON under
+`.mimry/plans/` with atomic writes and a bounded local lock. Text is normalized
+to UTF-8/LF/NFC. Stable IDs, projections, validation errors, inventory, and the
+semantic SHA-256 exclude checkout paths, timestamps, locale, timezone, runtime
+state, and formatting-only metadata. Stored plans reject duplicate JSON keys,
+unknown fields, or IDs that no longer derive from their canonical plan/root/
+parent data. Redirected default, JSON, and Markdown projections are canonical
+UTF-8 bytes; interactive terminals retain code-page-safe human output.
+
+Read-only MCP parity is available as `mimry_plan_tree`, `mimry_plan_check`,
+`mimry_plan_digest`, and `mimry_plan_list`. Plan mutation remains CLI-only.
+
 ## Feedback learning
 
 `mimry feedback` records local operational metadata about what an agent actually used after a task. It is not telemetry and is not durable user memory. It is stored in the current root's local SQLite cache and used as a modest explainable ranking signal for future similar queries.

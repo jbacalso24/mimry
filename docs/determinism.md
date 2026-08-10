@@ -138,6 +138,44 @@ is never persisted.
 Deleted, unreadable, locked, malformed, encrypted, and oversized files keep their
 existing graceful degradation.
 
+## Recursive plan-tree determinism
+
+Plan trees use a separate versioned canonical JSON contract under
+`.mimry/plans/`. Root and node IDs derive only from normalized explicit tree
+data: schema version, normalized plan text/name, parent identity, sibling index,
+and child text. They never derive from a checkout path, timestamp, process,
+session, locale, or timezone. Text normalization converts CRLF/CR to LF and
+Unicode NFD to NFC before IDs or hashes are computed.
+
+Node-object keys are sorted in storage and JSON projection, while each node's
+`children` array preserves explicit sibling order. Independent leaf splits can
+therefore be traversed in different orders without changing the final tree,
+renderings, or digest. The digest hashes canonical semantic JSON rather than
+stored bytes, so indentation and key insertion order cannot affect it.
+
+The validator fails closed on malformed or future schemas and reports sorted
+`(code, message)` pairs for invalid IDs/text, missing children/root, duplicate
+references, multiple parents, cycles, and unreachable nodes. Mutation takes a
+bounded exclusive lock around read/validate/update/atomic-replace; readers use
+the matching shared lock where supported.
+
+Validation also recomputes the plan ID from schema/name/root text, the root ID
+from the plan ID, and each child ID from plan ID/parent/sibling index/text.
+Unknown plan/node fields and duplicate JSON object keys are rejected before any
+projection. Validation, DFS projection, terminal rendering, Markdown rendering,
+and digest canonicalization use explicit stacks; a 2,000-node chain is part of
+the regression gate.
+
+When a plan projection is redirected, the CLI writes canonical UTF-8 bytes
+directly to stdout's binary buffer. Interactive terminals retain MIMRY's global
+code-page-safe human rendering, including strict Windows CP1252 consoles. Thus
+default tree, JSON, and Markdown redirection have the same bytes under UTF-8 and
+CP1252 process configurations without changing the human TTY contract.
+
+The determinism claim applies to representation of explicit tree data. It does
+not claim that user- or LLM-authored planning text is deterministic, and this
+feature performs no automatic planning or refinement.
+
 ## The gate
 
 ```bash

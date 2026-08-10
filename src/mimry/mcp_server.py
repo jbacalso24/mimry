@@ -28,6 +28,15 @@ from mimry.freshness import index_freshness
 from mimry.core.artifacts import graph_health
 from mimry.indexer import write_index
 from mimry.paths import context_file
+from mimry.plan import (
+    InvalidPlanError,
+    PlanError,
+    PlanStore,
+    canonical_plan,
+    plan_digest,
+    render_markdown,
+    render_terminal,
+)
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.semantic import semantic_health, semantic_rows
@@ -581,6 +590,54 @@ def _digest_payload(root_path: Path) -> dict[str, Any]:
 def mimry_digest(root: str | None = None) -> dict[str, Any]:
     """Return the canonical semantic digest and state metadata for an index generation."""
     return _digest_payload(_root(root))
+
+
+def _plan_read(operation) -> dict[str, Any]:
+    """Return one stable read-only MCP envelope without exposing local paths."""
+    try:
+        return {"returncode": 0, **operation()}
+    except InvalidPlanError as exc:
+        return {
+            "returncode": 2,
+            "valid": False,
+            "errors": [{"code": error.code, "message": error.message} for error in exc.errors],
+        }
+    except PlanError as exc:
+        return {"returncode": 2, "error": {"code": "plan_error", "message": str(exc)}}
+
+
+@mcp.tool
+@_state_guard
+def mimry_plan_tree(plan_id: str, root: str | None = None) -> dict[str, Any]:
+    """Return canonical JSON plus deterministic terminal and Markdown projections for a plan tree."""
+    return _plan_read(
+        lambda: {
+            "plan": canonical_plan(plan := PlanStore(_root(root)).load(plan_id)),
+            "terminal": render_terminal(plan),
+            "markdown": render_markdown(plan),
+        }
+    )
+
+
+@mcp.tool
+@_state_guard
+def mimry_plan_check(plan_id: str, root: str | None = None) -> dict[str, Any]:
+    """Validate a stored plan tree without changing it."""
+    return _plan_read(lambda: {"plan_id": PlanStore(_root(root)).load(plan_id)["planId"], "valid": True, "errors": []})
+
+
+@mcp.tool
+@_state_guard
+def mimry_plan_digest(plan_id: str, root: str | None = None) -> dict[str, Any]:
+    """Return the canonical semantic SHA-256 for a stored plan tree."""
+    return _plan_read(lambda: {"plan_id": plan_id, "digest": plan_digest(PlanStore(_root(root)).load(plan_id))})
+
+
+@mcp.tool
+@_state_guard
+def mimry_plan_list(root: str | None = None) -> dict[str, Any]:
+    """Return the deterministic local plan inventory for a root."""
+    return _plan_read(lambda: {"plans": PlanStore(_root(root)).list()})
 
 
 def main(argv: list[str] | None = None) -> None:
