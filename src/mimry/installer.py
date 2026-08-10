@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import os
 import platform as platform_module
+import shlex
 import shutil
 import sys
 from shutil import which
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 
 @dataclass(frozen=True)
@@ -501,6 +502,18 @@ def _resolve_mimry_exe() -> str:
     return "mimry"
 
 
+def _hook_command() -> str:
+    """Build a command for hook hosts that execute command strings with POSIX Bash."""
+    executable = _resolve_mimry_exe()
+    windows_absolute = PureWindowsPath(executable).is_absolute()
+    if windows_absolute:
+        executable = executable.replace("\\", "/")
+    quoted = shlex.quote(executable)
+    if windows_absolute and quoted == executable:
+        quoted = f"'{executable}'"
+    return f"{quoted} hook-check"
+
+
 def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Path | None:
     if cfg.key not in {"claude-code", "codex"} or cfg.hook_path is None:
         print(f"Hooks: no PreToolUse hook target for {cfg.label}; always-on instructions are the integration path.")
@@ -513,7 +526,7 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
         existing = json.loads(dst.read_text(encoding="utf-8")) if dst.exists() else {}
     except json.JSONDecodeError:
         existing = {}
-    command = f"{_resolve_mimry_exe()} hook-check"
+    command = _hook_command()
     hook = {
         "matcher": "Bash" if cfg.key == "codex" else "Bash|Read|Glob",
         "hooks": [{"type": "command", "command": command}],
