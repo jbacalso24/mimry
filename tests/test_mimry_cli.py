@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from mimry import installer
+
 
 def _posix(text: str) -> str:
     """Normalize printed paths for comparison.
@@ -262,6 +264,78 @@ def test_expanded_project_platform_paths(tmp_path):
         assert "platform-specific MIMRY skill install" in skill.read_text(encoding="utf-8") or platform in {
             "antigravity"
         }
+
+
+def _installed_hook_command(repo: Path, platform: str) -> str:
+    cfg = installer.platforms()[platform]
+    assert cfg.hook_path is not None
+    hook_file = repo / cfg.hook_path
+    settings = json.loads(hook_file.read_text(encoding="utf-8"))
+    entries = [entry for entry in settings["hooks"]["PreToolUse"] if installer._is_mimry_hook(entry)]
+    assert len(entries) == 1
+    return entries[0]["hooks"][0]["command"]
+
+
+@pytest.mark.parametrize("platform", ["claude-code", "codex"])
+@pytest.mark.parametrize(
+    ("windows_exe", "normalized_exe"),
+    [
+        (r"C:\Users\ExampleUser\.local\bin\mimry.EXE", "C:/Users/ExampleUser/.local/bin/mimry.EXE"),
+        (r"C:\Users\Example User\.local\bin\mimry.EXE", "C:/Users/Example User/.local/bin/mimry.EXE"),
+    ],
+)
+def test_install_hooks_serializes_windows_exe_for_posix_bash_and_stays_idempotent(
+    tmp_path, monkeypatch, platform, windows_exe, normalized_exe
+):
+    repo = copy_fixture(tmp_path)
+    monkeypatch.setattr(installer, "_resolve_mimry_exe", lambda: windows_exe)
+    cfg = installer.platforms()[platform]
+    assert cfg.hook_path is not None
+
+    installer._install_hooks(repo, cfg)
+    installer._install_hooks(repo, cfg)
+
+    command = _installed_hook_command(repo, platform)
+    assert command == f"'{normalized_exe}' hook-check"
+    parsed = subprocess.run(
+        ["bash", "-c", f'set -- {command}; printf "%s\\n" "$@"'],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert parsed.returncode == 0, parsed.stderr
+    assert parsed.stdout.splitlines() == [normalized_exe, "hook-check"]
+    assert installer.install_status(platform, project=True, root=repo)["hooks"] is True
+    assert installer._remove_hooks(repo, cfg) is not None
+    assert not any(
+        installer._is_mimry_hook(entry)
+        for entry in json.loads((repo / cfg.hook_path).read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+    )
+
+
+def test_generated_hook_command_executes_posix_launcher_with_spaces_and_quote_through_bash(tmp_path, monkeypatch):
+    repo = copy_fixture(tmp_path)
+    launcher = tmp_path / "quoted user's bin" / "mimry"
+    launcher.parent.mkdir()
+    launcher.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    monkeypatch.setattr(installer, "_resolve_mimry_exe", lambda: str(launcher))
+
+    installer._install_hooks(repo, installer.platforms()["claude-code"])
+    command = _installed_hook_command(repo, "claude-code")
+    result = subprocess.run(["bash", "-c", command], text=True, capture_output=True, check=False)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["hook-check"]
+
+
+def test_install_hooks_preserves_plain_path_launcher_fallback(tmp_path, monkeypatch):
+    repo = copy_fixture(tmp_path)
+    monkeypatch.setattr(installer, "_resolve_mimry_exe", lambda: "mimry")
+
+    installer._install_hooks(repo, installer.platforms()["codex"])
+
+    assert _installed_hook_command(repo, "codex") == "mimry hook-check"
 
 
 def test_install_project_codex_hooks_and_status_detect_broken_references(tmp_path):
