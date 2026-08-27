@@ -65,3 +65,35 @@ def test_export_snapshot_refuses_existing_destination(tmp_path: Path, populate: 
         EXPORTER.export_snapshot(ROOT, "HEAD", destination)
     assert destination.is_dir()
     assert (destination / "keep.txt").exists() is populate
+
+
+def test_export_snapshot_refuses_dangling_destination_symlink(tmp_path: Path):
+    destination = tmp_path / "public"
+    target = tmp_path / "missing-target"
+    destination.symlink_to(target, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="including as a symlink"):
+        EXPORTER.export_snapshot(ROOT, "HEAD", destination)
+
+    assert destination.is_symlink()
+    assert not target.exists()
+
+
+def test_export_snapshot_does_not_replace_destination_created_during_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    destination = tmp_path / "public"
+    original_rename = EXPORTER._rename_noreplace
+
+    def create_destination_then_publish(source: Path, target: Path) -> None:
+        target.mkdir()
+        (target / "owner.txt").write_text("preserve", encoding="utf-8")
+        original_rename(source, target)
+
+    monkeypatch.setattr(EXPORTER, "_rename_noreplace", create_destination_then_publish)
+
+    with pytest.raises(OSError):
+        EXPORTER.export_snapshot(ROOT, "HEAD", destination)
+
+    assert (destination / "owner.txt").read_text(encoding="utf-8") == "preserve"
+    assert not list(tmp_path.glob(".public.staging-*"))

@@ -38,7 +38,7 @@ uv run python scripts/export_public_snapshot.py \
   --destination /var/tmp/mimry-public-snapshot
 ```
 
-The exporter uses `git archive`, rejects unsafe archive members and generated/local paths, scans public text for non-placeholder home paths and non-example email addresses, and writes no Git history.
+The exporter uses `git archive`, rejects unsafe archive members and generated/local paths, scans public text for non-placeholder home paths and non-example email addresses, and writes no Git history. It stages beside the destination and publishes with an OS-native atomic no-replace operation; an existing path, a dangling symlink, or a destination created during export makes publication fail without clobbering that path.
 
 Re-run verification from the exported directory. At minimum:
 

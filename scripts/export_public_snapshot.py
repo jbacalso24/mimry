@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import io
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
@@ -66,13 +69,47 @@ def _validate_member(member: tarfile.TarInfo) -> PurePosixPath:
     return path
 
 
+def _rename_noreplace(source: Path, destination: Path) -> None:
+    """Atomically publish a directory, refusing any existing destination."""
+    if os.name == "nt":
+        # Windows os.rename fails rather than replacing an existing directory.
+        os.rename(source, destination)
+        return
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+
+    if sys.platform.startswith("linux"):
+        renameat2 = getattr(libc, "renameat2", None)
+        if renameat2 is None:
+            raise OSError(errno.ENOSYS, "atomic no-replace rename is unavailable")
+        renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        renameat2.restype = ctypes.c_int
+        result = renameat2(-100, source_bytes, -100, destination_bytes, 1)  # RENAME_NOREPLACE
+    elif sys.platform == "darwin":
+        renamex_np = getattr(libc, "renamex_np", None)
+        if renamex_np is None:
+            raise OSError(errno.ENOSYS, "atomic no-replace rename is unavailable")
+        renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        renamex_np.restype = ctypes.c_int
+        result = renamex_np(source_bytes, destination_bytes, 0x00000004)  # RENAME_EXCL
+    else:
+        raise OSError(errno.ENOSYS, f"atomic no-replace rename is unsupported on {sys.platform}")
+
+    if result != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), destination)
+
+
 def export_snapshot(repo: Path, ref: str, destination: Path) -> tuple[str, int]:
     repo = repo.resolve()
-    destination = destination.resolve()
+    destination_input = destination.expanduser().absolute()
+    if destination_input.exists() or destination_input.is_symlink():
+        raise ValueError("destination must not exist, including as a symlink")
+    destination = destination_input.parent.resolve(strict=True) / destination_input.name
     if destination == repo or repo in destination.parents:
         raise ValueError("destination must be outside the source repository")
-    if destination.exists():
-        raise ValueError("destination must not exist")
 
     candidate = _run(repo, "git", "rev-parse", "--verify", f"{ref}^{{commit}}").decode().strip()
     archive = _run(repo, "git", "archive", "--format=tar", candidate)
@@ -101,7 +138,7 @@ def export_snapshot(repo: Path, ref: str, destination: Path) -> tuple[str, int]:
                     findings.extend(_unsafe_text_findings(member.name, data.decode("utf-8", errors="replace")))
         if findings:
             raise ValueError("public snapshot scan failed:\n- " + "\n- ".join(sorted(set(findings))))
-        staging.rename(destination)
+        _rename_noreplace(staging, destination)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
