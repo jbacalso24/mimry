@@ -9,6 +9,7 @@ from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 TS_LANGUAGE_PACK_REQUIREMENT = "tree-sitter-language-pack==1.12.2"
+CRYPTOGRAPHY_REQUIREMENT = "cryptography>=50.0.0"
 
 
 def _build(tmp_path: Path) -> tuple[Path, Path]:
@@ -28,6 +29,7 @@ def test_wheel_metadata_carries_release_dependency_pins(tmp_path: Path):
     wheel, _ = _build(tmp_path)
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert TS_LANGUAGE_PACK_REQUIREMENT in project["project"]["dependencies"]
+    assert CRYPTOGRAPHY_REQUIREMENT in project["project"]["dependencies"]
     assert "tool" not in project or "uv" not in project["tool"] or "sources" not in project["tool"]["uv"]
 
     with ZipFile(wheel) as archive:
@@ -37,6 +39,7 @@ def test_wheel_metadata_carries_release_dependency_pins(tmp_path: Path):
         entry_points = archive.read(entry_points_name).decode("utf-8")
 
     assert TS_LANGUAGE_PACK_REQUIREMENT in metadata.get_all("Requires-Dist", [])
+    assert CRYPTOGRAPHY_REQUIREMENT in metadata.get_all("Requires-Dist", [])
     assert "mimry-integration-smoke = mimry.agent_integration:main" in entry_points
 
 

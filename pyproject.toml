@@ -24,6 +24,7 @@ classifiers = [
     "Topic :: Software Development",
 ]
 dependencies = [
+    "cryptography>=50.0.0",
     "fastmcp>=3.4.2",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
     # compiled against a specific core ABI; a 0.26 core can import cleanly and
