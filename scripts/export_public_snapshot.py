@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import tempfile
 from pathlib import Path, PurePosixPath
 
 _REJECTED_PARTS = {
@@ -70,12 +71,13 @@ def export_snapshot(repo: Path, ref: str, destination: Path) -> tuple[str, int]:
     destination = destination.resolve()
     if destination == repo or repo in destination.parents:
         raise ValueError("destination must be outside the source repository")
-    if destination.exists() and any(destination.iterdir()):
-        raise ValueError("destination must not exist or must be empty")
+    if destination.exists():
+        raise ValueError("destination must not exist")
 
     candidate = _run(repo, "git", "rev-parse", "--verify", f"{ref}^{{commit}}").decode().strip()
     archive = _run(repo, "git", "archive", "--format=tar", candidate)
-    destination.mkdir(parents=True, exist_ok=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{destination.name}.staging-", dir=destination.parent))
 
     findings: list[str] = []
     count = 0
@@ -83,7 +85,7 @@ def export_snapshot(repo: Path, ref: str, destination: Path) -> tuple[str, int]:
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
             for member in bundle.getmembers():
                 rel = _validate_member(member)
-                target = destination.joinpath(*rel.parts)
+                target = staging.joinpath(*rel.parts)
                 if member.isdir():
                     target.mkdir(parents=True, exist_ok=True)
                     continue
@@ -99,8 +101,9 @@ def export_snapshot(repo: Path, ref: str, destination: Path) -> tuple[str, int]:
                     findings.extend(_unsafe_text_findings(member.name, data.decode("utf-8", errors="replace")))
         if findings:
             raise ValueError("public snapshot scan failed:\n- " + "\n- ".join(sorted(set(findings))))
+        staging.rename(destination)
     except Exception:
-        shutil.rmtree(destination, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
         raise
     return candidate, count
 

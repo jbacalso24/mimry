@@ -54,10 +54,14 @@ def test_export_snapshot_uses_only_tracked_tree_without_history(tmp_path: Path):
     assert not (destination / "mimry-out").exists()
 
 
-def test_export_snapshot_refuses_nonempty_destination(tmp_path: Path):
+@pytest.mark.parametrize("populate", [False, True])
+def test_export_snapshot_refuses_existing_destination(tmp_path: Path, populate: bool):
     destination = tmp_path / "public"
     destination.mkdir()
-    (destination / "keep.txt").write_text("keep", encoding="utf-8")
+    if populate:
+        (destination / "keep.txt").write_text("keep", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="must not exist or must be empty"):
+    with pytest.raises(ValueError, match="must not exist"):
         EXPORTER.export_snapshot(ROOT, "HEAD", destination)
+    assert destination.is_dir()
+    assert (destination / "keep.txt").exists() is populate

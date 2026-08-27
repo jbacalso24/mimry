@@ -30,7 +30,7 @@ Also search tracked text for real names, machine-local home paths, work email do
 
 ## 3. Export only the reviewed snapshot
 
-Export the exact candidate into a new empty destination:
+Export the exact candidate into a destination that does not yet exist:
 
 ```bash
 uv run python scripts/export_public_snapshot.py \
