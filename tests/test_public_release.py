@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -31,11 +32,21 @@ def test_public_text_scan_rejects_machine_paths_and_work_email():
 
 
 def test_export_snapshot_uses_only_tracked_tree_without_history(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "README.md").write_text("# Public fixture\n", encoding="utf-8")
+    (source / "LICENSE").write_text("MIT fixture\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=source, check=True)
+    subprocess.run(["git", "config", "user.name", "Public Fixture"], cwd=source, check=True)
+    subprocess.run(["git", "config", "user.email", "fixture@example.com"], cwd=source, check=True)
+    subprocess.run(["git", "add", "."], cwd=source, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=source, check=True)
+
     destination = tmp_path / "public"
-    candidate, count = EXPORTER.export_snapshot(ROOT, "HEAD", destination)
+    candidate, count = EXPORTER.export_snapshot(source, "HEAD", destination)
 
     assert len(candidate) == 40
-    assert count > 100
+    assert count == 2
     assert (destination / "README.md").is_file()
     assert (destination / "LICENSE").is_file()
     assert not (destination / ".git").exists()
