@@ -19,7 +19,10 @@ def test_public_text_scan_allows_placeholders_and_public_noreply_identity():
 
 
 def test_public_text_scan_rejects_machine_paths_and_work_email():
-    text = "/home/localoperator/repo C:\\Users\\RealPerson\\repo person@company.invalid"
+    posix_home = "/" + "home/localoperator/repo"
+    windows_home = "C:" + "\\Users\\RealPerson\\repo"
+    work_email = "person" + "@company.invalid"
+    text = f"{posix_home} {windows_home} {work_email}"
     assert EXPORTER._unsafe_text_findings("README.md", text) == [
         "README.md: non-example email address",
         "README.md: non-placeholder Windows user path",
