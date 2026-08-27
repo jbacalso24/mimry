@@ -143,6 +143,26 @@ jobs:
             --expect-os ubuntu-latest,macos-latest,windows-latest \
             --expect-python 3.11,3.12,3.13
 
+  dependency-audit:
+    name: Runtime dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Export the locked runtime environment
+        run: |
+          uv export --frozen --no-dev --no-emit-project \
+            --format requirements-txt --output-file /tmp/mimry-runtime.txt
+
+      - name: Reject known runtime vulnerabilities
+        run: uvx pip-audit -r /tmp/mimry-runtime.txt --progress-spinner off
+
   benchmark-gate:
     name: Agent usefulness benchmark (frozen quality floors)
     runs-on: ubuntu-latest

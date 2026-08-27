@@ -32,6 +32,9 @@ uv run ruff check .
 uv run pytest -q
 uv run python scripts/cross_platform_check.py
 uv run python scripts/determinism_matrix.py
+uv export --frozen --no-dev --no-emit-project \
+  --format requirements-txt --output-file /tmp/mimry-runtime.txt
+uvx pip-audit -r /tmp/mimry-runtime.txt --progress-spinner off
 ```
 
 For packaging changes, also run:

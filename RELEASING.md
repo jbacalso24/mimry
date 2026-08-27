@@ -16,6 +16,7 @@ what they encode.
 | --- | --- | --- |
 | `release-floor` | 3 OS x Python 3.11/3.12/3.13 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix, unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
 | `determinism-aggregate` | ubuntu-latest, needs `release-floor` | Every one of the 9 matrix cells emitted evidence, and all of them agree with each other and with the committed golden values on the canonical digest, the retrieval rankings, and the context pack |
+| `dependency-audit` | ubuntu-latest, locked runtime export | The exact locked runtime dependency graph has no vulnerability known to `pip-audit` at run time |
 | `benchmark-gate` | ubuntu-latest, locked env | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
 
 ### Canonical versus operational evidence
@@ -54,6 +55,9 @@ uv sync --locked
 uv run ruff format --check .
 uv run ruff check .
 uv run pytest -q
+uv export --frozen --no-dev --no-emit-project \
+  --format requirements-txt --output-file /tmp/mimry-runtime.txt
+uvx pip-audit -r /tmp/mimry-runtime.txt --progress-spinner off
 rm -rf dist
 SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" uv build
 ```

@@ -74,7 +74,7 @@ Before announcing it:
 - enable secret scanning and push protection when available;
 - enable issues;
 - protect the default branch from force pushes and deletion;
-- require review and the release-floor, determinism-aggregate, and benchmark checks before merges;
+- require review and the release-floor, determinism-aggregate, dependency-audit, and benchmark checks before merges;
 - set the description, topics, MIT license, and public-alpha status accurately;
 - verify `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `LICENSE`, and release artifacts from the public URL.
 

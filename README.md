@@ -584,6 +584,8 @@ requires evidence from all 9 cells and compares the canonical digest, retrieval 
 context pack across them and against committed golden values; and a `benchmark-gate` job that
 first validates that the committed PASS still matches the fixture, cases, retrieval
 source, and frozen thresholds, then writes a fresh measured report only to a CI artifact.
+The separate `dependency-audit` job exports the exact locked runtime graph and rejects
+known vulnerabilities with `pip-audit`.
 
 A green CI run is required for a release but does not replace review. Releases are manually
 reviewed GitHub artifacts; there is no package-index or automated publishing step.
