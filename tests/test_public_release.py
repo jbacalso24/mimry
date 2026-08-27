@@ -14,6 +14,18 @@ EXPORTER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(EXPORTER)
 
 
+def _source_repo(path: Path) -> Path:
+    path.mkdir()
+    (path / "README.md").write_text("# Public fixture\n", encoding="utf-8")
+    (path / "LICENSE").write_text("MIT fixture\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Public Fixture"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "fixture@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "add", "."], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=path, check=True)
+    return path
+
+
 def test_public_text_scan_allows_placeholders_and_public_noreply_identity():
     text = "/home/you/repo C:\\Users\\you\\repo dev@example.com 1+owner@users.noreply.github.com"
     assert EXPORTER._unsafe_text_findings("README.md", text) == []
@@ -32,15 +44,7 @@ def test_public_text_scan_rejects_machine_paths_and_work_email():
 
 
 def test_export_snapshot_uses_only_tracked_tree_without_history(tmp_path: Path):
-    source = tmp_path / "source"
-    source.mkdir()
-    (source / "README.md").write_text("# Public fixture\n", encoding="utf-8")
-    (source / "LICENSE").write_text("MIT fixture\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q"], cwd=source, check=True)
-    subprocess.run(["git", "config", "user.name", "Public Fixture"], cwd=source, check=True)
-    subprocess.run(["git", "config", "user.email", "fixture@example.com"], cwd=source, check=True)
-    subprocess.run(["git", "add", "."], cwd=source, check=True)
-    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=source, check=True)
+    source = _source_repo(tmp_path / "source")
 
     destination = tmp_path / "public"
     candidate, count = EXPORTER.export_snapshot(source, "HEAD", destination)
@@ -82,6 +86,7 @@ def test_export_snapshot_refuses_dangling_destination_symlink(tmp_path: Path):
 def test_export_snapshot_does_not_replace_destination_created_during_export(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    source_repo = _source_repo(tmp_path / "source")
     destination = tmp_path / "public"
     original_rename = EXPORTER._rename_noreplace
 
@@ -93,7 +98,7 @@ def test_export_snapshot_does_not_replace_destination_created_during_export(
     monkeypatch.setattr(EXPORTER, "_rename_noreplace", create_destination_then_publish)
 
     with pytest.raises(OSError):
-        EXPORTER.export_snapshot(ROOT, "HEAD", destination)
+        EXPORTER.export_snapshot(source_repo, "HEAD", destination)
 
     assert (destination / "owner.txt").read_text(encoding="utf-8") == "preserve"
     assert not list(tmp_path.glob(".public.staging-*"))
