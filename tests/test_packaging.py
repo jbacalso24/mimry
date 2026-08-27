@@ -51,10 +51,12 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
         "src",
         "tests",
         "CHANGELOG.md",
+        "CONTRIBUTING.md",
         "LICENSE",
         "PKG-INFO",
         "README.md",
         "RELEASING.md",
+        "SECURITY.md",
         "THIRD_PARTY.md",
         "pyproject.toml",
     }
@@ -71,6 +73,9 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
     assert any(path.as_posix().endswith("scripts/agent_integration_smoke.py") for path in payload_paths)
     assert any(path.as_posix().endswith("scripts/determinism_aggregate.py") for path in payload_paths)
     assert any(path.as_posix().endswith("scripts/determinism_matrix.py") for path in payload_paths)
+    assert any(path.as_posix().endswith("scripts/export_public_snapshot.py") for path in payload_paths)
+    assert any(path.as_posix().endswith("CONTRIBUTING.md") for path in payload_paths)
+    assert any(path.as_posix().endswith("SECURITY.md") for path in payload_paths)
 
 
 def test_unlocked_ci_matrix_invokes_only_the_extracted_artifact_script():

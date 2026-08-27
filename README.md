@@ -34,6 +34,9 @@
 
 ---
 
+> [!IMPORTANT]
+> **Public alpha:** MIMRY is usable and heavily tested, but its interfaces may still change before 1.0. Use it on repositories you can rebuild or restore, review generated context before sharing it, and keep source files and real verification as the final truth.
+
 MIMRY gives agents a focused memory layer for a repo or project folder. Instead of opening random files, rereading the same tree, or guessing where logic lives, an agent can ask MIMRY for a compact evidence-backed handoff before it edits anything.
 
 ```bash
@@ -41,7 +44,7 @@ cd /path/to/your/project
 mimry preflight "fix auth bug"
 ```
 
-MIMRY checks freshness, refreshes when needed, ranks likely files, and writes a context pack for the agent:
+MIMRY checks freshness, ranks likely files, and writes a context pack for the agent. Fast preflight reports stale state without automatically paying for a full refresh; use `mimry refresh` or `mimry preflight --force-refresh "<task>"` when fresh artifacts are required:
 
 ```text
 Context: .mimry/mimry-out/context/latest.md
@@ -110,7 +113,7 @@ Specific things that are handled rather than assumed, because each one was a rea
 - subprocesses never inherit stdin, which under the MCP stdio server is the JSON-RPC channel
 - paths are POSIX-normalized internally; only display strings use native separators
 
-MIMRY 0.1.x is distributed internally from an authorized checkout or as a direct wheel artifact. See [`RELEASING.md`](RELEASING.md) for the supported channel and exact commands.
+MIMRY 0.1.x is distributed from its public source repository and manually reviewed GitHub release artifacts. It is not published to a Python package index yet, so do not assume `pip install mimry` is supported. See [`RELEASING.md`](RELEASING.md) for the exact release gate.
 
 Install from a checkout:
 
@@ -156,7 +159,7 @@ For agents, prefer the one-command preflight workflow:
 mimry preflight "fix auth bug"
 ```
 
-`preflight` initializes the root if needed, checks index freshness, refreshes only when state is missing or stale, generates `.mimry/mimry-out/context/latest.md`, prints top files, and reminds the agent to read the context pack before opening source files.
+`preflight` initializes the root if needed, checks index freshness, generates `.mimry/mimry-out/context/latest.md`, prints top files, and reminds the agent to read the context pack before opening source files. Fast mode does not automatically rebuild stale index/graph state; run `mimry refresh` or add `--force-refresh` when the task requires fresh artifacts.
 
 ## What it builds
 
@@ -582,10 +585,12 @@ context pack across them and against committed golden values; and a `benchmark-g
 first validates that the committed PASS still matches the fixture, cases, retrieval
 source, and frozen thresholds, then writes a fresh measured report only to a CI artifact.
 
-A green CI run is required for a release but does not replace review. Releases are manual
-internal direct artifacts and there is no automated publishing step.
+A green CI run is required for a release but does not replace review. Releases are manually
+reviewed GitHub artifacts; there is no package-index or automated publishing step.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the exact artifact and clean-wheel checks.
+
+Security issues must follow [`SECURITY.md`](SECURITY.md). Contributions follow [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Development
 
@@ -618,4 +623,4 @@ uv tool install --editable . --force
 
 ## Status
 
-MIMRY is early but usable for local, per-project agent memory. It is not a whole-computer brain and should not be pointed at entire drives or home directories.
+MIMRY is a public alpha: early but usable for local, per-project agent context and repository intelligence. It is not a whole-computer brain, a security boundary, or a replacement for source inspection, and it should not be pointed at entire drives or home directories.

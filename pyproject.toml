@@ -9,6 +9,20 @@ description = "Modular Intelligence Memory for Repos"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+keywords = ["coding-agents", "mcp", "repository-intelligence", "semantic-search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+]
 dependencies = [
     "fastmcp>=3.4.2",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
@@ -23,6 +37,11 @@ dependencies = [
     # extraction. Keep the version proved by the locked and unlocked artifact tests.
     "tree-sitter-language-pack==1.12.2",
 ]
+
+[project.urls]
+Documentation = "https://github.com/jbacalso24/mimry#readme"
+Issues = "https://github.com/jbacalso24/mimry/issues"
+Repository = "https://github.com/jbacalso24/mimry"
 
 [project.scripts]
 mimry = "mimry.cli:main"
@@ -56,12 +75,15 @@ include = [
     "/scripts/cross_platform_check.py",
     "/scripts/determinism_aggregate.py",
     "/scripts/determinism_matrix.py",
+    "/scripts/export_public_snapshot.py",
     "/benchmarks",
     "/docs",
     "/assets/banner.svg",
     "/README.md",
     "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
     "/RELEASING.md",
+    "/SECURITY.md",
     "/THIRD_PARTY.md",
     "/LICENSE",
     "/pyproject.toml",

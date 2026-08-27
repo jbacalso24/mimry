@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location("export_public_snapshot", ROOT / "scripts" / "export_public_snapshot.py")
+assert SPEC is not None and SPEC.loader is not None
+EXPORTER = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(EXPORTER)
+
+
+def test_public_text_scan_allows_placeholders_and_public_noreply_identity():
+    text = "/home/you/repo C:\\Users\\you\\repo dev@example.com 1+owner@users.noreply.github.com"
+    assert EXPORTER._unsafe_text_findings("README.md", text) == []
+
+
+def test_public_text_scan_rejects_machine_paths_and_work_email():
+    text = "/home/localoperator/repo C:\\Users\\RealPerson\\repo person@company.invalid"
+    assert EXPORTER._unsafe_text_findings("README.md", text) == [
+        "README.md: non-example email address",
+        "README.md: non-placeholder Windows user path",
+        "README.md: non-placeholder home path",
+    ]
+
+
+def test_export_snapshot_uses_only_tracked_tree_without_history(tmp_path: Path):
+    destination = tmp_path / "public"
+    candidate, count = EXPORTER.export_snapshot(ROOT, "HEAD", destination)
+
+    assert len(candidate) == 40
+    assert count > 100
+    assert (destination / "README.md").is_file()
+    assert (destination / "LICENSE").is_file()
+    assert not (destination / ".git").exists()
+    assert not (destination / ".mimry").exists()
+    assert not (destination / "mimry-out").exists()
+
+
+def test_export_snapshot_refuses_nonempty_destination(tmp_path: Path):
+    destination = tmp_path / "public"
+    destination.mkdir()
+    (destination / "keep.txt").write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must not exist or must be empty"):
+        EXPORTER.export_snapshot(ROOT, "HEAD", destination)

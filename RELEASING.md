@@ -30,19 +30,17 @@ used only for cache invalidation, feedback event IDs, and raw SQLite byte layout
 
 ## Distribution channel
 
-This release is an **internal direct-install artifact**. Distribution to a package index is a separate decision that has not been made; do not claim `pip install mimry` from an index is supported until it has.
+MIMRY 0.1.x is a **public alpha** distributed from the public source repository and manually reviewed GitHub release artifacts. Publishing to a Python package index is a separate decision that has not been made; do not claim `pip install mimry` from an index is supported until it is actually published there.
 
-Note that the technical blocker is gone: metadata no longer contains a direct Git reference, which is what PyPI-style indexes reject. Removing the Graphify pin removed that constraint.
-
-Distribute through an approved internal Git release or artifact store and install either from an authorized checkout or a direct wheel path/URL with `uv`. All dependencies resolve from a standard index:
+Install from a source checkout or a wheel downloaded from the matching GitHub release. All dependencies resolve from a standard index:
 
 ```bash
-# Authorized checkout
-git clone <internal-mimry-repo-url>
+# Public source checkout
+git clone <mimry-repo-url>
 cd mimry
 uv sync --locked
 
-# Direct wheel file downloaded from the approved internal artifact store
+# Wheel downloaded from the matching GitHub release
 uv venv /tmp/mimry-venv
 uv pip install --python /tmp/mimry-venv/bin/python ./mimry-0.1.0-py3-none-any.whl
 ```
@@ -87,4 +85,5 @@ evidence of parser compatibility, which is why `tree-sitter` carries an upper bo
 2. Re-run the unlocked-artifact parser and determinism lane before changing `tree-sitter` or `tree-sitter-language-pack`; keep both constrained in project metadata and regenerate `uv.lock`. Widening the `tree-sitter` upper bound requires that lane to pass and the golden determinism values to be re-confirmed, not regenerated to match.
 3. Run the complete release checks above on a clean checkout.
 4. Build twice with the same `SOURCE_DATE_EPOCH`, compare SHA-256 checksums, and review wheel metadata and sdist contents before tagging.
-5. Create the internal Git release/upload only after the release record contains the exact commands, platform/Python versions, and results for every claimed platform. Publishing to an index or adding automated publishing requires an explicit release decision.
+5. Create the GitHub release and upload artifacts only after the release record contains the exact commands, platform/Python versions, checksums, and results for every claimed platform. Publishing to an index or adding automated publishing requires a separate explicit release decision.
+6. For the first public publication, follow [`docs/public-release.md`](docs/public-release.md): publish a clean reviewed snapshot rather than exposing the private development repository's historical objects.
