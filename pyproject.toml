@@ -28,6 +28,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/jbacalso24/mimry"
 Repository = "https://github.com/jbacalso24/mimry"
+Author = "https://github.com/jbacalso24"
 
 [project.scripts]
 mimry = "mimry.cli:main"
