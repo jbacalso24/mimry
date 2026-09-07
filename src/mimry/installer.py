@@ -528,7 +528,9 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
         existing = {}
     command = _hook_command()
     hook = {
-        "matcher": "Bash" if cfg.key == "codex" else "Bash|Read|Glob",
+        # Grep is Claude Code's search tool; omitting it meant the hook only fired on
+        # shelled-out `grep`/`rg`, never on the tool AGENT_RULES.md actually targets.
+        "matcher": "Bash" if cfg.key == "codex" else "Bash|Read|Glob|Grep",
         "hooks": [{"type": "command", "command": command}],
     }
     pre_tool = existing.setdefault("hooks", {}).setdefault("PreToolUse", [])
@@ -605,12 +607,17 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
     return result
 
 
+SEARCH_TOOLS = {"grep", "glob"}
+
+
 def cmd_hook_check(a) -> int:
     raw = sys.stdin.read()
     command = ""
+    tool_name = ""
     try:
         data = json.loads(raw) if raw.strip() else {}
         tool_input = data.get("tool_input", data)
+        tool_name = str(data.get("tool_name") or "").lower()
         command = str(
             tool_input.get("command")
             or tool_input.get("file_path")
@@ -621,7 +628,12 @@ def cmd_hook_check(a) -> int:
     except Exception:
         command = raw
     low = command.lower().replace("\\", "/")
-    search_hit = any(tok in low for tok in ("grep", "rg ", "ripgrep", "find ", "fd ", "ack ", "ag "))
+    # A native search tool is identified by name, not payload text: the Grep tool's pattern
+    # is the caller's regex, so substring-sniffing for "grep" never matched it. Read/Glob
+    # only ever matched by accident, when a path happened to end in a listed extension.
+    search_hit = tool_name in SEARCH_TOOLS or any(
+        tok in low for tok in ("grep", "rg ", "ripgrep", "find ", "fd ", "ack ", "ag ")
+    )
     read_hit = any(
         low.endswith(ext) or f"{ext} " in low
         for ext in (".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".md")

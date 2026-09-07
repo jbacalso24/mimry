@@ -1,0 +1,6 @@
+# Test and benchmark fixtures are hashed and parsed byte-for-byte (see
+# benchmark_input_digests / the determinism gates). A Windows checkout with
+# core.autocrlf=true would rewrite their line endings and drift the digest and
+# content-derived metrics, so pin them to LF on every platform.
+benchmarks/fixtures/** text eol=lf
+tests/fixtures/** text eol=lf
