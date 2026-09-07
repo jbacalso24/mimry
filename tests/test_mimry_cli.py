@@ -24,9 +24,16 @@ def _posix(text: str) -> str:
     return text.replace("\\", "/")
 
 
+# subprocess.run(["bash", ...]) with a bare name lets Windows CreateProcess prefer
+# System32\bash.exe (WSL), which mangles the C:/... paths under test. Resolve the
+# POSIX bash on PATH (Git Bash) explicitly so the hook command is exercised, not WSL.
+_BASH = shutil.which("bash") or "bash"
+
+
 def _norm_hook(text: str) -> str:
-    """Normalize a resolved launcher path: Windows resolves mimry to mimry.EXE."""
-    return text.replace(".EXE", "").replace(".exe", "")
+    """Normalize a resolved launcher command: Windows resolves mimry to mimry.EXE, and an
+    absolute Windows path is shell-quoted, so strip the .EXE suffix and the surrounding quotes."""
+    return text.replace(".EXE", "").replace(".exe", "").replace("'", "").replace('"', "")
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -298,7 +305,7 @@ def test_install_hooks_serializes_windows_exe_for_posix_bash_and_stays_idempoten
     command = _installed_hook_command(repo, platform)
     assert command == f"'{normalized_exe}' hook-check"
     parsed = subprocess.run(
-        ["bash", "-c", f'set -- {command}; printf "%s\\n" "$@"'],
+        [_BASH, "-c", f'set -- {command}; printf "%s\\n" "$@"'],
         text=True,
         capture_output=True,
         check=False,
@@ -313,6 +320,18 @@ def test_install_hooks_serializes_windows_exe_for_posix_bash_and_stays_idempoten
     )
 
 
+def test_claude_code_hook_matches_the_grep_tool(tmp_path):
+    """Claude Code's search tool is named Grep. A matcher of Bash|Read|Glob fired only on
+    shelled-out grep/rg, so the tool AGENT_RULES.md targets went unnudged."""
+    repo = copy_fixture(tmp_path)
+    cfg = installer.platforms()["claude-code"]
+    installer._install_hooks(repo, cfg)
+
+    settings = json.loads((repo / cfg.hook_path).read_text(encoding="utf-8"))
+    entry = next(e for e in settings["hooks"]["PreToolUse"] if installer._is_mimry_hook(e))
+    assert "Grep" in entry["matcher"].split("|")
+
+
 def test_generated_hook_command_executes_posix_launcher_with_spaces_and_quote_through_bash(tmp_path, monkeypatch):
     repo = copy_fixture(tmp_path)
     launcher = tmp_path / "quoted user's bin" / "mimry"
@@ -323,7 +342,7 @@ def test_generated_hook_command_executes_posix_launcher_with_spaces_and_quote_th
 
     installer._install_hooks(repo, installer.platforms()["claude-code"])
     command = _installed_hook_command(repo, "claude-code")
-    result = subprocess.run(["bash", "-c", command], text=True, capture_output=True, check=False)
+    result = subprocess.run([_BASH, "-c", command], text=True, capture_output=True, check=False)
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == ["hook-check"]
@@ -379,7 +398,17 @@ def test_claude_skill_body_is_platform_specific(tmp_path):
     assert "mimry hook-check" in _norm_hook((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
 
 
-def test_hook_check_emits_nudge_when_mimry_exists(tmp_path):
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"tool_input": {"command": "rg auth"}}, id="bash-shelled-rg"),
+        # A native search tool carries no "grep" in its payload -- the pattern is the
+        # caller's regex. Identified by tool_name or it is missed entirely.
+        pytest.param({"tool_name": "Grep", "tool_input": {"pattern": "resolve_imports"}}, id="grep-tool"),
+        pytest.param({"tool_name": "Glob", "tool_input": {"pattern": "src/**"}}, id="glob-tool-no-extension"),
+    ],
+)
+def test_hook_check_emits_nudge_when_mimry_exists(tmp_path, payload):
     repo = copy_fixture(tmp_path)
     (repo / ".mimry").mkdir()
     (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
@@ -389,7 +418,7 @@ def test_hook_check_emits_nudge_when_mimry_exists(tmp_path):
         [sys.executable, "-m", "mimry.cli", "--root", str(repo), "hook-check"],
         cwd=repo,
         env=env,
-        input=json.dumps({"tool_input": {"command": "rg auth"}}),
+        input=json.dumps(payload),
         text=True,
         capture_output=True,
         check=False,
