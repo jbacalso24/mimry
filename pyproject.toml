@@ -9,6 +9,7 @@ description = "Modular Intelligence Memory for Repos"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+authors = [{ name = "Judison Bacalso" }]
 dependencies = [
     "fastmcp>=3.4.2",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
@@ -23,6 +24,10 @@ dependencies = [
     # extraction. Keep the version proved by the locked and unlocked artifact tests.
     "tree-sitter-language-pack==1.12.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jbacalso24/mimry"
+Repository = "https://github.com/jbacalso24/mimry"
 
 [project.scripts]
 mimry = "mimry.cli:main"
