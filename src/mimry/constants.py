@@ -96,4 +96,7 @@ TEXT_EXTS = {
     ".sh",
 }
 IMPORT_RE = re.compile(r"(?:from|import)\s+['\"]([^'\"]+)['\"]|import\s+([\w./@-]+)")
+# CommonJS: const x = require("./mod"). Without this a require-based file has no
+# import edges, so its cross-file calls can never resolve.
+REQUIRE_RE = re.compile(r"require\(\s*['\"]([^'\"]+)['\"]\s*\)")
 EXPORT_RE = re.compile(r"export\s+(?:default\s+)?(?:function|class|const|let|var)?\s*([A-Za-z_$][\w$]*)?")

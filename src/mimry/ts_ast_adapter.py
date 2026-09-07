@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .constants import EXPORT_RE, IMPORT_RE
+from .constants import EXPORT_RE, IMPORT_RE, REQUIRE_RE
 from .paths import stable_id
 from .security import is_text
 
@@ -73,6 +73,7 @@ def _parent_kinds(node: Any, limit: int = 3) -> set[str]:
 
 def _fallback_imports_exports(source: str) -> tuple[list[str], list[str]]:
     imports = [a or b for a, b in IMPORT_RE.findall(source) if a or b]
+    imports += [m for m in REQUIRE_RE.findall(source) if m]
     exports = [m for m in EXPORT_RE.findall(source) if m]
     return sorted(set(imports)), sorted(set(exports))
 
@@ -146,6 +147,10 @@ def parse_ts_like(
             add_symbol(_first_identifier(node, source), "function", node, exported)
         elif kind == "class_declaration":
             add_symbol(_first_identifier(node, source), "class", node, exported)
+        elif kind == "method_definition":
+            # A method is the real call unit in OO JS/TS. Without it, calls inside a
+            # method attribute to the enclosing class and method calls have no target.
+            add_symbol(_first_identifier(node, source), "method", node)
         elif kind == "variable_declarator":
             name = _first_identifier(node, source)
             text = _text(source, node)
