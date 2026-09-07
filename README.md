@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="MIMRY — Local repo memory for coding agents" width="100%">
+  <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/banner.png" alt="MIMRY - Local repo memory for coding agents" width="100%">
 </p>
 
 <h1 align="center">MIMRY</h1>
