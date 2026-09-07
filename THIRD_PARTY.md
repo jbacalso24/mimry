@@ -24,22 +24,3 @@ Used for the MCP server entrypoint (`mimry-mcp`) that exposes MIMRY's tools to c
 agents.
 
 - `fastmcp` (Apache-2.0)
-
-## Historical note
-
-Through 0.1.x development MIMRY used Graphify as its graph engine, pinned by Git commit
-and tracked as a submodule under `vendor/graphify`.
-
-- Upstream repository: https://github.com/safishamsi/graphify
-- Python package: `graphifyy`
-- License: MIT
-- Copyright: Copyright (c) 2026 Safi Shamsi
-
-It was replaced by the native engine after measurement rather than on principle. On
-MIMRY's own retrieval benchmark the native engine scored better on every quality metric
-and reached a queryable indexed graph in roughly half the wall-clock time.
-`benchmarks/baseline.graphify.json` retains the recorded Graphify numbers so the
-comparison stays auditable after the dependency is gone.
-
-Removing it also dropped the direct Git dependency reference from package metadata,
-which was the reason 0.1.x could not be published to a PyPI-style index.

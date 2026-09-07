@@ -249,9 +249,6 @@ def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
         "graph": graph,
         "semantic": semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files)),
     }
-    # Compatibility window for clients released before the native graph rename.
-    # Keep `graph` canonical and return the legacy key as an equal alias.
-    payload["graphify"] = graph
     return payload
 
 
@@ -300,11 +297,9 @@ def mimry_init(
     root: str | None = None,
     root_type: str = "repo",
     skip_graph: bool = False,
-    skip_graphify: bool | None = None,
 ) -> dict[str, Any]:
     """Initialize MIMRY metadata for a root."""
     root_path = _root(root)
-    skip_graph = skip_graph or bool(skip_graphify)
     payload = _capture_command(
         cmd_init, SimpleNamespace(root=str(root_path), root_type=root_type, skip_graph=skip_graph)
     )
