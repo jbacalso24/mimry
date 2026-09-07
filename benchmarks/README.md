@@ -15,6 +15,5 @@ Threshold changes require a schema/version bump and a before/after case report. 
 
 The committed native-graph report is a PASS whose provenance binds the portable fixture
 bytes, canonical cases manifest, retrieval implementation, and exact frozen thresholds.
-Historical Graphify and no-graph measurements remain attributed in
-`baseline.graphify.json` and `baseline.nograph.json`; they are comparisons, not
-current-run claims.
+The historical no-graph control measurement remains attributed in
+`baseline.nograph.json`; it is a comparison, not a current-run claim.

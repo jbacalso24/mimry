@@ -47,10 +47,9 @@ def build_parser():
     s.add_argument("--root-type", default="repo")
     s.add_argument(
         "--skip-graph",
-        "--skip-graphify",
         dest="skip_graph",
         action="store_true",
-        help="Create MIMRY metadata without building graph artifacts (--skip-graphify is deprecated)",
+        help="Create MIMRY metadata without building graph artifacts",
     )
     s.set_defaults(func=cmd_init)
     sub.add_parser("index").set_defaults(func=cmd_index)
@@ -65,9 +64,6 @@ def build_parser():
     )
     s.set_defaults(func=cmd_preflight)
     sub.add_parser("status").set_defaults(func=cmd_status)
-    graphify = sub.add_parser("graphify", help="Deprecated compatibility namespace for native graph status")
-    graphify_sub = graphify.add_subparsers(required=True)
-    graphify_sub.add_parser("status", help="Alias for `mimry status`").set_defaults(func=cmd_status)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
     s.add_argument("--active-only", action="store_true")
     s.set_defaults(func=cmd_adapters)

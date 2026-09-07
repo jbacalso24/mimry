@@ -184,7 +184,6 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     assert "mimry_route" in body
     assert "references/workflow.md" in body
     assert "$mimry" in body
-    assert "graphify" not in body
     agents = repo / "AGENTS.md"
     assert agents.exists()
     assert "## MIMRY" in agents.read_text(encoding="utf-8")
@@ -1013,7 +1012,6 @@ def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
     assert "Index ran: yes" in res.stdout
     assert "app.py" in res.stdout
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
-    assert (repo / ".mimry" / "graphify").exists() is False
     assert ".mimry/" in (repo / ".gitignore").read_text(encoding="utf-8")
     ignored = subprocess.run(
         ["git", "check-ignore", ".mimry/pointer.json"],
@@ -1055,7 +1053,6 @@ def test_status_reports_graph_artifact_health(tmp_path):
     assert "manifest.json: yes (1 entries" in status.stdout
     assert "Built from commit: abc123" in status.stdout
     assert "MIMRY graph artifacts stale/missing: no" in status.stdout
-    assert (repo / ".mimry" / "graphify").exists() is False
 
 
 def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):

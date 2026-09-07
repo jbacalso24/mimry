@@ -32,7 +32,7 @@ used only for cache invalidation, feedback event IDs, and raw SQLite byte layout
 
 This release is an **internal direct-install artifact**. Distribution to a package index is a separate decision that has not been made; do not claim `pip install mimry` from an index is supported until it has.
 
-Note that the technical blocker is gone: metadata no longer contains a direct Git reference, which is what PyPI-style indexes reject. Removing the Graphify pin removed that constraint.
+Note that the technical blocker is gone: metadata no longer contains a direct Git reference, which is what PyPI-style indexes reject.
 
 Distribute through an approved internal Git release or artifact store and install either from an authorized checkout or a direct wheel path/URL with `uv`. All dependencies resolve from a standard index:
 
