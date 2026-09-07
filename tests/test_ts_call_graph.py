@@ -51,9 +51,7 @@ def test_ts_class_method_is_a_symbol_and_owns_its_calls(tmp_path, monkeypatch):
         tmp_path,
         monkeypatch,
         {
-            "src/util.ts": (
-                "export function greet(name: string): string { return 'Hi ' + name; }\n"
-            ),
+            "src/util.ts": ("export function greet(name: string): string { return 'Hi ' + name; }\n"),
             "src/service.ts": (
                 "import { greet } from './util';\n"
                 "export class Greeter {\n"
