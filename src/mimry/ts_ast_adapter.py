@@ -45,9 +45,18 @@ def _children(node: Any):
 
 
 def _walk(node: Any):
-    yield node
-    for child in _children(node):
-        yield from _walk(child)
+    """Depth-first walk of tree, document order.
+
+    Iterative: a recursive generator hands every node up through one frame per
+    tree level, which made walking deep parse trees quadratic in their depth.
+    """
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        yield current
+        count = current.child_count()
+        if count:
+            stack.extend([current.child(i) for i in range(count - 1, -1, -1)])
 
 
 def _first_identifier(node: Any, source: str) -> str | None:

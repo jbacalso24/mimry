@@ -179,7 +179,25 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def build_semantic_index(idx: Path, root_id: str, generation_id: str | None = None) -> dict[str, Any]:
+def file_semantic_chunks(file_rec: dict[str, Any], symbols: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One file's chunks, independent of the root and build time.
+
+    ``symbols`` must be the file's symbols in symbols.jsonl order. The root_id
+    and created_at placeholders are filled in by build_semantic_index.
+    """
+    return _semantic_chunks_for_file("", file_rec, symbols, "")
+
+
+def build_semantic_index(
+    idx: Path, root_id: str, generation_id: str | None = None, precomputed: dict[str, list] | None = None
+) -> dict[str, Any]:
+    """Rebuild the generation's semantic chunks.
+
+    ``precomputed`` maps file_id to file_semantic_chunks() output for files
+    whose chunks were already derived (in index workers, or reused); the rest
+    are computed here. Either way the rows are identical.
+    """
+    precomputed = precomputed or {}
     files = _load_jsonl(idx / "files.jsonl")
     symbols = _load_jsonl(idx / "symbols.jsonl")
     # Group once: filtering the full symbol list per file was quadratic, and
@@ -190,6 +208,10 @@ def build_semantic_index(idx: Path, root_id: str, generation_id: str | None = No
     created_at = now()
     chunks: list[dict[str, Any]] = []
     for file_rec in files:
+        known = precomputed.get(file_rec["file_id"])
+        if known is not None:
+            chunks.extend({**chunk, "root_id": root_id, "created_at": created_at} for chunk in known)
+            continue
         file_symbols = symbols_by_file.get(file_rec["file_id"], [])
         chunks.extend(_semantic_chunks_for_file(root_id, file_rec, file_symbols, created_at))
 

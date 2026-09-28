@@ -193,7 +193,11 @@ def contains_sensitive_text(text: str) -> bool:
         _is_sensitive_label(label) for _start, _end, label, _replacement in _yaml_quoted_multiline_assignments(text)
     ):
         return True
-    if any(_is_sensitive_label(match.group("label")) for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)):
+    # That pattern requires a triple quote; skipping the scan without one is
+    # exact, and the scan is one of the costliest over large sources.
+    if ('"""' in text or "'''" in text) and any(
+        _is_sensitive_label(match.group("label")) for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)
+    ):
         return True
     return any(_assignment_match_is_sensitive(match) for match in ASSIGNMENT_RE.finditer(text))
 
@@ -428,17 +432,21 @@ def markdown_inline(value: Any) -> str:
     return "".join(rendered)
 
 
-def sanitize_data(value: Any) -> Any:
+def sanitize_data(value: Any, _redacted: dict[str, str] | None = None) -> Any:
     """Recursively redact strings at persistence/API boundaries."""
-
+    # Records repeat the same strings heavily (IDs reused as edge endpoints,
+    # kinds, languages); redact each distinct one once per call.
+    redacted = {} if _redacted is None else _redacted
     if isinstance(value, str):
-        return redact_sensitive_text(value)
+        if value not in redacted:
+            redacted[value] = redact_sensitive_text(value)
+        return redacted[value]
     if isinstance(value, dict):
-        return {key: sanitize_data(item) for key, item in value.items()}
+        return {key: sanitize_data(item, redacted) for key, item in value.items()}
     if isinstance(value, list):
-        return [sanitize_data(item) for item in value]
+        return [sanitize_data(item, redacted) for item in value]
     if isinstance(value, tuple):
-        return tuple(sanitize_data(item) for item in value)
+        return tuple(sanitize_data(item, redacted) for item in value)
     return value
 
 

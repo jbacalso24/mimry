@@ -116,3 +116,30 @@ def test_status_verify_rehashes_every_file(tmp_path, monkeypatch):
     adapted = _count_adapts(monkeypatch)
     _index(root, full=True)
     assert sorted(adapted) == ["a.py", "b.py", "guide.md"]
+
+
+def test_unchanged_reindex_keeps_the_generation_and_full_always_publishes(tmp_path, monkeypatch):
+    root = _repo(tmp_path, monkeypatch)
+    _index(root)
+    first = load_pointer(root)["generationId"]
+
+    kept = write_index(root, load_pointer(root))
+    assert kept["unchanged"] is True
+    assert load_pointer(root)["generationId"] == kept["generation"] == first
+
+    assert "unchanged" not in write_index(root, load_pointer(root), full=True)
+    republished = load_pointer(root)["generationId"]
+    assert republished != first
+
+    (root / "app" / "b.py").write_text("def beta():\n    return 90\n", encoding="utf-8")
+    _age(root)
+    assert "unchanged" not in write_index(root, load_pointer(root))
+    assert load_pointer(root)["generationId"] != republished
+
+
+def test_parallel_adaptation_matches_in_process(tmp_path, monkeypatch):
+    root = _repo(tmp_path, monkeypatch)
+    monkeypatch.setenv("MIMRY_INDEX_WORKERS", "1")
+    in_process = _index(root, full=True)
+    monkeypatch.setenv("MIMRY_INDEX_WORKERS", "2")
+    assert _index(root, full=True) == in_process

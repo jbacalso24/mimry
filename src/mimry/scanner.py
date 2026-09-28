@@ -36,6 +36,12 @@ class FileChangedError(OSError):
     pass
 
 
+class UnopenableFileError(FileChangedError):
+    """Raised when a regular file cannot be opened (locked or ACL-protected)."""
+
+    pass
+
+
 class SensitiveContentError(ValueError):
     """Raised when a file's own bytes carry a secret; the file is skipped, not recorded."""
 
@@ -64,6 +70,10 @@ def _resolves_within(path: Path, real_root: str) -> bool:
     return real == real_root or real.startswith(real_root.rstrip(os.sep) + os.sep)
 
 
+def _real_root(root) -> str:
+    return scoped(("real_root", str(root)), lambda: os.path.normcase(os.path.realpath(root, strict=True)))
+
+
 def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
     """Read a file once and prove it did not change underneath us.
 
@@ -85,7 +95,7 @@ def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
     if root is not None:
         # Resolved once per read scope (freshness reads every indexed file under
         # one shared lock); outside a scope, e.g. while indexing, once per call.
-        approved_root = scoped(("real_root", str(root)), lambda: os.path.normcase(os.path.realpath(root, strict=True)))
+        approved_root = _real_root(root)
     for attempt in range(3):
         before = path.lstat()
         if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
@@ -97,7 +107,7 @@ def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
         try:
             fd = os.open(path, flags)
         except OSError as exc:
-            raise FileChangedError(f"{path} could not be opened safely; not indexed this run") from exc
+            raise UnopenableFileError(f"{path} could not be opened safely; not indexed this run") from exc
         try:
             descriptor_stat = os.fstat(fd)
             with os.fdopen(fd, "rb", closefd=False) as fh:
@@ -130,14 +140,25 @@ def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
     raise FileChangedError(f"{path} changed while MIMRY was reading it")
 
 
-def verify_unchanged(path, st, expected_hash: str, *, root=None) -> None:
-    """Fail closed if live bytes differ from the immutable acquired snapshot."""
+def verify_unchanged(path, st, *, root=None) -> None:
+    """Fail closed if the live file is no longer the snapshot's file and version.
+
+    Parsers only ever see the acquired bytes, so this guards the record's
+    metadata, not its content: a record must not publish under a path that now
+    names another file, a symlink, or a newer version. It checks identity rather
+    than re-reading, the same trust freshness applies (see reuse.py); an edit
+    too quick to move the mtime is racy and re-read by the next freshness pass.
+    """
     path = Path(path)
     try:
-        current, current_stat = read_snapshot(path, root=root)
+        current = path.lstat()
+        approved_root = None if root is None else _real_root(root)
+        inside = approved_root is None or _resolves_within(path, approved_root)
     except OSError as exc:
         raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run") from exc
-    if _identity(current_stat) != _identity(st) or hashlib.sha256(current).hexdigest() != expected_hash:
+    if stat.S_ISLNK(current.st_mode) or not stat.S_ISREG(current.st_mode) or not inside:
+        raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run")
+    if _identity(current) != _identity(st):
         raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run")
 
 
@@ -414,7 +435,7 @@ def adapt(path, root, snapshot=None):
         references["inherits"] = inherits
 
     f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
-    verify_unchanged(path, _st, f["hash"], root=root)
+    verify_unchanged(path, _st, root=root)
     if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references)):
         raise ValueError("adapter output contained sensitive data")
     return f, symbols, edges, sorted(set(imports)), sorted(set(exports)), calls, references

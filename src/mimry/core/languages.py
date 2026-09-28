@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 from typing import Any
 
@@ -150,13 +151,13 @@ def _text(source: bytes, node: Any) -> str:
     ahead of it -- a UTF-8 BOM alone costs 2 characters, and Visual Studio writes
     C#/TS files with a BOM by default, so `formattedNumber` came out `rmattedNumber`.
     """
-    return source[node.start_byte() : node.end_byte()].decode("utf-8", "replace")
+    return source[node.start_byte : node.end_byte].decode("utf-8", "replace")
 
 
 def _line(node: Any) -> int | None:
     """Get 1-indexed line number from node."""
     try:
-        return int(node.start_position().row) + 1
+        return int(node.start_point.row) + 1
     except Exception:
         return None
 
@@ -164,27 +165,35 @@ def _line(node: Any) -> int | None:
 def _end_line(node: Any) -> int | None:
     """Get 1-indexed end line number from node."""
     try:
-        return int(node.end_position().row) + 1
+        return int(node.end_point.row) + 1
     except Exception:
         return None
 
 
 def _children(node: Any):
     """Iterate over child nodes."""
-    for i in range(node.child_count()):
+    for i in range(node.child_count):
         yield node.child(i)
 
 
 def _walk(node: Any):
-    """Depth-first walk of tree, document order."""
-    yield node
-    for child in _children(node):
-        yield from _walk(child)
+    """Depth-first walk of tree, document order.
+
+    Iterative: a recursive generator hands every node up through one frame per
+    tree level, which made walking deep parse trees quadratic in their depth.
+    """
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        yield current
+        count = current.child_count
+        if count:
+            stack.extend([current.child(i) for i in range(count - 1, -1, -1)])
 
 
 def _first_identifier(node: Any, source: str) -> str | None:
     """Find the first identifier-like child recursively."""
-    kind = node.kind()
+    kind = node.type
     if kind in ("identifier", "type_identifier", "field_identifier", "property_identifier", "name") or kind.endswith(
         "identifier"
     ):
@@ -220,12 +229,12 @@ def _definition_name(node: Any, source: bytes) -> str | None:
 def _parent_kinds(node: Any, limit: int = 3) -> set[str]:
     """Collect ancestor node kinds up to limit."""
     kinds: set[str] = set()
-    cur = node.parent()
+    cur = node.parent
     for _ in range(limit):
         if cur is None:
             break
-        kinds.add(cur.kind())
-        cur = cur.parent()
+        kinds.add(cur.type)
+        cur = cur.parent
     return kinds
 
 
@@ -247,14 +256,14 @@ def _is_exported(node: Any, language: str, source: str) -> bool:
     # Rust: check for visibility_modifier child
     if language == "rust":
         for child in _children(node):
-            if child.kind() == "visibility_modifier":
+            if child.type == "visibility_modifier":
                 return True
         return False
 
-    # C#: check for "public" in text
+    # C#: check for "public" in text. Checked on the bytes: ASCII survives
+    # UTF-8 decoding unchanged, and decoding a whole class per member was quadratic.
     if language == "csharp":
-        text = _text(source, node)
-        return "public" in text
+        return b"public" in source[node.start_byte : node.end_byte]
 
     # Python: no exported concept in this context
     return False
@@ -284,7 +293,7 @@ def _expression_name(node: Any, source: bytes) -> str | None:
     ponytail: positional heuristic, not name resolution. Upgrade to per-language
     field lookups if a language needs more than "last segment wins".
     """
-    kind = node.kind()
+    kind = node.type
     if _is_identifier_kind(kind):
         return _text(source, node)
     if "generic" in kind:
@@ -296,7 +305,7 @@ def _expression_name(node: Any, source: bytes) -> str | None:
         return None
     # Member access (a.b.Method): the method is the last segment.
     for child in reversed(list(_children(node))):
-        if "argument" in child.kind():
+        if "argument" in child.type:
             continue
         name = _expression_name(child, source)
         if name:
@@ -315,7 +324,7 @@ def _base_type_names(container: Any, source: bytes) -> list[str]:
 
     def visit(node: Any) -> None:
         for child in _children(node):
-            kind = child.kind()
+            kind = child.type
             # TS splits extends/implements into two clauses; Java wraps its
             # interface list in a type_list, so `implements G, R` would otherwise
             # collapse to whichever name the reversed scan reached first.
@@ -359,9 +368,59 @@ def _callee_name(node: Any, source: bytes) -> str | None:
     name = (_expression_name(callee, source) or "").strip()
     # Anything still carrying whitespace is an expression we failed to reduce.
     # Dropping it beats emitting an edge nothing can resolve.
-    if not name or any(char.isspace() for char in name):
+    if not name or name.split() != [name]:
         return None
     return name
+
+
+@functools.cache
+def _grammar(lang: str):
+    """The parser and fact query for ``lang``, built once per process."""
+    from tree_sitter import Parser, Query, QueryError
+    from tree_sitter_language_pack import get_language
+
+    language = get_language(lang)
+    node_types = NODE_TYPES[lang]
+    patterns = []
+    for category in ("definitions", "imports", "calls"):
+        for kind in sorted(node_types[category]):
+            pattern = f"({kind}) @{category}"
+            try:
+                Query(language, pattern)
+            except QueryError:
+                # Not a node type of this grammar: the full walk never saw one either.
+                continue
+            patterns.append(pattern)
+    return Parser(language), (Query(language, "\n".join(patterns)) if patterns else None)
+
+
+def _depth(node: Any) -> int:
+    depth = 0
+    while (node := node.parent) is not None:
+        depth += 1
+    return depth
+
+
+def _captures(query: Any, root_node: Any) -> list[tuple[Any, str]]:
+    """``(node, category)`` for every fact node, in the order the full walk visited them.
+
+    Query captures are not returned in document order, so each category is
+    sorted into the walk's pre-order: earlier start first, then the enclosing
+    (longer) node, then -- only for identical spans -- the shallower one. The
+    walk handled a node's categories in definitions, imports, calls order, but
+    only the order within each category is observable.
+    """
+    from tree_sitter import QueryCursor
+
+    by_category = QueryCursor(query).captures(root_node)
+    ordered = []
+    for category in ("definitions", "imports", "calls"):
+        nodes = sorted(by_category.get(category, ()), key=lambda node: (node.start_byte, -node.end_byte))
+        spans = [(node.start_byte, node.end_byte) for node in nodes]
+        if len(set(spans)) != len(spans):
+            nodes.sort(key=lambda node: (node.start_byte, -node.end_byte, _depth(node)))
+        ordered.extend((node, category) for node in nodes)
+    return ordered
 
 
 def extract(path: str | Path, source: str) -> dict:
@@ -397,14 +456,12 @@ def extract(path: str | Path, source: str) -> dict:
     base_kinds = node_types.get("bases", frozenset())
 
     try:
-        from tree_sitter_language_pack import get_parser
-
-        parser = get_parser(lang)
-        tree = parser.parse(source)
-        root_node = tree.root_node()
-        # Past this point every read is by byte offset, so rebind to bytes once
-        # rather than at each _text call site -- one missed site is silent corruption.
+        parser, query = _grammar(lang)
+        # Every read is by byte offset, so bind to bytes once rather than at
+        # each _text call site -- one missed site is silent corruption.
         source = source.encode("utf-8")
+        tree = parser.parse(source)
+        root_node = tree.root_node
     except Exception as exc:
         return {
             "definitions": [],
@@ -414,12 +471,16 @@ def extract(path: str | Path, source: str) -> dict:
             "status": f"parse_error:{exc.__class__.__name__}",
         }
 
-    # Walk tree and collect symbols
-    for node in _walk(root_node):
-        kind = node.kind()
+    # Only definition, import and call nodes carry facts. The query finds them
+    # natively, in document order per category; visiting every node from
+    # Python instead cost more than parsing. A node matching several categories
+    # is handled once per category, exactly as the full walk did.
+    facts = _captures(query, root_node) if query is not None else ((node, None) for node in _walk(root_node))
+    for node, category in facts:
+        kind = node.type
 
         # Definitions
-        if kind in node_types["definitions"]:
+        if category in (None, "definitions") and kind in node_types["definitions"]:
             name = _definition_name(node, source)
             if name:  # Skip if no name found
                 line = _line(node)
@@ -439,18 +500,18 @@ def extract(path: str | Path, source: str) -> dict:
                     # Heritage hangs directly off the type declaration. Functions have
                     # no such child, so this never fires for them.
                     for child in _children(node):
-                        if child.kind() in base_kinds:
+                        if child.type in base_kinds:
                             for base in _base_type_names(child, source):
                                 inherits.append({"type": name, "base": base, "line": line})
 
         # Imports
-        if kind in node_types["imports"]:
+        if category in (None, "imports") and kind in node_types["imports"]:
             import_text = _text(source, node)
             module = None
 
             # Try to find string literals first (JS/TS/Go)
             for child in _walk(node):
-                child_kind = child.kind()
+                child_kind = child.type
                 if "string" in child_kind or "literal" in child_kind:
                     module_text = _text(source, child)
                     # Strip quotes from both ends
@@ -462,7 +523,7 @@ def extract(path: str | Path, source: str) -> dict:
             # (Python/Rust/C#/Java, and PHP's namespace_use_clause wrapper)
             if not module:
                 for child in _children(node):
-                    child_kind = child.kind()
+                    child_kind = child.type
                     if child_kind in (
                         "identifier",
                         "dotted_name",
@@ -496,7 +557,7 @@ def extract(path: str | Path, source: str) -> dict:
                 )
 
         # Calls
-        if kind in node_types["calls"]:
+        if category in (None, "calls") and kind in node_types["calls"]:
             call_name = _callee_name(node, source)
             if call_name:
                 calls.append(
@@ -507,7 +568,7 @@ def extract(path: str | Path, source: str) -> dict:
                 )
 
     # Check for parse errors
-    if root_node.has_error():
+    if root_node.has_error:
         return {
             "definitions": definitions,
             "imports": imports,

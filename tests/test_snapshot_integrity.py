@@ -296,8 +296,8 @@ def test_pipeline_rejects_file_swapped_to_outside_symlink_before_adaptation(tmp_
 
     real_scan = indexer.scan_stats
 
-    def swapping_scan(scan_root):
-        discovered = real_scan(scan_root)
+    def swapping_scan(scan_root, **kwargs):
+        discovered = real_scan(scan_root, **kwargs)
         target.unlink()
         target.symlink_to(outside)
         return discovered

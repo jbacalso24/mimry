@@ -244,7 +244,8 @@ def connect(idx):
 
 
 def write_jsonl(path, rows):
-    atomic_write_text(path, "".join(json.dumps(sanitize_data(row), sort_keys=True) + "\n" for row in rows))
+    redacted: dict[str, str] = {}
+    atomic_write_text(path, "".join(json.dumps(sanitize_data(row, redacted), sort_keys=True) + "\n" for row in rows))
 
 
 def load_jsonl(path):

@@ -83,8 +83,8 @@ def load_stat_cache(idx: Path) -> StatCache | None:
         return None
 
 
-def load_adapt_cache(idx: Path, root: Path) -> dict[str, tuple[str, list]] | None:
-    """Per-file ``(cache line, adapter output)`` by rel path, if built by this code for this root."""
+def load_adapt_cache(idx: Path, root: Path) -> dict[str, tuple[str, dict]] | None:
+    """Per-file ``(cache line, parsed row)`` by rel path, if built by this code for this root."""
     data = _verified_bytes(idx, ADAPT_CACHE)
     if data is None:
         return None
@@ -95,7 +95,7 @@ def load_adapt_cache(idx: Path, root: Path) -> dict[str, tuple[str, list]] | Non
     if not rows or rows[0] != adapt_cache_header(root):
         return None
     lines = [line for line in data.decode("utf-8").splitlines() if line.strip()]
-    return {row["rel_path"]: (line, row["out"]) for line, row in zip(lines[1:], rows[1:], strict=True)}
+    return {row["rel_path"]: (line, row) for line, row in zip(lines[1:], rows[1:], strict=True)}
 
 
 def adapt_cache_header(root: Path) -> dict[str, str]:

@@ -265,7 +265,7 @@ def _initialized_repo(tmp_path: Path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
-    assert run_cli(repo, cache, "index").returncode == 0
+    assert run_cli(repo, cache, "index", "--full").returncode == 0
     return repo, cache
 
 
@@ -282,7 +282,7 @@ def test_generation_publish_failure_between_artifacts_keeps_previous_generation(
 
     monkeypatch.setattr("mimry.indexer.atomic_write_json", fail_on_graph)
     with pytest.raises(OSError, match="injected crash"):
-        write_index(repo, before)
+        write_index(repo, before, full=True)
 
     after = load_pointer(repo)
     assert after["generationId"] == before["generationId"]
@@ -302,7 +302,7 @@ def test_kill_after_generation_then_restart_keeps_lkg_and_next_index_migrates(tm
         }
     )
     killed = subprocess.run(
-        [sys.executable, "-m", "mimry.cli", "--root", str(repo), "index"],
+        [sys.executable, "-m", "mimry.cli", "--root", str(repo), "index", "--full"],
         env=env,
         text=True,
         capture_output=True,
@@ -315,7 +315,7 @@ def test_kill_after_generation_then_restart_keeps_lkg_and_next_index_migrates(tm
     )
     status = run_cli(repo, cache, "status")
     assert status.returncode == 0, status.stderr
-    rebuilt = run_cli(repo, cache, "index")
+    rebuilt = run_cli(repo, cache, "index", "--full")
     assert rebuilt.returncode == 0, rebuilt.stderr
     assert (
         json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))["generationId"]
@@ -382,7 +382,7 @@ def test_mixed_generation_sidecar_is_corrupt_and_all_direct_mcp_tools_structure_
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     first = load_pointer(repo)
-    write_index(repo, first)
+    write_index(repo, first, full=True)
     second = load_pointer(repo)
     (Path(second["indexPath"]) / "files.jsonl").write_bytes(
         (Path(first["indexPath"]) / "files.jsonl").read_bytes() + b"\n"
@@ -420,7 +420,7 @@ def test_mixed_generation_sqlite_is_never_reported_current(tmp_path: Path, monke
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     first = load_pointer(repo)
-    write_index(repo, first)
+    write_index(repo, first, full=True)
     second = load_pointer(repo)
     (Path(second["indexPath"]) / "mimry.sqlite").write_bytes((Path(first["indexPath"]) / "mimry.sqlite").read_bytes())
 
@@ -441,7 +441,7 @@ def test_concurrent_index_writers_publish_one_complete_generation(tmp_path: Path
             "MIMRY_CACHE_HOME": str(cache),
         }
     )
-    command = [sys.executable, "-m", "mimry.cli", "--root", str(repo), "index"]
+    command = [sys.executable, "-m", "mimry.cli", "--root", str(repo), "index", "--full"]
     writers = [
         subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(3)
     ]
@@ -463,7 +463,7 @@ def test_legacy_index_layout_migrates_on_next_index(tmp_path: Path, monkeypatch)
     (Path(legacy["indexPath"]) / "files.jsonl").write_text("", encoding="utf-8")
     save_pointer(repo, legacy)
 
-    stats = write_index(repo, legacy)
+    stats = write_index(repo, legacy, full=True)
     migrated = load_pointer(repo)
     assert migrated["generationId"] == stats["generation"]
     assert Path(migrated["indexPath"]).parent.name == "generations"
@@ -506,7 +506,7 @@ def test_wipe_and_publication_share_lock_and_publication_never_dangles(tmp_path:
     assert wipe_entered.wait(5)
 
     publish_result: list[dict] = []
-    publisher = threading.Thread(target=lambda: publish_result.append(write_index(repo, pointer)))
+    publisher = threading.Thread(target=lambda: publish_result.append(write_index(repo, pointer, full=True)))
     publisher.start()
     time.sleep(0.05)
     assert publisher.is_alive(), "publisher must wait for the cache wipe's per-root index lock"
@@ -535,7 +535,7 @@ def test_cache_wipe_current_leaves_truthful_missing_state_and_normal_index_rebui
     assert status.returncode == 2, status.stderr
     assert "Index: missing" in status.stdout
 
-    rebuilt = run_cli(repo, cache, "index")
+    rebuilt = run_cli(repo, cache, "index", "--full")
     assert rebuilt.returncode == 0, rebuilt.stderr
     published = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     assert published.get("generationId")
@@ -557,7 +557,7 @@ def test_feedback_waiting_for_publication_resolves_and_persists_to_new_generatio
         return original_save(root, pointer)
 
     monkeypatch.setattr("mimry.indexer.save_pointer", pause_before_publish)
-    publisher = threading.Thread(target=lambda: write_index(repo, old))
+    publisher = threading.Thread(target=lambda: write_index(repo, old, full=True))
     publisher.start()
     assert publishing.wait(5)
 
@@ -610,7 +610,7 @@ def test_reader_holds_generation_lifetime_across_two_publications_and_gc(tmp_pat
     reader_thread = threading.Thread(target=reader)
     reader_thread.start()
     assert reader_entered.wait(5)
-    publishers = [threading.Thread(target=lambda: write_index(repo, original)) for _ in range(2)]
+    publishers = [threading.Thread(target=lambda: write_index(repo, original, full=True)) for _ in range(2)]
     for publisher in publishers:
         publisher.start()
     time.sleep(0.05)
@@ -638,7 +638,7 @@ def test_hard_crash_staging_and_orphan_growth_is_collected_on_restart(tmp_path: 
             "MIMRY_CACHE_HOME": str(cache),
         }
     )
-    command = [sys.executable, "-m", "mimry.cli", "--root", str(repo), "index"]
+    command = [sys.executable, "-m", "mimry.cli", "--root", str(repo), "index", "--full"]
     pointer = load_pointer(repo)
     generations = idx_path(pointer["rootId"]) / "generations"
 
@@ -662,7 +662,7 @@ def test_repeated_successful_publications_retain_current_and_last_known_good(tmp
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     for _ in range(5):
-        write_index(repo, load_pointer(repo))
+        write_index(repo, load_pointer(repo), full=True)
 
     current = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     previous = json.loads((repo / ".mimry" / "pointer.json.bak").read_text(encoding="utf-8"))
@@ -677,7 +677,7 @@ def test_semantic_generation_swap_is_detected_as_corrupt(tmp_path: Path, monkeyp
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     first = load_pointer(repo)
-    write_index(repo, first)
+    write_index(repo, first, full=True)
     second = load_pointer(repo)
     target = sqlite3.connect(Path(second["indexPath"]) / "mimry.sqlite")
     try:
@@ -756,7 +756,7 @@ def test_cache_wipe_all_refuses_without_touching_cache_while_root_writer_is_acti
 def test_generation_cleanup_unlinks_staging_symlink_and_preserves_pointer_generations(tmp_path: Path, monkeypatch):
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    write_index(repo, load_pointer(repo))
+    write_index(repo, load_pointer(repo), full=True)
     current = load_pointer(repo)
     previous = json.loads((repo / ".mimry" / "pointer.json.bak").read_text(encoding="utf-8"))
     base = idx_path(current["rootId"])

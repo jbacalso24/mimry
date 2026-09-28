@@ -8,6 +8,8 @@ import time
 import subprocess
 import sys
 import uuid
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 from .core.build import GraphEngine, validate_edge_identity, canonicalize_edges
@@ -34,9 +36,9 @@ from .reuse import (
     load_adapt_cache,
     load_stat_cache,
 )
-from .scanner import adapt, read_snapshot, scan_stats, FileChangedError, SensitiveContentError
+from .scanner import adapt, read_snapshot, scan_stats, FileChangedError, SensitiveContentError, UnopenableFileError
 from .security import sanitize_data
-from .semantic import build_semantic_index
+from .semantic import build_semantic_index, file_semantic_chunks
 from .state import (
     GENERATION_MANIFEST,
     UNINDEXABLE_FILE,
@@ -44,7 +46,10 @@ from .state import (
     atomic_write_json,
     atomic_write_text,
     fsync_tree,
+    StateCorruptionError,
     generation_manifest,
+    load_json_state,
+    validate_generation,
     _fsync_directory,
 )
 from .storage import active_index_pointer, connect, register_root, save_pointer, write_jsonl
@@ -149,6 +154,81 @@ def _jsonl_line(row) -> str:
     return json.dumps(sanitize_data(row), sort_keys=True)
 
 
+def _symbol_order(symbol: dict) -> tuple:
+    return (symbol["file_id"], symbol["name"], symbol["kind"], symbol.get("line_start") or 0, symbol["symbol_id"])
+
+
+SKIPPED = "skipped"
+UNINDEXABLE = "unindexable"
+# Below this many files, worker start-up (a fresh interpreter importing the
+# parsers) costs more than it saves.
+PARALLEL_MIN_FILES = 64
+
+
+def _adapt_file(path: Path, root: Path, rel_path: str) -> tuple[str, list | None, str | None]:
+    """Adapt one file into ``(outcome, stat identity, cache line)``.
+
+    Runs in worker processes, so it returns only picklable, already-sanitized
+    data; the line is exactly what an incremental run later replays.
+    """
+    try:
+        snapshot = read_snapshot(path, root=root)
+        output = adapt(path, root, snapshot)
+    except UnopenableFileError:
+        # Locked or ACL-protected: skipped like ignored files, not refused.
+        return SKIPPED, None, None
+    except SensitiveContentError:
+        return SENSITIVE, identity(snapshot[1]), None
+    except (FileChangedError, OSError, UnicodeError, ValueError):
+        # adapt() also raises ValueError when its output carries sensitive data.
+        return UNINDEXABLE, None, None
+    row = sanitize_data({"rel_path": rel_path, "out": output})
+    # Semantic chunks derive from exactly the persisted (sanitized) record and
+    # its symbols in symbols.jsonl order, so they are computed here, in parallel,
+    # and replayed on reuse instead of being rebuilt serially for every file.
+    file_rec, file_symbols = row["out"][0], row["out"][1]
+    row["chunks"] = file_semantic_chunks(file_rec, sorted(file_symbols, key=_symbol_order))
+    return INDEXED, identity(snapshot[1]), json.dumps(row, sort_keys=True)
+
+
+def _index_workers(file_count: int) -> int:
+    configured = os.environ.get("MIMRY_INDEX_WORKERS")
+    if configured and configured.isdigit():
+        return max(1, min(int(configured), 61))
+    if file_count < PARALLEL_MIN_FILES:
+        return 1
+    # ponytail: capped because each worker holds its own parsers; raise it if
+    # indexing stays CPU-bound on bigger machines.
+    return max(1, min(os.cpu_count() or 1, 16))
+
+
+def _adapt_all(root: Path, todo: list[tuple[str, Path]], progress, total: int) -> list:
+    """Adapt ``todo`` in order, across worker processes when it is large."""
+    done_offset = total - len(todo)
+    workers = _index_workers(len(todo))
+    if workers > 1:
+        try:
+            results = []
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                chunksize = max(1, len(todo) // (workers * 8))
+                mapped = pool.map(
+                    _adapt_file, [p for _, p in todo], [root] * len(todo), [r for r, _ in todo], chunksize=chunksize
+                )
+                for number, result in enumerate(mapped, 1):
+                    progress(f"MIMRY: indexing {done_offset + number}/{total} files")
+                    results.append(result)
+            return results
+        except (OSError, BrokenProcessPool):
+            # No usable worker processes (sandboxed or resource-limited host):
+            # adaptation is pure, so redoing it in-process gives the same result.
+            pass
+    results = []
+    for number, (rel_path, path) in enumerate(todo, 1):
+        progress(f"MIMRY: indexing {done_offset + number}/{total} files")
+        results.append(_adapt_file(path, root, rel_path))
+    return results
+
+
 def _collect(root: Path, *, previous: Path | None = None, record: dict | None = None, progress=None):
     """Adapt every candidate file; reuse ``previous`` output for stat-unchanged ones.
 
@@ -184,38 +264,51 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
             pass
 
     progress("MIMRY: scanning files", force=True)
-    candidates = scan_stats(root)
-    total = len(candidates)
-    for number, (rel_path, path, live) in enumerate(candidates, 1):
-        progress(f"MIMRY: indexing {number}/{total} files")
-        cached = None
+    # No open probe here: the snapshot read opens each file once, and a file
+    # that cannot be opened is skipped at that point instead.
+    candidates = scan_stats(root, probe_open=False)
+    reused: dict[str, tuple[str, dict] | None] = {}
+    chunks_by_file_id: dict[str, list] = {}
+    todo: list[tuple[str, Path]] = []
+    for rel_path, path, live in candidates:
         # Config manifests read sibling lockfiles, so their output is not a
         # function of their own bytes alone; always re-adapt them.
         if adapt_cache is not None and not is_config_manifest(path):
-            if stat_cache.trusts(rel_path, live, INDEXED):
-                cached = adapt_cache.get(rel_path)
-            elif stat_cache.trusts(rel_path, live, SENSITIVE):
+            if stat_cache.trusts(rel_path, live, INDEXED) and rel_path in adapt_cache:
+                reused[rel_path] = adapt_cache[rel_path]
                 stat_entries[rel_path] = stat_cache.entries[rel_path]
                 continue
-        if cached is not None:
-            line, output = cached
-            stat_entries[rel_path] = stat_cache.entries[rel_path]
+            if stat_cache.trusts(rel_path, live, SENSITIVE):
+                reused[rel_path] = None
+                stat_entries[rel_path] = stat_cache.entries[rel_path]
+                continue
+        todo.append((rel_path, path))
+    adapted = dict(zip((rel for rel, _ in todo), _adapt_all(root, todo, progress, len(candidates)), strict=True))
+
+    for rel_path, path, _live in candidates:
+        if rel_path in reused:
+            cached = reused[rel_path]
+            if cached is None:
+                continue
+            line, row = cached
         else:
-            try:
-                snapshot = read_snapshot(path, root=root)
-                output = adapt(path, root, snapshot)
-            except SensitiveContentError:
+            outcome, stat_identity, line = adapted[rel_path]
+            if outcome == SKIPPED:
+                continue
+            if outcome == SENSITIVE:
                 # Secret-bearing source stays unrecorded, so freshness re-checks it
                 # and reports it once its bytes become indexable again.
-                stat_entries[rel_path] = [*identity(snapshot[1]), SENSITIVE]
+                stat_entries[rel_path] = [*stat_identity, SENSITIVE]
                 continue
-            except (FileChangedError, OSError, UnicodeError, ValueError):
-                # adapt() also raises ValueError when its output carries sensitive data.
+            if outcome == UNINDEXABLE:
                 _note_unindexable(path)
                 continue
-            stat_entries[rel_path] = [*identity(snapshot[1]), INDEXED]
-            line = _jsonl_line({"rel_path": rel_path, "out": output})
+            stat_entries[rel_path] = [*stat_identity, INDEXED]
+            row = json.loads(line)
         adapt_lines.append(line)
+        output = row["out"]
+        if row.get("chunks") is not None:
+            chunks_by_file_id[output[0]["file_id"]] = row["chunks"]
         file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references = output
         files.append(file_rec)
         symbols += file_symbols
@@ -234,9 +327,7 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
 
     # Sort all collections for determinism
     files = sorted(files, key=lambda f: f["rel_path"])
-    symbols = sorted(
-        symbols, key=lambda s: (s["file_id"], s["name"], s["kind"], s.get("line_start") or 0, s["symbol_id"])
-    )
+    symbols = sorted(symbols, key=_symbol_order)
     edges = sorted(
         edges,
         key=lambda e: (
@@ -266,6 +357,12 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
     if record is not None:
         record["stat_entries"] = stat_entries
         record["adapt_lines"] = adapt_lines
+        record["chunks"] = chunks_by_file_id
+        # What the previous generation was built from, to recognise a no-op run.
+        record["previous_lines"] = [line for line, _row in adapt_cache.values()] if adapt_cache is not None else None
+        record["previous_kinds"] = (
+            {rel: entry[4] for rel, entry in stat_cache.entries.items()} if stat_cache is not None else None
+        )
     return files, symbols, edges, imports, exports, calls, symbols_by_file, references, sorted(set(unindexable))
 
 
@@ -451,6 +548,42 @@ def _cleanup_generations(root: Path, base: Path, current: dict | None = None) ->
                 child.unlink()
 
 
+def _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable) -> dict | None:
+    """The active generation's stats when this run would republish it unchanged.
+
+    Every published artifact is a function of the per-file adapter lines, the
+    refused paths and the sensitive-file set, so when all three match the
+    previous run the graph, semantic index and sidecars would come out byte for
+    byte the same. Keep the generation instead of rebuilding it. Any doubt --
+    missing graph artifacts, a generation that fails validation, a manifest
+    from before this check -- means publishing normally.
+    """
+    if previous is None or record["previous_lines"] != record["adapt_lines"]:
+        return None
+    if record["previous_kinds"] != {rel: entry[4] for rel, entry in record["stat_entries"].items()}:
+        return None
+    out = graph_output_dir(root)
+    if not all((out / name).is_file() for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json")):
+        return None
+    try:
+        validate_generation(ptr)
+        manifest, _ = load_json_state(previous / GENERATION_MANIFEST)
+        previous_unindexable, _ = load_json_state(previous / UNINDEXABLE_FILE)
+    except (StateCorruptionError, OSError, ValueError):
+        return None
+    stats = manifest.get("stats") if isinstance(manifest, dict) else None
+    if not isinstance(stats, dict) or previous_unindexable != unindexable:
+        return None
+    return {
+        "files": len(files),
+        "symbols": len(symbols),
+        "index": str(previous),
+        "generation": ptr["generationId"],
+        **stats,
+        "unchanged": True,
+    }
+
+
 def write_index(root, ptr, *, full: bool = False):
     """Build and publish a new generation.
 
@@ -495,11 +628,13 @@ def write_index(root, ptr, *, full: bool = False):
             files, symbols, edges, imports, exports, calls, symbols_by_file, references, unindexable = _collect(
                 root, previous=previous, record=record, progress=progress
             )
+            kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
+            if kept is not None:
+                return kept
             progress("MIMRY: building graph", force=True)
             graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references)
-        except BaseException:
+        finally:
             progress.done()
-            raise
         generation_id = uuid.uuid4().hex
         indexed_at = now()
         staging = generations / f".{generation_id}.staging"
@@ -584,12 +719,18 @@ def write_index(root, ptr, *, full: bool = False):
             header = json.dumps(adapt_cache_header(root), sort_keys=True)
             atomic_write_text(staging / ADAPT_CACHE, "".join(f"{line}\n" for line in [header, *record["adapt_lines"]]))
             progress("MIMRY: building semantic index", force=True)
-            semantic = build_semantic_index(staging, ptr["rootId"], generation_id)
+            semantic = build_semantic_index(staging, ptr["rootId"], generation_id, precomputed=record["chunks"])
             _fault("after-sidecars")
 
             progress("MIMRY: publishing index", force=True)
             manifest = generation_manifest(staging, generation_id, indexed_at)
             manifest["caches"] = cache_checksums(staging)
+            manifest["stats"] = {
+                "edges": len(graph["edges"]),
+                "graph_engine": graph["engine"],
+                "semantic_chunks": semantic["chunks"],
+                "semantic_backend": semantic["backend"],
+            }
             atomic_write_json(staging / GENERATION_MANIFEST, manifest)
             fsync_tree(staging)
             _publish_generation(staging, final)
