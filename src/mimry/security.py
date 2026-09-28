@@ -429,13 +429,23 @@ def sanitize_data(value: Any) -> Any:
 
 
 def contains_sensitive_data(value) -> bool:
+    # Adapter output repeats the same strings heavily (IDs reused as edge endpoints,
+    # kinds, languages): about 12x on a typical repo. Scan each distinct one once.
+    strings: set[str] = set()
+    _collect_strings(value, strings)
+    return any(contains_sensitive_text(text) for text in strings)
+
+
+def _collect_strings(value, strings: set[str]) -> None:
     if isinstance(value, str):
-        return contains_sensitive_text(value)
-    if isinstance(value, dict):
-        return any(contains_sensitive_data(key) or contains_sensitive_data(item) for key, item in value.items())
-    if isinstance(value, (list, tuple, set)):
-        return any(contains_sensitive_data(item) for item in value)
-    return False
+        strings.add(value)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _collect_strings(key, strings)
+            _collect_strings(item, strings)
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            _collect_strings(item, strings)
 
 
 def stream_contains_sensitive_content(handle: BinaryIO, *, strict_text: bool = False) -> bool:

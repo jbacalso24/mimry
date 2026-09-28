@@ -21,8 +21,7 @@ from .core.resolve import (
 from .core.report import render_report, build_manifest
 from .paths import idx_path, now, pointer_file, graph_output_dir
 from .constants import SCHEMA_VERSION
-from .scanner import adapt, scan, FileChangedError
-from .security import contains_sensitive_data
+from .scanner import adapt, scan, FileChangedError, SensitiveContentError
 from .semantic import build_semantic_index
 from .state import (
     GENERATION_MANIFEST,
@@ -130,12 +129,12 @@ def _collect(root: Path):
             file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references = adapt(
                 path, root
             )
-        except (FileChangedError, OSError, UnicodeError, ValueError):
-            _note_unindexable(path)
+        except SensitiveContentError:
+            # Secret-bearing source stays unrecorded, so freshness re-checks it
+            # and reports it once its bytes become indexable again.
             continue
-        if contains_sensitive_data(
-            (file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references)
-        ):
+        except (FileChangedError, OSError, UnicodeError, ValueError):
+            # adapt() also raises ValueError when its output carries sensitive data.
             _note_unindexable(path)
             continue
         files.append(file_rec)

@@ -56,7 +56,7 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     indexed_paths = {f.get("rel_path") for f in files if f.get("rel_path")}
     # Resolve canonical identities back to their native filesystem spellings.
     # scan() also preserves the existing fail-closed NFC collision check.
-    native_paths = {canonical_rel_path(path, root): path for path in scan(root, inspect_sensitive_content=False)}
+    native_paths = {canonical_rel_path(path, root): path for path in scan(root)}
 
     for f in files:
         rel_path = f["rel_path"]

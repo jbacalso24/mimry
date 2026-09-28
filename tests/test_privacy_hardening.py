@@ -171,6 +171,34 @@ def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_po
         assert text_mentions_ignored_path(path)
 
 
+def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(tmp_path: Path, monkeypatch):
+    """scan() must not walk inside ignored trees; the content guard lives in adapt() alone."""
+    import mimry.scanner as scanner
+    from mimry.indexer import _collect
+
+    repo = tmp_path / "repo"
+    (repo / "node_modules" / "pkg" / "deep").mkdir(parents=True)
+    (repo / "node_modules" / "pkg" / "deep" / "index.js").write_text("x = 1\n", encoding="utf-8")
+    (repo / "safe.py").write_text("print('safe')\n", encoding="utf-8")
+    (repo / "leak.py").write_text(f"{QUERY_CANARY}\n", encoding="utf-8")
+
+    checked: list[Path] = []
+    real_should_ignore_path = scanner.should_ignore_path
+
+    def spy(path, root):
+        checked.append(path)
+        return real_should_ignore_path(path, root)
+
+    monkeypatch.setattr(scanner, "should_ignore_path", spy)
+    assert sorted(path.name for path in scan(repo)) == ["leak.py", "safe.py"]
+    assert [path.relative_to(repo).as_posix() for path in checked if "node_modules" in path.parts] == ["node_modules"]
+
+    files, *_, unindexable = _collect(repo)
+    assert [record["rel_path"] for record in files] == ["safe.py"]
+    # Unrecorded, so freshness re-checks the file and reports it once its secret is removed.
+    assert unindexable == []
+
+
 def test_sensitive_label_policy_covers_exact_variants_and_yaml_blocks_without_prose_false_positives():
     sensitive_samples = (
         f"CONFIDENTIAL={DEFENSIVE_MARKER}\n",

@@ -19,7 +19,6 @@ from .security import (
     is_text,
     redact_sensitive_text,
     safe_root,
-    should_ignore,
     should_ignore_path,
 )
 from .ts_ast_adapter import parse_ts_like
@@ -30,6 +29,12 @@ SCANNER_FILE_SIZE_LIMIT = 1_000_000
 
 class FileChangedError(OSError):
     """Raised when a file changes between snapshots during indexing."""
+
+    pass
+
+
+class SensitiveContentError(ValueError):
+    """Raised when a file's own bytes carry a secret; the file is skipped, not recorded."""
 
     pass
 
@@ -137,25 +142,35 @@ def text_hint(path, limit=12000, data=None):
     return " ".join([line.strip() for line in text.splitlines() if line.strip()][:40])[:2000]
 
 
-def scan(root, *, inspect_sensitive_content: bool = True):
+def scan(root):
+    """Yield indexable candidate paths by path policy alone.
+
+    Content is not opened here: adapt() secret-scans the exact snapshot bytes it
+    hashes and parses, so a second read here would only repeat that work.
+    """
     safe_root(root)
     paths = []
-    for path in root.rglob("*"):
-        ignored = should_ignore(path, root) if inspect_sensitive_content else should_ignore_path(path, root)
-        if not path.is_file() or path.is_symlink() or ignored:
-            continue
-        try:
-            if path.stat().st_size > SCANNER_FILE_SIZE_LIMIT:
+    # Prune ignored directories instead of walking and then filtering them:
+    # .git, .venv and node_modules routinely hold 95%+ of the paths on disk.
+    # followlinks=False matches rglob, which never descended into symlinked dirs.
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = [name for name in dirnames if not should_ignore_path(Path(dirpath, name), root)]
+        for name in filenames:
+            path = Path(dirpath, name)
+            if should_ignore_path(path, root) or not path.is_file() or path.is_symlink():
                 continue
-            # Windows/macOS can expose locked or ACL-protected files as regular
-            # files, then fail only when opened for hashing. Treat unreadable
-            # files like ignored/generated files; one locked DB sidecar should
-            # not abort the whole index refresh.
-            with path.open("rb"):
-                pass
-        except OSError:
-            continue
-        paths.append(path)
+            try:
+                if path.stat().st_size > SCANNER_FILE_SIZE_LIMIT:
+                    continue
+                # Windows/macOS can expose locked or ACL-protected files as regular
+                # files, then fail only when opened for hashing. Treat unreadable
+                # files like ignored/generated files; one locked DB sidecar should
+                # not abort the whole index refresh.
+                with path.open("rb"):
+                    pass
+            except OSError:
+                continue
+            paths.append(path)
     # Distinct native names may normalize to one canonical path/file ID. Reject
     # that ambiguity before adaptation or publication rather than picking a winner.
     canonical_paths: dict[str, Path] = {}
@@ -213,7 +228,7 @@ def adapt(path, root):
     # Check sensitivity using the captured bytes (not a separate file read)
     # to ensure hash and security classification derive from the same content.
     if has_sensitive_content(path, data=data):
-        raise ValueError("secret-bearing content is not indexable")
+        raise SensitiveContentError("secret-bearing content is not indexable")
     hint = safe_hint(path, data=data) if is_config_manifest(path) else text_hint(path, data=data)
     f = file_record(path, root, "generic", "ok", hint, snapshot)
     symbols = []
