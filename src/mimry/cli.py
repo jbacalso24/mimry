@@ -53,9 +53,14 @@ def build_parser():
         help="Create MIMRY metadata without building graph artifacts",
     )
     s.set_defaults(func=cmd_init)
-    sub.add_parser("index").set_defaults(func=cmd_index)
-    sub.add_parser("reindex").set_defaults(func=cmd_index)
-    sub.add_parser("refresh", help="Run internal graph build, MIMRY index, then status").set_defaults(func=cmd_refresh)
+    full_help = "Re-read and re-parse every file instead of reusing unchanged ones"
+    for name in ("index", "reindex"):
+        s = sub.add_parser(name)
+        s.add_argument("--full", action="store_true", help=full_help)
+        s.set_defaults(func=cmd_index)
+    s = sub.add_parser("refresh", help="Run internal graph build, MIMRY index, then status")
+    s.add_argument("--full", action="store_true", help=full_help)
+    s.set_defaults(func=cmd_refresh)
     s = sub.add_parser("preflight", help="Fast readiness check and task context generation")
     s.add_argument("task", help="Task description to build the context pack around")
     s.add_argument(
@@ -64,7 +69,11 @@ def build_parser():
         help="Run the slow full refresh path (graph build + MIMRY index) before context generation",
     )
     s.set_defaults(func=cmd_preflight)
-    sub.add_parser("status").set_defaults(func=cmd_status)
+    s = sub.add_parser("status")
+    s.add_argument(
+        "--verify", action="store_true", help="Re-hash every file instead of trusting unchanged metadata, like git"
+    )
+    s.set_defaults(func=cmd_status)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
     s.add_argument("--active-only", action="store_true")
     s.set_defaults(func=cmd_adapters)

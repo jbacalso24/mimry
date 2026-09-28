@@ -93,7 +93,7 @@ def test_mcp_status_reports_corrupt_pointer_without_raising(tmp_path: Path):
     assert "Preserve the corrupt state file" in payload["recommended"]
 
 
-def test_mcp_status_uses_hash_freshness_for_same_size_rewrite(tmp_path: Path, monkeypatch):
+def test_mcp_status_verify_uses_hash_freshness_for_same_size_rewrite(tmp_path: Path, monkeypatch):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
@@ -116,9 +116,9 @@ def test_mcp_status_uses_hash_freshness_for_same_size_rewrite(tmp_path: Path, mo
     changed = text.replace("pass", "True")
     assert len(changed.encode()) == len(text.encode())
     target.write_text(changed, encoding="utf-8")
-    os.utime(target, (original_stat.st_atime, original_stat.st_mtime))
+    os.utime(target, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
-    payload = mimry_status(str(repo))
+    payload = mimry_status(str(repo), verify=True)
 
     assert payload["index_state"] == "stale"
     assert payload["changed_files"] == ["src/auth/session.py"]

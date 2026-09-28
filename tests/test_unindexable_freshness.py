@@ -58,10 +58,10 @@ def refuse_one_file(monkeypatch: pytest.MonkeyPatch):
 
     real_adapt = indexer.adapt
 
-    def guarded(path: Path, root: Path):
+    def guarded(path: Path, root: Path, snapshot=None):
         if path.name == "refused.py":
             raise ValueError("adapter output contained sensitive data")
-        return real_adapt(path, root)
+        return real_adapt(path, root, snapshot)
 
     monkeypatch.setattr(indexer, "adapt", guarded)
 
@@ -139,9 +139,9 @@ def test_freshness_runs_once_per_read_scope_and_every_time_outside_one(tmp_path:
     passes: list[Path] = []
     real = freshness._index_freshness
 
-    def counted(r: Path, p: dict) -> dict:
+    def counted(r: Path, p: dict, verify: bool) -> dict:
         passes.append(r)
-        return real(r, p)
+        return real(r, p, verify)
 
     monkeypatch.setattr(freshness, "_index_freshness", counted)
     with active_index_pointer(root) as active:

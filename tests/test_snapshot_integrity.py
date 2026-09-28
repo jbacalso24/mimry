@@ -294,15 +294,15 @@ def test_pipeline_rejects_file_swapped_to_outside_symlink_before_adaptation(tmp_
 
     from mimry import indexer
 
-    real_scan = indexer.scan
+    real_scan = indexer.scan_stats
 
     def swapping_scan(scan_root):
-        discovered = list(real_scan(scan_root))
+        discovered = real_scan(scan_root)
         target.unlink()
         target.symlink_to(outside)
-        yield from discovered
+        return discovered
 
-    monkeypatch.setattr(indexer, "scan", swapping_scan)
+    monkeypatch.setattr(indexer, "scan_stats", swapping_scan)
     stats = write_index(root, pointer)
     published = Path(stats["index"])
     persisted = b"".join(path.read_bytes() for path in published.iterdir() if path.is_file())

@@ -239,7 +239,7 @@ def _index_reader(command):
 
 def cmd_index(a):
     root = Path(a.root).resolve()
-    stats = write_index(root, require(root, validate=False))
+    stats = write_index(root, require(root, validate=False), full=getattr(a, "full", False))
     print(
         f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nSemantic: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})\nIndex saved: {stats['index']}"
     )
@@ -250,7 +250,7 @@ def cmd_refresh(a):
     root = Path(a.root).resolve()
     ptr = require(root, validate=False)
     print("Refreshing MIMRY: MIMRY index -> status")
-    stats = write_index(root, ptr)
+    stats = write_index(root, ptr, full=getattr(a, "full", False))
     print(
         f"MIMRY indexing complete.\nIndexed files: {stats['files']}\nSymbols: {stats['symbols']}\nGraph edges: {stats['edges']}\nGraph engine: {stats['graph_engine']}\nSemantic: current ({stats['semantic_chunks']} chunks, backend {stats['semantic_backend']})\nIndex saved: {stats['index']}"
     )
@@ -265,7 +265,7 @@ def cmd_status(a):
     if not ptr:
         print("MIMRY status\nInitialized: no\nRecommended: Run `mimry init`.")
         return 1
-    fresh = index_freshness(root, ptr)
+    fresh = index_freshness(root, ptr, verify=getattr(a, "verify", False))
     idx = fresh["index_path"]
     files = fresh["files"]
     symbols = fresh["symbols"]

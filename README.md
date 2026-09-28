@@ -173,6 +173,14 @@ project-root/
 
 MIMRY also stores local indexes in the user cache directory. Those indexes are generated artifacts, not source of truth.
 
+## Freshness and incremental indexing
+
+Like git, MIMRY treats a file as unchanged while its size, inode and nanosecond mtime still match the snapshot it was indexed from, so status checks and reindexes do not re-read unchanged files.
+A reindex re-parses only new and changed files, and its output is identical to a full rebuild.
+Files modified within two seconds of the previous index scan are always re-read, which covers edits that land inside one timestamp tick.
+The one edit this cannot see is a rewrite that deliberately keeps size, inode and mtime.
+Run `mimry status --verify` to re-hash every file, and `mimry index --full` to re-parse every file.
+
 ### Graph relationships
 
 The engine emits five edge types:

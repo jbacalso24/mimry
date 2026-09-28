@@ -223,11 +223,11 @@ def _index_operation(*, exclusive: bool = False):
     return decorate
 
 
-def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
+def _status_payload_unchecked(root_path: Path, verify: bool = False) -> dict[str, Any]:
     ptr = load_pointer(root_path)
     if not ptr:
         return {"initialized": False, "root": str(root_path), "recommended": "Run `mimry init`."}
-    fresh = index_freshness(root_path, ptr)
+    fresh = index_freshness(root_path, ptr, verify=verify)
     idx = fresh["index_path"]
     files = fresh["files"]
     symbols = fresh["symbols"]
@@ -252,10 +252,10 @@ def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
     return payload
 
 
-def _status_payload(root_path: Path) -> dict[str, Any]:
+def _status_payload(root_path: Path, verify: bool = False) -> dict[str, Any]:
     try:
         with active_index_pointer(root_path):
-            return _status_payload_unchecked(root_path)
+            return _status_payload_unchecked(root_path, verify)
     except UnsupportedIndexSchemaError as exc:
         return _unsupported_schema_error_payload(exc, root=root_path)
     except IndexSchemaMigrationError as exc:
@@ -277,17 +277,20 @@ def mimry_list_adapters(active_only: bool = False) -> dict[str, Any]:
 
 @mcp.tool
 @_state_guard
-def mimry_status(root: str | None = None) -> dict[str, Any]:
-    """Return MIMRY initialization and index freshness for a root."""
-    return _status_payload(_root(root))
+def mimry_status(root: str | None = None, verify: bool = False) -> dict[str, Any]:
+    """Return MIMRY initialization and index freshness for a root.
+
+    Freshness trusts unchanged file metadata, like git; ``verify`` re-hashes every file.
+    """
+    return _status_payload(_root(root), verify)
 
 
 @mcp.tool
 @_state_guard
-def mimry_reindex(root: str | None = None) -> dict[str, Any]:
-    """Rebuild the local MIMRY index for a root."""
+def mimry_reindex(root: str | None = None, full: bool = False) -> dict[str, Any]:
+    """Rebuild the local MIMRY index for a root; ``full`` re-parses unchanged files too."""
     root_path = _root(root)
-    stats = write_index(root_path, require(root_path, validate=False))
+    stats = write_index(root_path, require(root_path, validate=False), full=full)
     return {"root": str(root_path), **stats}
 
 

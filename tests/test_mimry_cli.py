@@ -1106,7 +1106,8 @@ def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
     target.write_bytes(bytes([content[0] ^ 1]) + content[1:])
     os.utime(target, ns=(original.st_atime_ns, original.st_mtime_ns))
 
-    stale = run_cli(repo, cache, "status")
+    # Plain status trusts unchanged metadata like git; --verify re-hashes.
+    stale = run_cli(repo, cache, "status", "--verify")
     assert stale.returncode == 2, stale.stdout
     assert "Status: stale" in stale.stdout
     assert "Graph source changes: 1 changed, 0 missing" in stale.stdout
@@ -1166,7 +1167,7 @@ def test_reindex_detects_changed_file(tmp_path):
     assert "Index: current" in run_cli(repo, cache, "status").stdout
 
 
-def test_status_detects_same_size_rewrite_with_restored_mtime(tmp_path):
+def test_status_verify_detects_same_size_rewrite_with_restored_mtime(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
@@ -1178,9 +1179,10 @@ def test_status_detects_same_size_rewrite_with_restored_mtime(tmp_path):
     assert len(changed.encode()) == len(text.encode())
 
     target.write_text(changed, encoding="utf-8")
-    os.utime(target, (original_stat.st_atime, original_stat.st_mtime))
+    os.utime(target, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
-    stale = run_cli(repo, cache, "status")
+    # Plain status may trust this disguised edit's metadata, like git; --verify re-hashes.
+    stale = run_cli(repo, cache, "status", "--verify")
     assert stale.returncode == 2
     assert "Index: stale" in stale.stdout
     assert "Changed files: 1" in stale.stdout

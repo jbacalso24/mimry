@@ -163,7 +163,12 @@ def scan(root):
 
 
 def scan_entries(root, *, probe_open: bool = True) -> list[tuple[str, Path]]:
-    """Return ``(canonical_rel_path, native_path)`` for every indexable candidate.
+    """Return ``(canonical_rel_path, native_path)`` for every indexable candidate."""
+    return [(canonical, path) for canonical, path, _st in scan_stats(root, probe_open=probe_open)]
+
+
+def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.stat_result]]:
+    """Return ``(canonical_rel_path, native_path, lstat)`` for every indexable candidate.
 
     ``probe_open`` skips files that cannot be opened (locked or ACL-protected),
     which indexing needs. Freshness passes False: it opens each file itself and
@@ -172,7 +177,7 @@ def scan_entries(root, *, probe_open: bool = True) -> list[tuple[str, Path]]:
     safe_root(root)
     root = Path(root)
     root_str = str(root)
-    entries: list[tuple[str, str, Path]] = []
+    entries: list[tuple[str, str, Path, os.stat_result]] = []
     # Prune ignored directories instead of walking and then filtering them:
     # .git, .venv and node_modules routinely hold 95%+ of the paths on disk.
     # Only heavy-ignore names prune: every other path policy applies per file,
@@ -200,18 +205,18 @@ def scan_entries(root, *, probe_open: bool = True) -> list[tuple[str, Path]]:
             except OSError:
                 continue
             native_rel = f"{rel_dir}/{name}" if rel_dir else name
-            entries.append((unicodedata.normalize("NFC", native_rel), native_rel, path))
+            entries.append((unicodedata.normalize("NFC", native_rel), native_rel, path, info))
     entries.sort(key=lambda entry: (entry[0], entry[1]))
     # Distinct native names may normalize to one canonical path/file ID. Reject
     # that ambiguity before adaptation or publication rather than picking a winner.
-    for (canonical, native_rel, _path), (next_canonical, next_rel, _next) in zip(entries, entries[1:], strict=False):
+    for (canonical, native_rel, *_), (next_canonical, next_rel, *_) in zip(entries, entries[1:], strict=False):
         if canonical == next_canonical:
             raise CanonicalPathCollisionError(
                 f"Canonical path collision for {canonical!r}: "
                 f"{native_rel!r} and {next_rel!r}. "
                 "Rename one file; MIMRY will not publish ambiguous file IDs."
             )
-    return [(canonical, path) for canonical, _native_rel, path in entries]
+    return [(canonical, path, info) for canonical, _native_rel, path, info in entries]
 
 
 def file_record(path, root, adapter, status, hint, snapshot=None):
@@ -246,11 +251,12 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     }
 
 
-def adapt(path, root):
+def adapt(path, root, snapshot=None):
     ext = path.suffix.lower()
     # One read for the whole adapter chain. Everything below derives from these
     # bytes, and verify_unchanged() at the end proves nothing shifted meanwhile.
-    snapshot = read_snapshot(path, root=root)
+    # Callers that record the snapshot's stat identity pass the snapshot in.
+    snapshot = snapshot or read_snapshot(path, root=root)
     data, _st = snapshot
     # Check sensitivity using the captured bytes (not a separate file read)
     # to ensure hash and security classification derive from the same content.
