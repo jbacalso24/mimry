@@ -153,17 +153,27 @@ def _is_env_example(path: Path) -> bool:
     return path.name in ENV_EXAMPLE_NAMES
 
 
+# One regex over every sensitive filename pattern, with fnmatch.fnmatch's exact
+# platform case rule (os.path.normcase on both sides). Runs once per scanned path.
+_SENSITIVE_NAME_RE = re.compile("|".join(fnmatch.translate(os.path.normcase(pat)) for pat in SENSITIVE_PATTERNS))
+
+
 def is_sensitive(path):
     if _is_env_example(path):
         return False
-    name_match = any(fnmatch.fnmatch(path.name, pat) for pat in SENSITIVE_PATTERNS)
-    parts = {part.lower() for part in path.parts}
-    path_match = (
-        (".aws" in parts and path.name in {"credentials", "config"})
-        or (".kube" in parts and path.name == "config")
-        or ("firebase" in parts and path.suffix.lower() == ".json")
-    )
-    return name_match or path_match or contains_sensitive_text(path.name)
+    name = path.name
+    if _SENSITIVE_NAME_RE.match(os.path.normcase(name)):
+        return True
+    suffix = path.suffix.lower()
+    if name in {"credentials", "config"} or suffix == ".json":
+        parts = {part.lower() for part in path.parts}
+        if (
+            (".aws" in parts and name in {"credentials", "config"})
+            or (".kube" in parts and name == "config")
+            or ("firebase" in parts and suffix == ".json")
+        ):
+            return True
+    return contains_sensitive_text(name)
 
 
 def contains_sensitive_text(text: str) -> bool:
@@ -171,6 +181,10 @@ def contains_sensitive_text(text: str) -> bool:
         return False
     if PRIVATE_KEY_BLOCK_RE.search(text) or STANDALONE_SECRET_RE.search(text) or SENSITIVE_VALUE_RE.search(text):
         return True
+    # Every remaining detector is an assignment form whose pattern requires a
+    # literal "=" or ":". Most filenames and many short strings have neither.
+    if "=" not in text and ":" not in text:
+        return False
     if any(_spaced_assignment_value_is_sensitive(match) for match in SPACED_SENSITIVE_ASSIGNMENT_RE.finditer(text)):
         return True
     if any(_is_sensitive_label(match.group("label")) for match in YAML_BLOCK_ASSIGNMENT_RE.finditer(text)):

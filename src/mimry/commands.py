@@ -273,7 +273,7 @@ def cmd_status(a):
     missing = fresh["missing"]
     state = fresh["state"]
     g = fresh["graph"]
-    graph = graph_health(root, index_state=state)
+    graph = graph_health(root, index_state=state, verified_hashes=fresh["verified_hashes"])
     semantic = semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files))
     print(
         f"MIMRY status\nRoot: {root}\nInitialized: yes\nIndex: {state}\nLast indexed: {ptr.get('lastIndexedAt') or 'never'}\nFiles indexed: {len(files)}\nSymbols indexed: {len(symbols)}\nGraph nodes/edges: {len(g.get('nodes', []))}/{len(g.get('edges', []))}\nChanged files: {len(changed)}\nDeleted files: {len(missing)}\nPolicy-excluded stale records: {fresh['policy_excluded_count']}\nFiles MIMRY refused to index: {fresh.get('unindexable_count', 0)}\nIndex path: {idx}"
@@ -314,7 +314,7 @@ def cmd_status(a):
 
 def _index_and_graph_health(root: Path, ptr: dict):
     fresh = index_freshness(root, ptr)
-    graph = graph_health(root, index_state=fresh["state"])
+    graph = graph_health(root, index_state=fresh["state"], verified_hashes=fresh["verified_hashes"])
     return fresh, graph
 
 

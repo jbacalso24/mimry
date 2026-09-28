@@ -234,7 +234,7 @@ def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
     changed = fresh["changed"]
     missing = fresh["missing"]
     state = fresh["state"]
-    graph = graph_health(root_path, index_state=state)
+    graph = graph_health(root_path, index_state=state, verified_hashes=fresh["verified_hashes"])
     payload = {
         "initialized": True,
         "root": str(root_path),

@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from . import security
-from .paths import canonical_rel_path
-from .scanner import SCANNER_FILE_SIZE_LIMIT, read_snapshot, scan
-from .security import filter_index_records, path_has_ignored_part, should_ignore_path
-from .state import UNINDEXABLE_FILE, StateCorruptionError, load_json_state, validate_generation
+from .scanner import SCANNER_FILE_SIZE_LIMIT, read_snapshot, scan_entries
+from .security import filter_index_records, path_has_ignored_part
+from .state import UNINDEXABLE_FILE, StateCorruptionError, load_json_state, scoped, validate_generation
 from .storage import load_jsonl
 
 
@@ -43,6 +42,18 @@ def _unindexable_paths(idx: Path) -> set[str]:
 
 
 def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
+    """Compare the active generation with the live tree, once per read scope.
+
+    Commands such as brief, explain and route consult freshness several times
+    under one shared operation lock; the generation cannot change in that window,
+    so they share one content-hashed pass instead of re-reading the whole tree.
+    Callers must treat the returned mapping as read-only.
+    """
+    key = ("index_freshness", str(root), ptr.get("generationId"), str(ptr.get("indexPath")))
+    return scoped(key, lambda: _index_freshness(root, ptr))
+
+
+def _index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     validate_generation(ptr)
     idx = Path(ptr["indexPath"])
     files_path = idx / "files.jsonl"
@@ -56,7 +67,10 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     indexed_paths = {f.get("rel_path") for f in files if f.get("rel_path")}
     # Resolve canonical identities back to their native filesystem spellings.
     # scan() also preserves the existing fail-closed NFC collision check.
-    native_paths = {canonical_rel_path(path, root): path for path in scan(root)}
+    native_paths = dict(scan_entries(root, probe_open=False))
+    # Content hashes proven from verified snapshots of ``root / rel_path``; graph
+    # health reuses them instead of reading every source file a second time.
+    verified_hashes: dict[str, str] = {}
 
     for f in files:
         rel_path = f["rel_path"]
@@ -77,7 +91,9 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
             continue
         # Policy changes must invalidate old generations. Otherwise a file that
         # became ignored after it was indexed remains searchable indefinitely.
-        if should_ignore_path(p, root):
+        # Heavy-ignore parts were rejected above from rel_path; only the
+        # name/path sensitivity rule of should_ignore_path remains.
+        if security.is_sensitive(p):
             policy_excluded.append(rel_path)
             continue
         try:
@@ -91,10 +107,13 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
         is_oversized = st.st_size > SCANNER_FILE_SIZE_LIMIT
         size_changed = st.st_size != f.get("size")
+        digest = None if is_oversized else hashlib.sha256(data).hexdigest()
+        if digest is not None and p == root / rel_path:
+            verified_hashes[rel_path] = digest
         content_changed = (
             is_oversized
             or size_changed
-            or (hashlib.sha256(data).hexdigest() != expected_hash if expected_hash else st.st_mtime != f.get("mtime"))
+            or (digest != expected_hash if expected_hash else st.st_mtime != f.get("mtime"))
         )
         if not content_changed:
             continue
@@ -184,4 +203,5 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         "graph": visible_graph,
         "generation_id": ptr.get("generationId"),
         "layout": "generation" if ptr.get("generationId") else "legacy",
+        "verified_hashes": verified_hashes,
     }

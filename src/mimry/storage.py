@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ from .state import (
     atomic_write_text,
     exclusive_file_lock,
     load_json_state,
+    read_scope,
     shared_file_lock,
     validate_generation,
 )
@@ -130,7 +131,9 @@ def active_index_pointer(
             Path(initial["indexPath"]), initial["rootId"], initial.get("generationId"), root
         )
     lock = exclusive_file_lock if exclusive else shared_file_lock
-    with lock(base / "operation.lock"):
+    # Readers memoize generation validation and freshness from the moment the
+    # shared lock is held; writers change the generation and never memoize.
+    with lock(base / "operation.lock"), nullcontext() if exclusive else read_scope():
         current = load_pointer(root, validate_active_generation=validate)
         if not current:
             raise UnsafeCachePathError("MIMRY root pointer disappeared while waiting for the operation lock")

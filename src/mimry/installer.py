@@ -607,44 +607,6 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
     return result
 
 
-SEARCH_TOOLS = {"grep", "glob"}
-
-
-def cmd_hook_check(a) -> int:
-    raw = sys.stdin.read()
-    command = ""
-    tool_name = ""
-    try:
-        data = json.loads(raw) if raw.strip() else {}
-        tool_input = data.get("tool_input", data)
-        tool_name = str(data.get("tool_name") or "").lower()
-        command = str(
-            tool_input.get("command")
-            or tool_input.get("file_path")
-            or tool_input.get("pattern")
-            or tool_input.get("path")
-            or ""
-        )
-    except Exception:
-        command = raw
-    low = command.lower().replace("\\", "/")
-    # A native search tool is identified by name, not payload text: the Grep tool's pattern
-    # is the caller's regex, so substring-sniffing for "grep" never matched it. Read/Glob
-    # only ever matched by accident, when a path happened to end in a listed extension.
-    search_hit = tool_name in SEARCH_TOOLS or any(
-        tok in low for tok in ("grep", "rg ", "ripgrep", "find ", "fd ", "ack ", "ag ")
-    )
-    read_hit = any(
-        low.endswith(ext) or f"{ext} " in low
-        for ext in (".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".md")
-    )
-    has_mimry = Path(".mimry/pointer.json").exists() or Path(".mimry/mimry-out/context/latest.md").exists()
-    if has_mimry and (search_hit or read_hit):
-        msg = 'MIMRY is available for this project. Run `mimry preflight "<task>"` or use MIMRY MCP/context/find/related before broad search or repeated file reads.'
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg}}))
-    return 0
-
-
 def install_skill(
     platform_name: str,
     *,

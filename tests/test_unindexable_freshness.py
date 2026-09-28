@@ -128,6 +128,34 @@ def test_current_freshness_does_not_repeat_secret_scans_for_indexed_bytes(tmp_pa
     assert scanned == []
 
 
+def test_freshness_runs_once_per_read_scope_and_every_time_outside_one(tmp_path: Path, monkeypatch) -> None:
+    """brief/explain/route consult freshness repeatedly; one shared-lock scope pays for one pass."""
+    import mimry.freshness as freshness
+    from mimry.state import read_scope
+    from mimry.storage import active_index_pointer
+
+    root = _repo(tmp_path)
+    ptr = _index(root)
+    passes: list[Path] = []
+    real = freshness._index_freshness
+
+    def counted(r: Path, p: dict) -> dict:
+        passes.append(r)
+        return real(r, p)
+
+    monkeypatch.setattr(freshness, "_index_freshness", counted)
+    with active_index_pointer(root) as active:
+        first = index_freshness(root, active)
+        assert index_freshness(root, active) is first
+        with read_scope():  # nested scopes reuse the outer one
+            assert index_freshness(root, active) is first
+    assert len(passes) == 1
+
+    index_freshness(root, ptr)
+    index_freshness(root, ptr)
+    assert len(passes) == 3, "outside a read scope every call must re-check the live tree"
+
+
 def test_native_nfd_file_matches_indexed_nfc_identity_without_repeat_secret_scan(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "repo"
     root.mkdir()

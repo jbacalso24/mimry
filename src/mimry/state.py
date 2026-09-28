@@ -9,6 +9,7 @@ import sqlite3
 import tempfile
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -313,11 +314,50 @@ def generation_manifest(generation_dir: Path, generation_id: str, created_at: st
     }
 
 
+_READ_SCOPE: ContextVar[dict[tuple, Any] | None] = ContextVar("mimry_read_scope", default=None)
+
+
+@contextmanager
+def read_scope() -> Iterator[None]:
+    """Memoize generation-derived reads for one operation holding the shared lock.
+
+    While a reader holds the shared operation lock, publication and GC are
+    excluded, so the active generation cannot change underneath it. Repeating
+    generation validation or a full freshness scan inside that window only
+    re-reads the same immutable bytes. Nested scopes reuse the outer one.
+    """
+    if _READ_SCOPE.get() is not None:
+        yield
+        return
+    token = _READ_SCOPE.set({})
+    try:
+        yield
+    finally:
+        _READ_SCOPE.reset(token)
+
+
+def scoped(key: tuple, compute: Callable[[], Any]) -> Any:
+    """Return ``compute()`` once per active read scope; outside a scope, always compute."""
+    cache = _READ_SCOPE.get()
+    if cache is None:
+        return compute()
+    if key not in cache:
+        cache[key] = compute()
+    return cache[key]
+
+
 def validate_generation(pointer: dict[str, Any]) -> None:
     """Validate that pointer, immutable sidecars, and SQLite expose one generation."""
     generation_id = pointer.get("generationId")
     if not generation_id:
         return  # legacy layout; migrated on the next successful index
+    scoped(
+        ("validate_generation", str(pointer["indexPath"]), generation_id),
+        lambda: _validate_generation(pointer, generation_id),
+    )
+
+
+def _validate_generation(pointer: dict[str, Any], generation_id: str) -> None:
     idx = Path(pointer["indexPath"])
     manifest_path = idx / GENERATION_MANIFEST
     manifest, _ = load_json_state(manifest_path)

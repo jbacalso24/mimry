@@ -1,43 +1,44 @@
 from __future__ import annotations
 
-import argparse
 import sys
-
-from .commands import (
-    cmd_brief,
-    cmd_cache_wipe,
-    cmd_context,
-    cmd_digest,
-    cmd_explain,
-    cmd_feedback,
-    cmd_find,
-    cmd_index,
-    cmd_adapters,
-    cmd_init,
-    cmd_path,
-    cmd_plan_check,
-    cmd_plan_digest,
-    cmd_plan_list,
-    cmd_plan_new,
-    cmd_plan_split,
-    cmd_plan_tree,
-    cmd_preflight,
-    cmd_related,
-    cmd_refresh,
-    cmd_route,
-    cmd_roots,
-    cmd_semantic,
-    cmd_status,
-    cmd_symbol,
-    cmd_why,
-)
-from .installer import cmd_hook_check, cmd_install, cmd_uninstall
-from .plan import PlanError
-from .state import IndexSchemaMigrationError, StateCorruptionError, StateLockTimeoutError, UnsupportedIndexSchemaError
-from .storage import RootIdentityError
 
 
 def build_parser():
+    # Imported here, not at module load: `hook-check` runs before every agent tool
+    # call and must not pay for the indexing stack it never uses.
+    import argparse
+
+    from .commands import (
+        cmd_brief,
+        cmd_cache_wipe,
+        cmd_context,
+        cmd_digest,
+        cmd_explain,
+        cmd_feedback,
+        cmd_find,
+        cmd_index,
+        cmd_adapters,
+        cmd_init,
+        cmd_path,
+        cmd_plan_check,
+        cmd_plan_digest,
+        cmd_plan_list,
+        cmd_plan_new,
+        cmd_plan_split,
+        cmd_plan_tree,
+        cmd_preflight,
+        cmd_related,
+        cmd_refresh,
+        cmd_route,
+        cmd_roots,
+        cmd_semantic,
+        cmd_status,
+        cmd_symbol,
+        cmd_why,
+    )
+    from .hook import cmd_hook_check
+    from .installer import cmd_install, cmd_uninstall
+
     p = argparse.ArgumentParser(
         prog="mimry", description="Local repo intelligence memory. Defaults --root to the current working directory."
     )
@@ -211,7 +212,34 @@ def _configure_console() -> None:
             reconfigure(errors="backslashreplace")
 
 
+def _hook_check_root(args) -> str | None:
+    """Return the root when argv is exactly ``[--root R] hook-check``, else None."""
+    rest = list(args)
+    root = "."
+    if len(rest) >= 2 and rest[0] == "--root":
+        root, rest = rest[1], rest[2:]
+    elif rest and rest[0].startswith("--root="):
+        root, rest = rest[0].split("=", 1)[1], rest[1:]
+    return root if rest == ["hook-check"] else None
+
+
 def main(argv=None):
+    hook_root = _hook_check_root(sys.argv[1:] if argv is None else argv)
+    if hook_root is not None:
+        from types import SimpleNamespace
+
+        from .hook import cmd_hook_check
+
+        return cmd_hook_check(SimpleNamespace(root=hook_root))
+    from .plan import PlanError
+    from .state import (
+        IndexSchemaMigrationError,
+        StateCorruptionError,
+        StateLockTimeoutError,
+        UnsupportedIndexSchemaError,
+    )
+    from .storage import RootIdentityError
+
     _configure_console()
     a = build_parser().parse_args(argv)
     try:

@@ -123,8 +123,16 @@ def _report_freshness_lines(path: Path) -> dict[str, str | None]:
     return {"report_title": title, "built_from_commit": built_from_commit}
 
 
-def graph_health(root: Path, *, index_state: str | None = None) -> dict[str, Any]:
-    """Return cheap graph artifact health without invoking the graph engine or changing ranking."""
+def graph_health(
+    root: Path, *, index_state: str | None = None, verified_hashes: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """Return cheap graph artifact health without invoking the graph engine or changing ranking.
+
+    ``verified_hashes`` maps rel paths to content hashes that index freshness just
+    proved from verified snapshots of ``root / rel_path``; they stand in for a
+    second read of the same file. Paths without one are hashed here as before.
+    """
+    verified_hashes = verified_hashes or {}
     out = artifact_dir(root)
     graph_p = graph_path(root)
     report_p = report_path(root)
@@ -159,7 +167,8 @@ def graph_health(root: Path, *, index_state: str | None = None) -> dict[str, Any
         if isinstance(info, dict):
             expected_hash = info.get("mimry_sha256")
             if isinstance(expected_hash, str) and expected_hash:
-                if _safe_regular_sha256(source) != expected_hash:
+                actual_hash = verified_hashes.get(rel_path) or _safe_regular_sha256(source)
+                if actual_hash != expected_hash:
                     stale_sources.append(rel_path)
                 continue
             if isinstance(info.get("mtime"), int | float):

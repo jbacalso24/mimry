@@ -426,6 +426,32 @@ def test_hook_check_emits_nudge_when_mimry_exists(tmp_path, payload):
     assert "MIMRY is available" in res.stdout
 
 
+def test_hook_check_honors_root_and_never_fails(tmp_path):
+    repo = copy_fixture(tmp_path)
+    (repo / ".mimry").mkdir()
+    (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    grep = json.dumps({"tool_name": "Grep", "tool_input": {"pattern": "x"}}).encode()
+
+    def hook(*root_args: str, payload: bytes = grep) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-m", "mimry.cli", *root_args, "hook-check"],
+            cwd=tmp_path,
+            env=env,
+            input=payload,
+            capture_output=True,
+            check=False,
+        )
+
+    assert b"MIMRY is available" in hook("--root", str(repo)).stdout
+    assert b"MIMRY is available" in hook(f"--root={repo}").stdout
+    assert hook().stdout == b"", "without --root the hook looks at the working directory only"
+    for payload in (b"\xff\xfe not json", "rg \u00dd".encode(), b"[1, 2]", b'{"tool_input": "not a mapping"}', b""):
+        res = hook("--root", str(repo), payload=payload)
+        assert res.returncode == 0 and res.stderr == b"", res.stderr
+
+
 def test_uninstall_project_codex_removes_skill_references_and_always_on(tmp_path):
     repo = copy_fixture(tmp_path)
     assert (

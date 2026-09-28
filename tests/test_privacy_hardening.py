@@ -173,28 +173,39 @@ def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_po
 
 def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(tmp_path: Path, monkeypatch):
     """scan() must not walk inside ignored trees; the content guard lives in adapt() alone."""
-    import mimry.scanner as scanner
     from mimry.indexer import _collect
+    from mimry.paths import canonical_rel_path
+    from mimry.scanner import scan_entries
 
     repo = tmp_path / "repo"
     (repo / "node_modules" / "pkg" / "deep").mkdir(parents=True)
     (repo / "node_modules" / "pkg" / "deep" / "index.js").write_text("x = 1\n", encoding="utf-8")
     (repo / "safe.py").write_text("print('safe')\n", encoding="utf-8")
     (repo / "leak.py").write_text(f"{QUERY_CANARY}\n", encoding="utf-8")
+    # Sensitive-looking directory names do not prune: only heavy-ignore names do,
+    # and every file below is still judged by its own name.
+    (repo / ".env" / "lib").mkdir(parents=True)
+    (repo / ".env" / "lib" / "venv_module.py").write_text("x = 2\n", encoding="utf-8")
+    (repo / ".env" / "lib" / ".env").write_text("x = 3\n", encoding="utf-8")
 
-    checked: list[Path] = []
-    real_should_ignore_path = scanner.should_ignore_path
+    listed: list[str] = []
+    real_scandir = os.scandir
 
-    def spy(path, root):
-        checked.append(path)
-        return real_should_ignore_path(path, root)
+    def spy(path="."):
+        listed.append(Path(path).relative_to(repo).as_posix())
+        return real_scandir(path)
 
-    monkeypatch.setattr(scanner, "should_ignore_path", spy)
-    assert sorted(path.name for path in scan(repo)) == ["leak.py", "safe.py"]
-    assert [path.relative_to(repo).as_posix() for path in checked if "node_modules" in path.parts] == ["node_modules"]
+    monkeypatch.setattr(os, "scandir", spy)
+    entries = scan_entries(repo)
+    monkeypatch.undo()
+
+    assert [canonical for canonical, _ in entries] == [".env/lib/venv_module.py", "leak.py", "safe.py"]
+    assert all(canonical == canonical_rel_path(path, repo) for canonical, path in entries)
+    assert [p for p in listed if p.startswith("node_modules")] == [], "ignored trees must never be listed"
+    assert [path.name for path in scan(repo)] == ["venv_module.py", "leak.py", "safe.py"]
 
     files, *_, unindexable = _collect(repo)
-    assert [record["rel_path"] for record in files] == ["safe.py"]
+    assert [record["rel_path"] for record in files] == [".env/lib/venv_module.py", "safe.py"]
     # Unrecorded, so freshness re-checks the file and reports it once its secret is removed.
     assert unindexable == []
 

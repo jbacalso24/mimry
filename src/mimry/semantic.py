@@ -87,7 +87,8 @@ def _hash_index(token: str) -> int:
 def vectorize(text: str) -> dict[str, float]:
     counts: dict[int, float] = {}
     for token in _tokens(text):
-        counts[_hash_index(token)] = counts.get(_hash_index(token), 0.0) + 1.0
+        index = _hash_index(token)
+        counts[index] = counts.get(index, 0.0) + 1.0
     if not counts:
         return {}
     norm = math.sqrt(sum(value * value for value in counts.values())) or 1.0
@@ -181,10 +182,16 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 def build_semantic_index(idx: Path, root_id: str, generation_id: str | None = None) -> dict[str, Any]:
     files = _load_jsonl(idx / "files.jsonl")
     symbols = _load_jsonl(idx / "symbols.jsonl")
+    # Group once: filtering the full symbol list per file was quadratic, and
+    # dominated indexing on large repositories. Order within a file is preserved.
+    symbols_by_file: dict[Any, list[dict[str, Any]]] = {}
+    for sym in symbols:
+        symbols_by_file.setdefault(sym.get("file_id"), []).append(sym)
     created_at = now()
     chunks: list[dict[str, Any]] = []
     for file_rec in files:
-        chunks.extend(_semantic_chunks_for_file(root_id, file_rec, symbols, created_at))
+        file_symbols = symbols_by_file.get(file_rec["file_id"], [])
+        chunks.extend(_semantic_chunks_for_file(root_id, file_rec, file_symbols, created_at))
 
     con = sqlite3.connect(idx / "mimry.sqlite")
     try:
