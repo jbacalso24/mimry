@@ -178,7 +178,9 @@ def build_parser():
     s.add_argument("plan_id")
     s.set_defaults(func=cmd_plan_digest)
     plan_sub.add_parser("list", help="List local plan trees deterministically").set_defaults(func=cmd_plan_list)
-    sub.add_parser("roots").set_defaults(func=cmd_roots)
+    s = sub.add_parser("roots", help="List the folders MIMRY has indexed on this machine")
+    s.add_argument("--prune", action="store_true", help="Forget registered folders that no longer exist")
+    s.set_defaults(func=cmd_roots)
     i = sub.add_parser(
         "install", help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills"
     )
@@ -209,6 +211,11 @@ def build_parser():
     w.add_argument("--all", action="store_true")
     w.add_argument("--current", action="store_true")
     w.set_defaults(func=cmd_cache_wipe)
+    for name, command in sub.choices.items():
+        if name not in {"hook-check", "plan", "cache"}:
+            command.add_argument(
+                "-v", "--verbose", action="store_true", help="Also show paths, scores and internal details"
+            )
     return p
 
 
@@ -251,26 +258,23 @@ def main(argv=None):
 
     _configure_console()
     a = build_parser().parse_args(argv)
+    from . import ui
+
     try:
         return a.func(a)
     except UnsupportedIndexSchemaError as exc:
-        print(f"MIMRY index requires a newer MIMRY client: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("This index was built by a newer version of MIMRY", str(exc))
     except IndexSchemaMigrationError as exc:
-        print(f"MIMRY index is out of date: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("This index was built by an older version of MIMRY", str(exc))
     except StateCorruptionError as exc:
-        print(f"MIMRY state error: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("MIMRY found damaged index data", str(exc))
     except StateLockTimeoutError as exc:
-        print(f"MIMRY lock error: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("Another MIMRY command is still using this index", str(exc))
     except RootIdentityError as exc:
-        print(f"MIMRY root identity error: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("This .mimry folder belongs to a different location", str(exc))
     except PlanError as exc:
-        print(f"MIMRY plan error: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("Plan error", str(exc))
+    return 2
 
 
 if __name__ == "__main__":

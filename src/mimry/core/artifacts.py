@@ -124,15 +124,22 @@ def _report_freshness_lines(path: Path) -> dict[str, str | None]:
 
 
 def graph_health(
-    root: Path, *, index_state: str | None = None, verified_hashes: dict[str, str] | None = None
+    root: Path,
+    *,
+    index_state: str | None = None,
+    verified_hashes: dict[str, str] | None = None,
+    native_paths: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     """Return cheap graph artifact health without invoking the graph engine or changing ranking.
 
     ``verified_hashes`` maps rel paths to content hashes that index freshness just
     proved from verified snapshots of ``root / rel_path``; they stand in for a
     second read of the same file. Paths without one are hashed here as before.
+    ``native_paths`` maps canonical (NFC) rel paths to their on-disk spelling
+    where the two differ, as index freshness found them.
     """
     verified_hashes = verified_hashes or {}
+    native_paths = native_paths or {}
     out = artifact_dir(root)
     graph_p = graph_path(root)
     report_p = report_path(root)
@@ -160,7 +167,7 @@ def graph_health(
             continue
         if path_has_ignored_part(rel_path):
             continue
-        source = root / rel_path
+        source = native_paths.get(rel_path, root / rel_path)
         if not source.exists():
             missing_sources.append(rel_path)
             continue
@@ -276,14 +283,18 @@ def surface_matches(root: Path, query: str, limit: int = 5) -> list[dict]:
     return sorted(matches, key=lambda m: (-m["score"], m["path"], m["label"]))[:limit]
 
 
-def evidence_for_path(root: Path, surface: str, max_lines: int = 6) -> list[str]:
-    """Return concise graph node/edge evidence for a file or symbol surface."""
+def surface_evidence(root: Path, surface: str, max_items: int = 6) -> dict[str, Any]:
+    """Graph nodes matching a file or symbol surface, and the edges that touch them.
+
+    ``nodes`` and ``edges`` are capped at ``max_items`` each; ``node_count`` and
+    ``edge_count`` are the full totals.
+    """
     g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     surface_lower = surface.lower()
-    matched_ids = set()
-    lines = []
+    matched_ids: set[str] = set()
+    matched: list[dict] = []
     for node in nodes:
         src = node_source_file(node) or ""
         label = str(node.get("label") or node.get("id"))
@@ -293,20 +304,28 @@ def evidence_for_path(root: Path, surface: str, max_lines: int = 6) -> list[str]
             or surface_lower == str(node.get("id", "")).lower()
         ):
             matched_ids.add(str(node.get("id")))
-            lines.append(f"- node `{label}` in `{src or '?'}`")
-            if len(lines) >= max_lines:
-                return lines
+            matched.append({"label": label, "path": src or "?"})
     id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
+    edges: list[dict] = []
     for edge in links:
         source, target = _edge_endpoints(edge)
         if source not in matched_ids and target not in matched_ids:
             continue
         s = id_to_node.get(source or "", {})
         t = id_to_node.get(target or "", {})
-        lines.append(f"- edge `{s.get('label') or source}` --{_edge_relation(edge)}--> `{t.get('label') or target}`")
-        if len(lines) >= max_lines:
-            return lines
-    return lines
+        edges.append(
+            {
+                "source": str(s.get("label") or source),
+                "relation": _edge_relation(edge),
+                "target": str(t.get("label") or target),
+            }
+        )
+    return {
+        "nodes": matched[:max_items],
+        "node_count": len(matched),
+        "edges": edges[:max_items],
+        "edge_count": len(edges),
+    }
 
 
 def shortest_path(root: Path, source_query: str, target_query: str, max_hops: int = 6) -> dict:
@@ -315,12 +334,18 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
-    source_matches = surface_matches(root, source_query, limit=5)
-    target_matches = surface_matches(root, target_query, limit=5)
+    # An exact file path or symbol name means exactly that surface. Fuzzy term
+    # matching would also accept any file sharing "src" or ".py" with it, and the
+    # search would stop at whichever of those it happened to reach first.
+    source_matches = _exact_surface_matches(nodes, source_query) or surface_matches(root, source_query, limit=5)
+    target_matches = _exact_surface_matches(nodes, target_query) or surface_matches(root, target_query, limit=5)
     if not source_matches or not target_matches:
         return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
 
-    target_ids = {m["id"] for m in target_matches}
+    # A fuzzy target can also match the source itself; that is not a path to it.
+    target_ids = {m["id"] for m in target_matches} - {m["id"] for m in source_matches}
+    if not target_ids:
+        return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
     adjacency: dict[str, list[tuple[str, dict]]] = defaultdict(list)
     for edge in links:
         source, target = _edge_endpoints(edge)
@@ -329,39 +354,58 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
         adjacency[source].append((target, edge))
         adjacency[target].append((source, {**edge, "relation": "reverse " + _edge_relation(edge)}))
 
-    for source in source_matches:
-        queue = deque([(source["id"], [])])
-        seen = {source["id"]}
-        while queue:
-            node_id, path_edges = queue.popleft()
-            if node_id in target_ids:
-                steps = []
-                current = source["id"]
-                for edge in path_edges:
-                    edge_source, edge_target = _edge_endpoints(edge)
-                    next_id = edge_target if edge_source == current else edge_source
-                    steps.append(
-                        {
-                            "from": id_to_node.get(current, {"id": current}),
-                            "edge": edge,
-                            "to": id_to_node.get(next_id or "", {"id": next_id}),
-                        }
-                    )
-                    current = next_id or current
-                return {
-                    "found": True,
-                    "source_matches": source_matches,
-                    "target_matches": target_matches,
-                    "steps": steps,
-                }
-            if len(path_edges) >= max_hops:
+    # One breadth-first search from every source at once finds the shortest path overall.
+    queue = deque((m["id"], m["id"], []) for m in source_matches)
+    seen = {m["id"] for m in source_matches}
+    while queue:
+        node_id, start_id, path_edges = queue.popleft()
+        if node_id in target_ids:
+            steps = []
+            current = start_id
+            for edge in path_edges:
+                edge_source, edge_target = _edge_endpoints(edge)
+                next_id = edge_target if edge_source == current else edge_source
+                steps.append(
+                    {
+                        "from": id_to_node.get(current, {"id": current}),
+                        "edge": edge,
+                        "to": id_to_node.get(next_id or "", {"id": next_id}),
+                    }
+                )
+                current = next_id or current
+            return {"found": True, "source_matches": source_matches, "target_matches": target_matches, "steps": steps}
+        if len(path_edges) >= max_hops:
+            continue
+        for next_id, edge in adjacency.get(node_id, []):
+            if next_id in seen:
                 continue
-            for next_id, edge in adjacency.get(node_id, []):
-                if next_id in seen:
-                    continue
-                seen.add(next_id)
-                queue.append((next_id, [*path_edges, edge]))
+            seen.add(next_id)
+            queue.append((next_id, start_id, [*path_edges, edge]))
     return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
+
+
+def _exact_surface_matches(nodes: list[dict], query: str) -> list[dict]:
+    """Nodes whose id or label is ``query``, else the nodes defined in that file."""
+    wanted = query.strip().replace("\\", "/").lower()
+    ranked = []
+    for node in nodes:
+        label = str(node.get("label") or node.get("id"))
+        src = node_source_file(node) or ""
+        if wanted in (str(node.get("id", "")).lower(), label.lower()):
+            rank = 0
+        elif wanted == src.lower():
+            rank = 1
+        else:
+            continue
+        ranked.append(
+            (
+                rank,
+                label,
+                {"id": str(node.get("id")), "label": label, "path": src or "?", "score": 100 - rank, "node": node},
+            )
+        )
+    best = min((rank for rank, _label, _match in ranked), default=None)
+    return [match for rank, _label, match in sorted(ranked, key=lambda item: (item[0], item[1])) if rank == best]
 
 
 # How far a query's evidence travels along relationships, and how fast it decays.
@@ -534,13 +578,14 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
     return sorted(rows, key=lambda r: (-r["score"], r["path"]))[:limit]
 
 
-def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 12) -> list[str]:
+def relationship_edges(root: Path, selected_paths: list[str], max_edges: int = 12) -> list[dict]:
+    """Graph edges with an endpoint in one of ``selected_paths``, in graph order."""
     g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
     selected = set(selected_paths)
-    lines = []
+    edges = []
     for e in links:
         s = id_to_node.get(str(e.get("source")))
         t = id_to_node.get(str(e.get("target")))
@@ -550,21 +595,31 @@ def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 1
         tf = node_source_file(t)
         if sf not in selected and tf not in selected:
             continue
-        rel = e.get("relation") or e.get("type") or "relates"
-        conf = e.get("confidence") or e.get("confidence_score") or ""
-        src_label = s.get("label") or s.get("id")
-        tgt_label = t.get("label") or t.get("id")
-        src_file = sf or "?"
-        tgt_file = tf or "?"
-        line = (
-            f"- `{markdown_inline(src_label)}` --{markdown_inline(rel)}--> `{markdown_inline(tgt_label)}` "
-            f"({markdown_inline(src_file)} -> {markdown_inline(tgt_file)})"
+        edges.append(
+            {
+                "source": str(s.get("label") or s.get("id")),
+                "relation": str(e.get("relation") or e.get("type") or "relates"),
+                "target": str(t.get("label") or t.get("id")),
+                "source_file": sf or "?",
+                "target_file": tf or "?",
+                "confidence": str(e.get("confidence") or e.get("confidence_score") or ""),
+            }
         )
-        if conf:
-            line += f" [{markdown_inline(conf)}]"
+        if len(edges) >= max_edges:
+            break
+    return edges
+
+
+def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 12) -> list[str]:
+    lines = []
+    for e in relationship_edges(root, selected_paths, max_lines):
+        line = (
+            f"- `{markdown_inline(e['source'])}` --{markdown_inline(e['relation'])}--> `{markdown_inline(e['target'])}` "
+            f"({markdown_inline(e['source_file'])} -> {markdown_inline(e['target_file'])})"
+        )
+        if e["confidence"]:
+            line += f" [{markdown_inline(e['confidence'])}]"
         lines.append(line)
-        if len(lines) >= max_lines:
-            return lines
     return lines
 
 

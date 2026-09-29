@@ -234,7 +234,9 @@ def _status_payload_unchecked(root_path: Path, verify: bool = False) -> dict[str
     changed = fresh["changed"]
     missing = fresh["missing"]
     state = fresh["state"]
-    graph = graph_health(root_path, index_state=state, verified_hashes=fresh["verified_hashes"])
+    graph = graph_health(
+        root_path, index_state=state, verified_hashes=fresh["verified_hashes"], native_paths=fresh.get("native_paths")
+    )
     payload = {
         "initialized": True,
         "root": str(root_path),
@@ -291,6 +293,9 @@ def mimry_reindex(root: str | None = None, full: bool = False) -> dict[str, Any]
     """Rebuild the local MIMRY index for a root; ``full`` re-parses unchanged files too."""
     root_path = _root(root)
     stats = write_index(root_path, require(root_path, validate=False), full=full)
+    # Counts, not path lists: a branch switch can change thousands of files.
+    changes = stats.get("changes")
+    stats["changes"] = {kind: len(paths) for kind, paths in changes.items()} if changes is not None else None
     return {"root": str(root_path), **stats}
 
 

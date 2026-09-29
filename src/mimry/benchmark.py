@@ -18,6 +18,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from .core.artifacts import graph_health
+
 SCHEMA_VERSION = 1
 PRIVACY_CANARY = "MIMRY_BENCHMARK_CANARY_7f8e9d"
 DEFAULT_THRESHOLDS = {
@@ -31,8 +33,8 @@ DEFAULT_THRESHOLDS = {
     "context_token_proxy_max": 2500,
 }
 _ENV_ALLOWLIST = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SYSTEMROOT")
-_RESULT_RE = re.compile(r"^\d+\. (.+)$")
-_GRAPH_SIZE_RE = re.compile(r"graph\.json:\s*yes\s*\((\d+)\s*nodes/(\d+)\s*edges")
+# A `mimry find` result line: right-aligned rank, two spaces, repository path.
+_RESULT_RE = re.compile(r"^ +\d+  (\S.*)$")
 
 
 def token_proxy(text: str) -> int:
@@ -103,6 +105,9 @@ def _env(sandbox: Path) -> dict[str, str]:
             "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
             "PYTHONNOUSERSITE": "1",
             "NO_COLOR": "1",
+            # Output marks follow the stream encoding. Pin it so the measured
+            # token proxy is the same on every platform, not cp1252 on Windows.
+            "PYTHONIOENCODING": "utf-8",
         }
     )
     for key in ("HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "MIMRY_CACHE_HOME", "TMPDIR"):
@@ -142,6 +147,7 @@ def _run(repo: Path, env: dict[str, str], *args: str, timeout: int | None = None
         cwd=repo,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         timeout=timeout,
         check=False,
@@ -174,10 +180,13 @@ def _paths(stdout: str) -> list[str]:
     return [match.group(1).strip() for line in stdout.splitlines() if (match := _RESULT_RE.match(line))]
 
 
-def _graph_size(status_text: str) -> tuple[int, int]:
-    """Parse graph node and edge counts from mimry status output."""
-    match = _GRAPH_SIZE_RE.search(status_text)
-    return (int(match.group(1)), int(match.group(2))) if match else (0, 0)
+def _graph_size(repo: Path) -> tuple[int, int] | None:
+    """Node and edge counts of the published graph artifact; None when it is missing.
+
+    Read from the artifact, not scraped from `mimry status`, whose wording is for people.
+    """
+    health = graph_health(repo)
+    return (health["graph_nodes"], health["graph_edges"]) if health["graph_exists"] else None
 
 
 def _digest(root: Path) -> str:
@@ -238,8 +247,9 @@ def evaluate(
         # retained as a public runner argument, but report what actually ran
         # rather than claiming a no-graph run that never happened.
         graph_status_out, graph_status_err, _ = _run(repo, env, "status", timeout=60)
-        graph_nodes, graph_edges = _graph_size(graph_status_out)
-        graph_enabled = "graph.json: yes" in graph_status_out
+        graph_size = _graph_size(repo)
+        graph_enabled = graph_size is not None
+        graph_nodes, graph_edges = graph_size or (0, 0)
         case_reports, find_latencies, context_latencies, all_output = [], [], [], []
         all_output.extend(
             (

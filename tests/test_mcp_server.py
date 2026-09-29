@@ -230,7 +230,7 @@ def test_mcp_preflight_initializes_and_writes_context(tmp_path: Path, monkeypatc
     assert payload["index_state"] == "current"
     assert payload["context_path"].replace("\\", "/").endswith(".mimry/mimry-out/context/latest.md")
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
-    assert "MIMRY preflight complete" in payload["stdout"]
+    assert "OK Context ready for" in payload["stdout"]
 
 
 def test_mcp_refresh_rebuilds_index_and_reports_status(tmp_path: Path, monkeypatch):
@@ -244,7 +244,7 @@ def test_mcp_refresh_rebuilds_index_and_reports_status(tmp_path: Path, monkeypat
     assert payload["returncode"] == 0
     assert payload["status"]["index_state"] == "current"
     assert payload["status"]["files_indexed"] > 0
-    assert "MIMRY indexing complete" in payload["stdout"]
+    assert "OK Indexed repo for the first time" in payload["stdout"]
 
 
 def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path: Path, monkeypatch):
@@ -265,10 +265,10 @@ def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path:
         verification="pytest passed",
     )
 
-    assert explain["returncode"] == 0 and "MIMRY explain" in explain["stdout"]
-    assert why["returncode"] == 0 and "MIMRY why" in why["stdout"]
+    assert explain["returncode"] == 0 and '"fix auth session" maps to repo' in explain["stdout"]
+    assert why["returncode"] == 0 and 'Why src/auth/session.py ranks for "fix auth session"' in why["stdout"]
     assert path["returncode"] == 0
-    assert "No path was invented" in path["stdout"] or "Path found" in path["stdout"]
+    assert "connects to" in path["stdout"] or "No connection found" in path["stdout"]
     assert feedback["returncode"] == 0
     assert feedback["feedback"]["outcome"] == "passed"
     assert "src/auth/session.py" in feedback["feedback"]["changed_paths"]

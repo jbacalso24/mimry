@@ -40,6 +40,22 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
 
 
+def _row(output: str, label: str) -> str:
+    """The value of the first ``label  value`` table row in command output."""
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(label + " "):
+            return stripped[len(label) :].strip()
+    raise AssertionError(f"no {label!r} row in:\n{output}")
+
+
+def _result_paths(output: str) -> list[str]:
+    """Paths of numbered search results, in rank order."""
+    return [
+        parts[1] for parts in (line.split() for line in output.splitlines()) if len(parts) == 2 and parts[0].isdigit()
+    ]
+
+
 def run_cli(work: Path, cache: Path, *args: str):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
@@ -155,8 +171,10 @@ def test_install_lists_supported_agent_platforms(tmp_path):
     assert "codex" in res.stdout
     assert "hermes" in res.stdout
     assert "agents" in res.stdout
-    assert ".claude/skills/mimry/SKILL.md" in _posix(res.stdout)
-    assert ".codex/skills/mimry/SKILL.md" in _posix(res.stdout)
+    # Paths only shown with --verbose now
+    res_verbose = run_cli(repo, tmp_path / "cache", "install", "--list-platforms", "--verbose")
+    assert ".claude/skills/mimry/SKILL.md" in _posix(res_verbose.stdout)
+    assert ".codex/skills/mimry/SKILL.md" in _posix(res_verbose.stdout)
 
 
 def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_path):
@@ -187,7 +205,7 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     agents = repo / "AGENTS.md"
     assert agents.exists()
     assert "## MIMRY" in agents.read_text(encoding="utf-8")
-    assert "Git hint: git add .codex/skills/mimry/SKILL.md" in _posix(res.stdout)
+    assert "To share it with your team: git add .codex/skills/mimry/SKILL.md" in _posix(res.stdout)
     assert ".codex/skills/mimry/references/" in _posix(res.stdout)
     assert "AGENTS.md" in res.stdout
     assert "Codex:" in body
@@ -210,7 +228,7 @@ def test_install_dry_run_does_not_write(tmp_path):
     res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "hermes", "--dry-run")
 
     assert res.returncode == 0, res.stderr
-    assert "DRY RUN" in res.stdout
+    assert "Dry run" in res.stdout
     assert ".hermes/skills/mimry/SKILL.md" in _posix(res.stdout)
     assert not (repo / ".hermes" / "skills" / "mimry" / "SKILL.md").exists()
 
@@ -220,7 +238,7 @@ def test_install_requires_platform_unless_listing(tmp_path):
     res = run_cli(repo, tmp_path / "cache", "install")
 
     assert res.returncode != 0
-    assert "requires --platform" in res.stderr
+    assert "x Choose a platform with --platform <name>" in res.stderr
 
 
 def test_install_lists_expanded_platforms(tmp_path):
@@ -241,7 +259,7 @@ def test_install_lists_expanded_platforms(tmp_path):
         "devin",
         "antigravity",
     ):
-        assert f"- {name}:" in res.stdout
+        assert any(line.split()[:1] == [name] for line in res.stdout.splitlines()), name
 
 
 def test_expanded_project_platform_paths(tmp_path):
@@ -366,14 +384,15 @@ def test_install_project_codex_hooks_and_status_detect_broken_references(tmp_pat
 
     status = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status")
     assert status.returncode == 0, status.stderr
-    assert "Hooks: ok" in status.stdout
-    assert "References: ok" in status.stdout
+    assert "OK  Hook" in status.stdout
+    assert "OK  References" in status.stdout
 
     shutil.rmtree(repo / ".codex" / "skills" / "mimry" / "references")
     broken = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status")
     assert broken.returncode == 0, broken.stderr
-    assert "References: missing/broken" in broken.stdout
-    assert "Repair: rerun `mimry install`" in broken.stdout
+    assert "needs repair" in broken.stdout
+    assert "x   References  missing or broken" in broken.stdout
+    assert "Run `mimry install --platform codex --project --always-on` to repair it." in broken.stdout
 
 
 def test_uninstall_project_codex_removes_hooks_when_requested(tmp_path):
@@ -469,11 +488,11 @@ def test_uninstall_project_codex_removes_skill_references_and_always_on(tmp_path
 def test_install_global_rejects_always_on(tmp_path):
     repo = copy_fixture(tmp_path)
     res = run_cli(repo, tmp_path / "cache", "install", "--platform", "codex", "--always-on", "--dry-run")
-    assert res.returncode == 0, res.stderr
+    assert res.returncode != 0, "Should reject --always-on even in --dry-run"
 
     res = run_cli(repo, tmp_path / "cache", "install", "--platform", "codex", "--always-on")
     assert res.returncode != 0
-    assert "--always-on is only supported with --project" in res.stderr
+    assert "x --always-on only works with --project" in res.stderr
 
 
 def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
@@ -623,14 +642,15 @@ def test_status_find_symbol_related_context_loop(tmp_path):
     assert run_cli(repo, cache, "index").returncode == 0
     status = run_cli(repo, cache, "status")
     assert status.returncode == 0, status.stdout
-    assert "Index: current" in status.stdout
+    assert "OK repo is up to date" in status.stdout
     find = run_cli(repo, cache, "find", "auth middleware")
-    assert "middleware.py" in find.stdout
-    assert "Reason:" in find.stdout
+    assert 'Best matches for "auth middleware"' in find.stdout
+    assert _result_paths(find.stdout)[0] == "src/auth/middleware.py"
+    assert "name matches" in find.stdout
     sym = run_cli(repo, cache, "symbol", "create_session")
     assert "create_session" in sym.stdout
     rel = run_cli(repo, cache, "related", "login auth")
-    assert "Related files" in rel.stdout
+    assert 'Files related to "login auth"' in rel.stdout
     ctx = run_cli(repo, cache, "context", "fix login auth bug")
     assert ctx.returncode == 0
     text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text()
@@ -647,10 +667,9 @@ def test_route_recommends_backend_for_fastapi_auth_not_tooly(tmp_path):
     res = run_cli(repo, cache, "route", "fix FastAPI auth bug")
 
     assert res.returncode == 0, res.stderr
-    assert "MIMRY route" in res.stdout
-    assert "Recommended agent: backend" in res.stdout
-    assert "Risk level:" in res.stdout
-    assert "Recommended agent: tooly" not in res.stdout
+    assert "How to approach" in res.stdout
+    assert _row(res.stdout, "Agent").startswith("backend (")
+    assert _row(res.stdout, "Risk")
     assert "Next: mimry brief" in res.stdout
 
 
@@ -680,7 +699,7 @@ def test_route_recommends_mobile_for_expo_share_extension(tmp_path):
     res = run_cli(repo, cache, "route", "update Expo share extension")
 
     assert res.returncode == 0, res.stderr
-    assert "Recommended agent: mobile" in res.stdout
+    assert _row(res.stdout, "Agent").startswith("mobile (")
     assert "native/mobile" in res.stdout
 
 
@@ -693,8 +712,8 @@ def test_route_recommends_tooly_for_mimry_mcp_route_tool(tmp_path):
     res = run_cli(repo, cache, "route", "implement mimry MCP route tool")
 
     assert res.returncode == 0, res.stderr
-    assert "Recommended agent: tooly" in res.stdout
-    assert "mimry-tooling-pack" in res.stdout
+    assert _row(res.stdout, "Agent").startswith("tooly (")
+    assert "mimry-tooling-pack" in _row(res.stdout, "Context packs")
 
 
 def test_route_detects_risk_gates_for_sensitive_terms(tmp_path):
@@ -726,7 +745,7 @@ def test_route_prefers_explicit_specialist_intent_over_index_noise(tmp_path):
     for query, role in cases:
         res = run_cli(repo, cache, "route", query)
         assert res.returncode == 0, res.stderr
-        assert f"Recommended agent: {role}" in res.stdout
+        assert _row(res.stdout, "Agent").startswith(f"{role} (")
 
 
 def test_route_does_not_create_secret_gate_from_token_match_reason(tmp_path):
@@ -738,8 +757,8 @@ def test_route_does_not_create_secret_gate_from_token_match_reason(tmp_path):
     res = run_cli(repo, cache, "route", "fix Next.js checkout page")
 
     assert res.returncode == 0, res.stderr
-    assert "- billing" in res.stdout
-    assert "- secrets" not in res.stdout
+    assert "billing" in _row(res.stdout, "Risk")
+    assert "secrets" not in _row(res.stdout, "Risk")
 
 
 def test_brief_writes_role_aware_markdown_sections(tmp_path):
@@ -751,7 +770,7 @@ def test_brief_writes_role_aware_markdown_sections(tmp_path):
     res = run_cli(repo, cache, "brief", "fix auth", "--agent", "backend")
 
     assert res.returncode == 0, res.stderr
-    assert "MIMRY brief generated" in res.stdout
+    assert "OK Wrote a backend brief for" in res.stdout
     path = repo / ".mimry" / "mimry-out" / "context" / "brief-backend.md"
     assert path.exists()
     text = path.read_text(encoding="utf-8")
@@ -781,12 +800,12 @@ def test_explain_summarizes_ranked_files_paths_and_verification_hints(tmp_path):
     res = run_cli(repo, cache, "explain", "auth session bug")
 
     assert res.returncode == 0, res.stderr
-    assert "MIMRY explain: auth session bug" in res.stdout
-    assert "Top relevant files" in res.stdout
+    assert 'How "auth session bug" maps to' in res.stdout
+    assert "Most relevant files" in res.stdout
     assert "src/auth/session.py" in res.stdout or "src/auth/middleware.py" in res.stdout
-    assert "Likely source of truth" in res.stdout
-    assert "Suggested verification" in res.stdout
-    assert "No relationship path was invented" not in res.stdout
+    assert "How they connect" in res.stdout
+    assert "Start with " in res.stdout
+    assert "Verify with" in res.stdout
 
 
 def test_why_explains_file_ranking_signals_for_query(tmp_path):
@@ -799,11 +818,10 @@ def test_why_explains_file_ranking_signals_for_query(tmp_path):
     res = run_cli(repo, cache, "why", "src/auth/session.py", "--query", "login auth session")
 
     assert res.returncode == 0, res.stderr
-    assert "MIMRY why: src/auth/session.py" in res.stdout
-    assert "Ranked for query: login auth session" in res.stdout
-    assert "Ranking signals" in res.stdout
-    assert "Graph evidence:" in res.stdout
-    assert "filename" in res.stdout or "Graph" in res.stdout
+    assert 'Why src/auth/session.py ranks for "login auth session"' in res.stdout
+    assert _row(res.stdout, "Rank").startswith("#")
+    assert "name matches" in _row(res.stdout, "Signals")
+    assert "In the graph" in res.stdout
 
 
 def test_path_finds_graph_relationship_path_between_surfaces(tmp_path):
@@ -816,11 +834,10 @@ def test_path_finds_graph_relationship_path_between_surfaces(tmp_path):
     res = run_cli(repo, cache, "path", "middleware", "session")
 
     assert res.returncode == 0, res.stderr
-    assert "MIMRY path: middleware -> session" in res.stdout
-    assert "Path found" in res.stdout
+    assert " connects to " in res.stdout
     assert "src/auth/middleware.py" in res.stdout
     assert "src/auth/session.py" in res.stdout
-    assert "--imports-->" in res.stdout
+    assert "imports" in res.stdout
 
 
 def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
@@ -833,15 +850,13 @@ def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
     res = run_cli(repo, cache, "path", "middleware", "missing-target")
 
     assert res.returncode == 0, res.stderr
-    assert "No graph relationship path found" in res.stdout
-    assert "No path was invented" in res.stdout
-    assert "Fallback queries" in res.stdout
+    assert "! No connection found between" in res.stdout
+    assert "Try `mimry related" in res.stdout
 
     broad_token_res = run_cli(repo, cache, "path", "nonexistent-surface", "another-missing-surface")
     assert broad_token_res.returncode == 0, broad_token_res.stderr
-    assert "No graph relationship path found" in broad_token_res.stdout
-    assert "No path was invented" in broad_token_res.stdout
-    assert "Path found" not in broad_token_res.stdout
+    assert "! No connection found between" in broad_token_res.stdout
+    assert " connects to " not in broad_token_res.stdout
 
 
 def write_current_graph_artifacts(repo: Path):
@@ -883,11 +898,10 @@ def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
     after = json.loads((repo / ".mimry" / "pointer.json").read_text())["lastIndexedAt"]
 
     assert res.returncode == 0, res.stderr
-    assert "Preflight refresh: skipped" in res.stdout
-    assert "Init ran: no" in res.stdout
-    assert "Refresh ran: no" in res.stdout
-    assert "Context:" in res.stdout
-    assert "Top files:" in res.stdout
+    assert "OK Context ready for" in res.stdout
+    assert "Index is up to date" in res.stdout
+    assert "Reindexed first" not in res.stdout and "Built the index" not in res.stdout
+    assert "Start with" in res.stdout
     assert "Next: read" in res.stdout
     assert "src/auth/session.py" in res.stdout
     assert before == after
@@ -996,9 +1010,8 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
     res = run_cli(repo, cache, "preflight", "fix auth session bug", "--force-refresh")
 
     assert res.returncode == 0, res.stderr
-    assert "Preflight refresh: running (forced)" in res.stdout
-    assert "Refresh ran: yes" in res.stdout
-    assert "Index: current" in res.stdout
+    assert "OK Context ready for" in res.stdout
+    assert "Reindexed first" in res.stdout
 
 
 def test_preflight_keeps_stale_cached_context_fast_without_reindexing(tmp_path):
@@ -1015,12 +1028,10 @@ def test_preflight_keeps_stale_cached_context_fast_without_reindexing(tmp_path):
     res = run_cli(repo, cache, "preflight", "preflight marker auth session")
 
     assert res.returncode == 0, res.stderr
-    assert "Preflight refresh: skipped (fast mode; index stale" in res.stdout
-    assert "Refresh ran: no" in res.stdout
-    assert "Index ran: no" in res.stdout
-    assert "Index: stale" in res.stdout
-    assert "run `mimry preflight --force-refresh" in res.stdout
-    assert "MIMRY preflight complete" in res.stdout
+    assert "OK Context ready for" in res.stdout
+    assert "! Results may be out of date" in res.stdout
+    assert "Reindexed first" not in res.stdout and "Built the index" not in res.stdout
+    assert "Run `mimry reindex` to update." in res.stdout
 
 
 def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
@@ -1032,10 +1043,8 @@ def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
     res = run_cli(repo, tmp_path / "cache", "preflight", "test build commands")
 
     assert res.returncode == 0, res.stderr
-    assert "MIMRY preflight complete" in res.stdout
-    assert "Init ran: yes" in res.stdout
-    assert "Refresh ran: no" in res.stdout
-    assert "Index ran: yes" in res.stdout
+    assert "OK Context ready for" in res.stdout
+    assert "Set up MIMRY and built the index" in res.stdout
     assert "app.py" in res.stdout
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
     assert ".mimry/" in (repo / ".gitignore").read_text(encoding="utf-8")
@@ -1069,16 +1078,13 @@ def test_status_reports_graph_artifact_health(tmp_path):
         encoding="utf-8",
     )
 
-    status = run_cli(repo, cache, "status")
+    # Graph health info shown with --verbose
+    status = run_cli(repo, cache, "status", "--verbose")
 
     assert status.returncode == 0, status.stdout
-    assert "MIMRY graph artifact health" in status.stdout
-    assert "Status: current" in status.stdout
-    assert "graph.json: yes (1 nodes/1 edges" in status.stdout
-    assert "GRAPH_REPORT.md: yes" in status.stdout
-    assert "manifest.json: yes (1 entries" in status.stdout
-    assert "Built from commit: abc123" in status.stdout
-    assert "MIMRY graph artifacts stale/missing: no" in status.stdout
+    assert "OK repo is up to date" in status.stdout
+    assert "at commit abc123" in status.stdout
+    assert _row(status.stdout, "Graph").startswith("current, 1 node,")
 
 
 def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
@@ -1099,7 +1105,7 @@ def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
 
     current = run_cli(repo, cache, "status")
     assert current.returncode == 0, current.stdout
-    assert "Status: current" in current.stdout
+    assert "OK repo is up to date" in current.stdout
 
     original = target.stat()
     content = target.read_bytes()
@@ -1109,8 +1115,7 @@ def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
     # Plain status trusts unchanged metadata like git; --verify re-hashes.
     stale = run_cli(repo, cache, "status", "--verify")
     assert stale.returncode == 2, stale.stdout
-    assert "Status: stale" in stale.stdout
-    assert "Graph source changes: 1 changed, 0 missing" in stale.stdout
+    assert "is out of date - 1 file changed since the last index" in stale.stdout
 
 
 def test_status_keeps_legacy_mtime_only_manifest_compatible(tmp_path):
@@ -1129,7 +1134,7 @@ def test_status_keeps_legacy_mtime_only_manifest_compatible(tmp_path):
 
     status = run_cli(repo, cache, "status")
     assert status.returncode == 0, status.stdout
-    assert "Status: current" in status.stdout
+    assert "OK repo is up to date" in status.stdout
 
 
 def test_status_reports_missing_graph_artifact_without_changing_index_exit_code(tmp_path):
@@ -1148,9 +1153,8 @@ def test_status_reports_missing_graph_artifact_without_changing_index_exit_code(
     status = run_cli(repo, cache, "status")
 
     assert status.returncode == 0, status.stdout
-    assert "graph.json: missing" in status.stdout
-    assert "Status: missing" in status.stdout
-    assert "MIMRY graph artifacts stale/missing: yes" in status.stdout
+    assert "OK repo is up to date" in status.stdout
+    assert "! The graph files in .mimry/mimry-out/graph are missing" in status.stdout
 
 
 def test_reindex_detects_changed_file(tmp_path):
@@ -1162,9 +1166,9 @@ def test_reindex_detects_changed_file(tmp_path):
     target.write_text(target.read_text() + "\ndef validate_session():\n    return True\n")
     stale = run_cli(repo, cache, "status")
     assert stale.returncode == 2
-    assert "Index: stale" in stale.stdout
+    assert "is out of date - 1 file changed since the last index" in stale.stdout
     assert run_cli(repo, cache, "reindex").returncode == 0
-    assert "Index: current" in run_cli(repo, cache, "status").stdout
+    assert "OK repo is up to date" in run_cli(repo, cache, "status").stdout
 
 
 def test_status_verify_detects_same_size_rewrite_with_restored_mtime(tmp_path):
@@ -1184,8 +1188,7 @@ def test_status_verify_detects_same_size_rewrite_with_restored_mtime(tmp_path):
     # Plain status may trust this disguised edit's metadata, like git; --verify re-hashes.
     stale = run_cli(repo, cache, "status", "--verify")
     assert stale.returncode == 2
-    assert "Index: stale" in stale.stdout
-    assert "Changed files: 1" in stale.stdout
+    assert "is out of date - 1 file changed since the last index" in stale.stdout
 
 
 def test_status_detects_new_indexable_file(tmp_path):
@@ -1199,9 +1202,8 @@ def test_status_detects_new_indexable_file(tmp_path):
     stale = run_cli(repo, cache, "status")
 
     assert stale.returncode == 2
-    assert "Index: stale" in stale.stdout
-    assert "Changed files: 1" in stale.stdout
-    assert "src/auth/new_flow.py" in stale.stdout
+    assert "is out of date - 1 file changed since the last index" in stale.stdout
+    assert "changed  src/auth/new_flow.py" in stale.stdout
 
 
 def test_index_normalizes_stale_pointer_index_path(tmp_path):
@@ -1222,7 +1224,7 @@ def test_index_normalizes_stale_pointer_index_path(tmp_path):
     updated = json.loads(ptr_path.read_text(encoding="utf-8"))
     assert updated["indexPath"].startswith(str(cache))
     assert sentinel.read_text(encoding="utf-8") == "old profile data"
-    assert "Index: current" in run_cli(repo, cache, "status").stdout
+    assert "OK repo is up to date" in run_cli(repo, cache, "status").stdout
 
 
 def test_cache_wipe_current(tmp_path):
@@ -1247,7 +1249,7 @@ def test_cache_wipe_all_rejects_unsafe_cache_homes(tmp_path):
         sentinel.write_text("do not delete", encoding="utf-8")
         res = run_cli(repo, unsafe, "cache", "wipe", "--all")
         assert res.returncode == 2
-        assert "Refusing cache wipe" in res.stdout
+        assert "x Refusing to wipe the cache" in res.stderr
         assert sentinel.exists()
 
 
@@ -1257,7 +1259,7 @@ def test_cache_wipe_all_rejects_relative_and_empty_cache_home(tmp_path):
     for cache_value in ("relative-cache", ""):
         res = run_cli_with_cache_env(repo, cache_value, "cache", "wipe", "--all")
         assert res.returncode == 2
-        assert "Refusing cache wipe" in res.stdout
+        assert "x Refusing to wipe the cache" in res.stderr
 
 
 def test_cache_wipe_all_refuses_until_global_writer_coordination_exists(tmp_path):
@@ -1270,7 +1272,7 @@ def test_cache_wipe_all_refuses_until_global_writer_coordination_exists(tmp_path
     res = run_cli(repo, cache, "cache", "wipe", "--all")
 
     assert res.returncode == 2
-    assert "disabled" in res.stdout.lower()
+    assert "x `cache wipe --all` is turned off" in res.stderr
     assert cache.exists()
     assert (cache / "roots.json").exists()
 
@@ -1291,7 +1293,7 @@ def test_cache_wipe_current_rejects_index_path_outside_safe_cache(tmp_path):
     res = run_cli(repo, cache, "cache", "wipe", "--current")
 
     assert res.returncode == 2
-    assert "Refusing cache wipe" in res.stdout
+    assert "x Refusing to wipe the cache" in res.stderr
     assert (outside / "keep.txt").exists()
 
 
@@ -1503,8 +1505,8 @@ def test_feedback_records_cli_payload_normalizes_paths_and_stats(tmp_path):
     )
 
     assert res.returncode == 0, res.stderr
-    assert "MIMRY feedback recorded" in res.stdout
-    assert "Ranking influence: changed-file boost, opened-file boost, missed-file recovery boost" in res.stdout
+    assert "OK Saved feedback for" in res.stdout
+    assert "Future searches for similar tasks will rank these files higher." in res.stdout
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     with sqlite3.connect(Path(ptr["indexPath"]) / "mimry.sqlite") as con:
         row = con.execute("select query, opened_paths, changed_paths, missed_paths, outcome from feedback").fetchone()
@@ -1516,9 +1518,8 @@ def test_feedback_records_cli_payload_normalizes_paths_and_stats(tmp_path):
 
     stats = run_cli(repo, cache, "feedback", "stats")
     assert stats.returncode == 0, stats.stderr
-    assert "MIMRY feedback stats" in stats.stdout
-    assert "Records: 1" in stats.stdout
-    assert "- passed: 1" in stats.stdout
+    assert "1 feedback record" in stats.stdout
+    assert _row(stats.stdout, "Outcomes") == "1 passed"
 
 
 def test_feedback_redacts_likely_secrets_from_user_metadata(tmp_path):
@@ -1542,8 +1543,8 @@ def test_feedback_redacts_likely_secrets_from_user_metadata(tmp_path):
     )
 
     assert res.returncode == 0, res.stderr
-    assert "Warning: likely secret value(s) redacted" in res.stdout
-    feedback_id = next(line.split(": ", 1)[1] for line in res.stdout.splitlines() if line.startswith("Feedback ID:"))
+    assert "! Removed what looked like secrets from:" in res.stdout
+    feedback_id = _row(res.stdout, "ID:")
     shown = run_cli(repo, cache, "feedback", "show", feedback_id)
     assert shown.returncode == 0, shown.stderr
     data = json.loads(shown.stdout)
@@ -1579,7 +1580,7 @@ def test_feedback_json_records_equivalent_data_and_show_lists_it(tmp_path):
     res = run_cli(repo, cache, "feedback", "--json", str(feedback_json))
 
     assert res.returncode == 0, res.stderr
-    feedback_id = next(line.split(": ", 1)[1] for line in res.stdout.splitlines() if line.startswith("Feedback ID:"))
+    feedback_id = _row(res.stdout, "ID:")
     shown = run_cli(repo, cache, "feedback", "show", feedback_id)
     assert shown.returncode == 0, shown.stderr
     data = json.loads(shown.stdout)
@@ -1615,7 +1616,8 @@ def test_feedback_ranking_reasons_boost_missed_opened_changed_and_downrank_ignor
         == 0
     )
 
-    res = run_cli(repo, cache, "find", "login auth session bug")
+    # Raw ranking reasons only shown with --verbose
+    res = run_cli(repo, cache, "find", "login auth session bug", "--verbose")
 
     assert res.returncode == 0, res.stderr
     assert "feedback changed-file boost" in res.stdout
@@ -1644,7 +1646,7 @@ def test_semantic_index_stores_local_chunks_without_sensitive_files(tmp_path):
     res = run_cli(repo, cache, "index")
 
     assert res.returncode == 0, res.stderr
-    assert "Semantic: current" in res.stdout
+    assert res.stdout.startswith("OK ")
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])
     with sqlite3.connect(idx / "mimry.sqlite") as con:
@@ -1665,9 +1667,9 @@ def test_semantic_command_returns_explainable_local_results(tmp_path):
     res = run_cli(repo, cache, "semantic", "create session repository save")
 
     assert res.returncode == 0, res.stderr
-    assert "Semantic results for: create session repository save" in res.stdout
-    assert "src/auth/session.py" in res.stdout
-    assert "semantic" in res.stdout
+    assert 'Similar content for "create session repository save"' in res.stdout
+    assert "src/auth/session.py" in _result_paths(res.stdout)
+    assert "similar wording" in res.stdout
 
 
 def test_find_semantic_blends_labels_without_hiding_exact_match(tmp_path):
@@ -1679,9 +1681,8 @@ def test_find_semantic_blends_labels_without_hiding_exact_match(tmp_path):
     res = run_cli(repo, cache, "find", "session repository save", "--semantic")
 
     assert res.returncode == 0, res.stderr
-    first_result = next(line for line in res.stdout.splitlines() if line.startswith("1. "))
-    assert "src/auth/session.py" in first_result
-    assert "semantic" in res.stdout
+    assert _result_paths(res.stdout)[0] == "src/auth/session.py"
+    assert "similar wording" in res.stdout
 
 
 def test_semantic_missing_index_degrades_honestly(tmp_path):
@@ -1692,7 +1693,7 @@ def test_semantic_missing_index_degrades_honestly(tmp_path):
     res = run_cli(repo, cache, "semantic", "session repository")
 
     assert res.returncode == 0, res.stderr
-    assert "Semantic index is missing" in res.stdout
+    assert "! Semantic search is missing" in res.stdout
     assert "mimry refresh" in res.stdout
 
 
@@ -1718,7 +1719,7 @@ def test_find_splits_camelcase_query_terms_and_reports_token_match(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
-    res = run_cli(repo, cache, "find", "createSessionToken", "--limit", "3")
+    res = run_cli(repo, cache, "find", "createSessionToken", "--limit", "3", "--verbose")
 
     assert res.returncode == 0, res.stderr
     assert "src/auth/magic_flow.py" in res.stdout
@@ -1733,7 +1734,7 @@ def test_find_uses_fts_bm25_for_content_hint_phrase(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
-    res = run_cli(repo, cache, "find", "session refresh flow", "--limit", "3")
+    res = run_cli(repo, cache, "find", "session refresh flow", "--limit", "3", "--verbose")
 
     assert res.returncode == 0, res.stderr
     assert "src/auth/phrase_flow.py" in res.stdout

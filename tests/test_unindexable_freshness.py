@@ -21,7 +21,7 @@ import unicodedata
 
 import pytest
 
-from mimry.commands import cmd_init, cmd_preflight
+from mimry.commands import cmd_init, cmd_preflight, cmd_status
 from mimry.core.artifacts import graph_health
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
@@ -263,8 +263,8 @@ def test_secret_appended_beyond_snapshot_limit_is_stale_and_hidden_from_cached_r
     assert cmd_preflight(SimpleNamespace(root=root, task="indexed boundary marker", force_refresh=False)) == 0
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
-    assert "Index: stale" in stdout
-    assert "Index ran: no" in stdout
+    assert "! Results may be out of date" in stdout
+    assert "Reindexed first" not in stdout and "Built the index" not in stdout
     assert "app/boundary.py" not in stdout
     assert "app/boundary.py" not in context
 
@@ -300,8 +300,8 @@ def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
     )
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
-    assert "Index: stale" in stdout
-    assert "Index ran: no" in stdout
+    assert "! Results may be out of date" in stdout
+    assert "Reindexed first" not in stdout and "Built the index" not in stdout
     assert "src/auth/session.py" not in stdout
     assert "Index: stale" in context
     assert "src/auth/session.py" not in context
@@ -352,3 +352,21 @@ def test_indexed_file_that_becomes_unreadable_is_stale_and_hidden(tmp_path: Path
     assert "app/clean.py" in fresh["changed"]
     assert fresh["policy_excluded_count"] == 1
     assert all(record["rel_path"] != "app/clean.py" for record in fresh["files"])
+
+
+def test_native_nfd_file_keeps_graph_current_in_status(tmp_path: Path, capsys) -> None:
+    """Graph health must open the NFD file on disk, not its NFC identity."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    native_name = unicodedata.normalize("NFD", "caf\u00e9.py")
+    target = root / native_name
+    target.write_text("def serve_cafe():\n    return True\n", encoding="utf-8")
+    if target.name == unicodedata.normalize("NFC", native_name):
+        pytest.skip("filesystem normalized the native NFD filename")
+    _index(root)
+    capsys.readouterr()
+
+    assert cmd_status(SimpleNamespace(root=root, verbose=True)) == 0
+    stdout = capsys.readouterr().out
+    assert "OK repo is up to date" in stdout
+    assert "Graph       current," in stdout

@@ -229,6 +229,19 @@ def register_root(ptr):
         atomic_write_json(p, registry, keep_backup=True)
 
 
+def prune_root_registry() -> list[dict[str, Any]]:
+    """Forget registered roots whose folder no longer exists; return what was removed."""
+    p = roots_file()
+    with exclusive_file_lock(p.with_name(f"{p.name}.lock")):
+        registry, _ = _load_root_registry_unlocked()
+        roots = registry.get("roots", [])
+        removed = [entry for entry in roots if not Path(entry["rootPath"]).expanduser().exists()]
+        if removed:
+            registry["roots"] = [entry for entry in roots if entry not in removed]
+            atomic_write_json(p, registry, keep_backup=True)
+        return removed
+
+
 def connect(idx):
     idx.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(idx / "mimry.sqlite")

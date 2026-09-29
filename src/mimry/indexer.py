@@ -49,33 +49,11 @@ from .state import (
     StateCorruptionError,
     generation_manifest,
     load_json_state,
+    replace_path,
     validate_generation,
     _fsync_directory,
 )
 from .storage import active_index_pointer, connect, register_root, save_pointer, write_jsonl
-
-
-def _publish_generation(staging: Path, final: Path, *, attempts: int = 12, delay: float = 0.05) -> None:
-    """Rename a fully written staging directory into its final generation.
-
-    POSIX renames a directory atomically regardless of open handles. Windows
-    does not: os.replace raises WinError 5 (EACCES) while anything still holds
-    a handle inside the tree -- an antivirus or Search indexer scanning the
-    files MIMRY just wrote, or a SQLite handle the OS has not finished
-    releasing. The condition is transient and clears in milliseconds.
-
-    Retry with bounded backoff, then fail loudly. Never fall back to a
-    copy-then-delete: that would publish a partially visible generation, which
-    is the exact failure the staging directory exists to prevent.
-    """
-    for attempt in range(attempts):
-        try:
-            os.replace(staging, final)
-            return
-        except PermissionError:
-            if attempt == attempts - 1:
-                raise
-            time.sleep(delay * (attempt + 1))
 
 
 def _fault(point: str) -> None:
@@ -584,6 +562,25 @@ def _unchanged_generation(root, ptr, previous, record, files, symbols, unindexab
     }
 
 
+def _changes(ptr: dict, files: list[dict]) -> dict | None:
+    """Paths added, changed and removed since the active generation; None on a first index."""
+    if not ptr.get("generationId"):
+        return None
+    try:
+        before, _ = load_json_state(Path(ptr["indexPath"]) / "file-hashes.json", default=None)
+    except (StateCorruptionError, OSError, ValueError):
+        return None
+    if not isinstance(before, dict):
+        return None
+    old = {path: entry.get("hash") if isinstance(entry, dict) else None for path, entry in before.items()}
+    new = {file_rec["rel_path"]: file_rec["hash"] for file_rec in files}
+    return {
+        "added": sorted(new.keys() - old.keys()),
+        "changed": sorted(path for path in new.keys() & old.keys() if new[path] != old[path]),
+        "removed": sorted(old.keys() - new.keys()),
+    }
+
+
 def write_index(root, ptr, *, full: bool = False):
     """Build and publish a new generation.
 
@@ -628,9 +625,10 @@ def write_index(root, ptr, *, full: bool = False):
             files, symbols, edges, imports, exports, calls, symbols_by_file, references, unindexable = _collect(
                 root, previous=previous, record=record, progress=progress
             )
+            changes = _changes(ptr, files)
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
-                return kept
+                return {**kept, "changes": changes, "unindexable": len(unindexable)}
             progress("MIMRY: building graph", force=True)
             graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references)
         finally:
@@ -733,7 +731,7 @@ def write_index(root, ptr, *, full: bool = False):
             }
             atomic_write_json(staging / GENERATION_MANIFEST, manifest)
             fsync_tree(staging)
-            _publish_generation(staging, final)
+            replace_path(staging, final)
             _fsync_directory(generations)
             _fault("after-generation")
 
@@ -770,4 +768,6 @@ def write_index(root, ptr, *, full: bool = False):
         "graph_engine": graph["engine"],
         "semantic_chunks": semantic["chunks"],
         "semantic_backend": semantic["backend"],
+        "changes": changes,
+        "unindexable": len(unindexable),
     }

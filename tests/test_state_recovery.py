@@ -68,7 +68,7 @@ def test_corrupt_pointer_without_backup_is_actionable_and_has_no_traceback(tmp_p
     result = run_cli(repo, tmp_path / "cache", "status")
 
     assert result.returncode == 2
-    assert "MIMRY state error" in result.stderr
+    assert "x MIMRY found damaged index data" in result.stderr
     assert str(pointer) in result.stderr
     assert "last-known-good backup" in result.stderr
     assert "Preserve the corrupt file" in result.stderr
@@ -160,7 +160,7 @@ def test_moved_root_fails_closed_when_recorded_path_is_missing(tmp_path: Path):
     refused = run_cli(moved, cache, "init", "--skip-graph")
 
     assert refused.returncode == 2
-    assert "Moved-root rebinding requires an explicit recovery workflow" in refused.stderr
+    assert "x This .mimry folder was copied from another location" in refused.stderr
     assert (moved / ".mimry" / "pointer.json").read_bytes() == before_pointer
     assert (cache / "roots.json").read_bytes() == before_registry
 
@@ -178,7 +178,7 @@ def test_init_refuses_copied_pointer_while_recorded_root_exists(tmp_path: Path):
     refused = run_cli(copied, cache, "init", "--skip-graph")
 
     assert refused.returncode == 2
-    assert "Refusing MIMRY root identity mismatch" in refused.stderr
+    assert "x This .mimry folder was copied from another location" in refused.stderr
     assert (copied / ".mimry" / "pointer.json").read_bytes() == before_pointer
     assert (cache / "roots.json").read_bytes() == before_registry
 
@@ -194,7 +194,7 @@ def test_copied_pointer_blocks_index_preflight_and_mcp_without_mutating_original
     for command in (("index",), ("preflight", "copied root must fail closed"), ("status",)):
         refused = run_cli(copied, cache, *command)
         assert refused.returncode == 2
-        assert "MIMRY root identity error" in refused.stderr
+        assert "x This .mimry folder belongs to a different location" in refused.stderr
         assert "Traceback" not in refused.stderr
 
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
@@ -210,9 +210,13 @@ def test_roots_labels_missing_and_duplicate_root_ids_without_repairing_registry(
     cache = tmp_path / "cache"
     registry_path = cache / "roots.json"
     registry_path.parent.mkdir(parents=True)
+    (tmp_path / "present-a").mkdir()
+    (tmp_path / "present-b").mkdir()
     roots = [
         _pointer(tmp_path / "missing-a", "shared-id"),
         _pointer(tmp_path / "missing-b", "shared-id"),
+        _pointer(tmp_path / "present-a", "dup-id"),
+        _pointer(tmp_path / "present-b", "dup-id"),
     ]
     registry_path.write_text(json.dumps({"roots": roots}), encoding="utf-8")
     before = registry_path.read_bytes()
@@ -220,8 +224,10 @@ def test_roots_labels_missing_and_duplicate_root_ids_without_repairing_registry(
     result = run_cli(tmp_path / "command-root", cache, "roots")
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.count("missing root") == 2
-    assert result.stdout.count("duplicate root ID") == 2
+    assert "Indexed folders (2)" in result.stdout
+    assert result.stdout.count("(shares an index ID with another folder)") == 2
+    assert "missing-a" not in result.stdout
+    assert "! 2 registered folders no longer exist" in result.stdout
     assert registry_path.read_bytes() == before
 
 
@@ -533,7 +539,7 @@ def test_cache_wipe_current_leaves_truthful_missing_state_and_normal_index_rebui
     assert Path(pointer["indexPath"]) == cache / "indexes" / before["rootId"]
     status = run_cli(repo, cache, "status")
     assert status.returncode == 2, status.stderr
-    assert "Index: missing" in status.stdout
+    assert "! repo has not been indexed yet" in status.stdout
 
     rebuilt = run_cli(repo, cache, "index", "--full")
     assert rebuilt.returncode == 0, rebuilt.stderr
@@ -792,9 +798,10 @@ def test_cache_wipe_reports_incomplete_removal_nonzero(tmp_path: Path, monkeypat
 
     monkeypatch.setattr("mimry.commands.shutil.rmtree", fail_generation)
     result = cmd_cache_wipe(SimpleNamespace(root=str(repo), all=False))
-    output = capsys.readouterr().out
+    captured = capsys.readouterr()
+    output = captured.err
     assert result == 2
-    assert "Cache wipe incomplete" in output
+    assert "x The cache was only partly cleared" in output
     assert "injected removal failure" in output
 
 
@@ -806,7 +813,7 @@ def test_generation_publication_retries_transient_windows_permission_error(tmp_p
     freshly written tree open, which surfaced as three unrelated-looking test
     failures all pointing at os.replace in write_index.
     """
-    from mimry import indexer
+    from mimry import indexer, state
 
     calls = {"n": 0}
     real_replace = os.replace
@@ -823,7 +830,7 @@ def test_generation_publication_retries_transient_windows_permission_error(tmp_p
     (staging / "artifact").write_text("payload", encoding="utf-8")
     final = tmp_path / "final"
 
-    indexer._publish_generation(staging, final, attempts=5, delay=0.001)
+    state.replace_path(staging, final, attempts=5, delay=0.001)
 
     assert calls["n"] == 3, "publication should have retried twice before succeeding"
     assert (final / "artifact").read_text(encoding="utf-8") == "payload"
@@ -832,7 +839,7 @@ def test_generation_publication_retries_transient_windows_permission_error(tmp_p
 
 def test_generation_publication_fails_closed_after_bounded_retries(tmp_path: Path, monkeypatch):
     """Retrying is bounded; a genuinely stuck handle must surface, not hang."""
-    from mimry import indexer
+    from mimry import indexer, state
 
     calls = {"n": 0}
 
@@ -845,5 +852,5 @@ def test_generation_publication_fails_closed_after_bounded_retries(tmp_path: Pat
     staging.mkdir()
 
     with pytest.raises(PermissionError):
-        indexer._publish_generation(staging, tmp_path / "final2", attempts=4, delay=0.001)
+        state.replace_path(staging, tmp_path / "final2", attempts=4, delay=0.001)
     assert calls["n"] == 4, "retry count must be bounded by attempts"

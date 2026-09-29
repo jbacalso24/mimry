@@ -221,4 +221,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
         "generation_id": ptr.get("generationId"),
         "layout": "generation" if ptr.get("generationId") else "legacy",
         "verified_hashes": verified_hashes,
+        # Canonical paths whose on-disk spelling differs (an NFD name on a
+        # filesystem that does not normalise), so readers open the real file.
+        "native_paths": {canonical: path for canonical, (path, _st) in native.items() if path != root / canonical},
     }
