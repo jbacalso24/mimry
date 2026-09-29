@@ -9,6 +9,7 @@ import sqlite3
 import tempfile
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -191,6 +192,30 @@ def fsync_tree(path: Path) -> None:
         _fsync_directory(directory)
 
 
+def replace_path(source: Path, target: Path, *, attempts: int = 12, delay: float = 0.05) -> None:
+    """``os.replace`` that rides out Windows' transient sharing violations.
+
+    POSIX renames atomically regardless of open handles. Windows does not:
+    os.replace raises WinError 5 (EACCES) while anything still holds a handle
+    on the target or inside a directory tree -- another process reading the
+    file, an antivirus or Search indexer scanning what MIMRY just wrote, or a
+    SQLite handle the OS has not finished releasing. The condition clears in
+    milliseconds.
+
+    Retry with bounded backoff, then fail loudly. Never fall back to
+    copy-then-delete: that would expose a partially written target, which is
+    the exact failure the staged write exists to prevent.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
+
+
 def atomic_write_bytes(path: Path, data: bytes) -> None:
     """Replace *path* atomically without exposing a partial destination file."""
     path = Path(path)
@@ -202,7 +227,7 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_path, path)
+        replace_path(temp_path, path)
         _fsync_directory(path.parent)
     except BaseException:
         try:
@@ -313,11 +338,50 @@ def generation_manifest(generation_dir: Path, generation_id: str, created_at: st
     }
 
 
+_READ_SCOPE: ContextVar[dict[tuple, Any] | None] = ContextVar("mimry_read_scope", default=None)
+
+
+@contextmanager
+def read_scope() -> Iterator[None]:
+    """Memoize generation-derived reads for one operation holding the shared lock.
+
+    While a reader holds the shared operation lock, publication and GC are
+    excluded, so the active generation cannot change underneath it. Repeating
+    generation validation or a full freshness scan inside that window only
+    re-reads the same immutable bytes. Nested scopes reuse the outer one.
+    """
+    if _READ_SCOPE.get() is not None:
+        yield
+        return
+    token = _READ_SCOPE.set({})
+    try:
+        yield
+    finally:
+        _READ_SCOPE.reset(token)
+
+
+def scoped(key: tuple, compute: Callable[[], Any]) -> Any:
+    """Return ``compute()`` once per active read scope; outside a scope, always compute."""
+    cache = _READ_SCOPE.get()
+    if cache is None:
+        return compute()
+    if key not in cache:
+        cache[key] = compute()
+    return cache[key]
+
+
 def validate_generation(pointer: dict[str, Any]) -> None:
     """Validate that pointer, immutable sidecars, and SQLite expose one generation."""
     generation_id = pointer.get("generationId")
     if not generation_id:
         return  # legacy layout; migrated on the next successful index
+    scoped(
+        ("validate_generation", str(pointer["indexPath"]), generation_id),
+        lambda: _validate_generation(pointer, generation_id),
+    )
+
+
+def _validate_generation(pointer: dict[str, Any], generation_id: str) -> None:
     idx = Path(pointer["indexPath"])
     manifest_path = idx / GENERATION_MANIFEST
     manifest, _ = load_json_state(manifest_path)

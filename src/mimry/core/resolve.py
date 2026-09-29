@@ -310,37 +310,19 @@ def resolve_calls(
         # Get imports from this file
         imported_targets = imports_by_importer.get(file_path, set())
 
+        # Many calls share a line; the enclosing symbol depends on the line alone.
+        caller_by_line: dict[int, dict | None] = {}
+
         for call in call_list:
             # Step 1: Find the calling symbol
             call_line = call.get("line")
-            caller_symbol = None
-
+            caller = None
             if call_line is not None:
-                # Find the innermost symbol that encloses this line
-                enclosing_symbols = []
-                for symbol in file_symbols:
-                    line_start = symbol.get("line_start")
-                    line_end = symbol.get("line_end")
-
-                    # Handle missing values - cannot determine caller
-                    if line_start is None or line_end is None:
-                        continue
-
-                    if line_start <= call_line <= line_end:
-                        enclosing_symbols.append(symbol)
-
-                # Pick the innermost (largest line_start), with total tie-break
-                if enclosing_symbols:
-                    caller = max(
-                        sorted(enclosing_symbols, key=symbol_selection_key),
-                        key=lambda s: s.get("line_start") or 0,
-                    )
-                    caller_symbol = caller.get("name")
-                    caller_symbol_id = caller.get("symbol_id")
-                else:
-                    caller_symbol_id = None
-            else:
-                caller_symbol_id = None
+                if call_line not in caller_by_line:
+                    caller_by_line[call_line] = _enclosing_symbol(file_symbols, call_line)
+                caller = caller_by_line[call_line]
+            caller_symbol = caller.get("name") if caller else None
+            caller_symbol_id = caller.get("symbol_id") if caller else None
 
             # Step 2: Generate candidates from the callee name
             callee_name = call.get("name", "")
@@ -380,6 +362,29 @@ def resolve_calls(
     results.sort(key=lambda r: (r["caller_file"], r["caller_symbol"] or "", r["target_file"], r["target_symbol"]))
 
     return results
+
+
+def _enclosing_symbol(file_symbols: list[dict], line: int) -> dict | None:
+    """The innermost symbol spanning ``line`` (largest line_start), with total tie-break.
+
+    Among the symbols sharing the largest line_start, the first in
+    symbol_selection_key order wins.
+    """
+    innermost: dict | None = None
+    innermost_start = None
+    for symbol in file_symbols:
+        line_start = symbol.get("line_start")
+        line_end = symbol.get("line_end")
+        # Missing bounds cannot enclose anything.
+        if line_start is None or line_end is None or not line_start <= line <= line_end:
+            continue
+        if (
+            innermost is None
+            or line_start > innermost_start
+            or (line_start == innermost_start and symbol_selection_key(symbol) < symbol_selection_key(innermost))
+        ):
+            innermost, innermost_start = symbol, line_start
+    return innermost
 
 
 def _generate_candidates(callee_name: str) -> list[str]:

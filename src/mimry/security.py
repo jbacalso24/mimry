@@ -153,17 +153,27 @@ def _is_env_example(path: Path) -> bool:
     return path.name in ENV_EXAMPLE_NAMES
 
 
+# One regex over every sensitive filename pattern, with fnmatch.fnmatch's exact
+# platform case rule (os.path.normcase on both sides). Runs once per scanned path.
+_SENSITIVE_NAME_RE = re.compile("|".join(fnmatch.translate(os.path.normcase(pat)) for pat in SENSITIVE_PATTERNS))
+
+
 def is_sensitive(path):
     if _is_env_example(path):
         return False
-    name_match = any(fnmatch.fnmatch(path.name, pat) for pat in SENSITIVE_PATTERNS)
-    parts = {part.lower() for part in path.parts}
-    path_match = (
-        (".aws" in parts and path.name in {"credentials", "config"})
-        or (".kube" in parts and path.name == "config")
-        or ("firebase" in parts and path.suffix.lower() == ".json")
-    )
-    return name_match or path_match or contains_sensitive_text(path.name)
+    name = path.name
+    if _SENSITIVE_NAME_RE.match(os.path.normcase(name)):
+        return True
+    suffix = path.suffix.lower()
+    if name in {"credentials", "config"} or suffix == ".json":
+        parts = {part.lower() for part in path.parts}
+        if (
+            (".aws" in parts and name in {"credentials", "config"})
+            or (".kube" in parts and name == "config")
+            or ("firebase" in parts and suffix == ".json")
+        ):
+            return True
+    return contains_sensitive_text(name)
 
 
 def contains_sensitive_text(text: str) -> bool:
@@ -171,6 +181,10 @@ def contains_sensitive_text(text: str) -> bool:
         return False
     if PRIVATE_KEY_BLOCK_RE.search(text) or STANDALONE_SECRET_RE.search(text) or SENSITIVE_VALUE_RE.search(text):
         return True
+    # Every remaining detector is an assignment form whose pattern requires a
+    # literal "=" or ":". Most filenames and many short strings have neither.
+    if "=" not in text and ":" not in text:
+        return False
     if any(_spaced_assignment_value_is_sensitive(match) for match in SPACED_SENSITIVE_ASSIGNMENT_RE.finditer(text)):
         return True
     if any(_is_sensitive_label(match.group("label")) for match in YAML_BLOCK_ASSIGNMENT_RE.finditer(text)):
@@ -179,7 +193,11 @@ def contains_sensitive_text(text: str) -> bool:
         _is_sensitive_label(label) for _start, _end, label, _replacement in _yaml_quoted_multiline_assignments(text)
     ):
         return True
-    if any(_is_sensitive_label(match.group("label")) for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)):
+    # That pattern requires a triple quote; skipping the scan without one is
+    # exact, and the scan is one of the costliest over large sources.
+    if ('"""' in text or "'''" in text) and any(
+        _is_sensitive_label(match.group("label")) for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)
+    ):
         return True
     return any(_assignment_match_is_sensitive(match) for match in ASSIGNMENT_RE.finditer(text))
 
@@ -414,28 +432,42 @@ def markdown_inline(value: Any) -> str:
     return "".join(rendered)
 
 
-def sanitize_data(value: Any) -> Any:
+def sanitize_data(value: Any, _redacted: dict[str, str] | None = None) -> Any:
     """Recursively redact strings at persistence/API boundaries."""
-
+    # Records repeat the same strings heavily (IDs reused as edge endpoints,
+    # kinds, languages); redact each distinct one once per call.
+    redacted = {} if _redacted is None else _redacted
     if isinstance(value, str):
-        return redact_sensitive_text(value)
+        if value not in redacted:
+            redacted[value] = redact_sensitive_text(value)
+        return redacted[value]
     if isinstance(value, dict):
-        return {key: sanitize_data(item) for key, item in value.items()}
+        return {key: sanitize_data(item, redacted) for key, item in value.items()}
     if isinstance(value, list):
-        return [sanitize_data(item) for item in value]
+        return [sanitize_data(item, redacted) for item in value]
     if isinstance(value, tuple):
-        return tuple(sanitize_data(item) for item in value)
+        return tuple(sanitize_data(item, redacted) for item in value)
     return value
 
 
 def contains_sensitive_data(value) -> bool:
+    # Adapter output repeats the same strings heavily (IDs reused as edge endpoints,
+    # kinds, languages): about 12x on a typical repo. Scan each distinct one once.
+    strings: set[str] = set()
+    _collect_strings(value, strings)
+    return any(contains_sensitive_text(text) for text in strings)
+
+
+def _collect_strings(value, strings: set[str]) -> None:
     if isinstance(value, str):
-        return contains_sensitive_text(value)
-    if isinstance(value, dict):
-        return any(contains_sensitive_data(key) or contains_sensitive_data(item) for key, item in value.items())
-    if isinstance(value, (list, tuple, set)):
-        return any(contains_sensitive_data(item) for item in value)
-    return False
+        strings.add(value)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _collect_strings(key, strings)
+            _collect_strings(item, strings)
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            _collect_strings(item, strings)
 
 
 def stream_contains_sensitive_content(handle: BinaryIO, *, strict_text: bool = False) -> bool:
