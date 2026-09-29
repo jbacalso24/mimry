@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from . import security
-from .paths import canonical_rel_path
-from .scanner import SCANNER_FILE_SIZE_LIMIT, read_snapshot, scan
-from .security import filter_index_records, path_has_ignored_part, should_ignore_path
-from .state import UNINDEXABLE_FILE, StateCorruptionError, load_json_state, validate_generation
+from .reuse import INDEXED, SENSITIVE, load_stat_cache
+from .scanner import SCANNER_FILE_SIZE_LIMIT, read_snapshot, scan_stats
+from .security import filter_index_records, path_has_ignored_part
+from .state import UNINDEXABLE_FILE, StateCorruptionError, load_json_state, scoped, validate_generation
 from .storage import load_jsonl
 
 
@@ -42,7 +42,23 @@ def _unindexable_paths(idx: Path) -> set[str]:
     return {entry for entry in payload if isinstance(entry, str)}
 
 
-def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
+def index_freshness(root: Path, ptr: dict[str, Any], *, verify: bool = False) -> dict[str, Any]:
+    """Compare the active generation with the live tree, once per read scope.
+
+    A file whose lstat still matches the recorded identity of the snapshot it
+    was indexed from is unchanged without being read, as in git (see reuse.py
+    for the racy-file guard and the limits). ``verify`` re-reads and re-hashes
+    every file instead.
+
+    Commands such as brief, explain and route consult freshness several times
+    under one shared operation lock; the generation cannot change in that window,
+    so they share one pass. Callers must treat the returned mapping as read-only.
+    """
+    key = ("index_freshness", str(root), ptr.get("generationId"), str(ptr.get("indexPath")), verify)
+    return scoped(key, lambda: _index_freshness(root, ptr, verify))
+
+
+def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str, Any]:
     validate_generation(ptr)
     idx = Path(ptr["indexPath"])
     files_path = idx / "files.jsonl"
@@ -56,15 +72,27 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
     indexed_paths = {f.get("rel_path") for f in files if f.get("rel_path")}
     # Resolve canonical identities back to their native filesystem spellings.
     # scan() also preserves the existing fail-closed NFC collision check.
-    native_paths = {canonical_rel_path(path, root): path for path in scan(root, inspect_sensitive_content=False)}
+    native = {canonical: (path, st) for canonical, path, st in scan_stats(root, probe_open=False)}
+    stat_cache = None if verify else load_stat_cache(idx)
+    # Content hashes of ``root / rel_path``, proven from verified snapshots or by
+    # an unchanged stat identity; graph health reuses them instead of reading
+    # every source file a second time.
+    verified_hashes: dict[str, str] = {}
 
     for f in files:
         rel_path = f["rel_path"]
-        p = native_paths.get(rel_path, root / rel_path)
+        p, live = native.get(rel_path, (root / rel_path, None))
         # Path policy must be applied before filesystem existence. Otherwise a
         # deleted record from a newly excluded tree leaks through `missing`.
         if path_has_ignored_part(rel_path):
             policy_excluded.append(rel_path)
+            continue
+        # The scan already proved a regular, non-symlink, in-policy file; an
+        # identity match means it is the very snapshot this record came from.
+        if live is not None and stat_cache is not None and stat_cache.trusts(rel_path, live, INDEXED):
+            recorded_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
+            if recorded_hash and p == root / rel_path:
+                verified_hashes[rel_path] = recorded_hash
             continue
         # A replaced symlink must never inherit trust from the indexed regular
         # file, even when its target has identical bytes.
@@ -77,7 +105,9 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
             continue
         # Policy changes must invalidate old generations. Otherwise a file that
         # became ignored after it was indexed remains searchable indefinitely.
-        if should_ignore_path(p, root):
+        # Heavy-ignore parts were rejected above from rel_path; only the
+        # name/path sensitivity rule of should_ignore_path remains.
+        if security.is_sensitive(p):
             policy_excluded.append(rel_path)
             continue
         try:
@@ -91,10 +121,13 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
         is_oversized = st.st_size > SCANNER_FILE_SIZE_LIMIT
         size_changed = st.st_size != f.get("size")
+        digest = None if is_oversized else hashlib.sha256(data).hexdigest()
+        if digest is not None and p == root / rel_path:
+            verified_hashes[rel_path] = digest
         content_changed = (
             is_oversized
             or size_changed
-            or (hashlib.sha256(data).hexdigest() != expected_hash if expected_hash else st.st_mtime != f.get("mtime"))
+            or (digest != expected_hash if expected_hash else st.st_mtime != f.get("mtime"))
         )
         if not content_changed:
             continue
@@ -122,8 +155,11 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         # a current preflight parse the repository repeatedly. Discover paths
         # cheaply, then secret-scan only genuinely new candidates before calling
         # them a source change.
-        for rel, p in native_paths.items():
+        for rel, (p, live) in native.items():
             if rel in indexed_paths or rel in unindexable:
+                continue
+            # Skipped at index time for secret-bearing bytes, and still the same file.
+            if stat_cache is not None and stat_cache.trusts(rel, live, SENSITIVE):
                 continue
             try:
                 data, _ = read_snapshot(p, root=root)
@@ -184,4 +220,8 @@ def index_freshness(root: Path, ptr: dict[str, Any]) -> dict[str, Any]:
         "graph": visible_graph,
         "generation_id": ptr.get("generationId"),
         "layout": "generation" if ptr.get("generationId") else "legacy",
+        "verified_hashes": verified_hashes,
+        # Canonical paths whose on-disk spelling differs (an NFD name on a
+        # filesystem that does not normalise), so readers open the real file.
+        "native_paths": {canonical: path for canonical, (path, _st) in native.items() if path != root / canonical},
     }

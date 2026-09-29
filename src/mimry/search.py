@@ -8,7 +8,7 @@ from .core.artifacts import graph_available, graph_rows
 from .intent import apply_exclusion_adjustment, apply_intent_adjustment, excluded_query_terms, query_terms
 from .paths import canonical_cached_rel_path
 from .semantic import merge_semantic_rows, semantic_rows
-from .security import filter_index_records, redact_sensitive_text
+from .security import filter_index_records
 from .storage import connect, load_jsonl, load_pointer
 
 
@@ -203,11 +203,3 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
             return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)
-
-
-def print_rows(title, rows):
-    print(redact_sensitive_text(title))
-    for i, r in enumerate(rows, 1):
-        print(f"{i}. {r['path']}\n   Score: {r['score']}\n   Reason: {r['reason']}")
-        if r.get("details"):
-            print(f"   Details: {redact_sensitive_text(r['details'])}")

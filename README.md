@@ -156,7 +156,7 @@ For agents, prefer the one-command preflight workflow:
 mimry preflight "fix auth bug"
 ```
 
-`preflight` initializes the root if needed, checks index freshness, refreshes only when state is missing or stale, generates `.mimry/mimry-out/context/latest.md`, prints top files, and reminds the agent to read the context pack before opening source files.
+`preflight` initializes the root if needed, checks index freshness, builds the index only when there is none yet (a stale index still answers, with a warning; pass `--force-refresh` to reindex first), generates `.mimry/mimry-out/context/latest.md`, prints top files, and reminds the agent to read the context pack before opening source files.
 
 ## What it builds
 
@@ -172,6 +172,14 @@ project-root/
 ```
 
 MIMRY also stores local indexes in the user cache directory. Those indexes are generated artifacts, not source of truth.
+
+## Freshness and incremental indexing
+
+Like git, MIMRY treats a file as unchanged while its size, inode and nanosecond mtime still match the snapshot it was indexed from, so status checks and reindexes do not re-read unchanged files.
+A reindex re-parses only new and changed files, and its output is identical to a full rebuild.
+Files modified within two seconds of the previous index scan are always re-read, which covers edits that land inside one timestamp tick.
+The one edit this cannot see is a rewrite that deliberately keeps size, inode and mtime.
+Run `mimry status --verify` to re-hash every file, and `mimry index --full` to re-parse every file.
 
 ### Graph relationships
 
@@ -209,6 +217,30 @@ A context pack includes:
 Context packs remain relative-path-first and never dump full source or secret values. See [`docs/context-packs.md`](docs/context-packs.md) for the section contract.
 
 ## CLI examples
+
+Every command answers in the same shape: one line that says what happened, a few indented details, and a next step only when something needs doing.
+
+```text
+$ mimry reindex
+✓ Updated the index for my-app in 2.2s
+  2 files changed, 1 added
+    changed  src/auth/session.py
+    changed  src/auth/middleware.py
+    added    src/auth/magic_link.py
+  3,105 files · 6,859 symbols · 10,749 links
+
+$ mimry status
+! my-app is out of date - 1 file changed since the last index
+    changed  src/auth/session.py
+  Indexed 5 minutes ago · at commit d7bf046
+  3,105 files · 6,859 symbols · 10,749 links
+  Run `mimry reindex` to update it.
+```
+
+Add `--verbose` (`-v`) to any command for paths, scores, raw ranking reasons and other internals.
+Colour is used only on an interactive terminal, and `NO_COLOR=1` turns it off.
+Piped and captured output always uses plain ASCII marks (`OK`, `!`, `x`), so scripts and agents see the same text everywhere.
+`mimry roots` lists every indexed folder on this machine, and `mimry roots --prune` forgets folders that no longer exist.
 
 Find likely files:
 

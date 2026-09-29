@@ -17,7 +17,7 @@
       "decoys_at_5": 0,
       "expect_empty": false,
       "find_median_ms": 86.061924,
-      "find_token_proxy": 323,
+      "find_token_proxy": 105,
       "id": "session-renewal",
       "ndcg_at_5": 0.54997060974601,
       "paths": [
@@ -38,7 +38,7 @@
       "decoys_at_5": 1,
       "expect_empty": false,
       "find_median_ms": 85.366848,
-      "find_token_proxy": 216,
+      "find_token_proxy": 47,
       "id": "bearer-middleware",
       "ndcg_at_5": 0.7452525342261976,
       "paths": [
@@ -56,7 +56,7 @@
       "decoys_at_5": 1,
       "expect_empty": false,
       "find_median_ms": 89.998847,
-      "find_token_proxy": 389,
+      "find_token_proxy": 104,
       "id": "checkout-runtime",
       "ndcg_at_5": 0.8595547154669839,
       "paths": [
@@ -77,7 +77,7 @@
       "decoys_at_5": 0,
       "expect_empty": false,
       "find_median_ms": 89.166382,
-      "find_token_proxy": 381,
+      "find_token_proxy": 102,
       "id": "checkout-tests",
       "ndcg_at_5": 0.7363636171343382,
       "paths": [
@@ -98,7 +98,7 @@
       "decoys_at_5": 0,
       "expect_empty": false,
       "find_median_ms": 89.695734,
-      "find_token_proxy": 377,
+      "find_token_proxy": 97,
       "id": "session-migration",
       "ndcg_at_5": 0.6026493584157245,
       "paths": [
@@ -119,7 +119,7 @@
       "decoys_at_5": 0,
       "expect_empty": true,
       "find_median_ms": 89.629847,
-      "find_token_proxy": 15,
+      "find_token_proxy": 34,
       "id": "unknown",
       "ndcg_at_5": 1.0,
       "paths": [],
@@ -134,7 +134,7 @@
       "decoys_at_5": 1,
       "expect_empty": false,
       "find_median_ms": 93.138756,
-      "find_token_proxy": 367,
+      "find_token_proxy": 107,
       "id": "checkout-payment-chain",
       "ndcg_at_5": 0.8075588805057204,
       "paths": [
@@ -155,7 +155,7 @@
       "decoys_at_5": 0,
       "expect_empty": false,
       "find_median_ms": 87.896203,
-      "find_token_proxy": 332,
+      "find_token_proxy": 112,
       "id": "session-service-fan-in",
       "ndcg_at_5": 0.6305667822198809,
       "paths": [
@@ -176,7 +176,7 @@
       "decoys_at_5": 0,
       "expect_empty": false,
       "find_median_ms": 94.255054,
-      "find_token_proxy": 362,
+      "find_token_proxy": 105,
       "id": "login-to-database",
       "ndcg_at_5": 0.6735438532678194,
       "paths": [
@@ -213,7 +213,7 @@
   "profile": "quick-local-index",
   "python": "3.12.3",
   "repeat": 3,
-  "retrieval_source_sha256": "eb5a7469591d11bb0b24819127a958159ce8647ea305cf87134934e2b54c3c76",
+  "retrieval_source_sha256": "26bb2eb7a7fccc30e72ea9b7b773e6ce619fcf0cc4f490e14c6b6b3fd745b286",
   "schema_version": 1,
   "setup_ms": {
     "index": 1422.630853,

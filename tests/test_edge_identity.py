@@ -153,8 +153,8 @@ class TestEdgeIdentityThroughRealPipeline:
 
         real_adapt = scanner_module.adapt
 
-        def conflicting_adapt(path, root):
-            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root)
+        def conflicting_adapt(path, root, snapshot=None):
+            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root, snapshot)
             # Both files now claim the same edge identity but point at different
             # targets -- exactly the ambiguity that used to be resolved by
             # whichever file the scanner happened to reach last.
@@ -184,8 +184,8 @@ class TestEdgeIdentityThroughRealPipeline:
 
         real_adapt = scanner_module.adapt
 
-        def empty_edge_adapt(path, root):
-            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root)
+        def empty_edge_adapt(path, root, snapshot=None):
+            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root, snapshot)
             if edges:
                 edges[0]["edge_id"] = "  "
             return f, symbols, edges, imports, exports, calls, references
@@ -203,8 +203,8 @@ class TestEdgeIdentityThroughRealPipeline:
 
         real_adapt = scanner_module.adapt
 
-        def conflicting_adapt(path, root):
-            f, symbols, _edges, imports, exports, calls, references = real_adapt(path, root)
+        def conflicting_adapt(path, root, snapshot=None):
+            f, symbols, _edges, imports, exports, calls, references = real_adapt(path, root, snapshot)
             edges = [
                 {
                     "edge_id": "collision",
@@ -236,8 +236,8 @@ class TestEdgeIdentityThroughRealPipeline:
 
         real_adapt = scanner_module.adapt
 
-        def duplicating_adapt(path, root):
-            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root)
+        def duplicating_adapt(path, root, snapshot=None):
+            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root, snapshot)
             return f, symbols, edges + list(edges), imports, exports, calls, references
 
         monkeypatch.setattr("mimry.indexer.adapt", duplicating_adapt)
