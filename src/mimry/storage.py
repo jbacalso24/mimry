@@ -8,6 +8,7 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
+from . import ui
 from .feedback import ensure_feedback_schema
 from .cache_safety import UnsafeCachePathError, validated_current_root_cache_path
 from .paths import idx_path, pointer_file, roots_file
@@ -39,7 +40,12 @@ class RootIdentityError(RuntimeError):
 
 def _recovery_notice(path: Path) -> None:
     print(
-        f"Recovered corrupt MIMRY state at {path} from last-known-good backup {path.name}.bak.",
+        ui.error_text(
+            f"Repaired damaged MIMRY data in {path.name}",
+            f"It could not be read, so MIMRY restored the last good copy from {path.name}.bak.",
+            f"File: {path}",
+            kind="warn",
+        ),
         file=sys.stderr,
     )
 

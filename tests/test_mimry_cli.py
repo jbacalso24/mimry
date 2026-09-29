@@ -1202,8 +1202,8 @@ def test_status_detects_new_indexable_file(tmp_path):
     stale = run_cli(repo, cache, "status")
 
     assert stale.returncode == 2
-    assert "is out of date - 1 file changed since the last index" in stale.stdout
-    assert "changed  src/auth/new_flow.py" in stale.stdout
+    assert "is out of date - 1 new file since the last index" in stale.stdout
+    assert "new  src/auth/new_flow.py" in stale.stdout
 
 
 def test_index_normalizes_stale_pointer_index_path(tmp_path):

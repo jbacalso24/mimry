@@ -188,14 +188,19 @@ def require(root, *, validate: bool = True):
 
 def cmd_plan_new(a):
     plan = PlanStore(Path(a.root)).create(a.root_plan, a.name)
-    write_plan_output(f"Plan ID: {plan['planId']}\nRoot node ID: {plan['root']}\n")
+    write_plan_output(
+        f"{ui.headline('ok', 'Created plan ' + ui.quote(a.root_plan))}\n"
+        f"  Plan ID: {plan['planId']}\n"
+        f"  Root node ID: {plan['root']}\n"
+        f'  Break it down with `mimry plan split {plan["planId"]} {plan["root"]} --child "<step>"`.\n'
+    )
     return 0
 
 
 def cmd_plan_split(a):
     _, child_ids = PlanStore(Path(a.root)).split(a.plan_id, a.node_id, a.child)
-    lines = [f"Split node: {a.node_id}"]
-    lines.extend(f"Child {index}: {child_id}" for index, child_id in enumerate(child_ids, start=1))
+    lines = [ui.headline("ok", f"Split {a.node_id} into {ui.count(len(child_ids), 'step')}")]
+    lines.extend(f"  Child {index}: {child_id}" for index, child_id in enumerate(child_ids, start=1))
     write_plan_output("\n".join(lines) + "\n")
     return 0
 
@@ -216,10 +221,12 @@ def cmd_plan_check(a):
     plan = PlanStore(Path(a.root)).load(a.plan_id)
     errors = validate_plan(plan)
     if errors:
-        for error in errors:
-            print(f"{error.code}: {error.message}", file=sys.stderr)
+        ui.fail(
+            f"Plan {a.plan_id} has {ui.count(len(errors), 'problem')}",
+            *(f"{error.code}: {error.message}" for error in errors),
+        )
         return 2
-    write_plan_output(f"OK {a.plan_id}\n")
+    write_plan_output(ui.headline("ok", f"Plan {a.plan_id} is valid") + "\n")
     return 0
 
 
@@ -231,9 +238,10 @@ def cmd_plan_digest(a):
 def cmd_plan_list(a):
     inventory = PlanStore(Path(a.root)).list()
     if not inventory:
-        write_plan_output("No plans.\n")
+        write_plan_output('No plans yet. Create one with `mimry plan new "<goal>"`.\n')
         return 0
-    write_plan_output("".join(f"{item['planId']}\t{item['name']}\t{item['rootText']}\n" for item in inventory))
+    rows = [(item["planId"], item["name"], item["rootText"]) for item in inventory]
+    write_plan_output(f"Plans ({len(rows)})\n" + "".join(line + "\n" for line in ui.table_lines(rows)))
     return 0
 
 
@@ -328,15 +336,33 @@ def _counted(pairs) -> str:
     """ "3 files changed, 1 added": the noun goes on the first non-zero count only."""
     parts = []
     for n, label in pairs:
-        if n:
-            parts.append(f"{ui.count(n, 'file') if not parts else f'{n:,}'} {label}")
+        if not n:
+            continue
+        if parts:
+            parts.append(f"{n:,} {label}")
+        elif label == "new":
+            # An adjective goes before the noun: "1 new file", not "1 file new".
+            parts.append(ui.count(n, "new file"))
+        else:
+            parts.append(f"{ui.count(n, 'file')} {label}")
     return ", ".join(parts)
 
 
+def _stale_changes(fresh: dict) -> tuple[list[str], list[str]]:
+    """(edited, new): freshness reports files not in the index as changed too."""
+    indexed = {f.get("rel_path") for f in fresh["files"]}
+    return (
+        [path for path in fresh["changed"] if path in indexed],
+        [path for path in fresh["changed"] if path not in indexed],
+    )
+
+
 def _stale_summary(fresh: dict) -> str:
+    edited, new = _stale_changes(fresh)
     return _counted(
         (
-            (len(fresh["changed"]), "changed"),
+            (len(edited), "changed"),
+            (len(new), "new"),
             (len(fresh["missing"]), "deleted"),
             (fresh["policy_excluded_count"], "now ignored"),
         )
@@ -366,7 +392,12 @@ def _print_status(root: Path, ptr: dict, fresh: dict, graph: dict, semantic: dic
         return
     if fresh["state"] == "stale":
         ui.warn(f"{name} is out of date - {_stale_summary(fresh)} since the last index")
-        rows = [*(("changed", path) for path in fresh["changed"]), *(("deleted", path) for path in fresh["missing"])]
+        edited, new = _stale_changes(fresh)
+        rows = [
+            *(("changed", path) for path in edited),
+            *(("new", path) for path in new),
+            *(("deleted", path) for path in fresh["missing"]),
+        ]
         _print_rows_capped(rows)
     else:
         ui.ok(f"{name} is up to date")
@@ -1028,10 +1059,29 @@ def cmd_related(a):
     return 0
 
 
+_SETUP_COMMANDS = ("uv sync", "npm install", "npm ci", "pnpm install", "yarn install", "bun install")
+
+
+def _display_commands(commands: list[str]) -> list[str]:
+    """Setup first, and one entry per command: `uv run pytest -q` repeats `uv run pytest`."""
+    ordered = [c for c in commands if c.startswith(_SETUP_COMMANDS)] + [
+        c for c in commands if not c.startswith(_SETUP_COMMANDS)
+    ]
+    shown, seen = [], set()
+    for command in ordered:
+        base = " ".join(word for word in command.split() if not word.startswith("-"))
+        if base not in seen:
+            seen.add(base)
+            shown.append(command)
+    return shown
+
+
 def _print_verification(commands: list[str], limit: int = 5) -> None:
     print()
     ui.title("Verify with")
-    for command in commands[:limit] or ["the nearest tests, typecheck or build for the files you change"]:
+    for command in _display_commands(commands)[:limit] or [
+        "the nearest tests, typecheck or build for the files you change"
+    ]:
         ui.detail(command)
 
 
@@ -1176,10 +1226,15 @@ def cmd_path(a):
     steps = result["steps"]
     if result["found"]:
         start, end = steps[0]["from"], steps[-1]["to"]
-        ui.ok(f"{_node_name(start)} connects to {_node_name(end)} in {ui.count(len(steps), 'step')}")
-        for query, node in ((source, start), (target, end)):
-            if not _names_node(query, node):
-                ui.detail(ui.faint(f"{ui.quote(query)} is not in the graph; closest match: {_node_name(node)}"))
+        found = f"{_node_name(start)} connects to {_node_name(end)} in {ui.count(len(steps), 'step')}"
+        guessed = [query for query, node in ((source, start), (target, end)) if not _names_node(query, node)]
+        if guessed:
+            # A fuzzy stand-in is a guess, so it must not read like a confirmed answer.
+            ui.warn(f"Closest match: {found}")
+            for query in guessed:
+                ui.detail(f"Nothing in the graph is named {ui.quote(query)}, so this uses the closest match.")
+        else:
+            ui.ok(found)
         print()
         ui.detail(_node_text(steps[0]["from"]))
         ui.table(

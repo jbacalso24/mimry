@@ -213,7 +213,7 @@
   "profile": "quick-local-index",
   "python": "3.12.3",
   "repeat": 3,
-  "retrieval_source_sha256": "d17d8d673b0d64f1f33d592bb3eb3078ddd2745cd784d70bdbd4aa1331a2bdde",
+  "retrieval_source_sha256": "cbf994d892fbd6b9f5fad89a3e80669d607bdd58639a1c46e72b62c931b0c8b9",
   "schema_version": 1,
   "setup_ms": {
     "index": 1422.630853,

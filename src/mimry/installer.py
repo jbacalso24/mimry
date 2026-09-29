@@ -484,6 +484,19 @@ def _install_always_on(root: Path, cfg: MimryPlatform, dry_run: bool) -> Path | 
     return dst
 
 
+def _has_always_on(root: Path, cfg: MimryPlatform) -> bool:
+    path = root / cfg.always_on_file if cfg.always_on_file else None
+    return bool(path and path.exists() and _ALWAYS_ON_MARKER in path.read_text(encoding="utf-8"))
+
+
+def _has_hook(root: Path, cfg: MimryPlatform) -> bool:
+    path = root / cfg.hook_path if cfg.hook_path else None
+    if not (path and path.exists()):
+        return False
+    entries = json.loads(path.read_text(encoding="utf-8")).get("hooks", {}).get("PreToolUse", [])
+    return any(_is_mimry_hook(entry) for entry in entries)
+
+
 def _remove_always_on(root: Path, cfg: MimryPlatform) -> Path | None:
     if cfg.always_on_file is None:
         return None
@@ -598,15 +611,9 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
         "version": version.exists() and version.read_text(encoding="utf-8").strip() == _VERSION,
     }
     if project and cfg.always_on_file:
-        result["always_on"] = (root / cfg.always_on_file).exists() and _ALWAYS_ON_MARKER in (
-            root / cfg.always_on_file
-        ).read_text(encoding="utf-8")
+        result["always_on"] = _has_always_on(root, cfg)
     if project and cfg.hook_path:
-        hook_file = root / cfg.hook_path
-        result["hooks"] = hook_file.exists() and any(
-            _is_mimry_hook(entry)
-            for entry in json.loads(hook_file.read_text(encoding="utf-8")).get("hooks", {}).get("PreToolUse", [])
-        )
+        result["hooks"] = _has_hook(root, cfg)
     healthy = all(result.values())
     headline = f"MIMRY skill for {cfg.label} ({_scope(project)})"
     if healthy:
@@ -727,9 +734,19 @@ def uninstall_skill(
     if not removed:
         print(f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label} ({_scope(project)}).")
         return False
-    ui.ok(f"Removed the MIMRY skill for {cfg.label} ({_scope(project)})")
+    ui.ok(f"Removed MIMRY for {cfg.label} ({_scope(project)})")
     for path in removed:
         ui.detail(ui.faint(_shown(path, root, project)))
+    kept = []
+    if project and not always_on and _has_always_on(root, cfg):
+        kept.append(("--always-on", f"the always-on block in {cfg.always_on_file.as_posix()}"))
+    if project and not hooks and _has_hook(root, cfg):
+        kept.append(("--hooks", f"the hook in {cfg.hook_path.as_posix()}"))
+    if kept:
+        flags = " ".join(flag for flag, _ in kept)
+        ui.detail(
+            f"Kept {' and '.join(what for _, what in kept)}. Add {flags} to remove {'them' if len(kept) > 1 else 'it'} too."
+        )
     return True
 
 

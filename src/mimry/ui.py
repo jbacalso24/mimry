@@ -82,16 +82,17 @@ def arrow() -> str:
     return symbol("arrow")
 
 
-def _headline(kind: str, message: str, stream) -> str:
+def headline(kind: str, message: str, stream=None) -> str:
+    stream = stream or sys.stdout
     return f"{paint(symbol(kind, stream), kind, stream)} {message}"
 
 
 def ok(message: str) -> None:
-    print(_headline("ok", message, sys.stdout))
+    print(headline("ok", message))
 
 
 def warn(message: str) -> None:
-    print(_headline("warn", message, sys.stdout))
+    print(headline("warn", message))
 
 
 def fail(message: str, *details: str) -> None:
@@ -99,8 +100,9 @@ def fail(message: str, *details: str) -> None:
     print(error_text(message, *details), file=sys.stderr)
 
 
-def error_text(message: str, *details: str) -> str:
-    lines = [_headline("fail", message, sys.stderr), *(f"  {line}" for line in details if line)]
+def error_text(message: str, *details: str, kind: str = "fail") -> str:
+    """A headline and its details, for printing to stderr."""
+    lines = [headline(kind, message, sys.stderr), *(f"  {line}" for line in details if line)]
     return "\n".join(lines)
 
 
@@ -170,15 +172,22 @@ def quote(text: str) -> str:
     return f'"{text}"'
 
 
-def table(rows: list[tuple], indent: int = 2, gap: int = 2) -> None:
-    """Print rows with every column but the last padded to a common width."""
+def table_lines(rows: list[tuple], indent: int = 2, gap: int = 2) -> list[str]:
+    """Rows with every column but the last padded to a common width."""
     rows = [tuple("" if cell is None else str(cell) for cell in row) for row in rows]
     if not rows:
-        return
+        return []
     widths = [max(len(row[i]) for row in rows if i < len(row)) for i in range(max(map(len, rows)))]
+    lines = []
     for row in rows:
         cells = [cell.ljust(widths[i]) if i < len(row) - 1 else cell for i, cell in enumerate(row)]
-        print(" " * indent + (" " * gap).join(cells).rstrip())
+        lines.append(" " * indent + (" " * gap).join(cells).rstrip())
+    return lines
+
+
+def table(rows: list[tuple], indent: int = 2, gap: int = 2) -> None:
+    for line in table_lines(rows, indent, gap):
+        print(line)
 
 
 def listing(items: list[str], limit: int, indent: int = 2, more: str = "more") -> None:

@@ -86,7 +86,7 @@ def test_status_repairs_corrupt_pointer_from_last_known_good_backup(tmp_path: Pa
     result = run_cli(repo, cache, "status")
 
     assert result.returncode in {0, 2}
-    assert "Recovered corrupt MIMRY state" in result.stderr
+    assert "! Repaired damaged MIMRY data in pointer.json" in result.stderr
     assert "Traceback" not in result.stderr
     assert json.loads(pointer.read_text(encoding="utf-8")) == expected
 
@@ -103,7 +103,7 @@ def test_registry_recovery_restores_valid_backup(tmp_path: Path, monkeypatch, ca
 
     assert actual == expected
     assert json.loads(registry_path.read_text(encoding="utf-8")) == expected
-    assert "Recovered corrupt MIMRY state" in capsys.readouterr().err
+    assert "! Repaired damaged MIMRY data in roots.json" in capsys.readouterr().err
 
 
 def test_registry_deduplicates_canonical_paths_and_prefers_current_pointer(tmp_path: Path, monkeypatch):
