@@ -1,0 +1,30 @@
+# MIMRY
+
+> MIMRY is a local CLI and MCP server that gives AI coding agents a memory of a code repository. It indexes a repo, keeps the index fresh incrementally, and answers "which files matter for this task?" with ranked, evidence-backed files and a written context pack. Everything runs on the user's machine: no code upload, no remote embeddings, no telemetry.
+
+Install with `uv tool install mimry` (or `pipx install mimry`, `pip install mimry`); Python 3.11+ on Windows, Linux, or macOS. This provides `mimry` (CLI) and `mimry-mcp` (MCP server, stdio).
+
+Agent workflow in a repo:
+
+1. `mimry preflight "<task>"` sets MIMRY up if needed and prints the files to read first.
+2. Read `.mimry/mimry-out/context/latest.md`, the context pack: ranked files with reasons, key symbols, relationships, risky paths, and verification commands.
+3. Navigate with focused queries before broad grep: `mimry find "<query>"`, `mimry symbol <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`.
+4. Verify against real source, tests, and build output. MIMRY output is navigation, not proof.
+5. Record what helped: `mimry feedback --query "<task>" --opened <files> --changed <files> --verification "<result>" --outcome passed`.
+
+If MIMRY reports the index is out of date, run `mimry reindex`. Piped output uses ASCII marks (`OK`, `!`, `x`); exit code 0 is ok, 1 is not set up, 2 is stale or an error. `mimry route "<task>" --json` returns structured data.
+
+Connect as an MCP server: `claude mcp add --scope user mimry -- mimry-mcp` (Claude Code), `codex mcp add mimry -- mimry-mcp` (Codex), or `{"mcpServers": {"mimry": {"command": "mimry-mcp"}}}` for other clients. Tools include `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_semantic`, `mimry_symbol`, `mimry_context`, `mimry_explain`, `mimry_path`, `mimry_why`, `mimry_route`, `mimry_brief`, `mimry_status`, `mimry_reindex`, and `mimry_feedback`; each accepts an optional `root`.
+
+## Docs
+
+- [README](https://github.com/jbacalso24/mimry/blob/main/README.md): what MIMRY is, install, quickstart, agent workflow, MCP setup, and every command
+- [Context packs](https://github.com/jbacalso24/mimry/blob/main/docs/context-packs.md): the section contract of `.mimry/mimry-out/context/latest.md`
+- [Adapters](https://github.com/jbacalso24/mimry/blob/main/docs/adapters.md): the file-type adapters and what each extracts
+- [Determinism](https://github.com/jbacalso24/mimry/blob/main/docs/determinism.md): which index state is canonical and reproducible
+
+## Optional
+
+- [PyPI package](https://pypi.org/project/mimry/): released versions
+- [Changelog](https://github.com/jbacalso24/mimry/blob/main/CHANGELOG.md): notable changes
+- [Releasing](https://github.com/jbacalso24/mimry/blob/main/RELEASING.md): release checks and distribution
