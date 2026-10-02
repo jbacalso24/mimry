@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jbacalso24/mimry",
+  "title": "MIMRY",
+  "description": "Local repo memory for coding agents: ranked files, context packs and a code graph for any task.",
+  "websiteUrl": "https://jbacalso24.github.io/mimry/",
+  "repository": {
+    "url": "https://github.com/jbacalso24/mimry",
+    "source": "github"
+  },
+  "version": "0.2.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "mimry",
+      "version": "0.2.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}

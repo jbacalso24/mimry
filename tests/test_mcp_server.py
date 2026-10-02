@@ -616,3 +616,19 @@ def test_successful_rebuild_clears_the_outdated_schema_state(tmp_path: Path, mon
     assert "error" not in healed or healed.get("error", {}).get("code") != "index_schema_outdated"
     code, text = _cli_status(repo)
     assert code == 0 and "corrupt" not in text.lower()
+
+
+def test_mimry_mcp_subcommand_runs_the_stdio_server_in_the_root(tmp_path: Path, monkeypatch):
+    """`uvx mimry mcp` must start the same server as `mimry-mcp`, rooted at --root."""
+    import os
+
+    from mimry import cli, mcp_server
+
+    started = []
+    monkeypatch.setattr(mcp_server, "main", lambda argv=None: started.append((argv, os.getcwd())))
+    monkeypatch.chdir(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    assert cli.main(["--root", str(repo), "mcp"]) == 0
+    assert started == [([], str(repo))]

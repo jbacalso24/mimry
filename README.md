@@ -4,6 +4,8 @@
 
 <h1 align="center">MIMRY</h1>
 
+<!-- mcp-name: io.github.jbacalso24/mimry -->
+
 <p align="center">
   <strong>Local repo memory for coding agents.</strong>
   <br />
@@ -20,6 +22,8 @@
 </p>
 
 <p align="center">
+  <a href="https://jbacalso24.github.io/mimry/"><strong>Website</strong></a>
+  ·
   <a href="#install"><strong>Install</strong></a>
   ·
   <a href="#quickstart"><strong>Quickstart</strong></a>
@@ -158,6 +162,9 @@ Any other MCP client:
 }
 ```
 
+Without installing anything first, `uvx mimry mcp` runs the same server straight from PyPI (`"command": "uvx", "args": ["mimry", "mcp"]`).
+MIMRY is listed in the [official MCP Registry](https://registry.modelcontextprotocol.io/) as `io.github.jbacalso24/mimry`.
+
 The server works on its current directory by default, and every tool accepts a `root` argument for another repo.
 
 | MCP tool | What it does |
@@ -231,6 +238,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back |
 | `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
 | `mimry plan ...` | Store and render explicit plan trees |
+| `mimry mcp` | Run the MCP server (same as `mimry-mcp`) |
 | `mimry adapters` | List the file-type adapters |
 | `mimry install` / `mimry uninstall` | Manage agent skills |
 | `mimry digest` | Print a canonical digest of the index |
