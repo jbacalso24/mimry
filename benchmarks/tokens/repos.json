@@ -1,0 +1,10 @@
+{
+  "tasks_per_repo": 8,
+  "repos": [
+    "pallets/flask",
+    "encode/httpx",
+    "spf13/cobra",
+    "colinhacks/zod",
+    "BurntSushi/ripgrep"
+  ]
+}

@@ -1,0 +1,429 @@
+[
+  {
+    "id": "pallets/flask#6133",
+    "repo": "pallets/flask",
+    "pr": 6133,
+    "task": "add `app.query` route decorator",
+    "base": "3596b1ab61cea85edb8970e83ff61daa073facf8",
+    "gold": [
+      "src/flask/sansio/scaffold.py"
+    ]
+  },
+  {
+    "id": "pallets/flask#6096",
+    "repo": "pallets/flask",
+    "pr": 6096,
+    "task": "Fix `.partition(\":\")` usage on potential IPv6 addresses",
+    "base": "514fc6b3e8402e4c646d5284e97a4f0ab50a7c4b",
+    "gold": [
+      "src/flask/app.py",
+      "src/flask/testing.py"
+    ]
+  },
+  {
+    "id": "pallets/flask#6013",
+    "repo": "pallets/flask",
+    "pr": 6013,
+    "task": "autoescape selection uses case-insensitive comparison",
+    "base": "06ea505ce2b2042af26e96d35ebf159af7c0869d",
+    "gold": [
+      "src/flask/sansio/app.py"
+    ]
+  },
+  {
+    "id": "pallets/flask#5928",
+    "repo": "pallets/flask",
+    "pr": 5928,
+    "task": "all teardown callbacks are called despite errors",
+    "base": "7b0088693ece1bd3a9238a6fdf56ed8df7a4d43b",
+    "gold": [
+      "src/flask/app.py",
+      "src/flask/ctx.py",
+      "src/flask/helpers.py"
+    ]
+  },
+  {
+    "id": "pallets/flask#5917",
+    "repo": "pallets/flask",
+    "pr": 5917,
+    "task": "fix provide_automatic_options override",
+    "base": "d3b78fd18a8d9e224cb9ef58a23cec9b1ffc9ce9",
+    "gold": [
+      "src/flask/sansio/app.py"
+    ]
+  },
+  {
+    "id": "pallets/flask#5899",
+    "repo": "pallets/flask",
+    "pr": 5899,
+    "task": "deprecate `should_ignore_error`",
+    "base": "0292047b22c82921dcf165322d93a0b988328c2e",
+    "gold": [
+      "src/flask/app.py",
+      "src/flask/sansio/app.py"
+    ]
+  },
+  {
+    "id": "pallets/flask#5898",
+    "repo": "pallets/flask",
+    "pr": 5898,
+    "task": "redirect defaults to 303",
+    "base": "eb58d862cc4a8f31a369b6e9ad1724e9e642f13f",
+    "gold": [
+      "src/flask/helpers.py",
+      "src/flask/sansio/app.py"
+    ]
+  },
+  {
+    "id": "pallets/flask#5818",
+    "repo": "pallets/flask",
+    "pr": 5818,
+    "task": "pass context through dispatch methods",
+    "base": "88a65bb374e87a18816a780dbd4ae69d307aa85c",
+    "gold": [
+      "src/flask/app.py",
+      "src/flask/ctx.py",
+      "src/flask/templating.py"
+    ]
+  },
+  {
+    "id": "encode/httpx#3699",
+    "repo": "encode/httpx",
+    "pr": 3699,
+    "task": "Expose `FunctionAuth` in `__all__`",
+    "base": "ca097c96f97d8d2a5da09b8ca736c7e78a2467f6",
+    "gold": [
+      "httpx/__init__.py",
+      "httpx/_auth.py"
+    ]
+  },
+  {
+    "id": "encode/httpx#3690",
+    "repo": "encode/httpx",
+    "pr": 3690,
+    "task": "Add `.wait_ready` to parser for clean server disconnects",
+    "base": "20380490fd0bd13c68704080754c1385bff96d69",
+    "gold": [
+      "src/ahttpx/_parsers.py",
+      "src/ahttpx/_server.py",
+      "src/httpx/_parsers.py",
+      "src/httpx/_server.py"
+    ]
+  },
+  {
+    "id": "encode/httpx#3670",
+    "repo": "encode/httpx",
+    "pr": 3670,
+    "task": "Update FileStream API",
+    "base": "f9d5e1204978c0c66666fa169edada1bf719f8ba",
+    "gold": [
+      "src/ahttpx/_content.py",
+      "src/ahttpx/_streams.py",
+      "src/httpx/_content.py",
+      "src/httpx/_streams.py"
+    ]
+  },
+  {
+    "id": "encode/httpx#3571",
+    "repo": "encode/httpx",
+    "pr": 3571,
+    "task": "Display proxy protocol scheme on error",
+    "base": "6c7af967734bafd011164f2a1653abc87905a62b",
+    "gold": [
+      "httpx/_transports/default.py"
+    ]
+  },
+  {
+    "id": "encode/httpx#3442",
+    "repo": "encode/httpx",
+    "pr": 3442,
+    "task": "Fix `verify=False`, `cert=...` case.",
+    "base": "8ecb86f0d74ffc52d4663214fae9526bee89358d",
+    "gold": [
+      "httpx/_config.py"
+    ]
+  },
+  {
+    "id": "encode/httpx#3426",
+    "repo": "encode/httpx",
+    "pr": 3426,
+    "task": "Updating deprecated docstring Client() class",
+    "base": "80960fa31918d7663c3f4c3ad61661cf0e80628f",
+    "gold": [
+      "httpx/_client.py"
+    ]
+  },
+  {
+    "id": "encode/httpx#3418",
+    "repo": "encode/httpx",
+    "pr": 3418,
+    "task": "Error on verify as str.",
+    "base": "47f4a96ffaaaa07dca1614409549b5d7a6e7af49",
+    "gold": [
+      "httpx/_config.py"
+    ]
+  },
+  {
+    "id": "encode/httpx#3412",
+    "repo": "encode/httpx",
+    "pr": 3412,
+    "task": "Handle empty zstd responses",
+    "base": "189fc4bcbe5f314128775dec66a616ac9a31ad48",
+    "gold": [
+      "httpx/__version__.py",
+      "httpx/_decoders.py"
+    ]
+  },
+  {
+    "id": "spf13/cobra#2397",
+    "repo": "spf13/cobra",
+    "pr": 2397,
+    "task": "#2396: Add cobra unique args validator",
+    "base": "746ef07158728502482cea9f880a6f4b21ef29a9",
+    "gold": [
+      "args.go"
+    ]
+  },
+  {
+    "id": "spf13/cobra#2356",
+    "repo": "spf13/cobra",
+    "pr": 2356,
+    "task": "fix: prevent completions from mutating os.Args via append side effect",
+    "base": "f2878bab8c96afd6e36968af96343b35dbb82a82",
+    "gold": [
+      "completions.go"
+    ]
+  },
+  {
+    "id": "spf13/cobra#2333",
+    "repo": "spf13/cobra",
+    "pr": 2333,
+    "task": "perf: Loop over the bash variable directly instead of starting subprocesses.",
+    "base": "88b30ab89da2d0d0abb153818746c5a2d30eccec",
+    "gold": [
+      "bash_completionsV2.go"
+    ]
+  },
+  {
+    "id": "spf13/cobra#2328",
+    "repo": "spf13/cobra",
+    "pr": 2328,
+    "task": "refactor: replace several vars with consts",
+    "base": "e2dd29ddc39acacf3af13013b06e1fe58b5c3599",
+    "gold": [
+      "command.go"
+    ]
+  },
+  {
+    "id": "spf13/cobra#2325",
+    "repo": "spf13/cobra",
+    "pr": 2325,
+    "task": "refactor: change minUsagePadding from var to const",
+    "base": "117698a604b65e80a1ad5b76df67b604bcd992e0",
+    "gold": [
+      "command.go"
+    ]
+  },
+  {
+    "id": "spf13/cobra#2285",
+    "repo": "spf13/cobra",
+    "pr": 2285,
+    "task": "fix: quote args in fish shell completion",
+    "base": "10d4b48a79be3d4e89e6c45cb59f4d32a3d2ae19",
+    "gold": [
+      "fish_completions.go"
+    ]
+  },
+  {
+    "id": "spf13/cobra#2248",
+    "repo": "spf13/cobra",
+    "pr": 2248,
+    "task": "Update command.go",
+    "base": "1995054b003053cc1e404bccfbf6d168e8731509",
+    "gold": [
+      "command.go"
+    ]
+  },
+  {
+    "id": "spf13/cobra#2241",
+    "repo": "spf13/cobra",
+    "pr": 2241,
+    "task": "Flow context to command in SetHelpFunc",
+    "base": "f98cf4216d3cb5235e6e0cd00ee00959deb1dc65",
+    "gold": [
+      "command.go"
+    ]
+  },
+  {
+    "id": "colinhacks/zod#6600",
+    "repo": "colinhacks/zod",
+    "pr": 6600,
+    "task": "feat(instanceof): key the .properties() shape off the instance type",
+    "base": "de65a5cb39ed22a507fac935788f718fa88d104f",
+    "gold": [
+      "packages/zod/src/v4/classic/schemas.ts"
+    ]
+  },
+  {
+    "id": "colinhacks/zod#6587",
+    "repo": "colinhacks/zod",
+    "pr": 6587,
+    "task": "Fix undefined prefault outputs and object keys",
+    "base": "0c483c58849fdb6445aea4f54b1bac6b57ab3d22",
+    "gold": [
+      "packages/zod/src/v4/core/compile.ts",
+      "packages/zod/src/v4/core/schemas.ts",
+      "packages/zod/src/v4/mini/schemas.ts"
+    ]
+  },
+  {
+    "id": "colinhacks/zod#6582",
+    "repo": "colinhacks/zod",
+    "pr": 6582,
+    "task": "fix: preserve unique tags with defaulted discriminators",
+    "base": "dd9c36fa2ddcee79f71d19f9635586c7b65ead86",
+    "gold": [
+      "packages/zod/src/v4/core/compile.ts",
+      "packages/zod/src/v4/core/schemas.ts"
+    ]
+  },
+  {
+    "id": "colinhacks/zod#6581",
+    "repo": "colinhacks/zod",
+    "pr": 6581,
+    "task": "feat(locales): add Tajik",
+    "base": "c532d766de54e13aea5d03698980bf7d976fc544",
+    "gold": [
+      "packages/zod/src/v4/locales/index.ts"
+    ]
+  },
+  {
+    "id": "colinhacks/zod#6580",
+    "repo": "colinhacks/zod",
+    "pr": 6580,
+    "task": "fix(v4): defer recursive object index inference",
+    "base": "574d480fb443d3fd396efbcb8230f3dfee4a2cd2",
+    "gold": [
+      "packages/zod/src/v4/core/schemas.ts"
+    ]
+  },
+  {
+    "id": "colinhacks/zod#6575",
+    "repo": "colinhacks/zod",
+    "pr": 6575,
+    "task": "feat(compile): add z.withParser for externally generated parsers",
+    "base": "f9465d4e6497f92fe85ef7118ea64d7f86c28676",
+    "gold": [
+      "packages/zod/src/v4/classic/external.ts",
+      "packages/zod/src/v4/core/compile.ts",
+      "packages/zod/src/v4/mini/external.ts"
+    ]
+  },
+  {
+    "id": "colinhacks/zod#6573",
+    "repo": "colinhacks/zod",
+    "pr": 6573,
+    "task": "perf(v4): drop the lookaheads from the email regex",
+    "base": "36f17960d1defca5d0896d9424f4e1059fbbf081",
+    "gold": [
+      "packages/zod/src/v4/core/regexes.ts"
+    ]
+  },
+  {
+    "id": "colinhacks/zod#6572",
+    "repo": "colinhacks/zod",
+    "pr": 6572,
+    "task": "fix(v4): stop the memoizer from pinning a finished parse",
+    "base": "22bed613281143efa3815fe26ab666c6c56586af",
+    "gold": [
+      "packages/zod/src/v4/core/memoizer.ts"
+    ]
+  },
+  {
+    "id": "BurntSushi/ripgrep#3502",
+    "repo": "BurntSushi/ripgrep",
+    "pr": 3502,
+    "task": "ignore,globset: increase pool capacity",
+    "base": "7525479a9576f1ca4c2d04339d78e47ff5ae9b05",
+    "gold": [
+      "crates/ignore/src/gitignore.rs",
+      "crates/ignore/src/types.rs"
+    ]
+  },
+  {
+    "id": "BurntSushi/ripgrep#3496",
+    "repo": "BurntSushi/ripgrep",
+    "pr": 3496,
+    "task": "ignore: skip loading unreachable ignore files",
+    "base": "dffd776a737dc19a48b758dd6a621de113794121",
+    "gold": [
+      "crates/ignore/src/walk.rs"
+    ]
+  },
+  {
+    "id": "BurntSushi/ripgrep#3487",
+    "repo": "BurntSushi/ripgrep",
+    "pr": 3487,
+    "task": "Add initial scaffolding for ripgrep indexing",
+    "base": "d99ac34406f82c03c3938c222f1786495c845034",
+    "gold": [
+      "crates/core/flags/defs.rs",
+      "crates/core/flags/hiargs.rs",
+      "crates/core/main.rs",
+      "crates/index/src/lib.rs"
+    ]
+  },
+  {
+    "id": "BurntSushi/ripgrep#3475",
+    "repo": "BurntSushi/ripgrep",
+    "pr": 3475,
+    "task": "ignore: fix deadlock when visitor panics",
+    "base": "5e16a5c9e57e81f6031a23faa2ace52205fa8242",
+    "gold": [
+      "crates/ignore/src/walk.rs"
+    ]
+  },
+  {
+    "id": "BurntSushi/ripgrep#3472",
+    "repo": "BurntSushi/ripgrep",
+    "pr": 3472,
+    "task": "ignore: add incremental checking",
+    "base": "c55818fd32d68cf742aea67bce86529f198bc985",
+    "gold": [
+      "crates/ignore/src/dir.rs",
+      "crates/ignore/src/lib.rs",
+      "crates/ignore/src/pathutil.rs",
+      "crates/ignore/src/walk.rs"
+    ]
+  },
+  {
+    "id": "BurntSushi/ripgrep#3464",
+    "repo": "BurntSushi/ripgrep",
+    "pr": 3464,
+    "task": "feat[ignore]: Add depth to more errors",
+    "base": "48b0c795f4feb37343b2832d991c5c6a3900c08a",
+    "gold": [
+      "crates/ignore/src/walk.rs"
+    ]
+  },
+  {
+    "id": "BurntSushi/ripgrep#3458",
+    "repo": "BurntSushi/ripgrep",
+    "pr": 3458,
+    "task": "feat[ignore]: Always include depth in errors from WalkDir",
+    "base": "dfe4a81d2591daca76d25ae4e052c34b26578155",
+    "gold": [
+      "crates/ignore/src/lib.rs"
+    ]
+  },
+  {
+    "id": "BurntSushi/ripgrep#3420",
+    "repo": "BurntSushi/ripgrep",
+    "pr": 3420,
+    "task": "ignore: scope compiled parent matchers by root",
+    "base": "79a23e0841ae84ef9b99c446052c8e6063a198bd",
+    "gold": [
+      "crates/ignore/src/dir.rs"
+    ]
+  }
+]
