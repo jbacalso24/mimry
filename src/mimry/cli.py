@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 
 
@@ -205,6 +206,9 @@ def build_parser():
     u.add_argument("--hooks", action="store_true", help="With --project, also remove supported PreToolUse hooks")
     u.set_defaults(func=cmd_uninstall)
     sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(func=cmd_hook_check)
+    # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`: package
+    # runners such as uvx only launch the script named after the package.
+    sub.add_parser("mcp", help="Run the MIMRY MCP stdio server (same as mimry-mcp)").set_defaults(func=_cmd_mcp)
     cache = sub.add_parser("cache")
     cs = cache.add_subparsers(required=True)
     w = cs.add_parser("wipe")
@@ -212,11 +216,20 @@ def build_parser():
     w.add_argument("--current", action="store_true")
     w.set_defaults(func=cmd_cache_wipe)
     for name, command in sub.choices.items():
-        if name not in {"hook-check", "plan", "cache"}:
+        if name not in {"hook-check", "plan", "cache", "mcp"}:
             command.add_argument(
                 "-v", "--verbose", action="store_true", help="Also show paths, scores and internal details"
             )
     return p
+
+
+def _cmd_mcp(a) -> int:
+    from .mcp_server import main as run_mcp_server
+
+    # Tools default to the server's working directory, so --root picks the repo.
+    os.chdir(a.root)
+    run_mcp_server([])
+    return 0
 
 
 def _configure_console() -> None:

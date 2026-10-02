@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIMRY: local repo memory for AI coding agents</title>
+<meta name="description" content="MIMRY is a free, local CLI and MCP server that tells AI coding agents which files matter for a task. Ranked files, context packs and a code graph from your own repo. Install with uv tool install mimry.">
+<link rel="canonical" href="https://jbacalso24.github.io/mimry/">
+<meta name="theme-color" content="#F5F7F6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1828" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MIMRY">
+<meta property="og:title" content="MIMRY: local repo memory for AI coding agents">
+<meta property="og:description" content="Tell your coding agent which files matter. A local CLI and MCP server for Claude Code, Codex and other agents.">
+<meta property="og:url" content="https://jbacalso24.github.io/mimry/">
+<meta property="og:image" content="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314223A'/%3E%3Crect x='7' y='9' width='18' height='4' rx='1' fill='%23F4D35E'/%3E%3Crect x='7' y='16' width='13' height='3' rx='1' fill='%23F5F7F6'/%3E%3Crect x='7' y='22' width='9' height='3' rx='1' fill='%23F5F7F6'/%3E%3C/svg%3E">
+<script>
+try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "MIMRY",
+  "alternateName": "mimry",
+  "description": "Local repo memory for AI coding agents: a CLI and MCP server that ranks the files that matter for a task and writes context packs from your own codebase.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Windows, macOS, Linux",
+  "url": "https://jbacalso24.github.io/mimry/",
+  "downloadUrl": "https://pypi.org/project/mimry/",
+  "softwareVersion": "0.2.1",
+  "license": "https://opensource.org/licenses/MIT",
+  "codeRepository": "https://github.com/jbacalso24/mimry",
+  "sameAs": ["https://github.com/jbacalso24/mimry", "https://pypi.org/project/mimry/"],
+  "author": {"@type": "Person", "name": "Judison Bacalso", "url": "https://github.com/jbacalso24"},
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "What is MIMRY?", "acceptedAnswer": {"@type": "Answer", "text": "MIMRY is a local command-line tool and MCP server that gives AI coding agents a memory of a code repository. It answers which files matter for a task with a ranked list, the reason each file ranked, and a written context pack."}},
+    {"@type": "Question", "name": "Does MIMRY upload my code?", "acceptedAnswer": {"@type": "Answer", "text": "No. Everything runs on your machine. There is no code upload, no remote embedding service and no telemetry. The index lives in your user cache folder, outside the repo."}},
+    {"@type": "Question", "name": "Which coding agents work with MIMRY?", "acceptedAnswer": {"@type": "Answer", "text": "Any agent that can run a shell command or use an MCP server, including Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, OpenCode, Kiro, Amp and Devin."}},
+    {"@type": "Question", "name": "Does it replace reading the code?", "acceptedAnswer": {"@type": "Answer", "text": "No. MIMRY narrows where to look. Source files, tests and build output stay the final truth, and every result says why it ranked so an agent can check it."}},
+    {"@type": "Question", "name": "What does MIMRY need to run?", "acceptedAnswer": {"@type": "Answer", "text": "Python 3.11 or newer on Windows, macOS or Linux. Install it with uv tool install mimry or pipx install mimry."}},
+    {"@type": "Question", "name": "How much does MIMRY cost?", "acceptedAnswer": {"@type": "Answer", "text": "Nothing. MIMRY is open source under the MIT license."}}
+  ]
+}
+</script>
+<style>
+:root {
+  color-scheme: light dark;
+  --paper: #F5F7F6;
+  --ink: #14223A;
+  --slate: #56657B;
+  --rule: #D5DCE3;
+  --panel: #E9EEF2;
+  --mark: #F4D35E;
+  --term-bg: #14223A;
+  --term-ink: #DCE4EE;
+  --term-dim: #8C9BB0;
+  --term-ok: #8FD6A1;
+  --term-edge: transparent;
+  --focus: #2F6FDB;
+  --shadow: 0 30px 60px -32px rgba(20, 34, 58, 0.5);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --r-box: 14px;
+  --r-ctl: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0E1828;
+    --ink: #E3E9F1;
+    --slate: #9AA8BB;
+    --rule: #24324A;
+    --panel: #16233A;
+    --term-bg: #09111E;
+    --term-edge: #24324A;
+    --focus: #7FA8F0;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0E1828;
+  --ink: #E3E9F1;
+  --slate: #9AA8BB;
+  --rule: #24324A;
+  --panel: #16233A;
+  --term-bg: #09111E;
+  --term-edge: #24324A;
+  --focus: #7FA8F0;
+  --shadow: none;
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1.0625rem/1.6 "Schibsted Grotesk", system-ui, sans-serif;
+}
+h1, h2, h3 { text-wrap: balance; }
+p { text-wrap: pretty; }
+a { color: inherit; text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+@media (hover: hover) and (pointer: fine) { a:hover { text-decoration-thickness: 2px; } }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+code, pre, .term { font-family: "JetBrains Mono", ui-monospace, monospace; }
+code { font-size: 0.88em; background: var(--panel); padding: 0.12em 0.38em; border-radius: 5px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-inline: 32px; }
+.skip { position: absolute; left: 16px; top: -48px; background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: var(--r-ctl); z-index: 1; }
+.skip:focus { top: 12px; }
+
+/* Header */
+.top { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+.brand { font-weight: 800; font-size: 1.2rem; letter-spacing: -0.02em; text-decoration: none; }
+.top nav { display: flex; gap: 28px; font-size: 0.95rem; }
+.top nav a { text-decoration: none; color: var(--slate); }
+.top nav { align-items: center; }
+.theme {
+  display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+  color: var(--slate); background: none; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: var(--r-ctl);
+  transition: transform 160ms var(--ease-out), color 150ms ease, border-color 150ms ease;
+}
+.theme:active { transform: scale(0.94); }
+.theme svg { width: 18px; height: 18px; }
+.theme .i-sun { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme .i-moon { display: none; }
+  :root:not([data-theme="light"]) .theme .i-sun { display: block; }
+}
+:root[data-theme="dark"] .theme .i-moon { display: none; }
+:root[data-theme="dark"] .theme .i-sun { display: block; }
+@media (prefers-reduced-motion: no-preference) {
+  .theme svg { animation: icon-in 240ms var(--ease-out); }
+}
+@keyframes icon-in { from { opacity: 0; transform: rotate(-30deg) scale(0.85); } }
+@media (hover: hover) and (pointer: fine) { .theme:hover { color: var(--ink); border-color: var(--slate); } }
+@media (hover: hover) and (pointer: fine) { .top nav a:hover { color: var(--ink); } }
+
+/* Hero */
+.hero { padding-block: 32px 104px; }
+h1 {
+  font-weight: 800;
+  font-size: clamp(2.4rem, 5.4vw, 4.25rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  margin: 0 0 48px;
+}
+.hero-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 64px; align-items: start; }
+.lede { font-size: 1.25rem; line-height: 1.5; color: var(--slate); max-width: 30ch; margin: 0 0 32px; }
+.install {
+  display: flex; max-width: 400px;
+  border: 1px solid var(--rule); border-radius: var(--r-ctl); background: var(--panel);
+}
+.install code { flex: 1; background: none; padding: 14px 16px; font-size: 1rem; }
+.btn {
+  font: 600 0.92rem "Schibsted Grotesk", system-ui, sans-serif;
+  color: var(--paper); background: var(--ink);
+  border: 0; border-radius: 6px; margin: 5px; padding: 0 16px; cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+}
+.btn:active { transform: scale(0.97); }
+.hero-links { margin: 22px 0 0; font-size: 0.98rem; }
+
+/* Live sample */
+.tasks { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 0; border: 0; }
+.tasks legend { font-size: 0.92rem; color: var(--slate); margin-bottom: 10px; padding: 0; }
+.task {
+  font: 500 0.9rem "Schibsted Grotesk", system-ui, sans-serif;
+  color: var(--ink); background: transparent;
+  border: 1px solid var(--rule); border-radius: var(--r-ctl);
+  padding: 7px 12px; cursor: pointer;
+  transition: transform 160ms var(--ease-out), background-color 150ms ease, border-color 150ms ease;
+}
+.task:active { transform: scale(0.97); }
+.task[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .task[aria-pressed="false"]:hover { border-color: var(--slate); } }
+.term {
+  background: var(--term-bg); color: var(--term-ink);
+  border-radius: var(--r-box); padding: 24px 26px; margin: 0;
+  font-size: 0.86rem; line-height: 1.62; white-space: pre-wrap; overflow-wrap: anywhere;
+  box-shadow: var(--shadow); outline: 1px solid var(--term-edge);
+}
+.term .cmd { color: #FFFFFF; }
+.term .dim { color: var(--term-dim); }
+.term .ok { color: var(--term-ok); }
+.term .f { color: #FFFFFF; }
+.term .pick {
+  background-image: linear-gradient(var(--mark), var(--mark));
+  background-repeat: no-repeat; background-size: 100% 100%;
+  color: #14223A; padding: 1px 4px; margin: 0 -4px; border-radius: 3px;
+}
+.term .row { display: block; }
+.caption { font-size: 0.88rem; color: var(--slate); margin: 12px 0 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .term.is-entering .row { animation: row-in 260ms var(--ease-out) both; animation-delay: calc(var(--i) * 40ms); }
+  .term.is-entering .pick { animation: sweep 520ms var(--ease-out) both; animation-delay: 260ms; }
+  .term.is-loading .pick { animation: sweep 760ms var(--ease-out) both; animation-delay: 450ms; }
+}
+@keyframes row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes sweep { from { background-size: 0% 100%; color: #FFFFFF; } to { background-size: 100% 100%; color: #14223A; } }
+
+/* Sections */
+section { padding-block: 96px; border-top: 1px solid var(--rule); }
+h2 { font-weight: 800; font-size: clamp(1.8rem, 3.4vw, 2.6rem); letter-spacing: -0.03em; line-height: 1.08; margin: 0 0 16px; max-width: 22ch; }
+.intro { color: var(--slate); max-width: 58ch; margin: 0 0 48px; font-size: 1.1rem; }
+
+/* Comparison */
+.versus { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: stretch; }
+.versus h3 { font-size: 1rem; font-weight: 600; margin: 0 0 12px; }
+.grep {
+  background: var(--panel); border-radius: var(--r-box); padding: 24px 26px; margin: 0;
+  font-size: 0.86rem; line-height: 1.75; color: var(--slate); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.grep .cmd { color: var(--ink); }
+.versus .term { box-shadow: none; }
+.footnote { margin: 28px 0 0; color: var(--slate); max-width: 70ch; }
+
+/* What it builds */
+.bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.cell { border: 1px solid var(--rule); border-radius: var(--r-box); padding: 28px; }
+.cell h3 { font-size: 1.2rem; letter-spacing: -0.01em; margin: 0 0 8px; }
+.cell p { margin: 0; color: var(--slate); }
+.cell pre {
+  margin: 20px 0 0; padding: 18px 20px; border-radius: var(--r-ctl); background: var(--panel);
+  font-size: 0.84rem; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.cell .muted { color: var(--slate); }
+.c-pack { grid-column: 1 / 3; }
+.c-graph { grid-column: 3; grid-row: 1 / 3; display: flex; flex-direction: column; }
+.c-local { background: var(--mark); border-color: var(--mark); color: #14223A; }
+.c-local p { color: #14223A; }
+.c-langs { grid-column: 1 / 4; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 32px; align-items: center; }
+.langs { font-size: clamp(1.4rem, 2.6vw, 2rem); font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; margin: 0; }
+.cell .langs { color: var(--ink); }
+.chain { list-style: none; margin: 22px 0 0; padding: 0; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.82rem; }
+.chain li { position: relative; padding: 0 0 22px 22px; }
+.chain li::before { content: ""; position: absolute; left: 4px; top: 0.55em; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--ink); background: var(--paper); }
+.chain li:not(:last-child)::after { content: ""; position: absolute; left: 9px; top: 1.35em; bottom: 0.1em; width: 1px; background: var(--rule); }
+.c-graph .caption { margin-top: auto; padding-top: 8px; }
+.chain .edge { display: block; color: var(--slate); font-size: 0.78rem; }
+
+/* Setup */
+.setup { display: grid; grid-template-columns: minmax(0, 1fr); gap: 72px; }
+.tabs { max-width: 780px; }
+.tablist { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); }
+.tablist button {
+  font: 500 0.98rem "Schibsted Grotesk", system-ui, sans-serif; white-space: nowrap;
+  background: none; border: 0; color: var(--slate); padding: 10px 14px; cursor: pointer;
+  border-bottom: 3px solid transparent; margin-bottom: -1px;
+}
+.tablist button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--mark); }
+@media (hover: hover) and (pointer: fine) { .tablist button:hover { color: var(--ink); } }
+.panel { padding: 22px 0 0; }
+.panel pre { background: var(--panel); border-radius: var(--r-ctl); padding: 18px 20px; margin: 0 0 14px; overflow-x: auto; font-size: 0.9rem; }
+.panel pre code { background: none; padding: 0; }
+.panel p { margin: 0; color: var(--slate); font-size: 0.97rem; }
+.setup h3 { font-size: 1.3rem; letter-spacing: -0.015em; margin: 0 0 24px; }
+ol.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px; counter-reset: step; }
+ol.flow li { counter-increment: step; border-top: 2px solid var(--ink); padding-top: 16px; }
+ol.flow li::before { content: counter(step); display: block; font-weight: 700; font-size: 0.95rem; color: var(--slate); margin-bottom: 6px; }
+ol.flow strong { display: block; font-size: 1.05rem; margin-bottom: 6px; }
+ol.flow p { margin: 0; color: var(--slate); font-size: 0.95rem; }
+
+/* FAQ */
+.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 64px; }
+.faq h3 { font-size: 1.1rem; margin: 0 0 8px; }
+.faq p { margin: 0; color: var(--slate); max-width: 52ch; }
+
+footer { border-top: 1px solid var(--rule); padding-block: 36px 56px; color: var(--slate); font-size: 0.95rem; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
+footer nav { display: flex; flex-wrap: wrap; gap: 24px; }
+
+@media (max-width: 960px) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 48px; }
+  .versus { grid-template-columns: minmax(0, 1fr); }
+  .bento { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .c-pack { grid-column: 1 / 3; }
+  .c-graph { grid-column: 1 / 3; grid-row: auto; }
+  .c-langs { grid-column: 1 / 3; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  ol.flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .wrap { padding-inline: 16px; }
+  .top nav { gap: 18px; }
+  .top nav a:not(.gh) { display: none; }
+  .hero { padding-block: 16px 72px; }
+  h1 { margin-bottom: 28px; }
+  .lede { font-size: 1.12rem; }
+  section { padding-block: 64px; }
+  .bento { grid-template-columns: minmax(0, 1fr); }
+  .c-pack, .c-graph, .c-langs { grid-column: auto; }
+  .cell { padding: 22px; }
+  .term, .grep { padding: 18px; font-size: 0.8rem; }
+  ol.flow { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .faq { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .tablist button { padding: 10px; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap top">
+  <a class="brand" href="./">MIMRY</a>
+  <nav aria-label="Main">
+    <a href="#how-it-works">How it works</a>
+    <a href="#setup">Setup</a>
+    <a href="#faq">FAQ</a>
+    <a class="gh" href="https://github.com/jbacalso24/mimry">GitHub</a>
+    <button class="theme" type="button" id="theme" aria-label="Switch to dark mode" hidden><!-- Phosphor Icons, MIT --><svg class="i-moon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></svg><svg class="i-sun" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z"/></svg></button>
+  </nav>
+</header>
+
+<main id="main">
+  <div class="wrap hero">
+    <h1>MIMRY tells your coding agent which files matter.</h1>
+    <div class="hero-grid">
+      <div>
+        <p class="lede">Local repo memory for Claude Code, Codex and other AI agents. Describe a task, get the files to read first.</p>
+        <div class="install">
+          <code id="install-cmd">uv tool install mimry</code>
+          <button class="btn" type="button" data-copy="install-cmd">Copy</button>
+        </div>
+        <p class="hero-links"><a href="https://github.com/jbacalso24/mimry#readme">Documentation</a></p>
+      </div>
+      <div>
+        <fieldset class="tasks">
+          <legend>Try a task</legend>
+          <button class="task" type="button" aria-pressed="true" data-task="0">Payment redirect</button>
+          <button class="task" type="button" aria-pressed="false" data-task="1">Session expiry migration</button>
+          <button class="task" type="button" aria-pressed="false" data-task="2">Session service usage</button>
+        </fieldset>
+        <pre class="term is-loading" id="sample" aria-live="polite"><span class="row cmd">$ mimry preflight "debug payment redirect in checkout"</span><span class="row"><span class="ok">✓</span> Context ready for "debug payment redirect in checkout"</span><span class="row dim">  Index is up to date (17 files, indexed just now)</span><span class="row dim">  Context pack: .mimry/mimry-out/context/latest.md</span><span class="row"> </span><span class="row">Start with</span><span class="row">   1  <span class="f pick">web/src/lib/payments.ts</span></span><span class="row dim">      name matches · path matches</span><span class="row">   2  <span class="f">web/src/features/checkout/useCheckout.ts</span></span><span class="row dim">      name matches · path matches</span><span class="row">   3  <span class="f">web/src/app/checkout/page.tsx</span></span><span class="row dim">      name matches · path matches</span><span class="row">   4  <span class="f">archive/checkout-old.ts</span></span><span class="row dim">      name matches · path matches</span><span class="row">   5  <span class="f">web/tests/checkout.test.tsx</span></span><span class="row dim">      name matches · path matches</span></pre>
+        <p class="caption">Real MIMRY 0.2 output on a 17-file sample shop app from its benchmark suite.</p>
+      </div>
+    </div>
+  </div>
+
+  <section id="how-it-works">
+    <div class="wrap">
+      <h2>Search finds words. MIMRY ranks files.</h2>
+      <p class="intro">Same question, asked of MIMRY's own repository. A text search returns every file that mentions the word. MIMRY returns the five to read first, in order, with the reason each one ranked.</p>
+      <div class="versus">
+        <div>
+          <h3>Text search</h3>
+<pre class="grep"><span class="cmd">$ git grep -il "stale"</span>
+.github/workflows/ci.yml
+README.md
+docs/context-packs.md
+llms.txt
+src/mimry/commands.py
+src/mimry/core/artifacts.py
+src/mimry/freshness.py
+src/mimry/indexer.py
+src/mimry/installer.py
+src/mimry/mcp_server.py
+...and 10 more files
+
+20 files, 114 matching lines, alphabetical.</pre>
+        </div>
+        <div>
+          <h3>MIMRY</h3>
+<pre class="term"><span class="cmd">$ mimry preflight "why is the index stale after a file rename"</span>
+
+Start with
+   1  <span class="f">src/mimry/indexer.py</span>
+<span class="dim">      name matches · path matches</span>
+   2  <span class="f">src/mimry/commands.py</span>
+<span class="dim">      name matches</span>
+   3  <span class="f">tests/test_state_recovery.py</span>
+<span class="dim">      name matches</span>
+   4  <span class="f">tests/test_incremental_index.py</span>
+<span class="dim">      name matches · path matches</span>
+   5  <span class="f">src/mimry/mcp_server.py</span>
+<span class="dim">      name matches</span></pre>
+        </div>
+      </div>
+      <p class="footnote">On MIMRY's frozen retrieval benchmark, 94% of the files a task needs appear in its top five results (recall@5 0.94, nDCG@5 0.70). <a href="https://github.com/jbacalso24/mimry/tree/main/benchmarks">See the benchmark</a></p>
+    </div>
+  </section>
+
+  <section id="builds">
+    <div class="wrap">
+      <h2>What MIMRY builds for every task</h2>
+      <p class="intro">One index of your repository, kept fresh as files change, and a few small outputs your agent can read in seconds.</p>
+      <div class="bento">
+        <article class="cell c-pack">
+          <h3>A context pack your agent reads first</h3>
+          <p>A short Markdown handoff with the files, key symbols, relationships, risky paths and a reading order. Relative paths, never source dumps.</p>
+<pre><span class="muted">## Suggested Reading Order</span>
+1. web/src/lib/payments.ts <span class="muted">- primary code/edit path</span>
+2. web/src/features/checkout/useCheckout.ts <span class="muted">- primary code/edit path</span>
+3. web/src/app/checkout/page.tsx <span class="muted">- primary code/edit path</span>
+4. archive/checkout-old.ts <span class="muted">- primary code/edit path</span>
+5. web/tests/checkout.test.tsx <span class="muted">- test/verification support</span>
+6. docs/checkout-plan.md <span class="muted">- docs/rules support</span></pre>
+        </article>
+        <article class="cell c-graph">
+          <h3>A graph of how the code connects</h3>
+          <p>Imports, calls, definitions and references. An ambiguous reference produces no edge rather than a guess.</p>
+          <ol class="chain" aria-label="Output of mimry path backend/api/auth.py db/schema.sql">
+            <li>backend/<wbr>api/<wbr>auth.py<span class="edge">imports</span></li>
+            <li>backend/<wbr>services/<wbr>session_service.py<span class="edge">imports</span></li>
+            <li>backend/<wbr>repositories/<wbr>session_repository.py<span class="edge">references</span></li>
+            <li>sessions<span class="edge">defined in db/schema.sql</span></li>
+          </ol>
+          <p class="caption">From <code>mimry path</code> on the sample shop app.</p>
+        </article>
+        <article class="cell">
+          <h3>It learns from what helped</h3>
+          <p>Record which files the agent opened and changed, and similar tasks rank them higher next time.</p>
+        </article>
+        <article class="cell c-local">
+          <h3>Your code stays on your machine</h3>
+          <p>No code upload, no remote embeddings, no telemetry. Credential files are skipped.</p>
+        </article>
+        <article class="cell c-langs">
+          <p class="langs">Python, TypeScript, JavaScript, Go, Rust and C#</p>
+          <p>Parsed into the graph with tree-sitter, plus adapters for Next.js routes, FastAPI, Expo, SQL schemas, config manifests and Markdown docs.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="setup">
+    <div class="wrap setup">
+      <div>
+        <h2>Connect your agent</h2>
+        <p class="intro">MIMRY runs as an MCP server, so agents call it directly. Add it once per machine.</p>
+        <div class="tabs">
+          <div class="tablist" role="tablist" aria-label="Agent">
+            <button role="tab" id="tab-claude" aria-controls="panel-claude" aria-selected="true">Claude Code</button>
+            <button role="tab" id="tab-codex" aria-controls="panel-codex" aria-selected="false" tabindex="-1">Codex</button>
+            <button role="tab" id="tab-other" aria-controls="panel-other" aria-selected="false" tabindex="-1">Other clients</button>
+          </div>
+          <div class="panel" role="tabpanel" id="panel-claude" aria-labelledby="tab-claude">
+            <pre><code>claude mcp add --scope user mimry -- mimry-mcp</code></pre>
+            <p>Teach it the workflow too: <code>mimry install --project --platform claude-code --always-on --hooks</code></p>
+          </div>
+          <div class="panel" role="tabpanel" id="panel-codex" aria-labelledby="tab-codex" hidden>
+            <pre><code>codex mcp add mimry -- mimry-mcp</code></pre>
+            <p>Teach it the workflow too: <code>mimry install --project --platform codex --always-on --hooks</code></p>
+          </div>
+          <div class="panel" role="tabpanel" id="panel-other" aria-labelledby="tab-other" hidden>
+            <pre><code>{
+  "mcpServers": {
+    "mimry": { "command": "uvx", "args": ["mimry", "mcp"] }
+  }
+}</code></pre>
+            <p>Skills are available for 20 agents, including Copilot CLI, Gemini CLI, OpenCode, Kiro, Amp and Devin. Run <code>mimry install --list-platforms</code>.</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <h3>Then, on every task</h3>
+        <ol class="flow">
+          <li><strong>Start</strong><p><code>mimry preflight</code> with the task prints the files to read first.</p></li>
+          <li><strong>Read the pack</strong><p>The context pack explains what ranked and how it connects.</p></li>
+          <li><strong>Navigate</strong><p><code>find</code>, <code>symbol</code>, <code>related</code> and <code>why</code> replace broad searches.</p></li>
+          <li><strong>Verify</strong><p>Tests and build output stay the final truth.</p></li>
+          <li><strong>Record</strong><p><code>mimry feedback</code> turns what helped into ranking signal.</p></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <div class="faq">
+        <div><h3>What is MIMRY?</h3><p>A local command-line tool and MCP server that gives AI coding agents a memory of a code repository. It answers "which files matter for this task?" with a ranked list, the reason each file ranked, and a written context pack.</p></div>
+        <div><h3>Does MIMRY upload my code?</h3><p>No. Everything runs on your machine. There is no code upload, no remote embedding service and no telemetry. The index lives in your user cache folder, outside the repo.</p></div>
+        <div><h3>Which coding agents work with it?</h3><p>Any agent that can run a shell command or use an MCP server, including Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, OpenCode, Kiro, Amp and Devin.</p></div>
+        <div><h3>Does it replace reading the code?</h3><p>No. MIMRY narrows where to look. Source files, tests and build output stay the final truth, and every result says why it ranked so an agent can check it.</p></div>
+        <div><h3>What does it need to run?</h3><p>Python 3.11 or newer on Windows, macOS or Linux. Install it with <code>uv tool install mimry</code> or <code>pipx install mimry</code>.</p></div>
+        <div><h3>How much does it cost?</h3><p>Nothing. MIMRY is open source under the MIT license.</p></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MIMRY is open source under the <a href="https://github.com/jbacalso24/mimry/blob/main/LICENSE">MIT license</a>.</span>
+    <nav aria-label="Project">
+      <a href="https://github.com/jbacalso24/mimry">GitHub</a>
+      <a href="https://pypi.org/project/mimry/">PyPI</a>
+      <a href="https://github.com/jbacalso24/mimry#readme">Documentation</a>
+      <a href="https://github.com/jbacalso24/mimry/releases">Releases</a>
+      <a href="llms.txt">llms.txt</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+// Real `mimry preflight` output captured on benchmarks/fixtures/agent_repo.
+var SAMPLES = [
+  { task: "debug payment redirect in checkout", files: [
+    ["web/src/lib/payments.ts", "name matches · path matches"],
+    ["web/src/features/checkout/useCheckout.ts", "name matches · path matches"],
+    ["web/src/app/checkout/page.tsx", "name matches · path matches"],
+    ["archive/checkout-old.ts", "name matches · path matches"],
+    ["web/tests/checkout.test.tsx", "name matches · path matches"]] },
+  { task: "database migration for session expiry", files: [
+    ["backend/repositories/session_repository.py", "name matches · path matches"],
+    ["backend/services/session_service.py", "name matches · path matches"],
+    ["db/migrations/20260701_add_session_expiry.sql", "name matches · path matches"],
+    ["backend/api/auth.py", "name matches"],
+    ["db/schema.sql", "name matches"]] },
+  { task: "where is the session service used", files: [
+    ["backend/services/session_service.py", "name matches · path matches"],
+    ["backend/repositories/session_repository.py", "name matches · path matches"],
+    ["backend/api/auth.py", "name matches"],
+    ["db/migrations/20260701_add_session_expiry.sql", "name matches · path matches"],
+    ["backend/tests/test_auth.py", "connected to other matches · content matches"]] }
+];
+var sample = document.getElementById("sample");
+function row(cls, html, i) {
+  return '<span class="row ' + cls + '" style="--i:' + i + '">' + html + "</span>";
+}
+function render(s) {
+  var rows = [
+    row("cmd", '$ mimry preflight "' + s.task + '"', 0),
+    row("", '<span class="ok">✓</span> Context ready for "' + s.task + '"', 1),
+    row("dim", "  Index is up to date (17 files, indexed just now)", 2),
+    row("dim", "  Context pack: .mimry/mimry-out/context/latest.md", 3),
+    row("", " ", 4),
+    row("", "Start with", 5)
+  ];
+  s.files.forEach(function (f, n) {
+    rows.push(row("", "   " + (n + 1) + '  <span class="f' + (n ? "" : " pick") + '">' + f[0] + "</span>", 6 + n * 2));
+    rows.push(row("dim", "      " + f[1], 7 + n * 2));
+  });
+  sample.innerHTML = rows.join("");
+  sample.classList.remove("is-loading", "is-entering");
+  void sample.offsetWidth; // restart the entry animation
+  sample.classList.add("is-entering");
+}
+document.querySelectorAll(".task").forEach(function (button) {
+  button.addEventListener("click", function () {
+    if (button.getAttribute("aria-pressed") === "true") return;
+    document.querySelectorAll(".task").forEach(function (b) { b.setAttribute("aria-pressed", b === button); });
+    render(SAMPLES[button.dataset.task]);
+  });
+});
+
+document.querySelectorAll("[data-copy]").forEach(function (button) {
+  var code = document.getElementById(button.dataset.copy);
+  function flash(label) {
+    button.textContent = label;
+    setTimeout(function () { button.textContent = "Copy"; }, 1600);
+  }
+  function selectCode() {
+    var range = document.createRange();
+    range.selectNodeContents(code);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    flash("Selected");
+  }
+  button.addEventListener("click", function () {
+    if (!navigator.clipboard) return selectCode();
+    navigator.clipboard.writeText(code.textContent).then(function () { flash("Copied"); }, selectCode);
+  });
+});
+
+var themeButton = document.getElementById("theme");
+var systemDark = matchMedia("(prefers-color-scheme: dark)");
+function isDark() {
+  var t = document.documentElement.dataset.theme;
+  return t ? t === "dark" : systemDark.matches;
+}
+function syncThemeButton() {
+  var label = isDark() ? "Switch to light mode" : "Switch to dark mode";
+  themeButton.setAttribute("aria-label", label);
+  themeButton.title = label;
+}
+themeButton.hidden = false;
+syncThemeButton();
+systemDark.addEventListener("change", syncThemeButton);
+themeButton.addEventListener("click", function () {
+  var next = isDark() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("theme", next); } catch (e) {}
+  syncThemeButton();
+});
+
+var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+function selectTab(tab) {
+  tabs.forEach(function (t) {
+    var on = t === tab;
+    t.setAttribute("aria-selected", on);
+    t.tabIndex = on ? 0 : -1;
+    document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+  });
+}
+tabs.forEach(function (tab, i) {
+  tab.addEventListener("click", function () { selectTab(tab); });
+  tab.addEventListener("keydown", function (e) {
+    var next = e.key === "ArrowRight" ? tabs[(i + 1) % tabs.length] : e.key === "ArrowLeft" ? tabs[(i - 1 + tabs.length) % tabs.length] : null;
+    if (next) { selectTab(next); next.focus(); }
+  });
+});
+</script>
+</body>
+</html>
