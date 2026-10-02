@@ -288,10 +288,12 @@ def test_file_changed_during_read_is_not_indexed(tmp_path: Path):
         # Stand in for a real editor writing the file while MIMRY parses it.
         # Mirrors the real signature, including the snapshot bytes adapters now
         # receive, so the stub cannot drift from what adapt() actually calls.
+        # Append rather than overwrite: every edit must really change the bytes
+        # and size. Rewriting identical text leaves only mtime to differ, and on
+        # Windows two writes inside one timestamp tick share an mtime.
         if path.name == "volatile.py":
-            path.write_text(
-                "def mutated():" + chr(10) + "    pass" + chr(10) + "# a much longer second version" + chr(10)
-            )
+            with path.open("a") as fh:
+                fh.write("# edited while MIMRY was parsing" + chr(10))
         return original_enrich(path, root, f, symbols, edges, source_data=source_data)
 
     with patch.object(scanner, "enrich_framework_facts", rewrite_then_enrich):

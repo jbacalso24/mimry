@@ -30,13 +30,15 @@ def assign_communities(nodes: list[dict], edges: list[dict]) -> list[dict]:
     # Initialize: each node's label is its own id
     labels = {node["id"]: node["id"] for node in nodes}
 
+    # Process nodes in sorted order for determinism; the id set never changes.
+    order = sorted(labels.keys())
+
     # Label propagation with convergence check or max 20 iterations
     for _ in range(20):
         new_labels = {}
         changed = False
 
-        # Process nodes in sorted order for determinism
-        for node_id in sorted(labels.keys()):
+        for node_id in order:
             neighbors = adjacency[node_id]
 
             if not neighbors:

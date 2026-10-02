@@ -21,7 +21,7 @@ import unicodedata
 
 import pytest
 
-from mimry.commands import cmd_init, cmd_preflight
+from mimry.commands import cmd_init, cmd_preflight, cmd_status
 from mimry.core.artifacts import graph_health
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
@@ -58,10 +58,10 @@ def refuse_one_file(monkeypatch: pytest.MonkeyPatch):
 
     real_adapt = indexer.adapt
 
-    def guarded(path: Path, root: Path):
+    def guarded(path: Path, root: Path, snapshot=None):
         if path.name == "refused.py":
             raise ValueError("adapter output contained sensitive data")
-        return real_adapt(path, root)
+        return real_adapt(path, root, snapshot)
 
     monkeypatch.setattr(indexer, "adapt", guarded)
 
@@ -126,6 +126,34 @@ def test_current_freshness_does_not_repeat_secret_scans_for_indexed_bytes(tmp_pa
 
     assert fresh["state"] == "current"
     assert scanned == []
+
+
+def test_freshness_runs_once_per_read_scope_and_every_time_outside_one(tmp_path: Path, monkeypatch) -> None:
+    """brief/explain/route consult freshness repeatedly; one shared-lock scope pays for one pass."""
+    import mimry.freshness as freshness
+    from mimry.state import read_scope
+    from mimry.storage import active_index_pointer
+
+    root = _repo(tmp_path)
+    ptr = _index(root)
+    passes: list[Path] = []
+    real = freshness._index_freshness
+
+    def counted(r: Path, p: dict, verify: bool) -> dict:
+        passes.append(r)
+        return real(r, p, verify)
+
+    monkeypatch.setattr(freshness, "_index_freshness", counted)
+    with active_index_pointer(root) as active:
+        first = index_freshness(root, active)
+        assert index_freshness(root, active) is first
+        with read_scope():  # nested scopes reuse the outer one
+            assert index_freshness(root, active) is first
+    assert len(passes) == 1
+
+    index_freshness(root, ptr)
+    index_freshness(root, ptr)
+    assert len(passes) == 3, "outside a read scope every call must re-check the live tree"
 
 
 def test_native_nfd_file_matches_indexed_nfc_identity_without_repeat_secret_scan(tmp_path: Path, monkeypatch) -> None:
@@ -235,8 +263,8 @@ def test_secret_appended_beyond_snapshot_limit_is_stale_and_hidden_from_cached_r
     assert cmd_preflight(SimpleNamespace(root=root, task="indexed boundary marker", force_refresh=False)) == 0
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
-    assert "Index: stale" in stdout
-    assert "Index ran: no" in stdout
+    assert "! Results may be out of date" in stdout
+    assert "Reindexed first" not in stdout and "Built the index" not in stdout
     assert "app/boundary.py" not in stdout
     assert "app/boundary.py" not in context
 
@@ -272,8 +300,8 @@ def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
     )
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
-    assert "Index: stale" in stdout
-    assert "Index ran: no" in stdout
+    assert "! Results may be out of date" in stdout
+    assert "Reindexed first" not in stdout and "Built the index" not in stdout
     assert "src/auth/session.py" not in stdout
     assert "Index: stale" in context
     assert "src/auth/session.py" not in context
@@ -324,3 +352,21 @@ def test_indexed_file_that_becomes_unreadable_is_stale_and_hidden(tmp_path: Path
     assert "app/clean.py" in fresh["changed"]
     assert fresh["policy_excluded_count"] == 1
     assert all(record["rel_path"] != "app/clean.py" for record in fresh["files"])
+
+
+def test_native_nfd_file_keeps_graph_current_in_status(tmp_path: Path, capsys) -> None:
+    """Graph health must open the NFD file on disk, not its NFC identity."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    native_name = unicodedata.normalize("NFD", "caf\u00e9.py")
+    target = root / native_name
+    target.write_text("def serve_cafe():\n    return True\n", encoding="utf-8")
+    if target.name == unicodedata.normalize("NFC", native_name):
+        pytest.skip("filesystem normalized the native NFD filename")
+    _index(root)
+    capsys.readouterr()
+
+    assert cmd_status(SimpleNamespace(root=root, verbose=True)) == 0
+    stdout = capsys.readouterr().out
+    assert "OK repo is up to date" in stdout
+    assert "Graph       current," in stdout

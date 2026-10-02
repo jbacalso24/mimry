@@ -10,6 +10,8 @@ from shutil import which
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
+from . import ui
+
 
 @dataclass(frozen=True)
 class MimryPlatform:
@@ -250,15 +252,25 @@ def canonical_platform(name: str) -> str:
     return key
 
 
-def platform_table() -> str:
-    lines = ["MIMRY install platforms"]
-    for cfg in platforms().values():
-        aliases = f" (aliases: {', '.join(cfg.aliases)})" if cfg.aliases else ""
-        lines.append(f"- {cfg.key}: {cfg.label}{aliases}")
-        lines.append(f"  project: {cfg.project_path.as_posix()}")
-        lines.append(f"  global:  {cfg.global_path}")
-        if cfg.always_on_file:
-            lines.append(f"  always-on: {cfg.always_on_file.as_posix()} (--project only)")
+def platform_table(*, verbose: bool = False) -> str:
+    configs = list(platforms().values())
+    lines = [ui.paint(f"Supported platforms ({len(configs)})", "bold")]
+    width = max(len(cfg.key) for cfg in configs)
+    label_width = max(len(cfg.label) for cfg in configs)
+    for cfg in configs:
+        aliases = f"also: {', '.join(cfg.aliases)}" if cfg.aliases else ""
+        lines.append(f"  {cfg.key.ljust(width)}  {cfg.label.ljust(label_width)}  {ui.faint(aliases)}".rstrip())
+        if verbose:
+            lines.append(f"    {'this project'.ljust(12)}  {cfg.project_path.as_posix()}")
+            lines.append(f"    {'all projects'.ljust(12)}  {ui.display_path(cfg.global_path)}")
+            if cfg.always_on_file:
+                lines.append(f"    {'always-on'.ljust(12)}  {cfg.always_on_file.as_posix()} (with --project)")
+    lines += [
+        "",
+        "Install with `mimry install --platform <name>`. Add --project to install into this repo only.",
+    ]
+    if not verbose:
+        lines.append("Use --verbose to see where each platform's skill is written.")
     return "\n".join(lines)
 
 
@@ -466,12 +478,23 @@ def _install_always_on(root: Path, cfg: MimryPlatform, dry_run: bool) -> Path | 
         return None
     dst = (root / cfg.always_on_file).resolve()
     if dry_run:
-        print(f"Always-on: {dst}")
         return dst
     content = dst.read_text(encoding="utf-8") if dst.exists() else ""
     _atomic_write(dst, _replace_or_append_section(content, _ALWAYS_ON_MARKER, always_on_body()))
-    print(f"Always-on installed -> {dst}")
     return dst
+
+
+def _has_always_on(root: Path, cfg: MimryPlatform) -> bool:
+    path = root / cfg.always_on_file if cfg.always_on_file else None
+    return bool(path and path.exists() and _ALWAYS_ON_MARKER in path.read_text(encoding="utf-8"))
+
+
+def _has_hook(root: Path, cfg: MimryPlatform) -> bool:
+    path = root / cfg.hook_path if cfg.hook_path else None
+    if not (path and path.exists()):
+        return False
+    entries = json.loads(path.read_text(encoding="utf-8")).get("hooks", {}).get("PreToolUse", [])
+    return any(_is_mimry_hook(entry) for entry in entries)
 
 
 def _remove_always_on(root: Path, cfg: MimryPlatform) -> Path | None:
@@ -486,7 +509,6 @@ def _remove_always_on(root: Path, cfg: MimryPlatform) -> Path | None:
         _atomic_write(dst, cleaned + "\n")
     else:
         dst.unlink()
-    print(f"Always-on removed -> {dst}")
     return dst
 
 
@@ -516,11 +538,9 @@ def _hook_command() -> str:
 
 def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Path | None:
     if cfg.key not in {"claude-code", "codex"} or cfg.hook_path is None:
-        print(f"Hooks: no PreToolUse hook target for {cfg.label}; always-on instructions are the integration path.")
         return None
     dst = (root / cfg.hook_path).resolve()
     if dry_run:
-        print(f"Hooks: {dst}")
         return dst
     try:
         existing = json.loads(dst.read_text(encoding="utf-8")) if dst.exists() else {}
@@ -528,13 +548,14 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
         existing = {}
     command = _hook_command()
     hook = {
-        "matcher": "Bash" if cfg.key == "codex" else "Bash|Read|Glob",
+        # Grep is Claude Code's search tool; omitting it meant the hook only fired on
+        # shelled-out `grep`/`rg`, never on the tool AGENT_RULES.md actually targets.
+        "matcher": "Bash" if cfg.key == "codex" else "Bash|Read|Glob|Grep",
         "hooks": [{"type": "command", "command": command}],
     }
     pre_tool = existing.setdefault("hooks", {}).setdefault("PreToolUse", [])
     existing["hooks"]["PreToolUse"] = [h for h in pre_tool if not _is_mimry_hook(h)] + [hook]
     _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
-    print(f"Hooks installed -> {dst} ({command})")
     return dst
 
 
@@ -566,8 +587,15 @@ def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
         return None
     existing.setdefault("hooks", {})["PreToolUse"] = filtered
     _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
-    print(f"Hooks removed -> {dst}")
     return dst
+
+
+def _scope(project: bool) -> str:
+    return "this project" if project else "all projects"
+
+
+def _shown(path: Path, root: Path, project: bool) -> str:
+    return ui.display_path(path, root if project else None)
 
 
 def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str, bool]:
@@ -583,54 +611,43 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
         "version": version.exists() and version.read_text(encoding="utf-8").strip() == _VERSION,
     }
     if project and cfg.always_on_file:
-        result["always_on"] = (root / cfg.always_on_file).exists() and _ALWAYS_ON_MARKER in (
-            root / cfg.always_on_file
-        ).read_text(encoding="utf-8")
+        result["always_on"] = _has_always_on(root, cfg)
     if project and cfg.hook_path:
-        hook_file = root / cfg.hook_path
-        result["hooks"] = hook_file.exists() and any(
-            _is_mimry_hook(entry)
-            for entry in json.loads(hook_file.read_text(encoding="utf-8")).get("hooks", {}).get("PreToolUse", [])
-        )
-    print(f"MIMRY install status: {cfg.label} ({cfg.key}) / {'project' if project else 'global'}")
-    print(f"Skill: {'ok' if result['skill'] else 'missing'} -> {dst}")
-    print(f"References: {'ok' if result['references'] else 'missing/broken'} -> {refs}")
-    print(f"Version: {'ok' if result['version'] else 'missing/stale'} -> {version}")
+        result["hooks"] = _has_hook(root, cfg)
+    healthy = all(result.values())
+    headline = f"MIMRY skill for {cfg.label} ({_scope(project)})"
+    if healthy:
+        ui.ok(f"{headline} is installed and up to date")
+    elif not result["skill"]:
+        ui.warn(f"{headline} is not installed")
+    else:
+        ui.warn(f"{headline} needs repair")
+    checks = [
+        ("skill", "Skill", _shown(dst, root, project), "missing"),
+        ("references", "References", _shown(refs, root, project), "missing or broken"),
+        ("version", "Version", _VERSION, "missing or out of date"),
+    ]
     if "always_on" in result:
-        print(f"Always-on: {'ok' if result['always_on'] else 'missing'} -> {root / cfg.always_on_file}")
+        checks.append(("always_on", "Always-on", cfg.always_on_file.as_posix(), "missing"))
     if "hooks" in result:
-        print(f"Hooks: {'ok' if result['hooks'] else 'missing'} -> {root / cfg.hook_path}")
-    if not all(result.values()):
-        print("Repair: rerun `mimry install` with the same platform/scope/options.")
-    return result
-
-
-def cmd_hook_check(a) -> int:
-    raw = sys.stdin.read()
-    command = ""
-    try:
-        data = json.loads(raw) if raw.strip() else {}
-        tool_input = data.get("tool_input", data)
-        command = str(
-            tool_input.get("command")
-            or tool_input.get("file_path")
-            or tool_input.get("pattern")
-            or tool_input.get("path")
-            or ""
-        )
-    except Exception:
-        command = raw
-    low = command.lower().replace("\\", "/")
-    search_hit = any(tok in low for tok in ("grep", "rg ", "ripgrep", "find ", "fd ", "ack ", "ag "))
-    read_hit = any(
-        low.endswith(ext) or f"{ext} " in low
-        for ext in (".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".md")
+        checks.append(("hooks", "Hook", cfg.hook_path.as_posix(), "missing"))
+    ui.table(
+        [
+            (
+                ui.paint(ui.symbol("ok"), "ok") if result[name] else ui.paint(ui.symbol("fail"), "fail"),
+                label,
+                good if result[name] else bad,
+            )
+            for name, label, good, bad in checks
+        ]
     )
-    has_mimry = Path(".mimry/pointer.json").exists() or Path(".mimry/mimry-out/context/latest.md").exists()
-    if has_mimry and (search_hit or read_hit):
-        msg = 'MIMRY is available for this project. Run `mimry preflight "<task>"` or use MIMRY MCP/context/find/related before broad search or repeated file reads.'
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg}}))
-    return 0
+    if not healthy:
+        flags = " --project" if project else ""
+        flags += " --always-on" if "always_on" in result and not result["always_on"] else ""
+        flags += " --hooks" if "hooks" in result and not result["hooks"] else ""
+        verb = "install" if not result["skill"] else "repair"
+        ui.detail(f"Run `mimry install --platform {key}{flags}` to {verb} it.")
+    return result
 
 
 def install_skill(
@@ -645,42 +662,47 @@ def install_skill(
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
     root = root.resolve()
+    # Refuse before writing anything, so a bad flag never leaves a half-done install.
+    if always_on and not project:
+        raise SystemExit(ui.error_text("--always-on only works with --project"))
+    if hooks and not project:
+        raise SystemExit(ui.error_text("--hooks only works with --project"))
     dst = (root / cfg.project_path if project else cfg.global_path).resolve()
+    extras = []
+    if always_on and cfg.always_on_file:
+        extras.append(f"always-on instructions in {cfg.always_on_file.as_posix()}")
+    hook_target = _install_hooks(root, cfg, dry_run=True) if hooks else None
+    if hook_target:
+        extras.append(f"a hook in {cfg.hook_path.as_posix()} that nudges agents to use MIMRY before broad searches")
     if dry_run:
-        print("MIMRY skill install: DRY RUN")
-        print(f"Platform: {cfg.label} ({cfg.key})")
-        print(f"Scope: {'project' if project else 'global'}")
-        print(f"Destination: {dst}")
-        print(f"References: {dst.parent / 'references'}")
-        if always_on and project:
-            _install_always_on(root, cfg, dry_run=True)
-        if hooks and project:
-            _install_hooks(root, cfg, dry_run=True)
+        print("Dry run - nothing was written")
+        ui.detail(f"Would install the MIMRY skill for {cfg.label} ({_scope(project)}) at {_shown(dst, root, project)}")
+        for extra in extras:
+            ui.detail(f"Would add {extra}")
+        if hooks and not hook_target:
+            ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
         return dst
     _install_references(dst.parent)
     _atomic_write(dst, skill_body(key))
     _atomic_write(dst.parent / ".mimry_version", _VERSION + "\n")
-    print("MIMRY skill installed")
-    print(f"Platform: {cfg.label} ({cfg.key})")
-    print(f"Scope: {'project' if project else 'global'}")
-    print(f"Destination: {dst}")
-    print(f"References: {dst.parent / 'references'}")
     git_paths = [dst, dst.parent / ".mimry_version", dst.parent / "references"]
     if always_on:
-        if not project:
-            raise SystemExit("--always-on is only supported with --project")
         ao = _install_always_on(root, cfg, dry_run=False)
         if ao:
             git_paths.append(ao)
     if hooks:
-        if not project:
-            raise SystemExit("--hooks is only supported with --project")
         hp = _install_hooks(root, cfg, dry_run=False)
         if hp:
             git_paths.append(hp)
+    ui.ok(f"Installed the MIMRY skill for {cfg.label} ({_scope(project)})")
+    ui.detail(_shown(dst, root, project))
+    for extra in extras:
+        ui.detail(f"Added {extra}")
+    if hooks and not hook_target:
+        ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
     if project:
         rels = [p.relative_to(root).as_posix() + ("/" if p.is_dir() else "") for p in git_paths]
-        print(f"Git hint: git add {' '.join(rels)}")
+        ui.detail(f"To share it with your team: git add {' '.join(rels)}")
     return dst
 
 
@@ -691,37 +713,54 @@ def uninstall_skill(
     cfg = platforms()[key]
     root = root.resolve()
     dst = (root / cfg.project_path if project else cfg.global_path).resolve()
-    removed = False
+    removed: list[Path] = []
     for path in (dst, dst.parent / ".mimry_version"):
         if path.exists():
             path.unlink()
-            print(f"Removed -> {path}")
-            removed = True
+            removed.append(path)
     refs = dst.parent / "references"
     if refs.exists():
         shutil.rmtree(refs)
-        print(f"Removed -> {refs}")
-        removed = True
-    if always_on and project:
-        removed = bool(_remove_always_on(root, cfg)) or removed
-    if hooks and project:
-        removed = bool(_remove_hooks(root, cfg)) or removed
+        removed.append(refs)
+    if always_on and project and (path := _remove_always_on(root, cfg)):
+        removed.append(path)
+    if hooks and project and (path := _remove_hooks(root, cfg)):
+        removed.append(path)
     for d in (dst.parent, dst.parent.parent, dst.parent.parent.parent):
         try:
             d.rmdir()
         except OSError:
             break
     if not removed:
-        print("No MIMRY skill install found for that platform/scope")
-    return removed
+        print(f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label} ({_scope(project)}).")
+        return False
+    ui.ok(f"Removed MIMRY for {cfg.label} ({_scope(project)})")
+    for path in removed:
+        ui.detail(ui.faint(_shown(path, root, project)))
+    kept = []
+    if project and not always_on and _has_always_on(root, cfg):
+        kept.append(("--always-on", f"the always-on block in {cfg.always_on_file.as_posix()}"))
+    if project and not hooks and _has_hook(root, cfg):
+        kept.append(("--hooks", f"the hook in {cfg.hook_path.as_posix()}"))
+    if kept:
+        flags = " ".join(flag for flag, _ in kept)
+        ui.detail(
+            f"Kept {' and '.join(what for _, what in kept)}. Add {flags} to remove {'them' if len(kept) > 1 else 'it'} too."
+        )
+    return True
 
 
 def cmd_install(a) -> int:
     if getattr(a, "list_platforms", False):
-        print(platform_table())
+        print(platform_table(verbose=getattr(a, "verbose", False)))
         return 0
     if not a.platform:
-        raise SystemExit("mimry install requires --platform, or use --list-platforms")
+        raise SystemExit(
+            ui.error_text(
+                "Choose a platform with --platform <name>",
+                "See them all with `mimry install --list-platforms`.",
+            )
+        )
     if getattr(a, "status", False):
         install_status(a.platform, project=a.project, root=Path(a.root))
         return 0
@@ -733,6 +772,6 @@ def cmd_install(a) -> int:
 
 def cmd_uninstall(a) -> int:
     if not a.platform:
-        raise SystemExit("mimry uninstall requires --platform")
+        raise SystemExit(ui.error_text("Choose a platform with --platform <name>"))
     uninstall_skill(a.platform, project=a.project, root=Path(a.root), always_on=a.always_on, hooks=a.hooks)
     return 0

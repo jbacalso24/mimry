@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mimry"
-version = "0.1.0"
+version = "0.2.1"
 description = "Modular Intelligence Memory for Repos"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,6 @@ keywords = ["coding-agents", "mcp", "repository-intelligence", "semantic-search"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
@@ -23,8 +22,8 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development",
 ]
+authors = [{ name = "Judison Bacalso", email = "judisonbacalso24@gmail.com" }]
 dependencies = [
-    "cryptography>=50.0.0",
     "fastmcp>=3.4.2",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
     # compiled against a specific core ABI; a 0.26 core can import cleanly and
@@ -40,9 +39,10 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/jbacalso24/mimry#readme"
-Issues = "https://github.com/jbacalso24/mimry/issues"
+Homepage = "https://jbacalso24.github.io/mimry/"
 Repository = "https://github.com/jbacalso24/mimry"
+Issues = "https://github.com/jbacalso24/mimry/issues"
+GitHub = "https://github.com/jbacalso24"
 
 [project.scripts]
 mimry = "mimry.cli:main"
@@ -76,7 +76,6 @@ include = [
     "/scripts/cross_platform_check.py",
     "/scripts/determinism_aggregate.py",
     "/scripts/determinism_matrix.py",
-    "/scripts/export_public_snapshot.py",
     "/benchmarks",
     "/docs",
     "/assets/banner.svg",
@@ -94,7 +93,7 @@ exclude = ["/tests/fixtures/**/.env"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["vendor", "benchmarks/fixtures", ".claude"]
+extend-exclude = ["benchmarks/fixtures", ".claude"]
 
 [tool.ruff.lint]
 # Was ["E9", "F63", "F7", "F82"] -- syntax errors and a couple of bug patterns only,

@@ -1,43 +1,45 @@
 from __future__ import annotations
 
-import argparse
+import os
 import sys
-
-from .commands import (
-    cmd_brief,
-    cmd_cache_wipe,
-    cmd_context,
-    cmd_digest,
-    cmd_explain,
-    cmd_feedback,
-    cmd_find,
-    cmd_index,
-    cmd_adapters,
-    cmd_init,
-    cmd_path,
-    cmd_plan_check,
-    cmd_plan_digest,
-    cmd_plan_list,
-    cmd_plan_new,
-    cmd_plan_split,
-    cmd_plan_tree,
-    cmd_preflight,
-    cmd_related,
-    cmd_refresh,
-    cmd_route,
-    cmd_roots,
-    cmd_semantic,
-    cmd_status,
-    cmd_symbol,
-    cmd_why,
-)
-from .installer import cmd_hook_check, cmd_install, cmd_uninstall
-from .plan import PlanError
-from .state import IndexSchemaMigrationError, StateCorruptionError, StateLockTimeoutError, UnsupportedIndexSchemaError
-from .storage import RootIdentityError
 
 
 def build_parser():
+    # Imported here, not at module load: `hook-check` runs before every agent tool
+    # call and must not pay for the indexing stack it never uses.
+    import argparse
+
+    from .commands import (
+        cmd_brief,
+        cmd_cache_wipe,
+        cmd_context,
+        cmd_digest,
+        cmd_explain,
+        cmd_feedback,
+        cmd_find,
+        cmd_index,
+        cmd_adapters,
+        cmd_init,
+        cmd_path,
+        cmd_plan_check,
+        cmd_plan_digest,
+        cmd_plan_list,
+        cmd_plan_new,
+        cmd_plan_split,
+        cmd_plan_tree,
+        cmd_preflight,
+        cmd_related,
+        cmd_refresh,
+        cmd_route,
+        cmd_roots,
+        cmd_semantic,
+        cmd_status,
+        cmd_symbol,
+        cmd_why,
+    )
+    from .hook import cmd_hook_check
+    from .installer import cmd_install, cmd_uninstall
+
     p = argparse.ArgumentParser(
         prog="mimry", description="Local repo intelligence memory. Defaults --root to the current working directory."
     )
@@ -47,15 +49,19 @@ def build_parser():
     s.add_argument("--root-type", default="repo")
     s.add_argument(
         "--skip-graph",
-        "--skip-graphify",
         dest="skip_graph",
         action="store_true",
-        help="Create MIMRY metadata without building graph artifacts (--skip-graphify is deprecated)",
+        help="Create MIMRY metadata without building graph artifacts",
     )
     s.set_defaults(func=cmd_init)
-    sub.add_parser("index").set_defaults(func=cmd_index)
-    sub.add_parser("reindex").set_defaults(func=cmd_index)
-    sub.add_parser("refresh", help="Run internal graph build, MIMRY index, then status").set_defaults(func=cmd_refresh)
+    full_help = "Re-read and re-parse every file instead of reusing unchanged ones"
+    for name in ("index", "reindex"):
+        s = sub.add_parser(name)
+        s.add_argument("--full", action="store_true", help=full_help)
+        s.set_defaults(func=cmd_index)
+    s = sub.add_parser("refresh", help="Run internal graph build, MIMRY index, then status")
+    s.add_argument("--full", action="store_true", help=full_help)
+    s.set_defaults(func=cmd_refresh)
     s = sub.add_parser("preflight", help="Fast readiness check and task context generation")
     s.add_argument("task", help="Task description to build the context pack around")
     s.add_argument(
@@ -64,10 +70,11 @@ def build_parser():
         help="Run the slow full refresh path (graph build + MIMRY index) before context generation",
     )
     s.set_defaults(func=cmd_preflight)
-    sub.add_parser("status").set_defaults(func=cmd_status)
-    graphify = sub.add_parser("graphify", help="Deprecated compatibility namespace for native graph status")
-    graphify_sub = graphify.add_subparsers(required=True)
-    graphify_sub.add_parser("status", help="Alias for `mimry status`").set_defaults(func=cmd_status)
+    s = sub.add_parser("status")
+    s.add_argument(
+        "--verify", action="store_true", help="Re-hash every file instead of trusting unchanged metadata, like git"
+    )
+    s.set_defaults(func=cmd_status)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
     s.add_argument("--active-only", action="store_true")
     s.set_defaults(func=cmd_adapters)
@@ -172,7 +179,9 @@ def build_parser():
     s.add_argument("plan_id")
     s.set_defaults(func=cmd_plan_digest)
     plan_sub.add_parser("list", help="List local plan trees deterministically").set_defaults(func=cmd_plan_list)
-    sub.add_parser("roots").set_defaults(func=cmd_roots)
+    s = sub.add_parser("roots", help="List the folders MIMRY has indexed on this machine")
+    s.add_argument("--prune", action="store_true", help="Forget registered folders that no longer exist")
+    s.set_defaults(func=cmd_roots)
     i = sub.add_parser(
         "install", help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills"
     )
@@ -197,13 +206,30 @@ def build_parser():
     u.add_argument("--hooks", action="store_true", help="With --project, also remove supported PreToolUse hooks")
     u.set_defaults(func=cmd_uninstall)
     sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(func=cmd_hook_check)
+    # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`: package
+    # runners such as uvx only launch the script named after the package.
+    sub.add_parser("mcp", help="Run the MIMRY MCP stdio server (same as mimry-mcp)").set_defaults(func=_cmd_mcp)
     cache = sub.add_parser("cache")
     cs = cache.add_subparsers(required=True)
     w = cs.add_parser("wipe")
     w.add_argument("--all", action="store_true")
     w.add_argument("--current", action="store_true")
     w.set_defaults(func=cmd_cache_wipe)
+    for name, command in sub.choices.items():
+        if name not in {"hook-check", "plan", "cache", "mcp"}:
+            command.add_argument(
+                "-v", "--verbose", action="store_true", help="Also show paths, scores and internal details"
+            )
     return p
+
+
+def _cmd_mcp(a) -> int:
+    from .mcp_server import main as run_mcp_server
+
+    # Tools default to the server's working directory, so --root picks the repo.
+    os.chdir(a.root)
+    run_mcp_server([])
+    return 0
 
 
 def _configure_console() -> None:
@@ -215,29 +241,53 @@ def _configure_console() -> None:
             reconfigure(errors="backslashreplace")
 
 
+def _hook_check_root(args) -> str | None:
+    """Return the root when argv is exactly ``[--root R] hook-check``, else None."""
+    rest = list(args)
+    root = "."
+    if len(rest) >= 2 and rest[0] == "--root":
+        root, rest = rest[1], rest[2:]
+    elif rest and rest[0].startswith("--root="):
+        root, rest = rest[0].split("=", 1)[1], rest[1:]
+    return root if rest == ["hook-check"] else None
+
+
 def main(argv=None):
+    hook_root = _hook_check_root(sys.argv[1:] if argv is None else argv)
+    if hook_root is not None:
+        from types import SimpleNamespace
+
+        from .hook import cmd_hook_check
+
+        return cmd_hook_check(SimpleNamespace(root=hook_root))
+    from .plan import PlanError
+    from .state import (
+        IndexSchemaMigrationError,
+        StateCorruptionError,
+        StateLockTimeoutError,
+        UnsupportedIndexSchemaError,
+    )
+    from .storage import RootIdentityError
+
     _configure_console()
     a = build_parser().parse_args(argv)
+    from . import ui
+
     try:
         return a.func(a)
     except UnsupportedIndexSchemaError as exc:
-        print(f"MIMRY index requires a newer MIMRY client: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("This index was built by a newer version of MIMRY", str(exc))
     except IndexSchemaMigrationError as exc:
-        print(f"MIMRY index is out of date: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("This index was built by an older version of MIMRY", str(exc))
     except StateCorruptionError as exc:
-        print(f"MIMRY state error: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("MIMRY found damaged index data", str(exc))
     except StateLockTimeoutError as exc:
-        print(f"MIMRY lock error: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("Another MIMRY command is still using this index", str(exc))
     except RootIdentityError as exc:
-        print(f"MIMRY root identity error: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("This .mimry folder belongs to a different location", str(exc))
     except PlanError as exc:
-        print(f"MIMRY plan error: {exc}", file=sys.stderr)
-        return 2
+        ui.fail("Plan error", str(exc))
+    return 2
 
 
 if __name__ == "__main__":

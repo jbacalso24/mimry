@@ -4,6 +4,7 @@ import ast
 import hashlib
 import os
 import stat
+import unicodedata
 from pathlib import Path
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
@@ -13,14 +14,15 @@ from .core.languages import extract as extract_language
 from .core.languages import language_for
 from .framework_adapters import enrich_framework_facts, markdown_link_targets, sql_table_references
 from .paths import stable_id, canonical_rel_path
+from .state import scoped
 from .security import (
+    _has_heavy_ignore,
     contains_sensitive_data,
     has_sensitive_content,
+    is_sensitive,
     is_text,
     redact_sensitive_text,
     safe_root,
-    should_ignore,
-    should_ignore_path,
 )
 from .ts_ast_adapter import parse_ts_like
 
@@ -30,6 +32,18 @@ SCANNER_FILE_SIZE_LIMIT = 1_000_000
 
 class FileChangedError(OSError):
     """Raised when a file changes between snapshots during indexing."""
+
+    pass
+
+
+class UnopenableFileError(FileChangedError):
+    """Raised when a regular file cannot be opened (locked or ACL-protected)."""
+
+    pass
+
+
+class SensitiveContentError(ValueError):
+    """Raised when a file's own bytes carry a secret; the file is skipped, not recorded."""
 
     pass
 
@@ -45,12 +59,19 @@ def _identity(st) -> tuple:
     return (st.st_size, st.st_mtime_ns, st.st_ino, st.st_dev)
 
 
-def _within_root(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
+def _resolves_within(path: Path, real_root: str) -> bool:
+    """Whether ``path`` resolves (strictly) to ``real_root`` or below it.
+
+    Component-wise and, on Windows, case-insensitive -- the same answer as
+    ``path.resolve(strict=True).relative_to(root)`` -- without pathlib's
+    per-call overhead, which dominated freshness on large trees.
+    """
+    real = os.path.normcase(os.path.realpath(path, strict=True))
+    return real == real_root or real.startswith(real_root.rstrip(os.sep) + os.sep)
+
+
+def _real_root(root) -> str:
+    return scoped(("real_root", str(root)), lambda: os.path.normcase(os.path.realpath(root, strict=True)))
 
 
 def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
@@ -70,19 +91,23 @@ def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
     unindexable rather than recording a mixed-version record.
     """
     path = Path(path)
-    approved_root = Path(root).resolve(strict=True) if root is not None else None
+    approved_root = None
+    if root is not None:
+        # Resolved once per read scope (freshness reads every indexed file under
+        # one shared lock); outside a scope, e.g. while indexing, once per call.
+        approved_root = _real_root(root)
     for attempt in range(3):
         before = path.lstat()
         if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
             raise FileChangedError(f"{path} is not a regular non-symlink file; not indexed this run")
-        if approved_root is not None and not _within_root(path.resolve(strict=True), approved_root):
+        if approved_root is not None and not _resolves_within(path, approved_root):
             raise FileChangedError(f"{path} resolves outside the approved root; not indexed this run")
 
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
         try:
             fd = os.open(path, flags)
         except OSError as exc:
-            raise FileChangedError(f"{path} could not be opened safely; not indexed this run") from exc
+            raise UnopenableFileError(f"{path} could not be opened safely; not indexed this run") from exc
         try:
             descriptor_stat = os.fstat(fd)
             with os.fdopen(fd, "rb", closefd=False) as fh:
@@ -97,7 +122,7 @@ def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
         after = path.lstat()
         if stat.S_ISLNK(after.st_mode) or not stat.S_ISREG(after.st_mode):
             raise FileChangedError(f"{path} became a symlink or non-regular file; not indexed this run")
-        if approved_root is not None and not _within_root(path.resolve(strict=True), approved_root):
+        if approved_root is not None and not _resolves_within(path, approved_root):
             raise FileChangedError(f"{path} resolved outside the approved root; not indexed this run")
 
         # The descriptor and final path must still identify the same file. This
@@ -115,14 +140,25 @@ def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
     raise FileChangedError(f"{path} changed while MIMRY was reading it")
 
 
-def verify_unchanged(path, st, expected_hash: str, *, root=None) -> None:
-    """Fail closed if live bytes differ from the immutable acquired snapshot."""
+def verify_unchanged(path, st, *, root=None) -> None:
+    """Fail closed if the live file is no longer the snapshot's file and version.
+
+    Parsers only ever see the acquired bytes, so this guards the record's
+    metadata, not its content: a record must not publish under a path that now
+    names another file, a symlink, or a newer version. It checks identity rather
+    than re-reading, the same trust freshness applies (see reuse.py); an edit
+    too quick to move the mtime is racy and re-read by the next freshness pass.
+    """
     path = Path(path)
     try:
-        current, current_stat = read_snapshot(path, root=root)
+        current = path.lstat()
+        approved_root = None if root is None else _real_root(root)
+        inside = approved_root is None or _resolves_within(path, approved_root)
     except OSError as exc:
         raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run") from exc
-    if _identity(current_stat) != _identity(st) or hashlib.sha256(current).hexdigest() != expected_hash:
+    if stat.S_ISLNK(current.st_mode) or not stat.S_ISREG(current.st_mode) or not inside:
+        raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run")
+    if _identity(current) != _identity(st):
         raise FileChangedError(f"{path} changed while MIMRY was parsing it; not indexed this run")
 
 
@@ -137,39 +173,71 @@ def text_hint(path, limit=12000, data=None):
     return " ".join([line.strip() for line in text.splitlines() if line.strip()][:40])[:2000]
 
 
-def scan(root, *, inspect_sensitive_content: bool = True):
+def scan(root):
+    """Yield indexable candidate paths by path policy alone, in canonical order.
+
+    Content is not opened here: adapt() secret-scans the exact snapshot bytes it
+    hashes and parses, so a second read here would only repeat that work.
+    """
+    for _canonical, path in scan_entries(root):
+        yield path
+
+
+def scan_entries(root, *, probe_open: bool = True) -> list[tuple[str, Path]]:
+    """Return ``(canonical_rel_path, native_path)`` for every indexable candidate."""
+    return [(canonical, path) for canonical, path, _st in scan_stats(root, probe_open=probe_open)]
+
+
+def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.stat_result]]:
+    """Return ``(canonical_rel_path, native_path, lstat)`` for every indexable candidate.
+
+    ``probe_open`` skips files that cannot be opened (locked or ACL-protected),
+    which indexing needs. Freshness passes False: it opens each file itself and
+    already treats an unreadable file as changed or skipped.
+    """
     safe_root(root)
-    paths = []
-    for path in root.rglob("*"):
-        ignored = should_ignore(path, root) if inspect_sensitive_content else should_ignore_path(path, root)
-        if not path.is_file() or path.is_symlink() or ignored:
-            continue
-        try:
-            if path.stat().st_size > SCANNER_FILE_SIZE_LIMIT:
+    root = Path(root)
+    root_str = str(root)
+    entries: list[tuple[str, str, Path, os.stat_result]] = []
+    # Prune ignored directories instead of walking and then filtering them:
+    # .git, .venv and node_modules routinely hold 95%+ of the paths on disk.
+    # Only heavy-ignore names prune: every other path policy applies per file,
+    # exactly as when each file was checked against its full relative path.
+    # followlinks=False matches rglob, which never descended into symlinked dirs.
+    for dirpath, dirnames, filenames in os.walk(root_str, followlinks=False):
+        dirnames[:] = [name for name in dirnames if not _has_heavy_ignore((name,))]
+        rel_dir = dirpath[len(root_str) :].lstrip(os.sep).replace(os.sep, "/")
+        for name in filenames:
+            path = Path(dirpath, name)
+            if _has_heavy_ignore((name,)) or is_sensitive(path):
                 continue
-            # Windows/macOS can expose locked or ACL-protected files as regular
-            # files, then fail only when opened for hashing. Treat unreadable
-            # files like ignored/generated files; one locked DB sidecar should
-            # not abort the whole index refresh.
-            with path.open("rb"):
-                pass
-        except OSError:
-            continue
-        paths.append(path)
+            try:
+                # One lstat answers regular-file, not-a-symlink, and size.
+                info = os.lstat(path)
+                if not stat.S_ISREG(info.st_mode) or info.st_size > SCANNER_FILE_SIZE_LIMIT:
+                    continue
+                if probe_open:
+                    # Windows/macOS can expose locked or ACL-protected files as regular
+                    # files, then fail only when opened for hashing. Treat unreadable
+                    # files like ignored/generated files; one locked DB sidecar should
+                    # not abort the whole index refresh.
+                    with path.open("rb"):
+                        pass
+            except OSError:
+                continue
+            native_rel = f"{rel_dir}/{name}" if rel_dir else name
+            entries.append((unicodedata.normalize("NFC", native_rel), native_rel, path, info))
+    entries.sort(key=lambda entry: (entry[0], entry[1]))
     # Distinct native names may normalize to one canonical path/file ID. Reject
     # that ambiguity before adaptation or publication rather than picking a winner.
-    canonical_paths: dict[str, Path] = {}
-    for path in sorted(paths, key=lambda p: (canonical_rel_path(p, root), p.relative_to(root).as_posix())):
-        canonical = canonical_rel_path(path, root)
-        previous = canonical_paths.get(canonical)
-        if previous is not None and previous != path:
+    for (canonical, native_rel, *_), (next_canonical, next_rel, *_) in zip(entries, entries[1:], strict=False):
+        if canonical == next_canonical:
             raise CanonicalPathCollisionError(
                 f"Canonical path collision for {canonical!r}: "
-                f"{previous.relative_to(root).as_posix()!r} and {path.relative_to(root).as_posix()!r}. "
+                f"{native_rel!r} and {next_rel!r}. "
                 "Rename one file; MIMRY will not publish ambiguous file IDs."
             )
-        canonical_paths[canonical] = path
-        yield path
+    return [(canonical, path, info) for canonical, _native_rel, path, info in entries]
 
 
 def file_record(path, root, adapter, status, hint, snapshot=None):
@@ -204,16 +272,17 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     }
 
 
-def adapt(path, root):
+def adapt(path, root, snapshot=None):
     ext = path.suffix.lower()
     # One read for the whole adapter chain. Everything below derives from these
     # bytes, and verify_unchanged() at the end proves nothing shifted meanwhile.
-    snapshot = read_snapshot(path, root=root)
+    # Callers that record the snapshot's stat identity pass the snapshot in.
+    snapshot = snapshot or read_snapshot(path, root=root)
     data, _st = snapshot
     # Check sensitivity using the captured bytes (not a separate file read)
     # to ensure hash and security classification derive from the same content.
     if has_sensitive_content(path, data=data):
-        raise ValueError("secret-bearing content is not indexable")
+        raise SensitiveContentError("secret-bearing content is not indexable")
     hint = safe_hint(path, data=data) if is_config_manifest(path) else text_hint(path, data=data)
     f = file_record(path, root, "generic", "ok", hint, snapshot)
     symbols = []
@@ -366,7 +435,7 @@ def adapt(path, root):
         references["inherits"] = inherits
 
     f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
-    verify_unchanged(path, _st, f["hash"], root=root)
+    verify_unchanged(path, _st, root=root)
     if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references)):
         raise ValueError("adapter output contained sensitive data")
     return f, symbols, edges, sorted(set(imports)), sorted(set(exports)), calls, references

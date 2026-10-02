@@ -93,7 +93,7 @@ def test_mcp_status_reports_corrupt_pointer_without_raising(tmp_path: Path):
     assert "Preserve the corrupt state file" in payload["recommended"]
 
 
-def test_mcp_status_uses_hash_freshness_for_same_size_rewrite(tmp_path: Path, monkeypatch):
+def test_mcp_status_verify_uses_hash_freshness_for_same_size_rewrite(tmp_path: Path, monkeypatch):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
@@ -116,9 +116,9 @@ def test_mcp_status_uses_hash_freshness_for_same_size_rewrite(tmp_path: Path, mo
     changed = text.replace("pass", "True")
     assert len(changed.encode()) == len(text.encode())
     target.write_text(changed, encoding="utf-8")
-    os.utime(target, (original_stat.st_atime, original_stat.st_mtime))
+    os.utime(target, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
-    payload = mimry_status(str(repo))
+    payload = mimry_status(str(repo), verify=True)
 
     assert payload["index_state"] == "stale"
     assert payload["changed_files"] == ["src/auth/session.py"]
@@ -153,18 +153,6 @@ def test_mcp_status_includes_graph_health_payload(tmp_path: Path, monkeypatch):
     assert payload["graph"]["graph_exists"] is True
     assert payload["graph"]["report_exists"] is True
     assert payload["graph"]["manifest_exists"] is True
-    assert payload["graphify"] == payload["graph"]
-
-
-def test_mcp_init_accepts_legacy_skip_graphify_alias(tmp_path: Path, monkeypatch):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
-
-    payload = mimry_init(str(repo), skip_graphify=True)
-
-    assert payload["returncode"] == 0
-    assert payload["status"]["initialized"] is True
 
 
 def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, monkeypatch):
@@ -242,7 +230,7 @@ def test_mcp_preflight_initializes_and_writes_context(tmp_path: Path, monkeypatc
     assert payload["index_state"] == "current"
     assert payload["context_path"].replace("\\", "/").endswith(".mimry/mimry-out/context/latest.md")
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
-    assert "MIMRY preflight complete" in payload["stdout"]
+    assert "OK Context ready for" in payload["stdout"]
 
 
 def test_mcp_refresh_rebuilds_index_and_reports_status(tmp_path: Path, monkeypatch):
@@ -256,7 +244,7 @@ def test_mcp_refresh_rebuilds_index_and_reports_status(tmp_path: Path, monkeypat
     assert payload["returncode"] == 0
     assert payload["status"]["index_state"] == "current"
     assert payload["status"]["files_indexed"] > 0
-    assert "MIMRY indexing complete" in payload["stdout"]
+    assert "OK Indexed repo for the first time" in payload["stdout"]
 
 
 def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path: Path, monkeypatch):
@@ -277,10 +265,10 @@ def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path:
         verification="pytest passed",
     )
 
-    assert explain["returncode"] == 0 and "MIMRY explain" in explain["stdout"]
-    assert why["returncode"] == 0 and "MIMRY why" in why["stdout"]
+    assert explain["returncode"] == 0 and '"fix auth session" maps to repo' in explain["stdout"]
+    assert why["returncode"] == 0 and 'Why src/auth/session.py ranks for "fix auth session"' in why["stdout"]
     assert path["returncode"] == 0
-    assert "No path was invented" in path["stdout"] or "Path found" in path["stdout"]
+    assert "connects to" in path["stdout"] or "No connection found" in path["stdout"]
     assert feedback["returncode"] == 0
     assert feedback["feedback"]["outcome"] == "passed"
     assert "src/auth/session.py" in feedback["feedback"]["changed_paths"]
@@ -628,3 +616,19 @@ def test_successful_rebuild_clears_the_outdated_schema_state(tmp_path: Path, mon
     assert "error" not in healed or healed.get("error", {}).get("code") != "index_schema_outdated"
     code, text = _cli_status(repo)
     assert code == 0 and "corrupt" not in text.lower()
+
+
+def test_mimry_mcp_subcommand_runs_the_stdio_server_in_the_root(tmp_path: Path, monkeypatch):
+    """`uvx mimry mcp` must start the same server as `mimry-mcp`, rooted at --root."""
+    import os
+
+    from mimry import cli, mcp_server
+
+    started = []
+    monkeypatch.setattr(mcp_server, "main", lambda argv=None: started.append((argv, os.getcwd())))
+    monkeypatch.chdir(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    assert cli.main(["--root", str(repo), "mcp"]) == 0
+    assert started == [([], str(repo))]

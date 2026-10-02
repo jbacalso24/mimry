@@ -1,10 +1,10 @@
 {
   "aggregates": {
     "abstention_accuracy": 1.0,
-    "context_p95_ms": 147.482843,
+    "context_p95_ms": 378.262205,
     "context_token_proxy_max": 2228,
     "decoy_rate_at_5": 0.08108108108108109,
-    "find_p95_ms": 155.264702,
+    "find_p95_ms": 95.783157,
     "ndcg_at_5": 0.7006825438728344,
     "primary_hit_at_3": 0.875,
     "recall_at_5": 0.9375
@@ -12,12 +12,12 @@
   "cases": [
     {
       "abstained": null,
-      "context_ms": 147.482843,
+      "context_ms": 93.41174,
       "context_token_proxy": 2228,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 135.951472,
-      "find_token_proxy": 323,
+      "find_median_ms": 86.061924,
+      "find_token_proxy": 105,
       "id": "session-renewal",
       "ndcg_at_5": 0.54997060974601,
       "paths": [
@@ -33,12 +33,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 137.8663,
+      "context_ms": 92.364707,
       "context_token_proxy": 1218,
       "decoys_at_5": 1,
       "expect_empty": false,
-      "find_median_ms": 132.080626,
-      "find_token_proxy": 216,
+      "find_median_ms": 85.366848,
+      "find_token_proxy": 47,
       "id": "bearer-middleware",
       "ndcg_at_5": 0.7452525342261976,
       "paths": [
@@ -51,12 +51,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 141.392844,
+      "context_ms": 378.262205,
       "context_token_proxy": 2027,
       "decoys_at_5": 1,
       "expect_empty": false,
-      "find_median_ms": 136.881291,
-      "find_token_proxy": 389,
+      "find_median_ms": 89.998847,
+      "find_token_proxy": 104,
       "id": "checkout-runtime",
       "ndcg_at_5": 0.8595547154669839,
       "paths": [
@@ -72,12 +72,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 141.320051,
+      "context_ms": 162.692815,
       "context_token_proxy": 2200,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 133.198628,
-      "find_token_proxy": 381,
+      "find_median_ms": 89.166382,
+      "find_token_proxy": 102,
       "id": "checkout-tests",
       "ndcg_at_5": 0.7363636171343382,
       "paths": [
@@ -93,12 +93,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 141.839422,
+      "context_ms": 96.683348,
       "context_token_proxy": 2227,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 131.825823,
-      "find_token_proxy": 377,
+      "find_median_ms": 89.695734,
+      "find_token_proxy": 97,
       "id": "session-migration",
       "ndcg_at_5": 0.6026493584157245,
       "paths": [
@@ -114,12 +114,12 @@
     },
     {
       "abstained": true,
-      "context_ms": 132.324176,
+      "context_ms": 93.408855,
       "context_token_proxy": 1008,
       "decoys_at_5": 0,
       "expect_empty": true,
-      "find_median_ms": 131.421425,
-      "find_token_proxy": 15,
+      "find_median_ms": 89.629847,
+      "find_token_proxy": 34,
       "id": "unknown",
       "ndcg_at_5": 1.0,
       "paths": [],
@@ -129,12 +129,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 137.18494,
+      "context_ms": 95.800184,
       "context_token_proxy": 1917,
       "decoys_at_5": 1,
       "expect_empty": false,
-      "find_median_ms": 127.398775,
-      "find_token_proxy": 367,
+      "find_median_ms": 93.138756,
+      "find_token_proxy": 107,
       "id": "checkout-payment-chain",
       "ndcg_at_5": 0.8075588805057204,
       "paths": [
@@ -150,12 +150,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 134.369381,
+      "context_ms": 94.577889,
       "context_token_proxy": 2193,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 131.124767,
-      "find_token_proxy": 332,
+      "find_median_ms": 87.896203,
+      "find_token_proxy": 112,
       "id": "session-service-fan-in",
       "ndcg_at_5": 0.6305667822198809,
       "paths": [
@@ -171,12 +171,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 137.237816,
+      "context_ms": 98.654176,
       "context_token_proxy": 2204,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 128.283631,
-      "find_token_proxy": 362,
+      "find_median_ms": 94.255054,
+      "find_token_proxy": 105,
       "id": "login-to-database",
       "ndcg_at_5": 0.6735438532678194,
       "paths": [
@@ -209,17 +209,17 @@
   "graph_edges": 24,
   "graph_enabled": true,
   "graph_nodes": 30,
-  "platform": "Linux-7.1.6-1-cachyos-x86_64-with-glibc2.44",
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
   "profile": "quick-local-index",
-  "python": "3.13.13",
+  "python": "3.12.3",
   "repeat": 3,
-  "retrieval_source_sha256": "3a6770e766efffa620ab3ee2540467c798d4f1398c2ba9c59d6bc3b19a3b34a8",
+  "retrieval_source_sha256": "23975b013517d3fdfc336d004cf89f65bfe273b591d134a10be28d9868f69f44",
   "schema_version": 1,
   "setup_ms": {
-    "index": 2678.680177,
-    "init": 128.755211
+    "index": 1422.630853,
+    "init": 1186.621468
   },
-  "setup_total_ms": 2807.4353880000003,
+  "setup_total_ms": 2609.252321,
   "state": "PASS",
   "thresholds": {
     "abstention_accuracy_min": 1.0,

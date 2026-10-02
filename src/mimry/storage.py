@@ -4,10 +4,11 @@ import json
 import os
 import sqlite3
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
+from . import ui
 from .feedback import ensure_feedback_schema
 from .cache_safety import UnsafeCachePathError, validated_current_root_cache_path
 from .paths import idx_path, pointer_file, roots_file
@@ -19,6 +20,7 @@ from .state import (
     atomic_write_text,
     exclusive_file_lock,
     load_json_state,
+    read_scope,
     shared_file_lock,
     validate_generation,
 )
@@ -38,7 +40,12 @@ class RootIdentityError(RuntimeError):
 
 def _recovery_notice(path: Path) -> None:
     print(
-        f"Recovered corrupt MIMRY state at {path} from last-known-good backup {path.name}.bak.",
+        ui.error_text(
+            f"Repaired damaged MIMRY data in {path.name}",
+            f"It could not be read, so MIMRY restored the last good copy from {path.name}.bak.",
+            f"File: {path}",
+            kind="warn",
+        ),
         file=sys.stderr,
     )
 
@@ -130,7 +137,9 @@ def active_index_pointer(
             Path(initial["indexPath"]), initial["rootId"], initial.get("generationId"), root
         )
     lock = exclusive_file_lock if exclusive else shared_file_lock
-    with lock(base / "operation.lock"):
+    # Readers memoize generation validation and freshness from the moment the
+    # shared lock is held; writers change the generation and never memoize.
+    with lock(base / "operation.lock"), nullcontext() if exclusive else read_scope():
         current = load_pointer(root, validate_active_generation=validate)
         if not current:
             raise UnsafeCachePathError("MIMRY root pointer disappeared while waiting for the operation lock")
@@ -226,6 +235,19 @@ def register_root(ptr):
         atomic_write_json(p, registry, keep_backup=True)
 
 
+def prune_root_registry() -> list[dict[str, Any]]:
+    """Forget registered roots whose folder no longer exists; return what was removed."""
+    p = roots_file()
+    with exclusive_file_lock(p.with_name(f"{p.name}.lock")):
+        registry, _ = _load_root_registry_unlocked()
+        roots = registry.get("roots", [])
+        removed = [entry for entry in roots if not Path(entry["rootPath"]).expanduser().exists()]
+        if removed:
+            registry["roots"] = [entry for entry in roots if entry not in removed]
+            atomic_write_json(p, registry, keep_backup=True)
+        return removed
+
+
 def connect(idx):
     idx.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(idx / "mimry.sqlite")
@@ -241,7 +263,8 @@ def connect(idx):
 
 
 def write_jsonl(path, rows):
-    atomic_write_text(path, "".join(json.dumps(sanitize_data(row), sort_keys=True) + "\n" for row in rows))
+    redacted: dict[str, str] = {}
+    atomic_write_text(path, "".join(json.dumps(sanitize_data(row, redacted), sort_keys=True) + "\n" for row in rows))
 
 
 def load_jsonl(path):

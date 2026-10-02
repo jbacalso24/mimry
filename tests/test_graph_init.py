@@ -47,23 +47,6 @@ def test_init_bootstraps_safe_graph_output(tmp_path):
     assert (visible_graph_dir / "graph.json").exists()
     assert (visible_graph_dir / "GRAPH_REPORT.md").exists()
     assert (visible_graph_dir / "manifest.json").exists()
-    assert (repo / ".mimry" / "graphify").exists() is False
-    assert (repo / "graphify-out").exists() is False
-
-
-def test_legacy_skip_graphify_and_graphify_status_aliases_remain_functional(tmp_path):
-    repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
-    env = _env(tmp_path)
-
-    init = _run(repo, env, "init", "--skip-graphify")
-    status = _run(repo, env, "graphify", "status")
-    canonical_status = _run(repo, env, "status")
-
-    assert init.returncode == 0, init.stderr
-    assert status.returncode == canonical_status.returncode
-    assert status.stdout == canonical_status.stdout
-    assert "Initialized: yes" in status.stdout
 
 
 def test_refresh_runs_graph_index_and_status(tmp_path):
@@ -78,24 +61,21 @@ def test_refresh_runs_graph_index_and_status(tmp_path):
     res = _run(repo, env, "refresh")
 
     assert res.returncode == 0, res.stderr
-    assert "Refreshing MIMRY" in res.stdout
-    assert "MIMRY indexing complete" in res.stdout
-    assert "Index: current" in res.stdout
+    assert "OK Indexed repo for the first time" in res.stdout
+    assert "4 files - 5 symbols - 5 links" in res.stdout
     assert (visible_graph_dir / "graph.json").exists()
-    assert (repo / ".mimry" / "graphify").exists() is False
 
-    status = _run(repo, env, "status")
+    status = _run(repo, env, "status", "--verbose")
 
     assert status.returncode == 0, status.stderr
-    assert "Status: current" in status.stdout
-    assert "Graph source changes: 0 changed, 0 missing" in status.stdout
-    assert "MIMRY graph artifacts stale/missing: no" in status.stdout
+    assert "OK repo is up to date" in status.stdout
+    assert "Graph       current," in status.stdout
 
     changed_source = repo / "src" / "auth" / "session.py"
     changed_source.write_text(changed_source.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
-    stale_status = _run(repo, env, "status")
+    stale_status = _run(repo, env, "status", "--verbose")
 
     assert stale_status.returncode == 2, stale_status.stderr
-    assert "Status: stale" in stale_status.stdout
-    assert "Graph source changes: 1 changed, 0 missing" in stale_status.stdout
-    assert "MIMRY graph artifacts stale/missing: yes" in stale_status.stdout
+    assert "! repo is out of date - 1 file changed since the last index" in stale_status.stdout
+    assert "changed  src/auth/session.py" in stale_status.stdout
+    assert "Graph       stale," in stale_status.stdout

@@ -223,18 +223,20 @@ def _index_operation(*, exclusive: bool = False):
     return decorate
 
 
-def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
+def _status_payload_unchecked(root_path: Path, verify: bool = False) -> dict[str, Any]:
     ptr = load_pointer(root_path)
     if not ptr:
         return {"initialized": False, "root": str(root_path), "recommended": "Run `mimry init`."}
-    fresh = index_freshness(root_path, ptr)
+    fresh = index_freshness(root_path, ptr, verify=verify)
     idx = fresh["index_path"]
     files = fresh["files"]
     symbols = fresh["symbols"]
     changed = fresh["changed"]
     missing = fresh["missing"]
     state = fresh["state"]
-    graph = graph_health(root_path, index_state=state)
+    graph = graph_health(
+        root_path, index_state=state, verified_hashes=fresh["verified_hashes"], native_paths=fresh.get("native_paths")
+    )
     payload = {
         "initialized": True,
         "root": str(root_path),
@@ -249,16 +251,13 @@ def _status_payload_unchecked(root_path: Path) -> dict[str, Any]:
         "graph": graph,
         "semantic": semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files)),
     }
-    # Compatibility window for clients released before the native graph rename.
-    # Keep `graph` canonical and return the legacy key as an equal alias.
-    payload["graphify"] = graph
     return payload
 
 
-def _status_payload(root_path: Path) -> dict[str, Any]:
+def _status_payload(root_path: Path, verify: bool = False) -> dict[str, Any]:
     try:
         with active_index_pointer(root_path):
-            return _status_payload_unchecked(root_path)
+            return _status_payload_unchecked(root_path, verify)
     except UnsupportedIndexSchemaError as exc:
         return _unsupported_schema_error_payload(exc, root=root_path)
     except IndexSchemaMigrationError as exc:
@@ -280,17 +279,23 @@ def mimry_list_adapters(active_only: bool = False) -> dict[str, Any]:
 
 @mcp.tool
 @_state_guard
-def mimry_status(root: str | None = None) -> dict[str, Any]:
-    """Return MIMRY initialization and index freshness for a root."""
-    return _status_payload(_root(root))
+def mimry_status(root: str | None = None, verify: bool = False) -> dict[str, Any]:
+    """Return MIMRY initialization and index freshness for a root.
+
+    Freshness trusts unchanged file metadata, like git; ``verify`` re-hashes every file.
+    """
+    return _status_payload(_root(root), verify)
 
 
 @mcp.tool
 @_state_guard
-def mimry_reindex(root: str | None = None) -> dict[str, Any]:
-    """Rebuild the local MIMRY index for a root."""
+def mimry_reindex(root: str | None = None, full: bool = False) -> dict[str, Any]:
+    """Rebuild the local MIMRY index for a root; ``full`` re-parses unchanged files too."""
     root_path = _root(root)
-    stats = write_index(root_path, require(root_path, validate=False))
+    stats = write_index(root_path, require(root_path, validate=False), full=full)
+    # Counts, not path lists: a branch switch can change thousands of files.
+    changes = stats.get("changes")
+    stats["changes"] = {kind: len(paths) for kind, paths in changes.items()} if changes is not None else None
     return {"root": str(root_path), **stats}
 
 
@@ -300,11 +305,9 @@ def mimry_init(
     root: str | None = None,
     root_type: str = "repo",
     skip_graph: bool = False,
-    skip_graphify: bool | None = None,
 ) -> dict[str, Any]:
     """Initialize MIMRY metadata for a root."""
     root_path = _root(root)
-    skip_graph = skip_graph or bool(skip_graphify)
     payload = _capture_command(
         cmd_init, SimpleNamespace(root=str(root_path), root_type=root_type, skip_graph=skip_graph)
     )

@@ -47,7 +47,7 @@ def new_plan(root: Path, text: str = "Ship feature", *, name: str | None = None)
         args += ["--name", name]
     code, out, err = run(root, *args)
     assert code == 0, err
-    fields = dict(line.split(": ", 1) for line in out.splitlines() if ": " in line)
+    fields = dict(line.strip().split(": ", 1) for line in out.splitlines()[1:] if ": " in line)
     return fields["Plan ID"], fields["Root node ID"]
 
 
@@ -277,7 +277,9 @@ def test_inventory_is_deterministic_and_contains_no_absolute_paths(tmp_path: Pat
     first = new_plan(root, "Alpha", name="alpha")[0]
     code, out, err = run(root, "plan", "list")
     assert code == 0, err
-    assert out.splitlines() == sorted(out.splitlines())
+    title, *rows = out.splitlines()
+    assert title == "Plans (2)"
+    assert rows == sorted(rows)
     assert first in out and second in out
     assert str(root) not in out
 
