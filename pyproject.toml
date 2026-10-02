@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mimry"
-version = "0.2.0"
+version = "0.2.1"
 description = "Modular Intelligence Memory for Repos"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jbacalso24/mimry"
+Homepage = "https://jbacalso24.github.io/mimry/"
 Repository = "https://github.com/jbacalso24/mimry"
 GitHub = "https://github.com/jbacalso24"
 
