@@ -413,7 +413,8 @@ Handled explicitly, because each was a real bug:
 
 ## Support and releases
 
-CI runs on every push and pull request: lint, tests, an end-to-end determinism matrix, an unlocked extracted-sdist parser suite, and a clean-wheel smoke test on each platform, plus jobs that compare determinism evidence across platforms, gate the retrieval benchmark, and audit the locked runtime dependencies for known vulnerabilities.
+CI runs on every push and pull request: lint, tests, an end-to-end determinism matrix, an unlocked extracted-sdist parser suite, and a clean-wheel smoke test on each platform, plus jobs that compare determinism evidence across platforms and gate the retrieval benchmark.
+A separate workflow audits the locked runtime dependencies for known vulnerabilities whenever they change, and weekly.
 Releases are cut by pushing a `vX.Y.Z` tag, which builds reproducible artifacts and publishes them to PyPI and GitHub Releases.
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the release checks.
 Report security issues privately as described in [`SECURITY.md`](SECURITY.md); contributions follow [`CONTRIBUTING.md`](CONTRIBUTING.md).

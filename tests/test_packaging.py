@@ -81,10 +81,3 @@ def test_unlocked_ci_matrix_invokes_only_the_extracted_artifact_script():
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert '"$GITHUB_WORKSPACE/$artifact_root/scripts/determinism_matrix.py"' in workflow
     assert '"$GITHUB_WORKSPACE/scripts/determinism_matrix.py"' not in workflow
-
-
-def test_ci_audits_the_exact_locked_runtime_dependency_graph():
-    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "dependency-audit:" in workflow
-    assert "uv export --frozen --no-dev --no-emit-project" in workflow
-    assert "uvx pip-audit -r /tmp/mimry-runtime.txt --progress-spinner off" in workflow

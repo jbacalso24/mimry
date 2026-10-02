@@ -1,0 +1,38 @@
+name: Dependency audit
+
+# Separate from CI so a newly published advisory turns this workflow red, not
+# unrelated pull requests. It runs when the locked dependencies change, and
+# weekly so new advisories against an unchanged lock still surface.
+on:
+  push:
+    branches: [main]
+    paths: [uv.lock, pyproject.toml, .github/workflows/audit.yml]
+  pull_request:
+    paths: [uv.lock, pyproject.toml, .github/workflows/audit.yml]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Runtime dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Export the locked runtime environment
+        run: |
+          uv export --frozen --no-dev --no-emit-project \
+            --format requirements-txt --output-file /tmp/mimry-runtime.txt
+
+      - name: Reject known runtime vulnerabilities
+        run: uvx pip-audit==2.10.1 -r /tmp/mimry-runtime.txt --progress-spinner off

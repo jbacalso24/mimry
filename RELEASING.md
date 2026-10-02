@@ -2,7 +2,7 @@
 
 MIMRY targets CPython 3.11–3.13 on Windows, Linux, and macOS. That matrix is committed
 in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every push and pull
-request: 3 operating systems x 3 Python versions, plus aggregate, audit, and benchmark jobs. All dependencies
+request: 3 operating systems x 3 Python versions, plus two aggregate jobs. All dependencies
 resolve from a standard index; MIMRY no longer pins any dependency to a Git commit.
 
 A green CI run is **required** for a release, and it is **not a substitute for review**. CI
@@ -16,8 +16,10 @@ what they encode.
 | --- | --- | --- |
 | `release-floor` | 3 OS x Python 3.11/3.12/3.13 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix, unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
 | `determinism-aggregate` | ubuntu-latest, needs `release-floor` | Every one of the 9 matrix cells emitted evidence, and all of them agree with each other and with the committed golden values on the canonical digest, the retrieval rankings, and the context pack |
-| `dependency-audit` | ubuntu-latest, locked runtime export | The exact locked runtime dependency graph has no vulnerability known to `pip-audit` at run time |
 | `benchmark-gate` | ubuntu-latest, locked env | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
+
+A separate [`audit.yml`](.github/workflows/audit.yml) workflow runs `pip-audit` against the exact locked runtime dependencies whenever `uv.lock` or `pyproject.toml` changes, and weekly.
+It is not a required check, so a newly published advisory never blocks unrelated pull requests; a red run means the lock needs an upgrade.
 
 ### Canonical versus operational evidence
 
