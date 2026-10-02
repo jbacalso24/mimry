@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: MIMRY version
-      description: From `uv tool list` or `pip show mimry`.
+      description: From `mimry --version` (0.2.2 and later), `uv tool list` or `pip show mimry`.
       placeholder: "0.2.1"
     validations:
       required: true
