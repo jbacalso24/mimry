@@ -8,6 +8,7 @@ MIMRY is an early public alpha. Focused bug fixes, portability improvements, pri
 - Keep the change narrow; avoid mixing refactors with behavior changes.
 - Open an issue first for large features, schema changes, new network behavior, telemetry, remote embeddings, or changes to privacy/security defaults.
 - Report vulnerabilities through [`SECURITY.md`](SECURITY.md), not a public issue.
+- Follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
 

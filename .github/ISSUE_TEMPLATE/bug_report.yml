@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in MIMRY does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here. Use the private report link in [SECURITY.md](https://github.com/jbacalso24/mimry/blob/main/SECURITY.md).
+        Remove secrets, private paths and proprietary source from anything you paste.
+  - type: input
+    id: version
+    attributes:
+      label: MIMRY version
+      description: From `uv tool list` or `pip show mimry`.
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or MCP tool you ran
+      description: The exact command, or the MCP tool and its arguments, plus the agent you used if any.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The output or error, copied as text.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
