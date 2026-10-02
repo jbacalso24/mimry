@@ -13,7 +13,7 @@ cherry-picked for MIMRY:
 - the task runs at the first parent of the merge commit, the code as it was
   before the change
 
-Requires an authenticated `gh` CLI. Writes benchmarks/tokens/tasks.json.
+Requires an authenticated `gh` CLI. Usage: select_tasks.py [dev|holdout]. Writes benchmarks/tokens/tasks.<set>.json.
 """
 
 from __future__ import annotations
@@ -81,9 +81,12 @@ def select(repo: str, per_repo: int) -> list[dict[str, object]]:
 
 
 def main() -> int:
-    config = json.loads((HERE / "repos.json").read_text(encoding="utf-8"))
+    # "dev" tasks may be inspected while improving ranking; "holdout" tasks come
+    # from different repositories and are only run to report the final number.
+    name = sys.argv[1] if len(sys.argv) > 1 else "dev"
+    config = json.loads((HERE / f"repos.{name}.json").read_text(encoding="utf-8"))
     tasks = [task for repo in config["repos"] for task in select(repo, config["tasks_per_repo"])]
-    (HERE / "tasks.json").write_text(json.dumps(tasks, indent=2) + "\n", encoding="utf-8")
+    (HERE / f"tasks.{name}.json").write_text(json.dumps(tasks, indent=2) + "\n", encoding="utf-8")
     print(f"selected {len(tasks)} tasks", file=sys.stderr)
     return 0
 

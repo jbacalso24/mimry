@@ -15,7 +15,7 @@ tool. Indexing is not charged: it is local, one-time, and uses no model tokens.
 
 Tokens are counted with tiktoken's o200k_base encoding. Run from the repo root:
 
-    uv run --with tiktoken python benchmarks/tokens/run.py --work C:/tmp/mimry-tokens
+    uv run --with tiktoken python benchmarks/tokens/run.py --work C:/tmp/mimry-tokens [--set dev|holdout]
 """
 
 from __future__ import annotations
@@ -172,13 +172,14 @@ def summarize(results: list[dict]) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--work", type=Path, required=True, help="Scratch directory for clones and the MIMRY cache")
+    parser.add_argument("--set", default="dev", choices=["dev", "holdout"], help="Task set to run")
     parser.add_argument("--only", help="Run only task ids containing this text")
     args = parser.parse_args()
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "MIMRY_CACHE_HOME": str(work / "cache"), "PYTHONIOENCODING": "utf-8"}
 
-    tasks = json.loads((HERE / "tasks.json").read_text(encoding="utf-8"))
+    tasks = json.loads((HERE / f"tasks.{args.set}.json").read_text(encoding="utf-8"))
     if args.only:
         tasks = [t for t in tasks if args.only in t["id"]]
     results, repo_tokens = [], {}
@@ -205,7 +206,7 @@ def main() -> int:
 
     report = {"summary": summarize(results), "tasks": results}
     if not args.only:
-        (HERE / "results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        (HERE / f"results.{args.set}.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report["summary"], indent=2))
     return 0
 
