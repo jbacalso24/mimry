@@ -18,6 +18,9 @@ what they encode.
 | `determinism-aggregate` | ubuntu-latest, needs `release-floor` | Every one of the 9 matrix cells emitted evidence, and all of them agree with each other and with the committed golden values on the canonical digest, the retrieval rankings, and the context pack |
 | `benchmark-gate` | ubuntu-latest, locked env | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
 
+A separate [`audit.yml`](.github/workflows/audit.yml) workflow runs `pip-audit` against the exact locked runtime dependencies whenever `uv.lock` or `pyproject.toml` changes, and weekly.
+It is not a required check, so a newly published advisory never blocks unrelated pull requests; a red run means the lock needs an upgrade.
+
 ### Canonical versus operational evidence
 
 Release evidence must distinguish the two. Canonical state is reproducible and is what the
@@ -50,6 +53,9 @@ uv sync --locked
 uv run ruff format --check .
 uv run ruff check .
 uv run pytest -q
+uv export --frozen --no-dev --no-emit-project \
+  --format requirements-txt --output-file /tmp/mimry-runtime.txt
+uvx pip-audit -r /tmp/mimry-runtime.txt --progress-spinner off
 rm -rf dist
 SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" uv build
 ```

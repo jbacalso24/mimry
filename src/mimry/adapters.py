@@ -168,7 +168,7 @@ PLANNED_ADAPTERS: tuple[AdapterInfo, ...] = (
         extensions=(".swift", ".xcodeproj", ".pbxproj"),
         parser="SwiftSyntax or pragmatic Swift/Xcode parser",
         emits=("targets", "entitlements", "app_groups", "native_symbols", "extension_edges"),
-        agent_use="Needed for Maggy iOS share extension and App Group work.",
+        agent_use="Maps iOS targets, entitlements, app extensions and App Groups for native mobile work.",
         notes="Later, but important for mobile native boundaries.",
     ),
 )

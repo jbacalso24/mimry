@@ -70,6 +70,12 @@ def run_cli(work: Path, cache: Path, *args: str):
     )
 
 
+def test_version_flag_prints_the_package_version(tmp_path: Path):
+    result = run_cli(tmp_path, tmp_path / "cache", "--version")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"mimry {version('mimry')}"
+
+
 def run_cli_from_cwd(work: Path, cache: Path, *args: str):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")

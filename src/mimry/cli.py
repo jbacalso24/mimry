@@ -37,12 +37,14 @@ def build_parser():
         cmd_symbol,
         cmd_why,
     )
+    from . import __version__
     from .hook import cmd_hook_check
     from .installer import cmd_install, cmd_uninstall
 
     p = argparse.ArgumentParser(
         prog="mimry", description="Local repo intelligence memory. Defaults --root to the current working directory."
     )
+    p.add_argument("--version", action="version", version=f"mimry {__version__}")
     p.add_argument("--root", default=".", help="Repo/folder to operate on (default: current working directory)")
     sub = p.add_subparsers(dest="command", required=True)
     s = sub.add_parser("init", help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees")

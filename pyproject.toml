@@ -9,6 +9,19 @@ description = "Modular Intelligence Memory for Repos"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+keywords = ["coding-agents", "mcp", "repository-intelligence", "semantic-search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+]
 authors = [{ name = "Judison Bacalso", email = "judisonbacalso24@gmail.com" }]
 dependencies = [
     "fastmcp>=3.4.2",
@@ -28,6 +41,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://jbacalso24.github.io/mimry/"
 Repository = "https://github.com/jbacalso24/mimry"
+Issues = "https://github.com/jbacalso24/mimry/issues"
 GitHub = "https://github.com/jbacalso24"
 
 [project.scripts]
@@ -67,7 +81,9 @@ include = [
     "/assets/banner.svg",
     "/README.md",
     "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
     "/RELEASING.md",
+    "/SECURITY.md",
     "/THIRD_PARTY.md",
     "/LICENSE",
     "/pyproject.toml",
