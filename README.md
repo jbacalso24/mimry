@@ -7,10 +7,11 @@
 <p align="center">
   <strong>Local repo memory for coding agents.</strong>
   <br />
-  Build context packs, graph maps, semantic recall, and feedback-ranked search from your own codebase.
+  Ranked files, context packs, a code relationship graph, and feedback-tuned search, built from your own codebase.
 </p>
 
 <p align="center">
+  <a href="https://pypi.org/project/mimry/"><img alt="PyPI" src="https://img.shields.io/pypi/v/mimry"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-green">
   <img alt="Local first" src="https://img.shields.io/badge/local--first-yes-purple">
@@ -19,171 +20,268 @@
 </p>
 
 <p align="center">
+  <a href="#install"><strong>Install</strong></a>
+  ·
   <a href="#quickstart"><strong>Quickstart</strong></a>
   ·
-  <a href="#why-mimry"><strong>Why MIMRY?</strong></a>
+  <a href="#for-ai-agents"><strong>For AI agents</strong></a>
   ·
-  <a href="#what-it-builds"><strong>What it builds</strong></a>
+  <a href="#connect-mimry-to-your-agent"><strong>MCP setup</strong></a>
   ·
-  <a href="#mcp-for-agents"><strong>MCP</strong></a>
-  ·
-  <a href="#good-roots-vs-bad-roots"><strong>Good roots</strong></a>
+  <a href="#commands"><strong>Commands</strong></a>
   ·
   <a href="#development"><strong>Development</strong></a>
 </p>
 
 ---
 
-MIMRY gives agents a focused memory layer for a repo or project folder. Instead of opening random files, rereading the same tree, or guessing where logic lives, an agent can ask MIMRY for a compact evidence-backed handoff before it edits anything.
+## What is MIMRY?
+
+MIMRY is a local command-line tool and MCP server that gives AI coding agents a memory of a code repository.
+It indexes a repo once, keeps the index fresh incrementally, and answers "which files matter for this task?" with a ranked, evidence-backed list and a written context pack.
+
+- **Who it is for:** anyone using an AI coding agent (Claude Code, Codex, Copilot CLI, Gemini CLI, Cursor-style tools, and others) on a real codebase.
+- **The problem it solves:** agents start every task cold. They grep blindly, reread the same files, miss the file that actually matters, and burn tokens and time doing it.
+- **What it does instead:** one command, `mimry preflight "<task>"`, returns the files to read first, how they connect, what to verify with, and a context pack the agent reads before touching code.
+- **How it works:** it parses source files into symbols and a relationship graph (imports, calls, definitions, inheritance, references), combines that with full-text and local semantic search, and learns from feedback about which files agents actually used.
+- **Where it runs:** entirely on your machine.
+  No code is uploaded, there are no remote embeddings, and there is no telemetry.
+- **What it is not:** it is not a source of truth, a code generator, or an LLM.
+  It narrows where to look; source files, tests, and build output remain the final truth.
+
+## Install
+
+MIMRY is a Python package on [PyPI](https://pypi.org/project/mimry/) and needs Python 3.11 or newer.
+It works on Windows, Linux, and macOS.
 
 ```bash
-cd /path/to/your/project
-mimry preflight "fix auth bug"
+uv tool install mimry
 ```
 
-MIMRY checks freshness, refreshes when needed, ranks likely files, and writes a context pack for the agent:
+`pipx install mimry` and `pip install mimry` also work.
+The install provides two commands: `mimry` (the CLI) and `mimry-mcp` (the MCP server for agents).
 
-```text
-Context: .mimry/mimry-out/context/latest.md
-Top files:
-1. src/auth/session.py
-2. src/app/login/page.tsx
-3. tests/test_auth.py
-```
-
-MIMRY is local-first. Source files, tests, and real build output remain the final truth.
-
-## Why MIMRY?
-
-Coding agents usually start cold. They need to discover project structure, find the right files, understand relationships, and avoid touching generated or risky paths. That wastes time and creates bad edits.
-
-MIMRY turns a local repo into a small intelligence layer:
-
-- **Context packs** for agent handoffs
-- **Task routing and role-aware briefs** for agent orchestration
-- **File and symbol indexes** for quick navigation
-- **Relationship maps** for code/document relationships
-- **Local semantic recall** for fuzzy “I remember something like…” queries
-- **Feedback ranking** from what agents actually opened, changed, missed, or ignored
-- **MCP tools** so coding agents can query MIMRY directly
-- **Privacy-first behavior**: no remote embeddings by default, no source dumps in context packs, and secret-looking feedback values are redacted before persistence
-- **Cooperative test isolation**: tester-owned `acceptance_tests/` trees stay outside ordinary index surfaces by default; this is not secrecy, because repository users can still open those files directly
-
-Use it when you want agents to answer:
-
-- “What files matter for this task?”
-- “Where is this flow probably implemented?”
-- “What should I read first?”
-- “What changed last time a similar task was done?”
-- “What verification commands are likely relevant?”
-
-## Quickstart
-
-MIMRY is a Python package with two CLI entrypoints:
-
-- `mimry` — main CLI
-- `mimry-mcp` — MCP server for agent integrations
-
-Requirements:
-
-- Python `>=3.11` (required CI currently covers 3.11, 3.12, and 3.13)
-- [`uv`](https://docs.astral.sh/uv/)
-- Git (for repo analysis)
-
-### Supported platforms
-
-MIMRY targets **Windows, Linux, and macOS**. Paths are handled POSIX-style
-internally regardless of host, and platform-specific syscalls are capability-guarded
-rather than assumed.
-
-CI runs the full suite on `ubuntu-latest`, `macos-latest`, and `windows-latest` across
-Python 3.11–3.13, so a regression on any of the three fails the build.
-
-Specific things that are handled rather than assumed, because each one was a real bug:
-
-- `Path.home()` resolves from `USERPROFILE` on Windows, not `HOME`
-- `fsync` needs a writable descriptor on Windows; `st_ctime` there is *creation* time
-  and differs between `os.fstat` and `Path.lstat` for the same file
-- `os.utime(follow_symlinks=False)` and byte-range lock semantics are capability-guarded
-- human CLI streams use `backslashreplace`, so Unicode paths degrade safely on strict
-  cp1252 consoles while JSON, Markdown, and index artifacts remain UTF-8
-- subprocesses never inherit stdin, which under the MCP stdio server is the JSON-RPC channel
-- paths are POSIX-normalized internally; only display strings use native separators
-
-MIMRY 0.1.x is distributed internally from an authorized checkout or as a direct wheel artifact. See [`RELEASING.md`](RELEASING.md) for the supported channel and exact commands.
-
-Install from a checkout:
-
-```bash
-git clone <mimry-repo-url>
-cd mimry
-uv sync
-uv run pytest -q
-uv tool install --editable . --force
-```
-
-Verify the install:
+Check it:
 
 ```bash
 mimry --help
-mimry status
-uv tool list
 ```
 
-Expected `uv tool list` output includes:
+Upgrade later with `uv tool upgrade mimry`.
 
-```text
-mimry v0.1.0
-- mimry
-- mimry-mcp
-```
+## Quickstart
 
-## First run in a project
-
-Use MIMRY inside a local repo or meaningful project folder:
+Run these inside the project you want an agent to work on:
 
 ```bash
 cd /path/to/your/project
 mimry init
-mimry refresh
-mimry status
-mimry context "understand auth flow"
+mimry index
+mimry preflight "fix the login redirect bug"
 ```
 
-For agents, prefer the one-command preflight workflow:
+`preflight` answers like this:
+
+```text
+✓ Context ready for "fix the login redirect bug"
+  Index is up to date (3,105 files, indexed just now)
+  Context pack: .mimry/mimry-out/context/latest.md
+
+Start with
+   1  src/auth/session.py
+      name matches · path matches
+   2  src/app/login/page.tsx
+      name matches
+   3  tests/test_auth.py
+      path matches
+
+Next: read .mimry/mimry-out/context/latest.md before opening files.
+```
+
+`preflight` also sets MIMRY up and builds the index on first use, so in practice it is the only command an agent needs to start a task.
+
+## For AI agents
+
+This section is written for an AI coding agent working in a repository where MIMRY is installed.
+
+### When to use MIMRY
+
+Use MIMRY before broad search.
+Run it first whenever you need to find where something lives, what a task touches, or how two parts of the code connect.
+Fall back to `grep`, `rg`, or reading files only to verify MIMRY's answer or when it cannot answer.
+
+### The workflow
+
+1. **Start the task:** `mimry preflight "<task in plain words>"`.
+2. **Read the context pack:** `.mimry/mimry-out/context/latest.md`.
+   It lists ranked files with reasons, key symbols, relationships, risky paths, and verification commands.
+3. **Navigate with focused queries** instead of scanning the tree:
+   `mimry find "<query>"`, `mimry symbol <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`.
+4. **Verify against the source.**
+   MIMRY output is navigation, not proof.
+   Open the files, run the tests, and trust the build output over any ranking.
+5. **Record what helped:**
+   `mimry feedback --query "<task>" --opened <files> --changed <files> --verification "<command and result>" --outcome passed`.
+   Future searches for similar tasks rank those files higher.
+
+### Rules
+
+- If MIMRY says the index is out of date, run `mimry reindex` (fast: it only re-reads changed files).
+- Treat `.mimry/`, caches, and generated files as support artifacts, never as the place to fix a bug.
+- Never paste secret values into context or reports; MIMRY skips secret-looking files and redacts feedback.
+- Output is plain ASCII when piped (`OK`, `!`, `x` marks), and exit codes are meaningful: `0` ok, `1` not set up, `2` stale or an error.
+  `mimry route "<task>" --json` returns structured data.
+
+## Connect MIMRY to your agent
+
+Agents can call MIMRY directly as an MCP server (stdio transport, command `mimry-mcp`).
+
+Claude Code:
 
 ```bash
-mimry preflight "fix auth bug"
+claude mcp add --scope user mimry -- mimry-mcp
 ```
 
-`preflight` initializes the root if needed, checks index freshness, builds the index only when there is none yet (a stale index still answers, with a warning; pass `--force-refresh` to reindex first), generates `.mimry/mimry-out/context/latest.md`, prints top files, and reminds the agent to read the context pack before opening source files.
+Codex:
+
+```bash
+codex mcp add mimry -- mimry-mcp
+```
+
+Any other MCP client:
+
+```json
+{
+  "mcpServers": {
+    "mimry": { "command": "mimry-mcp" }
+  }
+}
+```
+
+The server works on its current directory by default, and every tool accepts a `root` argument for another repo.
+
+| MCP tool | What it does |
+|---|---|
+| `mimry_preflight` | Set up if needed, then write a context pack and return the top files for a task |
+| `mimry_find` | Rank files for a query |
+| `mimry_related` | Files related to a query through the graph |
+| `mimry_semantic` | Fuzzy "something like this" search |
+| `mimry_symbol` | Look up a function, class, or other symbol by name |
+| `mimry_context` | Write a context pack for a task |
+| `mimry_explain` | Relevant files, key symbols, and how they connect |
+| `mimry_path` | Shortest relationship path between two files or symbols |
+| `mimry_why` | Why a file ranks for a query |
+| `mimry_route` / `mimry_brief` | Recommend an agent role and write a role-specific brief |
+| `mimry_status` / `mimry_refresh` / `mimry_reindex` / `mimry_init` | Index health and maintenance |
+| `mimry_feedback` | Record which files helped a task |
+| `mimry_list_adapters`, `mimry_digest`, `mimry_plan_*` | Adapters, canonical index digest, read-only plan trees |
+
+### Teach your agent to use it
+
+MIMRY can install a skill (instruction bundle) that teaches an agent the workflow above:
+
+```bash
+mimry install --project --platform claude-code --always-on --hooks
+```
+
+- `--project` installs into this repo only; omit it to install for every project.
+- `--always-on` adds a short rules block to the agent's always-read file, such as `AGENTS.md`.
+- `--hooks` adds a hook that nudges the agent to use MIMRY before broad searches.
+
+Supported platforms: `claude-code`, `codex`, `opencode`, `kilo`, `aider`, `copilot`, `claw`, `droid`, `trae`, `trae-cn`, `hermes`, `kiro`, `gemini`, `agents`, `amp`, `devin`, `antigravity`, `kimi`, `pi`, `codebuddy`.
+Run `mimry install --list-platforms` for aliases, `mimry install --project --platform <name> --status` to check an install, and `mimry uninstall --project --platform <name> --always-on --hooks` to remove it.
+
+## Why MIMRY?
+
+- **Agents find the right file first.**
+  On MIMRY's frozen retrieval benchmark, 94% of the files a task needs appear in its top 5 results (recall@5 0.94, nDCG@5 0.70).
+- **It stays fast on large repos.**
+  Like git, it trusts unchanged file metadata, so a reindex with no changes takes about three seconds on a 3,000-file repo, and a real reindex re-parses only what changed.
+- **Answers carry evidence.**
+  Every result says why it ranked, and `mimry why` and `mimry path` show the actual relationships behind it.
+  Unresolvable imports are dropped rather than guessed.
+- **It learns from use.**
+  Feedback about files agents opened, changed, missed, or ignored becomes an explainable ranking signal.
+- **It is private by default.**
+  Everything stays local, semantic search uses a deterministic local method (`local-hash-v1`), and credential files are skipped.
+- **Small outputs save tokens.**
+  Results are compact summaries and relative paths, never full source dumps.
+
+## Commands
+
+Every command answers the same way: one line that says what happened, a few indented details, and a next step only when something needs doing.
+Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons.
+
+| Command | Use it to |
+|---|---|
+| `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
+| `mimry find "<query>"` | Rank files for a query (`--semantic` blends in fuzzy matches) |
+| `mimry related "<query>"` | Find files connected through the graph |
+| `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
+| `mimry symbol <name>` | Find where a symbol is defined |
+| `mimry context "<task>"` | Write a context pack without the preflight checks |
+| `mimry explain "<task>"` | Files, key symbols, and how they connect |
+| `mimry path <a> <b>` | Shortest relationship path between two files or symbols |
+| `mimry why <file> --query "<task>"` | Why a file ranks for a query |
+| `mimry route "<task>"` | Recommend an agent role (`--json` for tools) |
+| `mimry brief "<task>" --agent <role>` | Write a role-specific brief |
+| `mimry init` / `mimry index` | Set up a repo and build the index |
+| `mimry reindex` / `mimry refresh` | Update the index (`--full` re-parses everything) |
+| `mimry status` | Is the index current? (`--verify` re-hashes every file) |
+| `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back |
+| `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
+| `mimry plan ...` | Store and render explicit plan trees |
+| `mimry adapters` | List the file-type adapters |
+| `mimry install` / `mimry uninstall` | Manage agent skills |
+| `mimry digest` | Print a canonical digest of the index |
+| `mimry cache wipe --current` | Delete this repo's cached index |
+
+Use `mimry --root /path/to/repo <command>` to target another repo.
+
+Keeping an index current:
+
+```text
+$ mimry status
+! my-app is out of date - 1 file changed, 1 new since the last index
+    changed  src/auth/session.py
+    new      src/auth/magic_link.py
+  Indexed 5 minutes ago · at commit d7bf046
+  3,105 files · 6,859 symbols · 10,749 links
+  Run `mimry reindex` to update it.
+
+$ mimry reindex
+✓ Updated the index for my-app in 2.2s
+  1 file changed, 1 added
+    changed  src/auth/session.py
+    added    src/auth/magic_link.py
+  3,106 files · 6,871 symbols · 10,762 links
+```
+
+Colour is used only on an interactive terminal, and `NO_COLOR=1` turns it off.
+Piped and captured output always uses plain ASCII marks, so scripts and agents see the same text on every platform.
 
 ## What it builds
 
-After `mimry init` and `mimry refresh`, a project gets this shape:
-
 ```text
 project-root/
-├─ .mimry/                  # hidden local control/config
-│  └─ mimry-out/            # generated MIMRY output for agents/humans
+├─ .mimry/                  # local settings, gitignored
+│  └─ mimry-out/            # generated output for agents and humans
 │     ├─ context/latest.md  # latest context pack
-│     └─ graph/             # native relationship graph artifacts
+│     └─ graph/             # relationship graph artifacts
 └─ source files...
 ```
 
-MIMRY also stores local indexes in the user cache directory. Those indexes are generated artifacts, not source of truth.
+The index itself lives in your user cache directory, outside the repo.
+It is a generated artifact, not a source of truth.
 
-## Freshness and incremental indexing
+A context pack contains the query and index freshness, ranked files with reasons, symbol hints, relationships, a suggested reading order, likely edit surfaces versus support files, risk notes for generated or sensitive paths, verification commands from the project's manifests and docs, and a final-report checklist.
+It uses relative paths and never includes full source or secret values.
+See [`docs/context-packs.md`](docs/context-packs.md) for the contract.
 
-Like git, MIMRY treats a file as unchanged while its size, inode and nanosecond mtime still match the snapshot it was indexed from, so status checks and reindexes do not re-read unchanged files.
-A reindex re-parses only new and changed files, and its output is identical to a full rebuild.
-Files modified within two seconds of the previous index scan are always re-read, which covers edits that land inside one timestamp tick.
-The one edit this cannot see is a rewrite that deliberately keeps size, inode and mtime.
-Run `mimry status --verify` to re-hash every file, and `mimry index --full` to re-parse every file.
+## Graph engine
 
-### Graph relationships
-
-The engine emits five edge types:
+MIMRY builds its own relationship graph in `src/mimry/core/`.
+Indexing parses each file once and derives these edges from what it read:
 
 | relation | shape | from |
 |---|---|---|
@@ -193,461 +291,145 @@ The engine emits five edge types:
 | `inherits` | symbol to symbol | base classes and implemented interfaces |
 | `references` | file to file, file to symbol | markdown links and SQL table mentions |
 
-Languages parsed: Python, JavaScript, JSX, TypeScript, TSX, Go, Rust, C#. Markdown,
-text, `.docx` and `.xlsx` are indexed for content and can carry `references` edges.
+Languages parsed: Python, JavaScript, JSX, TypeScript, TSX, Go, Rust, and C#.
+Markdown, text, `.docx`, and `.xlsx` are indexed for content and can carry `references` edges.
 
-Resolution never guesses. A target that is ambiguous, or defined outside the repo,
-produces no edge rather than a plausible one. `inherits` additionally resolves a base
-type by name across the repo when exactly one file defines that name, because C#
-reaches base types through `using <namespace>` rather than a path import.
+Resolution never guesses.
+A target that is ambiguous, or defined outside the repo, produces no edge rather than a plausible one.
+`inherits` additionally resolves a base type by name across the repo when exactly one file defines that name, because C# reaches base types through `using <namespace>` rather than a path import.
+Nodes are grouped into communities by deterministic label propagation, and `graph.json` is byte-identical across rebuilds of unchanged sources.
+Adding a language is a table entry in `core/languages.py`, since every grammar ships in the pinned `tree-sitter-language-pack`.
 
-A context pack includes:
+Artifacts land in `.mimry/mimry-out/graph/` (`graph.json`, `GRAPH_REPORT.md`, `manifest.json`) during `mimry index`; there is no separate build step.
 
-- query and status summary
-- index and graph freshness
-- ranked relevant files with reason labels
-- symbol/entity hints when indexed
-- graph relationship and community signals when available
-- suggested reading order
-- likely edit surfaces vs support files
-- risk notes for generated/cache/privacy-sensitive paths
-- suggested verification commands from project manifests and docs
-- final report checklist for agents
+## Freshness and incremental indexing
 
-Context packs remain relative-path-first and never dump full source or secret values. See [`docs/context-packs.md`](docs/context-packs.md) for the section contract.
-
-## CLI examples
-
-Every command answers in the same shape: one line that says what happened, a few indented details, and a next step only when something needs doing.
-
-```text
-$ mimry reindex
-✓ Updated the index for my-app in 2.2s
-  2 files changed, 1 added
-    changed  src/auth/session.py
-    changed  src/auth/middleware.py
-    added    src/auth/magic_link.py
-  3,105 files · 6,859 symbols · 10,749 links
-
-$ mimry status
-! my-app is out of date - 1 file changed since the last index
-    changed  src/auth/session.py
-  Indexed 5 minutes ago · at commit d7bf046
-  3,105 files · 6,859 symbols · 10,749 links
-  Run `mimry reindex` to update it.
-```
-
-Add `--verbose` (`-v`) to any command for paths, scores, raw ranking reasons and other internals.
-Colour is used only on an interactive terminal, and `NO_COLOR=1` turns it off.
-Piped and captured output always uses plain ASCII marks (`OK`, `!`, `x`), so scripts and agents see the same text everywhere.
-`mimry roots` lists every indexed folder on this machine, and `mimry roots --prune` forgets folders that no longer exist.
-
-Find likely files:
-
-```bash
-mimry find "auth login token"
-```
-
-Generate an agent handoff:
-
-```bash
-mimry context "debug checkout redirect"
-```
-
-Route a task to an agent role and write a focused brief:
-
-```bash
-mimry route "fix FastAPI auth migration bug"
-mimry route "fix FastAPI auth migration bug" --json
-mimry brief "fix FastAPI auth migration bug" --agent backend
-```
-
-`route` recommends one of `backend`, `frontend`, `mobile`, `reviewer`, `qa`, `docs`, `tooly`, or `general`, with confidence, why, suggested context-pack labels, likely files, risk level/severity, risk/approval gates, verification hints, and a pasteable next command. `--json` prints the same structured payload for agents/tools. `brief` writes `.mimry/mimry-out/context/brief-<agent>.md` without dumping source contents.
-
-Explain why something ranked:
-
-```bash
-mimry why src/auth/session.py --query "login auth bug"
-```
-
-Find a graph relationship path:
-
-```bash
-mimry path "ui hook" "sqlite cache"
-```
-
-Explain a task/debug area:
-
-```bash
-mimry explain "login route bug"
-```
-
-Use local semantic recall:
-
-```bash
-mimry semantic "vague thing I remember"
-mimry find "auth redirect weirdness" --semantic
-mimry context "payment flow bug" --semantic
-```
-
-Target another root explicitly:
-
-```bash
-mimry --root /path/to/repo status
-```
-
-## Recursive plan trees
-
-`mimry plan` is a narrow deterministic decomposer for explicit, user-authored
-plan structure. A plan has one root and ordered children; every child can be
-split again to arbitrary depth. It stores and renders the tree only. It does
-not generate plans with an LLM, execute work, schedule it, track evidence, or
-act as a board, goal, or todo system.
-
-Initialize MIMRY in the repository, then create and decompose a tree:
-
-```bash
-mimry plan new "Ship feature" --name ship-feature
-# prints Plan ID and Root node ID
-
-mimry plan split <plan-id> <root-node-id> \
-  --child "Design" \
-  --child "Implement"
-mimry plan split <plan-id> <design-node-id> \
-  --child "Data shape" \
-  --child "User flow"
-
-mimry plan tree <plan-id>
-mimry plan tree <plan-id> --json
-mimry plan tree <plan-id> --md
-mimry plan check <plan-id>
-mimry plan digest <plan-id>
-mimry plan list
-```
-
-Example default projection:
-
-```text
-Ship feature [node-...]
-|-- Design [node-...]
-|   |-- Data shape [node-...]
-|   `-- User flow [node-...]
-`-- Implement [node-...]
-```
-
-`split` is intentionally leaf-only. Repeated `--child` arguments define sibling
-order, and splitting a non-leaf is rejected rather than ambiguously replacing
-or appending children. Trees are stored as canonical versioned JSON under
-`.mimry/plans/` with atomic writes and a bounded local lock. Text is normalized
-to UTF-8/LF/NFC. Stable IDs, projections, validation errors, inventory, and the
-semantic SHA-256 exclude checkout paths, timestamps, locale, timezone, runtime
-state, and formatting-only metadata. Stored plans reject duplicate JSON keys,
-unknown fields, or IDs that no longer derive from their canonical plan/root/
-parent data. Redirected default, JSON, and Markdown projections are canonical
-UTF-8 bytes; interactive terminals retain code-page-safe human output.
-
-Read-only MCP parity is available as `mimry_plan_tree`, `mimry_plan_check`,
-`mimry_plan_digest`, and `mimry_plan_list`. Plan mutation remains CLI-only.
+Like git, MIMRY treats a file as unchanged while its size, inode, and nanosecond mtime still match the snapshot it was indexed from, so status checks and reindexes do not re-read unchanged files.
+A reindex re-parses only new and changed files, and its output is identical to a full rebuild.
+Files modified within two seconds of the previous index scan are always re-read, which covers edits that land inside one timestamp tick.
+The one edit this cannot see is a rewrite that deliberately keeps size, inode, and mtime.
+Run `mimry status --verify` to re-hash every file, and `mimry index --full` to re-parse every file.
 
 ## Feedback learning
 
-`mimry feedback` records local operational metadata about what an agent actually used after a task. It is not telemetry and is not durable user memory. It is stored in the current root's local SQLite cache and used as a modest explainable ranking signal for future similar queries.
-
-Example:
+`mimry feedback` records which files an agent actually used after a task.
+It is stored in the repo's local cache, is not telemetry, and becomes a modest, explainable ranking signal for similar future queries.
 
 ```bash
-mimry feedback --query "fix board card click bridge unavailable" \
+mimry feedback --query "fix board card click" \
   --context .mimry/mimry-out/context/latest.md \
-  --opened src/features/boards/api.ts,src/app/api/bridge/[...path]/route.ts \
-  --changed src/app/api/bridge/[...path]/route.ts \
+  --opened src/features/boards/api.ts \
+  --changed src/app/api/bridge/route.ts \
   --missed bridge/fastapi_app.py \
   --ignored README.md \
   --verification "npm run build passed" \
   --outcome passed
 ```
 
-Read feedback later:
+Exact filename, symbol, graph, and source evidence stay primary.
+Feedback breaks ties and recovers previously missed files; it does not override source-truth signals.
+
+## Recursive plan trees
+
+`mimry plan` stores explicit, user-authored plan trees: one root with ordered children, each of which can be split again.
+It stores and renders the tree only; it does not generate plans, execute work, or track progress.
 
 ```bash
-mimry feedback stats
-mimry feedback list --limit 10
-mimry feedback show <feedback_id>
+mimry plan new "Ship feature" --name ship-feature
+mimry plan split <plan-id> <root-node-id> --child "Design" --child "Implement"
+mimry plan tree <plan-id>          # also --json or --md
+mimry plan check <plan-id>
+mimry plan list
 ```
-
-Feedback can add labels such as:
-
-- `feedback changed-file boost`
-- `feedback opened-file boost`
-- `feedback missed-file recovery boost`
-- `feedback ignored suggestion downrank`
-
-Exact filename, symbol, graph, framework, and source evidence remain primary. Feedback helps break ties and recover previously missed files; it should not override source-truth signals.
-
-## MCP for agents
-
-Expose MIMRY to coding agents through MCP:
-
-```bash
-mimry-mcp
-```
-
-Available MCP-style workflows include:
-
-- status checks
-- index refresh
-- file search
-- related file discovery
-- symbol search
-- context-pack generation
-- adapter listing
-- task routing (`mimry_route`)
-- role-aware brief generation (`mimry_brief`)
-
-This lets agents ask the local project memory for focused context instead of scraping the whole repo from scratch.
-
-For a real stdio protocol round trip plus isolated Claude Code and Codex MCP registration checks, run:
-
-```bash
-uv run mimry-integration-smoke
-```
-
-The smoke is included in installed wheels as well as source artifacts. It creates a temporary repo/cache and temporary client config homes, passes clients a credential-free allowlisted environment, calls MIMRY tools through an actual FastMCP stdio client, asks Claude Code to health-check the server, and reads Codex's registered transport back as JSON. It never edits the operator's normal Claude/Codex configuration. Missing clients are reported as `UNVERIFIED`, not silently treated as passes; Herdr remains pane-only and is never simulated by this harness.
-
-## Agent skill install
-
-MIMRY can also install a MIMRY-owned skill/instruction bundle for coding agents. It installs MIMRY workflow rules only.
-
-List supported platforms:
-
-```bash
-mimry install --list-platforms
-```
-
-Install globally for an agent profile:
-
-```bash
-mimry install --platform claude-code
-mimry install --platform codex
-mimry install --platform hermes
-mimry install --platform agents
-mimry install --platform opencode
-mimry install --platform kilo
-mimry install --platform aider
-mimry install --platform copilot
-mimry install --platform claw
-mimry install --platform droid
-mimry install --platform trae
-mimry install --platform trae-cn
-mimry install --platform kiro
-mimry install --platform gemini
-mimry install --platform amp
-mimry install --platform devin
-mimry install --platform antigravity
-mimry install --platform kimi
-mimry install --platform pi
-mimry install --platform codebuddy
-```
-
-Install into the current project instead:
-
-```bash
-mimry install --project --platform codex
-```
-
-Project installs write skill files and focused references, for example:
 
 ```text
-.codex/skills/mimry/SKILL.md
-.codex/skills/mimry/references/workflow.md
-.codex/skills/mimry/references/commands.md
-.codex/skills/mimry/references/mcp.md
-.codex/skills/mimry/references/feedback.md
-.codex/skills/mimry/references/safety.md
+Ship feature [node-...]
+|-- Design [node-...]
+`-- Implement [node-...]
 ```
 
-For project-scoped installs, add always-on instructions so the agent is reminded to use MIMRY before broad search:
-
-```bash
-mimry install --project --platform codex --always-on
-```
-
-For supported platforms, also add PreToolUse hooks that nudge the agent before broad search/file exploration:
-
-```bash
-mimry install --project --platform codex --hooks
-mimry install --project --platform claude-code --hooks
-```
-
-Check install health and repair by rerunning install with the same options:
-
-```bash
-mimry install --project --platform codex --status
-mimry install --project --platform codex --always-on --hooks
-```
-
-Remove an install:
-
-```bash
-mimry uninstall --project --platform codex --always-on --hooks
-```
-
-`claude` is accepted as an alias for `claude-code`, `skills` for `agents`, `openclaw` for `claw`, and `factory` for `droid`. The Claude target means **Claude Code**, not the Claude web app.
-
-The installed skill tells agents to run `mimry preflight`, read `.mimry/mimry-out/context/latest.md`, use focused MIMRY queries before broad search, verify against real source/tests/build output, and record `mimry feedback` after work.
+`split` works on leaves only, and repeated `--child` arguments set sibling order.
+Trees are canonical versioned JSON under `.mimry/plans/`, written atomically.
+IDs, projections, and the semantic SHA-256 from `mimry plan digest` exclude paths, timestamps, locale, and formatting.
+MCP exposes read-only parity (`mimry_plan_tree`, `mimry_plan_check`, `mimry_plan_digest`, `mimry_plan_list`); changing a plan is CLI-only.
 
 ## Good roots vs bad roots
 
-MIMRY works best when one root equals one meaningful working context.
+MIMRY works best when one root is one meaningful working context: a repo or a project folder.
 
-Good roots:
+Good roots: `~/Documents/project-a`, `C:\Users\you\Documents\project-a`, `D:\Work\active-product`.
 
-```text
-/home/you/Documents/project-a
-/home/you/Documents/product-workspace
-/home/you/.hermes/hermes-agent
-/Users/you/Documents/project-a
-C:\Users\you\Documents\project-a
-D:\Work\active-product
-```
+Bad roots: `/`, `~`, `~/.config`, `~/.cache`, `C:\`, `C:\Users\you`, `AppData`, `node_modules`.
 
-Bad roots:
-
-```text
-/
-/home/you
-/home/you/.config
-/home/you/.cache
-/Users/you
-C:\
-C:\Users\you
-C:\Users\you\AppData
-node_modules
-```
-
-Avoid whole-drive or whole-home indexing. It is noisy, slower, and more likely to include secrets, caches, browser data, dependency folders, and unrelated old projects.
-
-If you want a personal “global” memory, create a curated folder such as:
-
-```text
-~/Workspace
-~/Documents/Active
-D:\Work\Active
-```
-
-Put only useful projects and docs there.
+Whole-drive or whole-home indexing is noisy, slow, and likely to include secrets, caches, and unrelated projects.
+For a personal "global" memory, make a curated folder such as `~/Workspace` and put only useful projects and docs in it.
 
 ## Local-first safety
 
-MIMRY is designed around local project memory:
-
-- source files remain the final truth
-- context packs use relative paths and summaries, not full source dumps
-- semantic search defaults to deterministic local `local-hash-v1`
-- feedback is local metadata, not telemetry
-- secret-looking feedback values are redacted before persistence
-- scanner/security rules skip common credential files
-- generated/cache paths are treated as support artifacts, not source fixes
-
-MIMRY narrows context. It does not replace reading source files, running tests, or checking real build output.
+- Source files remain the final truth.
+- Context packs use relative paths and summaries, not full source.
+- Semantic search defaults to the deterministic local `local-hash-v1`; nothing is sent to a remote embedding service.
+- Feedback is local metadata, not telemetry, and secret-looking values are redacted before they are stored.
+- Scanner rules skip common credential files.
+- Tester-owned `acceptance_tests/` trees stay out of ordinary index surfaces by default.
+  This is cooperative isolation, not secrecy: anyone with the repo can still open those files.
 
 ### Cache generation and lock safety
 
-Index publication, feedback writes, readers, generation cleanup, and `mimry cache wipe --current` use one stable per-root operation lock. POSIX readers share it; Windows readers intentionally take it exclusively because `msvcrt.locking` has no shared mode. Lock waits are bounded to 10 seconds by default; set `MIMRY_LOCK_TIMEOUT_SECONDS` to a positive number when a slower operation needs a larger bound. Timeout errors include the lock path and available holder metadata so a stuck process can be diagnosed without deleting lock files blindly.
+Index publication, feedback writes, readers, generation cleanup, and `mimry cache wipe --current` share one per-root operation lock.
+POSIX readers share it; Windows readers take it exclusively because `msvcrt.locking` has no shared mode.
+Lock waits are bounded to 10 seconds by default; set `MIMRY_LOCK_TIMEOUT_SECONDS` to raise the bound.
+Timeout errors include the lock path and holder metadata, so a stuck process can be diagnosed without deleting lock files blindly.
 
-After `mimry cache wipe --current`, status truthfully reports a missing index and the normal `mimry index` / `mimry refresh` path rebuilds it. `mimry cache wipe --all` is disabled until MIMRY has a proven cache-global writer coordination protocol; use the per-root wipe instead.
-
-Published indexes are immutable generations. Startup and successful publication remove abandoned staging/orphan trees while retaining only the pointer-current and last-known-good generations. Generation manifests checksum immutable sidecars, and SQLite semantic rows carry the same generation identity plus a deterministic content checksum.
-
-Locking uses advisory `flock` on POSIX systems, including macOS. Windows uses `msvcrt.locking` over one byte as a best-effort advisory equivalent; Windows does not provide POSIX inode/`flock` semantics, so native Windows crash/rename behavior remains a platform-specific verification boundary.
+Published indexes are immutable generations.
+Startup and successful publication remove abandoned staging trees and keep only the current and last-known-good generations.
+Generation manifests checksum immutable sidecars, and SQLite semantic rows carry the same generation identity plus a content checksum.
+`mimry cache wipe --all` is disabled until MIMRY has a proven cache-global writer protocol; use `--current` instead.
 
 ## Structured adapters
 
-MIMRY includes structured adapters for common project surfaces. Check active adapters with:
+Adapters teach MIMRY about common project surfaces: `python-ast`, `typescript-ast`, `config-manifest`, `nextjs-app-router`, `fastapi`, `react-native-expo`, `sql-schema`, `markdown-docs`, and `generic-text`.
+Run `mimry adapters --verbose` to see what each extracts.
 
-```bash
-mimry adapters --active-only
-```
+## Supported platforms
 
-Current adapters include:
+MIMRY targets Windows, Linux, and macOS on Python 3.11 to 3.13, and CI runs the full suite on all nine combinations.
+Paths are handled POSIX-style internally, and platform-specific system calls are capability-guarded rather than assumed.
+Handled explicitly, because each was a real bug:
 
-```text
-python-ast
-typescript-ast
-config-manifest
-nextjs-app-router
-fastapi
-react-native-expo
-sql-schema
-markdown-docs
-generic-text
-```
-
-## Graph engine
-
-MIMRY builds its own relationship graph in `src/mimry/core/`. Indexing parses each file
-once and derives three kinds of edge from what it already read:
-
-- `defines` -- a file defines a symbol
-- `imports` -- an import statement resolved to a real file in the repo
-- `calls` -- a call site resolved to a symbol, in the same file or through an import
-
-Imports that cannot be resolved unambiguously are dropped rather than guessed, so a
-relationship shown by `mimry path` or `mimry why` is one MIMRY can actually evidence.
-Nodes are grouped into communities by deterministic label propagation, and `graph.json`
-is byte-identical across rebuilds of unchanged sources.
-
-Languages covered: Python, JavaScript, TypeScript, JSX, TSX, Go, Rust, and C#. Adding a
-language is a table entry in `core/languages.py`, not new code -- every grammar ships in
-the already-pinned `tree-sitter-language-pack`.
-
-Artifacts land in `.mimry/mimry-out/graph/`: `graph.json`, `GRAPH_REPORT.md`, and
-`manifest.json`. They are written during `mimry index`; there is no separate build step.
+- `Path.home()` resolves from `USERPROFILE` on Windows, not `HOME`.
+- `fsync` needs a writable descriptor on Windows, and `st_ctime` there is creation time.
+- `os.utime(follow_symlinks=False)` and byte-range lock semantics are capability-guarded.
+- Human CLI output degrades Unicode safely on strict cp1252 consoles, while JSON, Markdown, and index artifacts stay UTF-8.
+- Subprocesses never inherit stdin, which under the MCP stdio server is the JSON-RPC channel.
 
 ## Support and releases
 
-MIMRY targets Python 3.11–3.13 on Windows, Linux, and macOS. That matrix is committed in
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every push and pull request:
-9 matrix cells running lint, tests, the real end-to-end determinism matrix, the unlocked
-extracted-sdist parser suite, and a clean-wheel smoke test; a `determinism-aggregate` job that
-requires evidence from all 9 cells and compares the canonical digest, retrieval rankings, and
-context pack across them and against committed golden values; and a `benchmark-gate` job that
-first validates that the committed PASS still matches the fixture, cases, retrieval
-source, and frozen thresholds, then writes a fresh measured report only to a CI artifact.
-
-A green CI run is required for a release but does not replace review. Releases are manual
-internal direct artifacts and there is no automated publishing step.
-
-See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the exact artifact and clean-wheel checks.
+CI runs on every push and pull request: lint, tests, an end-to-end determinism matrix, an unlocked extracted-sdist parser suite, and a clean-wheel smoke test on each platform, plus jobs that compare determinism evidence across platforms and gate the retrieval benchmark.
+Releases are cut by pushing a `vX.Y.Z` tag, which builds reproducible artifacts and publishes them to PyPI and GitHub Releases.
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the release checks.
 
 ## Development
 
-Install development dependencies:
-
 ```bash
+git clone https://github.com/jbacalso24/mimry.git
+cd mimry
 uv sync
-```
-
-Run checks:
-
-```bash
 uv run ruff format .
 uv run ruff check .
 uv run pytest -q
 ```
 
-Install local Git hooks:
-
-```bash
-uv run pre-commit install
-uv run pre-commit run --all-files
-```
-
-Install the CLI from your checkout:
+Install the CLI from your checkout, so edits take effect immediately:
 
 ```bash
 uv tool install --editable . --force
 ```
 
+Install the Git hooks with `uv run pre-commit install`.
+Run `uv run mimry-integration-smoke` for a real MCP stdio round trip plus isolated Claude Code and Codex registration checks; it never touches your normal agent configuration.
+
 ## Status
 
-MIMRY is early but usable for local, per-project agent memory. It is not a whole-computer brain and should not be pointed at entire drives or home directories.
+MIMRY is early but usable for local, per-project agent memory.
+It is not a whole-computer brain and should not be pointed at entire drives or home directories.

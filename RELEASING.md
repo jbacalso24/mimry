@@ -30,21 +30,15 @@ used only for cache invalidation, feedback event IDs, and raw SQLite byte layout
 
 ## Distribution channel
 
-This release is an **internal direct-install artifact**. Distribution to a package index is a separate decision that has not been made; do not claim `pip install mimry` from an index is supported until it has.
+MIMRY is published to [PyPI](https://pypi.org/project/mimry/) and attached to [GitHub Releases](https://github.com/jbacalso24/mimry/releases).
+Pushing a `vX.Y.Z` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which checks that the tag matches the `pyproject.toml` version, builds the sdist and wheel with `SOURCE_DATE_EPOCH` set from the tagged commit, publishes to PyPI through Trusted Publishing (OIDC, no stored token), and creates the GitHub Release with the artifacts.
+The PyPI Trusted Publisher is configured for repository `jbacalso24/mimry`, workflow `release.yml`, and environment `pypi`.
 
-Note that the technical blocker is gone: metadata no longer contains a direct Git reference, which is what PyPI-style indexes reject.
-
-Distribute through an approved internal Git release or artifact store and install either from an authorized checkout or a direct wheel path/URL with `uv`. All dependencies resolve from a standard index:
+`main` accepts changes only through pull requests, so tag the merged commit on `main`, not a local branch commit.
 
 ```bash
-# Authorized checkout
-git clone <internal-mimry-repo-url>
-cd mimry
-uv sync --locked
-
-# Direct wheel file downloaded from the approved internal artifact store
-uv venv /tmp/mimry-venv
-uv pip install --python /tmp/mimry-venv/bin/python ./mimry-0.1.0-py3-none-any.whl
+uv tool install mimry          # users
+git clone https://github.com/jbacalso24/mimry.git && cd mimry && uv sync --locked   # contributors
 ```
 
 ## Release checks
@@ -87,4 +81,4 @@ evidence of parser compatibility, which is why `tree-sitter` carries an upper bo
 2. Re-run the unlocked-artifact parser and determinism lane before changing `tree-sitter` or `tree-sitter-language-pack`; keep both constrained in project metadata and regenerate `uv.lock`. Widening the `tree-sitter` upper bound requires that lane to pass and the golden determinism values to be re-confirmed, not regenerated to match.
 3. Run the complete release checks above on a clean checkout.
 4. Build twice with the same `SOURCE_DATE_EPOCH`, compare SHA-256 checksums, and review wheel metadata and sdist contents before tagging.
-5. Create the internal Git release/upload only after the release record contains the exact commands, platform/Python versions, and results for every claimed platform. Publishing to an index or adding automated publishing requires an explicit release decision.
+5. Merge the release pull request, then tag the merged commit and push the tag (`git tag -a vX.Y.Z <sha> -m "mimry X.Y.Z" && git push origin vX.Y.Z`); the release workflow publishes to PyPI and GitHub Releases.

@@ -54,6 +54,9 @@ jobs:
       - name: Publish GitHub Release with artifacts
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          # Not dist/*: uv build also writes dist/.gitignore, which would be uploaded as an asset.
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
           generate_release_notes: true
           fail_on_unmatched_files: true
