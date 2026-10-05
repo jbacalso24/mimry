@@ -148,6 +148,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     # files.jsonl by design. Counting them as changed would keep the index stale
     # forever, which pins graph health to stale and disables `mimry path`.
     unindexable = _unindexable_paths(idx)
+    secret_skipped = 0
 
     if files_path.exists():
         # Indexed files were secret-scanned from the exact bytes whose hashes we
@@ -160,12 +161,15 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
                 continue
             # Skipped at index time for secret-bearing bytes, and still the same file.
             if stat_cache is not None and stat_cache.trusts(rel, live, SENSITIVE):
+                secret_skipped += 1
                 continue
             try:
                 data, _ = read_snapshot(p, root=root)
             except OSError:
                 continue
-            if not security.has_sensitive_content(p, data=data):
+            if security.has_sensitive_content(p, data=data):
+                secret_skipped += 1
+            else:
                 changed.append(rel)
 
     changed = sorted(set(changed))
@@ -215,7 +219,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
         # feedback, and semantic artifacts. Never include file content here.
         "excluded_paths": sorted(excluded_paths),
         # Count only: these are paths policy intentionally keeps out of agent context.
-        "unindexable_count": len(unindexable),
+        "unindexable_count": len(unindexable) + secret_skipped,
         "state": state,
         "graph": visible_graph,
         "generation_id": ptr.get("generationId"),

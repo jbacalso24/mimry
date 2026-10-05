@@ -229,6 +229,7 @@ h2 { font-weight: 800; font-size: clamp(1.8rem, 3.4vw, 2.6rem); letter-spacing: 
 .grep .cmd { color: var(--ink); }
 .versus .term { box-shadow: none; }
 .footnote { margin: 28px 0 0; color: var(--slate); max-width: 70ch; }
+.footnote + .footnote { margin-top: 12px; }
 
 /* What it builds */
 .bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
@@ -389,7 +390,8 @@ Start with
 <span class="dim">      name matches</span></pre>
         </div>
       </div>
-      <p class="footnote">On MIMRY's frozen retrieval benchmark, 94% of the files a task needs appear in its top five results (recall@5 0.94, nDCG@5 0.70). <a href="https://github.com/jbacalso24/mimry/tree/main/benchmarks">See the benchmark</a></p>
+      <p class="footnote">On 48 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 62% fewer tokens than one using grep, and read every source file the change modified in 42 tasks to grep's 33. <a href="https://github.com/jbacalso24/mimry/tree/main/benchmarks/tokens">See the token benchmark</a></p>
+      <p class="footnote">On MIMRY's frozen retrieval benchmark, 94% of the files a task needs appear in its top five results (recall@5 0.94, nDCG@5 0.84). <a href="https://github.com/jbacalso24/mimry/tree/main/benchmarks">See the retrieval benchmark</a></p>
     </div>
   </section>
 

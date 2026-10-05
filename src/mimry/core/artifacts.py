@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import stat
 from collections import defaultdict, deque
@@ -9,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..intent import apply_intent_adjustment, query_terms
+from ..intent import apply_intent_adjustment, location_terms, matching_tokens, query_terms, text_terms
 from ..paths import graph_output_dir
 from ..security import markdown_inline, path_has_ignored_part, stat_identity, text_mentions_ignored_path
 
@@ -460,26 +461,39 @@ def _expand_along_edges(
         if not frontier:
             break
 
+    # One contribution per file, from its most strongly reached node. Summing
+    # every reached node let large hub files, which neighbour everything, top
+    # queries they have nothing specific to do with.
+    best_reached: dict[str, int] = {}
     for node_id in sorted(reached):
         node = node_by_id.get(node_id)
         src = node_source_file(node) if node else None
-        if not src:
-            continue
-        row = by_file.setdefault(
-            src,
-            {
-                "path": src,
-                "score": 0,
-                "reasons": set(),
-                "nodes": [],
-                "max_degree": 0,
-                "communities": set(),
-                "topology_boost": 0,
-                "topology_nodes": 0,
-            },
-        )
-        row["score"] += reached[node_id]
+        if src:
+            best_reached[src] = max(best_reached.get(src, 0), reached[node_id])
+
+    for src, carried in sorted(best_reached.items()):
+        row = by_file.setdefault(src, {"path": src, "score": 0, "reasons": set(), "nodes": []})
+        row["score"] += carried
         row["reasons"].add("reached by MIMRY graph relationship")
+
+
+_LABEL_WEIGHT = 30
+_PATH_WEIGHT = 25
+_COVERAGE_WEIGHT = 12
+
+
+def _term_weights(terms: list[str], total_files: int, file_hits: dict[str, tuple]) -> dict[str, float]:
+    """Inverse document frequency over files: a rare query word is stronger evidence.
+
+    "fish" in a task about fish shell completion points at one file; "completion"
+    points at a dozen. Treating them equally ranked whichever file matched the
+    common word most often.
+    """
+    df = dict.fromkeys(terms, 0)
+    for path_hits, node_hits in file_hits.values():
+        for term in path_hits.union(*(hits for hits, _ in node_hits)):
+            df[term] += 1
+    return {term: 1.0 + math.log((total_files + 1) / (df[term] + 1)) for term in terms}
 
 
 def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
@@ -499,56 +513,73 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         if e.get("target"):
             degree[str(e["target"])] += 1
 
-    matched_scores: dict[str, int] = {}
+    located = location_terms(terms)
+    nodes_by_file: dict[str, list[dict]] = defaultdict(list)
     for n in nodes:
         src = node_source_file(n)
-        if not src:
-            continue
-        text = " ".join(str(n.get(k, "")) for k in ("label", "norm_label", "source_file", "file_type", "id")).lower()
-        score = 0
-        reasons = []
-        for term in terms:
-            if term in text:
-                if term in str(n.get("label", "")).lower() or term in str(n.get("norm_label", "")).lower():
-                    score += 45
-                    reasons.append("graph node label match")
-                if term in src.lower():
-                    score += 35
-                    reasons.append("graph source file match")
-                if term in str(n.get("id", "")).lower():
-                    score += 10
-                    reasons.append("graph node id match")
-        if not score:
-            continue
-        deg = degree.get(str(n.get("id")), 0)
-        if deg:
-            score += min(25, deg * 5)
-        if n.get("community") is not None:
-            score += 5
-        row = by_file.setdefault(
-            src,
-            {
-                "path": src,
-                "score": 0,
-                "reasons": set(),
-                "nodes": [],
-                "max_degree": 0,
-                "communities": set(),
-                "topology_boost": 0,
-                "topology_nodes": 0,
-            },
+        if src:
+            nodes_by_file[src].append(n)
+    path_tokens = {src: text_terms(src) for src in nodes_by_file}
+    label_tokens = {
+        id(n): text_terms(f"{n.get('label', '')} {n.get('norm_label', '')}")
+        for file_nodes in nodes_by_file.values()
+        for n in file_nodes
+    }
+    matches = matching_tokens(located, set().union(*path_tokens.values(), *label_tokens.values()))
+
+    def hits_in(tokens: frozenset[str]) -> frozenset[str]:
+        return frozenset(term for term in located if not tokens.isdisjoint(matches[term]))
+
+    file_hits: dict[str, tuple[frozenset[str], list[tuple[frozenset[str], dict]]]] = {}
+    for src, file_nodes in sorted(nodes_by_file.items()):
+        node_hits = [(hits, n) for n in file_nodes if (hits := hits_in(label_tokens[id(n)]))]
+        path_hits = hits_in(path_tokens[src])
+        if node_hits or path_hits:
+            file_hits[src] = (path_hits, node_hits)
+    weights = _term_weights(located, len(nodes_by_file), file_hits)
+
+    matched_scores: dict[str, int] = {}
+    for src, (path_hits, node_hits) in file_hits.items():
+        matched = sorted(
+            ((sum(weights[t] for t in hits), hits, n) for hits, n in node_hits),
+            key=lambda item: (-item[0], str(item[2].get("id"))),
         )
-        row["score"] += score
-        row["reasons"].update(reasons)
-        row["nodes"].append(str(n.get("label") or n.get("id")))
-        row["max_degree"] = max(row["max_degree"], deg)
-        topology_boost = min(25, deg * 5) + (5 if n.get("community") is not None else 0)
-        if topology_boost:
-            row["topology_boost"] += topology_boost
-            row["topology_nodes"] += 1
-        if n.get("community") is not None:
-            row["communities"].add(str(n["community"]))
-        matched_scores[str(n.get("id"))] = max(matched_scores.get(str(n.get("id")), 0), score)
+        # A file is as relevant as its best match, not the sum of all of them.
+        # Summing let test files, with dozens of descriptively named cases,
+        # outrank the one source file the task is about.
+        best_weight, best_hits, best = matched[0] if matched else (0.0, frozenset(), None)
+        covered = best_hits.union(*(hits for _, hits, _ in matched))
+        score = (
+            _LABEL_WEIGHT * best_weight
+            + _PATH_WEIGHT * sum(weights[t] for t in path_hits)
+            + _COVERAGE_WEIGHT * sum(weights[t] for t in covered - best_hits)
+            + (min(15.0, 5 * math.log2(len(matched))) if len(matched) > 1 else 0.0)
+        )
+        reasons = set()
+        if matched:
+            reasons.add("graph node label match")
+        if path_hits:
+            reasons.add("graph source file match")
+        if best is not None:
+            # Topology of the best match only, for the same reason as above.
+            deg = degree.get(str(best.get("id")), 0)
+            in_community = best.get("community") is not None
+            topology_boost = min(25, deg * 5) + (5 if in_community else 0)
+            if topology_boost:
+                score += topology_boost
+                detail = ", ".join(
+                    filter(None, (f"degree {deg}" if deg else "", "in a community" if in_community else ""))
+                )
+                reasons.add(f"graph topology boost {topology_boost} ({detail})")
+        by_file[src] = {
+            "path": src,
+            "score": int(round(score)),
+            "reasons": reasons,
+            "nodes": [str(n.get("label") or n.get("id")) for _, _, n in matched],
+        }
+        for node_weight, _, n in matched:
+            node_id = str(n.get("id"))
+            matched_scores[node_id] = max(matched_scores.get(node_id, 0), int(round(_LABEL_WEIGHT * node_weight)))
 
     _expand_along_edges(nodes, links, matched_scores, by_file)
 
@@ -559,17 +590,6 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         if row["score"] <= 0:
             continue
         row["reasons"].update(intent_reasons)
-
-        topology_details = []
-        if row["max_degree"]:
-            topology_details.append(f"max degree {row['max_degree']}")
-        if row["communities"]:
-            topology_details.append(f"{len(row['communities'])} communities")
-        if row["topology_boost"]:
-            detail = f" ({'; '.join(topology_details)})" if topology_details else ""
-            row["reasons"].add(
-                f"graph topology boost {row['topology_boost']} across {row['topology_nodes']} matched nodes{detail}"
-            )
         node_preview = ", ".join(row["nodes"][:4])
         reason = ", ".join(sorted(row["reasons"]))
         if node_preview:

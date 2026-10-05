@@ -201,7 +201,7 @@ Run `mimry install --list-platforms` for aliases, `mimry install --project --pla
 ## Why MIMRY?
 
 - **Agents find the right file first.**
-  On MIMRY's frozen retrieval benchmark, 94% of the files a task needs appear in its top 5 results (recall@5 0.94, nDCG@5 0.70).
+  On MIMRY's frozen retrieval benchmark, 94% of the files a task needs appear in its top 5 results (recall@5 0.94, nDCG@5 0.84).
 - **It stays fast on large repos.**
   Like git, it trusts unchanged file metadata, so a reindex with no changes takes about three seconds on a 3,000-file repo, and a real reindex re-parses only what changed.
 - **Answers carry evidence.**
@@ -211,7 +211,8 @@ Run `mimry install --list-platforms` for aliases, `mimry install --project --pla
   Feedback about files agents opened, changed, missed, or ignored becomes an explainable ranking signal.
 - **It is private by default.**
   Everything stays local, semantic search uses a deterministic local method (`local-hash-v1`), and credential files are skipped.
-- **Small outputs save tokens.**
+- **It saves tokens.**
+  On 48 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 62% fewer tokens than one using grep, and read every source file the change modified in 42 tasks to grep's 33 ([token benchmark](benchmarks/tokens/README.md)).
   Results are compact summaries and relative paths, never full source dumps.
 
 ## Commands

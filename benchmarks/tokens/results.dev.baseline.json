@@ -4,17 +4,17 @@
     "read_budget": 10,
     "success": {
       "grep": 30,
-      "mimry": 32
+      "mimry": 23
     },
     "tokens_total": {
       "grep": 1894477,
-      "mimry": 1357462
+      "mimry": 2433178
     },
-    "savings_vs_grep_pct": 28.3,
-    "both_succeeded": 26,
-    "savings_vs_grep_pct_both_succeeded": 35.8,
-    "median_task_savings_vs_grep_pct": 21.6,
-    "median_x_fewer_than_reading_whole_repo": 15.5
+    "savings_vs_grep_pct": -28.4,
+    "both_succeeded": 22,
+    "savings_vs_grep_pct_both_succeeded": -52.9,
+    "median_task_savings_vs_grep_pct": -17.6,
+    "median_x_fewer_than_reading_whole_repo": 8.5
   },
   "tasks": [
     {
@@ -33,12 +33,12 @@
         "success": false
       },
       "mimry": {
-        "tokens": 40362,
-        "search_tokens": 2723,
-        "reads": 4,
-        "first_gold_read": 4,
-        "gold_found": 1,
-        "success": true
+        "tokens": 66278,
+        "search_tokens": 2792,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
       }
     },
     {
@@ -58,11 +58,11 @@
         "success": true
       },
       "mimry": {
-        "tokens": 60899,
-        "search_tokens": 2661,
+        "tokens": 52787,
+        "search_tokens": 2702,
         "reads": 10,
-        "first_gold_read": 6,
-        "gold_found": 1,
+        "first_gold_read": null,
+        "gold_found": 0,
         "success": false
       }
     },
@@ -82,12 +82,12 @@
         "success": true
       },
       "mimry": {
-        "tokens": 11128,
-        "search_tokens": 2412,
-        "reads": 1,
-        "first_gold_read": 1,
-        "gold_found": 1,
-        "success": true
+        "tokens": 28848,
+        "search_tokens": 2389,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
       }
     },
     {
@@ -108,11 +108,11 @@
         "success": false
       },
       "mimry": {
-        "tokens": 77850,
-        "search_tokens": 2655,
+        "tokens": 65002,
+        "search_tokens": 2615,
         "reads": 10,
-        "first_gold_read": 6,
-        "gold_found": 1,
+        "first_gold_read": null,
+        "gold_found": 0,
         "success": false
       }
     },
@@ -132,10 +132,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16162,
-        "search_tokens": 2614,
-        "reads": 4,
-        "first_gold_read": 4,
+        "tokens": 30662,
+        "search_tokens": 2609,
+        "reads": 9,
+        "first_gold_read": 9,
         "gold_found": 1,
         "success": true
       }
@@ -157,12 +157,12 @@
         "success": true
       },
       "mimry": {
-        "tokens": 33567,
-        "search_tokens": 2668,
-        "reads": 5,
-        "first_gold_read": 1,
-        "gold_found": 2,
-        "success": true
+        "tokens": 60402,
+        "search_tokens": 2595,
+        "reads": 10,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": false
       }
     },
     {
@@ -182,10 +182,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 18096,
-        "search_tokens": 2636,
-        "reads": 3,
-        "first_gold_read": 1,
+        "tokens": 47476,
+        "search_tokens": 2620,
+        "reads": 9,
+        "first_gold_read": 6,
         "gold_found": 2,
         "success": true
       }
@@ -208,12 +208,12 @@
         "success": false
       },
       "mimry": {
-        "tokens": 29229,
-        "search_tokens": 2654,
-        "reads": 5,
-        "first_gold_read": 3,
-        "gold_found": 3,
-        "success": true
+        "tokens": 68385,
+        "search_tokens": 2668,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": false
       }
     },
     {
@@ -233,12 +233,12 @@
         "success": true
       },
       "mimry": {
-        "tokens": 21222,
-        "search_tokens": 2494,
-        "reads": 4,
-        "first_gold_read": 1,
-        "gold_found": 2,
-        "success": true
+        "tokens": 38948,
+        "search_tokens": 2887,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": false
       }
     },
     {
@@ -260,10 +260,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 12543,
-        "search_tokens": 2745,
-        "reads": 4,
-        "first_gold_read": 1,
+        "tokens": 18498,
+        "search_tokens": 2689,
+        "reads": 5,
+        "first_gold_read": 2,
         "gold_found": 4,
         "success": true
       }
@@ -287,8 +287,8 @@
         "success": true
       },
       "mimry": {
-        "tokens": 11152,
-        "search_tokens": 2623,
+        "tokens": 11246,
+        "search_tokens": 2717,
         "reads": 4,
         "first_gold_read": 1,
         "gold_found": 4,
@@ -311,8 +311,8 @@
         "success": true
       },
       "mimry": {
-        "tokens": 55954,
-        "search_tokens": 2597,
+        "tokens": 49066,
+        "search_tokens": 2799,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
@@ -335,12 +335,12 @@
         "success": true
       },
       "mimry": {
-        "tokens": 4494,
-        "search_tokens": 2543,
-        "reads": 1,
-        "first_gold_read": 1,
-        "gold_found": 1,
-        "success": true
+        "tokens": 32123,
+        "search_tokens": 2882,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
       }
     },
     {
@@ -359,10 +359,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16294,
-        "search_tokens": 2728,
-        "reads": 1,
-        "first_gold_read": 1,
+        "tokens": 51928,
+        "search_tokens": 2723,
+        "reads": 10,
+        "first_gold_read": 10,
         "gold_found": 1,
         "success": true
       }
@@ -383,8 +383,8 @@
         "success": true
       },
       "mimry": {
-        "tokens": 57473,
-        "search_tokens": 2528,
+        "tokens": 61887,
+        "search_tokens": 2632,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
@@ -408,8 +408,8 @@
         "success": false
       },
       "mimry": {
-        "tokens": 52077,
-        "search_tokens": 2702,
+        "tokens": 38907,
+        "search_tokens": 2711,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
@@ -432,10 +432,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 3457,
-        "search_tokens": 2409,
-        "reads": 1,
-        "first_gold_read": 1,
+        "tokens": 38465,
+        "search_tokens": 2462,
+        "reads": 4,
+        "first_gold_read": 4,
         "gold_found": 1,
         "success": true
       }
@@ -456,8 +456,8 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16407,
-        "search_tokens": 2505,
+        "tokens": 32036,
+        "search_tokens": 2590,
         "reads": 3,
         "first_gold_read": 3,
         "gold_found": 1,
@@ -480,10 +480,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 13761,
-        "search_tokens": 2700,
-        "reads": 2,
-        "first_gold_read": 2,
+        "tokens": 16465,
+        "search_tokens": 2673,
+        "reads": 3,
+        "first_gold_read": 3,
         "gold_found": 1,
         "success": true
       }
@@ -504,8 +504,8 @@
         "success": true
       },
       "mimry": {
-        "tokens": 51705,
-        "search_tokens": 2171,
+        "tokens": 51662,
+        "search_tokens": 2128,
         "reads": 7,
         "first_gold_read": 7,
         "gold_found": 1,
@@ -528,8 +528,8 @@
         "success": true
       },
       "mimry": {
-        "tokens": 17481,
-        "search_tokens": 2346,
+        "tokens": 17995,
+        "search_tokens": 2860,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
@@ -552,10 +552,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 6602,
-        "search_tokens": 2552,
-        "reads": 2,
-        "first_gold_read": 2,
+        "tokens": 62627,
+        "search_tokens": 2597,
+        "reads": 9,
+        "first_gold_read": 9,
         "gold_found": 1,
         "success": true
       }
@@ -576,10 +576,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 17528,
-        "search_tokens": 2396,
-        "reads": 1,
-        "first_gold_read": 1,
+        "tokens": 33435,
+        "search_tokens": 2413,
+        "reads": 2,
+        "first_gold_read": 2,
         "gold_found": 1,
         "success": true
       }
@@ -600,10 +600,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 17633,
-        "search_tokens": 2445,
-        "reads": 1,
-        "first_gold_read": 1,
+        "tokens": 33614,
+        "search_tokens": 2536,
+        "reads": 2,
+        "first_gold_read": 2,
         "gold_found": 1,
         "success": true
       }
@@ -624,10 +624,10 @@
         "success": false
       },
       "mimry": {
-        "tokens": 74178,
-        "search_tokens": 3049,
-        "reads": 5,
-        "first_gold_read": 5,
+        "tokens": 87503,
+        "search_tokens": 3104,
+        "reads": 8,
+        "first_gold_read": 8,
         "gold_found": 1,
         "success": true
       }
@@ -650,12 +650,12 @@
         "success": false
       },
       "mimry": {
-        "tokens": 62103,
-        "search_tokens": 3011,
-        "reads": 5,
-        "first_gold_read": 1,
-        "gold_found": 3,
-        "success": true
+        "tokens": 145097,
+        "search_tokens": 3033,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": false
       }
     },
     {
@@ -675,9 +675,9 @@
         "success": true
       },
       "mimry": {
-        "tokens": 39965,
-        "search_tokens": 2975,
-        "reads": 2,
+        "tokens": 99747,
+        "search_tokens": 2993,
+        "reads": 9,
         "first_gold_read": 1,
         "gold_found": 2,
         "success": true
@@ -699,8 +699,8 @@
         "success": false
       },
       "mimry": {
-        "tokens": 19594,
-        "search_tokens": 3012,
+        "tokens": 61816,
+        "search_tokens": 2978,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
@@ -723,8 +723,8 @@
         "success": true
       },
       "mimry": {
-        "tokens": 79641,
-        "search_tokens": 2938,
+        "tokens": 161113,
+        "search_tokens": 3158,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
@@ -749,10 +749,10 @@
         "success": false
       },
       "mimry": {
-        "tokens": 65026,
-        "search_tokens": 3036,
+        "tokens": 108105,
+        "search_tokens": 2969,
         "reads": 10,
-        "first_gold_read": 2,
+        "first_gold_read": 1,
         "gold_found": 1,
         "success": false
       }
@@ -773,10 +773,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 7668,
-        "search_tokens": 3109,
-        "reads": 1,
-        "first_gold_read": 1,
+        "tokens": 133712,
+        "search_tokens": 3128,
+        "reads": 9,
+        "first_gold_read": 9,
         "gold_found": 1,
         "success": true
       }
@@ -797,12 +797,12 @@
         "success": true
       },
       "mimry": {
-        "tokens": 6085,
-        "search_tokens": 3135,
-        "reads": 1,
-        "first_gold_read": 1,
-        "gold_found": 1,
-        "success": true
+        "tokens": 154274,
+        "search_tokens": 3152,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
       }
     },
     {
@@ -822,12 +822,12 @@
         "success": true
       },
       "mimry": {
-        "tokens": 99447,
-        "search_tokens": 2889,
-        "reads": 10,
-        "first_gold_read": 9,
-        "gold_found": 1,
-        "success": false
+        "tokens": 86294,
+        "search_tokens": 2753,
+        "reads": 8,
+        "first_gold_read": 6,
+        "gold_found": 2,
+        "success": true
       }
     },
     {
@@ -846,10 +846,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 29929,
-        "search_tokens": 2868,
-        "reads": 2,
-        "first_gold_read": 2,
+        "tokens": 18464,
+        "search_tokens": 2779,
+        "reads": 1,
+        "first_gold_read": 1,
         "gold_found": 1,
         "success": true
       }
@@ -873,12 +873,12 @@
         "success": false
       },
       "mimry": {
-        "tokens": 64795,
-        "search_tokens": 2660,
+        "tokens": 112788,
+        "search_tokens": 2699,
         "reads": 10,
-        "first_gold_read": 2,
-        "gold_found": 4,
-        "success": true
+        "first_gold_read": 1,
+        "gold_found": 3,
+        "success": false
       }
     },
     {
@@ -897,8 +897,8 @@
         "success": true
       },
       "mimry": {
-        "tokens": 18416,
-        "search_tokens": 2867,
+        "tokens": 18352,
+        "search_tokens": 2803,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
@@ -924,12 +924,12 @@
         "success": false
       },
       "mimry": {
-        "tokens": 57199,
-        "search_tokens": 2858,
-        "reads": 8,
+        "tokens": 115419,
+        "search_tokens": 2781,
+        "reads": 10,
         "first_gold_read": 1,
-        "gold_found": 4,
-        "success": true
+        "gold_found": 3,
+        "success": false
       }
     },
     {
@@ -948,10 +948,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 22745,
-        "search_tokens": 2853,
-        "reads": 2,
-        "first_gold_read": 2,
+        "tokens": 18375,
+        "search_tokens": 2791,
+        "reads": 1,
+        "first_gold_read": 1,
         "gold_found": 1,
         "success": true
       }
@@ -972,10 +972,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 33905,
-        "search_tokens": 2794,
-        "reads": 3,
-        "first_gold_read": 3,
+        "tokens": 57917,
+        "search_tokens": 2780,
+        "reads": 5,
+        "first_gold_read": 5,
         "gold_found": 1,
         "success": true
       }
@@ -996,10 +996,10 @@
         "success": true
       },
       "mimry": {
-        "tokens": 13690,
-        "search_tokens": 2869,
-        "reads": 1,
-        "first_gold_read": 1,
+        "tokens": 45460,
+        "search_tokens": 2833,
+        "reads": 3,
+        "first_gold_read": 3,
         "gold_found": 1,
         "success": true
       }

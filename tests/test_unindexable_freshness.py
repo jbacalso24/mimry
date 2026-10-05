@@ -370,3 +370,36 @@ def test_native_nfd_file_keeps_graph_current_in_status(tmp_path: Path, capsys) -
     stdout = capsys.readouterr().out
     assert "OK repo is up to date" in stdout
     assert "Graph       current," in stdout
+
+
+def test_files_skipped_for_secrets_are_reported_by_index_and_status(tmp_path: Path, capsys) -> None:
+    # A whole source file dropped for a secret-like line used to vanish without a
+    # word, which hid a detector false positive on the most important files.
+    root = _repo(tmp_path)
+    (root / "app" / "settings.py").write_text('API_TOKEN = "' + "x1y2z3" * 4 + '"\n', encoding="utf-8")
+    ptr = _index(root)
+    capsys.readouterr()
+
+    assert index_freshness(root, ptr)["unindexable_count"] == 1
+    assert cmd_status(SimpleNamespace(root=root, json=False, verbose=False)) == 0
+    assert "1 file skipped: may contain secrets or could not be read" in capsys.readouterr().out
+
+
+def test_a_secret_verdict_from_older_code_is_checked_again(tmp_path: Path, monkeypatch) -> None:
+    # After an upgrade that stops a false positive, the skipped file must count as
+    # a change; trusting the old verdict kept it out of the index with "up to date".
+    import mimry.reuse as reuse
+    import mimry.security as security
+
+    root = _repo(tmp_path)
+    settings = root / "app" / "settings.py"
+    settings.write_text('API_TOKEN = "' + "x1y2z3" * 4 + '"\n', encoding="utf-8")
+    old = settings.stat().st_mtime - 3600
+    os.utime(settings, (old, old))
+    ptr = _index(root)
+    assert "app/settings.py" not in index_freshness(root, ptr)["changed"]
+
+    monkeypatch.setattr(reuse, "code_fingerprint", lambda: "upgraded")
+    monkeypatch.setattr(security, "has_sensitive_content", lambda path, data=None: False)
+
+    assert "app/settings.py" in index_freshness(root, ptr)["changed"]
