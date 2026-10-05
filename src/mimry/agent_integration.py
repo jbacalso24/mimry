@@ -23,10 +23,21 @@ REQUIRED_TOOLS = {
     "mimry_preflight",
     "mimry_status",
 }
-_ENV_ALLOWLIST = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR", "SYSTEMROOT")
+_ENV_ALLOWLIST = (
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TMPDIR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "SYSTEMROOT",
+)
 
 
-def _run(command: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 45) -> subprocess.CompletedProcess[str]:
+def _run(
+    command: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 45
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         cwd=cwd,
@@ -46,7 +57,7 @@ def _require_ok(result: subprocess.CompletedProcess[str], label: str) -> str:
 
 
 def _client_env(sandbox: Path, *, client: str) -> dict[str, str]:
-    """Build a fail-closed client environment without operator credentials."""
+    """Build a fail-closed client env without operator credentials."""
     env = {name: os.environ[name] for name in _ENV_ALLOWLIST if os.environ.get(name)}
     home = sandbox / f"{client}-home"
     config = sandbox / f"{client}-config"
@@ -59,11 +70,12 @@ def _client_env(sandbox: Path, *, client: str) -> dict[str, str]:
     env.update(
         {
             "HOME": str(home),
-            # Windows resolves Path.home() from USERPROFILE (then HOMEDRIVE+HOMEPATH)
-            # and ignores HOME entirely. Without these the server subprocess raises
-            # "Could not determine home directory" at startup and the client just
-            # waits out its timeout with no diagnosable error. Point them at the same
-            # sandbox home so isolation is unchanged.
+            # Windows resolves Path.home() from USERPROFILE (then
+            # HOMEDRIVE+HOMEPATH) and ignores HOME entirely. Without
+            # these the server subprocess raises "Could not determine
+            # home directory" at startup and the client just waits out
+            # its timeout with no diagnosable error. Point them at the
+            # same sandbox home so isolation is unchanged.
             "USERPROFILE": str(home),
             "HOMEDRIVE": home.drive,
             "HOMEPATH": str(home)[len(home.drive) :],
@@ -125,7 +137,10 @@ async def _protocol_smoke(repo: Path, cache: Path, server_command: list[str]) ->
             )
         ).data
         context_path = Path(context.get("output", ""))
-        if not context_path.is_file() or "## Source of Truth Reminder" not in context_path.read_text(encoding="utf-8"):
+        if (
+            not context_path.is_file()
+            or "## Source of Truth Reminder" not in context_path.read_text(encoding="utf-8")
+        ):
             raise RuntimeError("mimry_context did not write an evidence-grade context pack")
 
     return {
@@ -144,15 +159,23 @@ def _claude_smoke(sandbox: Path, repo: Path, server_command: list[str]) -> dict[
         return {"state": "UNVERIFIED", "blocker": "claude binary not found"}
 
     env = _client_env(sandbox, client="claude")
-    add = _run([binary, "mcp", "add", "--scope", "user", "mimry-smoke", "--", *server_command], cwd=repo, env=env)
+    add = _run(
+        [binary, "mcp", "add", "--scope", "user", "mimry-smoke", "--", *server_command],
+        cwd=repo,
+        env=env,
+    )
     _require_ok(add, "Claude Code MCP registration")
     get = _run([binary, "mcp", "get", "mimry-smoke"], cwd=repo, env=env)
     output = _require_ok(get, "Claude Code MCP health check")
     if "Connected" not in output or server_command[0] not in output:
-        raise RuntimeError(f"Claude Code did not report the isolated MIMRY server connected: {output}")
+        raise RuntimeError(
+            f"Claude Code did not report the isolated MIMRY server connected: {output}"
+        )
     return {
         "state": "PASS",
-        "version": _require_ok(_run([binary, "--version"], cwd=repo, env=env), "Claude Code version"),
+        "version": _require_ok(
+            _run([binary, "--version"], cwd=repo, env=env), "Claude Code version"
+        ),
         "health": "Connected",
         "config_home": "temporary isolated sandbox",
     }
@@ -169,7 +192,11 @@ def _codex_smoke(sandbox: Path, repo: Path, server_command: list[str]) -> dict[s
     get = _run([binary, "mcp", "get", "mimry-smoke", "--json"], cwd=repo, env=env)
     payload = json.loads(_require_ok(get, "Codex MCP config readback"))
     transport = payload.get("transport", {})
-    if not payload.get("enabled") or transport.get("type") != "stdio" or transport.get("command") != server_command[0]:
+    if (
+        not payload.get("enabled")
+        or transport.get("type") != "stdio"
+        or transport.get("command") != server_command[0]
+    ):
         raise RuntimeError(f"Codex MCP registration readback mismatch: {payload}")
     return {
         "state": "PASS",
@@ -183,7 +210,8 @@ def _codex_smoke(sandbox: Path, repo: Path, server_command: list[str]) -> dict[s
 def _herdr_status() -> dict[str, Any]:
     binary = shutil.which("herdr")
     blocker = (
-        "Herdr runtime detected, but pane-only round-trip proof requires an active isolated pane harness."
+        "Herdr runtime detected, but pane-only round-trip proof requires an active isolated pane"
+        " harness."
         if binary
         else "Herdr runtime not detected; pane-only integration was not simulated."
     )
@@ -191,8 +219,12 @@ def _herdr_status() -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Safely smoke MIMRY through real MCP, Claude Code, and Codex clients.")
-    parser.add_argument("--json-output", type=Path, help="Optional path for the machine-readable report.")
+    parser = argparse.ArgumentParser(
+        description="Safely smoke MIMRY through real MCP, Claude Code, and Codex clients."
+    )
+    parser.add_argument(
+        "--json-output", type=Path, help="Optional path for the machine-readable report."
+    )
     args = parser.parse_args(argv)
 
     with tempfile.TemporaryDirectory(prefix="mimry-agent-integration-") as raw_sandbox:
@@ -208,7 +240,9 @@ def main(argv: list[str] | None = None) -> int:
             report = {
                 "schema_version": 1,
                 "sandbox": "temporary and deleted after run",
-                "mcp_protocol": asyncio.run(_protocol_smoke(repo, sandbox / "cache", server_command)),
+                "mcp_protocol": asyncio.run(
+                    _protocol_smoke(repo, sandbox / "cache", server_command)
+                ),
                 "claude_code": _claude_smoke(sandbox, repo, server_command),
                 "codex": _codex_smoke(sandbox, repo, server_command),
                 "herdr": _herdr_status(),

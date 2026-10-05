@@ -6,8 +6,8 @@ from collections import Counter, defaultdict
 def assign_communities(nodes: list[dict], edges: list[dict]) -> list[dict]:
     """Return nodes with a stable integer 'community' assigned to each.
 
-    Uses label propagation over the undirected edge list. Nodes with no edges
-    each keep their own singleton community.
+    Uses label propagation over the undirected edge list. Nodes with no
+    edges each keep their own singleton community.
     """
     if not nodes:
         return []
@@ -30,7 +30,8 @@ def assign_communities(nodes: list[dict], edges: list[dict]) -> list[dict]:
     # Initialize: each node's label is its own id
     labels = {node["id"]: node["id"] for node in nodes}
 
-    # Process nodes in sorted order for determinism; the id set never changes.
+    # Process nodes in sorted order for determinism; the id set never
+    # changes.
     order = sorted(labels.keys())
 
     # Label propagation with convergence check or max 20 iterations
@@ -47,7 +48,8 @@ def assign_communities(nodes: list[dict], edges: list[dict]) -> list[dict]:
             else:
                 # Collect labels of neighbors
                 neighbor_labels = [labels[neighbor] for neighbor in neighbors]
-                # Add node's own label to the pool for tie-breaking stability
+                # Add node's own label to the pool for tie-breaking
+                # stability
                 neighbor_labels.append(labels[node_id])
 
                 # Count label frequencies

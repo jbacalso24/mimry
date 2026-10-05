@@ -6,14 +6,24 @@ import math
 import os
 import stat
 from collections import defaultdict, deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..intent import apply_intent_adjustment, location_terms, matching_tokens, query_terms, text_terms
+from ..intent import (
+    apply_intent_adjustment,
+    location_terms,
+    matching_tokens,
+    query_terms,
+    text_terms,
+)
 from ..paths import graph_output_dir
-from ..security import markdown_inline, path_has_ignored_part, stat_identity, text_mentions_ignored_path
-
+from ..security import (
+    markdown_inline,
+    path_has_ignored_part,
+    stat_identity,
+    text_mentions_ignored_path,
+)
 
 GRAPH_ARTIFACT_FILES = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
 
@@ -26,7 +36,7 @@ def artifact_dir(root: Path) -> Path:
 def _iso_mtime(path: Path) -> str | None:
     if not path.exists():
         return None
-    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
 
 
 def _load_json(path: Path) -> Any:
@@ -37,7 +47,7 @@ def _load_json(path: Path) -> Any:
 
 
 def _safe_regular_sha256(path: Path) -> str | None:
-    """Hash a stable regular-file descriptor and reject pathname races."""
+    """Hash a stable regular-file descriptor; reject pathname races."""
 
     try:
         before = path.lstat()
@@ -47,7 +57,10 @@ def _safe_regular_sha256(path: Path) -> str | None:
         fd = os.open(path, flags)
         try:
             opened = os.fstat(fd)
-            if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
+                before.st_dev,
+                before.st_ino,
+            ):
                 return None
             digest = hashlib.sha256()
             while chunk := os.read(fd, 65536):
@@ -80,7 +93,9 @@ def manifest_path(root: Path) -> Path:
 
 def _filtered_graph(graph: dict) -> dict:
     nodes = graph.get("nodes") or []
-    retained_nodes = [node for node in nodes if not path_has_ignored_part(node_source_file(node) or "")]
+    retained_nodes = [
+        node for node in nodes if not path_has_ignored_part(node_source_file(node) or "")
+    ]
     retained_ids = {str(node.get("id")) for node in retained_nodes if node.get("id") is not None}
     edge_key = "links" if "links" in graph else "edges"
     retained_edges = []
@@ -131,13 +146,15 @@ def graph_health(
     verified_hashes: dict[str, str] | None = None,
     native_paths: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
-    """Return cheap graph artifact health without invoking the graph engine or changing ranking.
+    """Return cheap graph artifact health without invoking the graph
+    engine or changing ranking.
 
-    ``verified_hashes`` maps rel paths to content hashes that index freshness just
-    proved from verified snapshots of ``root / rel_path``; they stand in for a
-    second read of the same file. Paths without one are hashed here as before.
-    ``native_paths`` maps canonical (NFC) rel paths to their on-disk spelling
-    where the two differ, as index freshness found them.
+    ``verified_hashes`` maps rel paths to content hashes that index
+    freshness just proved from verified snapshots of ``root /
+    rel_path``; they stand in for a second read of the same file. Paths
+    without one are hashed here as before. ``native_paths`` maps
+    canonical (NFC) rel paths to their on-disk spelling where the two
+    differ, as index freshness found them.
     """
     verified_hashes = verified_hashes or {}
     native_paths = native_paths or {}
@@ -159,7 +176,9 @@ def graph_health(
     manifest_entries = manifest if isinstance(manifest, dict) else {}
 
     ignored_manifest_sources = sorted(
-        rel_path for rel_path in manifest_entries if isinstance(rel_path, str) and path_has_ignored_part(rel_path)
+        rel_path
+        for rel_path in manifest_entries
+        if isinstance(rel_path, str) and path_has_ignored_part(rel_path)
     )
     missing_sources: list[str] = []
     stale_sources: list[str] = []
@@ -185,9 +204,9 @@ def graph_health(
                 except OSError:
                     stale_sources.append(rel_path)
                     continue
-                # Compatibility fallback for manifests generated before MIMRY
-                # added content hashes. New manifests never depend on timestamp
-                # precision for freshness.
+                # Compatibility fallback for manifests generated before
+                # MIMRY added content hashes. New manifests never depend
+                # on timestamp precision for freshness.
                 if abs(source_mtime - float(info["mtime"])) > 1e-6:
                     stale_sources.append(rel_path)
 
@@ -221,9 +240,12 @@ def graph_health(
         "source_stale": source_stale,
         "source_changed_files": stale_sources,
         "source_missing_files": missing_sources,
-        # Report only a count. Status is an agent-facing output and must not
-        # disclose paths that policy intentionally excludes from agent context.
-        "policy_filtered_source_count": len(set(ignored_artifact_sources + ignored_manifest_sources)),
+        # Report only a count. Status is an agent-facing output and must
+        # not disclose paths that policy intentionally excludes from
+        # agent context.
+        "policy_filtered_source_count": len(
+            set(ignored_artifact_sources + ignored_manifest_sources)
+        ),
         "index_state": index_state,
         "possibly_stale": possibly_stale,
     }
@@ -248,12 +270,16 @@ def _edge_relation(edge: dict) -> str:
 
 def _node_text(node: dict) -> str:
     return " ".join(
-        str(node.get(k, "")) for k in ("id", "label", "norm_label", "source_file", "path", "type", "kind", "file_type")
+        str(node.get(k, ""))
+        for k in ("id", "label", "norm_label", "source_file", "path", "type", "kind", "file_type")
     ).lower()
 
 
 def surface_matches(root: Path, query: str, limit: int = 5) -> list[dict]:
-    """Resolve a file/symbol/query to graph nodes, using artifact text only."""
+    """Resolve a file/symbol/query to graph nodes.
+
+    Uses artifact text only.
+    """
     g = load_graph(root)
     terms = query_terms(query)
     if not terms:
@@ -285,10 +311,11 @@ def surface_matches(root: Path, query: str, limit: int = 5) -> list[dict]:
 
 
 def surface_evidence(root: Path, surface: str, max_items: int = 6) -> dict[str, Any]:
-    """Graph nodes matching a file or symbol surface, and the edges that touch them.
+    """Graph nodes matching a file or symbol surface, and the edges that
+    touch them.
 
-    ``nodes`` and ``edges`` are capped at ``max_items`` each; ``node_count`` and
-    ``edge_count`` are the full totals.
+    ``nodes`` and ``edges`` are capped at ``max_items`` each;
+    ``node_count`` and ``edge_count`` are the full totals.
     """
     g = load_graph(root)
     nodes = g.get("nodes") or []
@@ -330,23 +357,42 @@ def surface_evidence(root: Path, surface: str, max_items: int = 6) -> dict[str, 
 
 
 def shortest_path(root: Path, source_query: str, target_query: str, max_hops: int = 6) -> dict:
-    """Find a shortest relationship path in graph artifacts; do not infer missing edges."""
+    """Find a shortest relationship path in graph artifacts.
+
+    Missing edges are never inferred.
+    """
     g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
-    # An exact file path or symbol name means exactly that surface. Fuzzy term
-    # matching would also accept any file sharing "src" or ".py" with it, and the
-    # search would stop at whichever of those it happened to reach first.
-    source_matches = _exact_surface_matches(nodes, source_query) or surface_matches(root, source_query, limit=5)
-    target_matches = _exact_surface_matches(nodes, target_query) or surface_matches(root, target_query, limit=5)
+    # An exact file path or symbol name means exactly that surface.
+    # Fuzzy term matching would also accept any file sharing "src" or
+    # ".py" with it, and the search would stop at whichever of those it
+    # happened to reach first.
+    source_matches = _exact_surface_matches(nodes, source_query) or surface_matches(
+        root, source_query, limit=5
+    )
+    target_matches = _exact_surface_matches(nodes, target_query) or surface_matches(
+        root, target_query, limit=5
+    )
     if not source_matches or not target_matches:
-        return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
+        return {
+            "found": False,
+            "source_matches": source_matches,
+            "target_matches": target_matches,
+            "steps": [],
+        }
 
-    # A fuzzy target can also match the source itself; that is not a path to it.
+    # A fuzzy target can also match the source itself; that is not a
+    # path to it.
     target_ids = {m["id"] for m in target_matches} - {m["id"] for m in source_matches}
     if not target_ids:
-        return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
+        return {
+            "found": False,
+            "source_matches": source_matches,
+            "target_matches": target_matches,
+            "steps": [],
+        }
     adjacency: dict[str, list[tuple[str, dict]]] = defaultdict(list)
     for edge in links:
         source, target = _edge_endpoints(edge)
@@ -355,7 +401,8 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
         adjacency[source].append((target, edge))
         adjacency[target].append((source, {**edge, "relation": "reverse " + _edge_relation(edge)}))
 
-    # One breadth-first search from every source at once finds the shortest path overall.
+    # One breadth-first search from every source at once finds the
+    # shortest path overall.
     queue = deque((m["id"], m["id"], []) for m in source_matches)
     seen = {m["id"] for m in source_matches}
     while queue:
@@ -374,7 +421,12 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
                     }
                 )
                 current = next_id or current
-            return {"found": True, "source_matches": source_matches, "target_matches": target_matches, "steps": steps}
+            return {
+                "found": True,
+                "source_matches": source_matches,
+                "target_matches": target_matches,
+                "steps": steps,
+            }
         if len(path_edges) >= max_hops:
             continue
         for next_id, edge in adjacency.get(node_id, []):
@@ -382,11 +434,19 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
                 continue
             seen.add(next_id)
             queue.append((next_id, start_id, [*path_edges, edge]))
-    return {"found": False, "source_matches": source_matches, "target_matches": target_matches, "steps": []}
+    return {
+        "found": False,
+        "source_matches": source_matches,
+        "target_matches": target_matches,
+        "steps": [],
+    }
 
 
 def _exact_surface_matches(nodes: list[dict], query: str) -> list[dict]:
-    """Nodes whose id or label is ``query``, else the nodes defined in that file."""
+    """Nodes whose id or label is ``query``.
+
+    Otherwise, the nodes defined in that file.
+    """
     wanted = query.strip().replace("\\", "/").lower()
     ranked = []
     for node in nodes:
@@ -402,16 +462,27 @@ def _exact_surface_matches(nodes: list[dict], query: str) -> list[dict]:
             (
                 rank,
                 label,
-                {"id": str(node.get("id")), "label": label, "path": src or "?", "score": 100 - rank, "node": node},
+                {
+                    "id": str(node.get("id")),
+                    "label": label,
+                    "path": src or "?",
+                    "score": 100 - rank,
+                    "node": node,
+                },
             )
         )
     best = min((rank for rank, _label, _match in ranked), default=None)
-    return [match for rank, _label, match in sorted(ranked, key=lambda item: (item[0], item[1])) if rank == best]
+    return [
+        match
+        for rank, _label, match in sorted(ranked, key=lambda item: (item[0], item[1]))
+        if rank == best
+    ]
 
 
-# How far a query's evidence travels along relationships, and how fast it decays.
-# Two hops covers "the page calls a hook that calls the payments module" without
-# letting a hub node drag in the whole repository.
+# How far a query's evidence travels along relationships, and how fast
+# it decays. Two hops covers "the page calls a hook that calls the
+# payments module" without letting a hub node drag in the whole
+# repository.
 _EXPANSION_DECAY = (0.35, 0.15)
 
 
@@ -423,9 +494,10 @@ def _expand_along_edges(
 ) -> None:
     """Carry query relevance from matched nodes to their neighbours.
 
-    Scoring a node only on its own text is what a plain search index already does;
-    it wins a multi-hop question only when the answer file happens to contain the
-    query words. Following edges is the thing a graph is actually for.
+    Scoring a node only on its own text is what a plain search index
+    already does; it wins a multi-hop question only when the answer file
+    happens to contain the query words. Following edges is the thing a
+    graph is actually for.
     """
     if not matched_scores:
         return
@@ -448,10 +520,11 @@ def _expand_along_edges(
             if carried <= 0:
                 continue
             for neighbour in sorted(adjacency.get(node_id, ())):
-                # Directly matched nodes keep their own score. Letting expansion
-                # top them up as well was measured and scored worse overall
-                # (ndcg 0.6845 vs 0.6907): it rewards whichever file has the most
-                # neighbours rather than the one the query is actually about.
+                # Directly matched nodes keep their own score. Letting
+                # expansion top them up as well was measured and scored
+                # worse overall (ndcg 0.6845 vs 0.6907): it rewards
+                # whichever file has the most neighbours rather than the
+                # one the query is actually about.
                 if neighbour in matched_scores:
                     continue
                 if carried > reached.get(neighbour, 0):
@@ -461,9 +534,9 @@ def _expand_along_edges(
         if not frontier:
             break
 
-    # One contribution per file, from its most strongly reached node. Summing
-    # every reached node let large hub files, which neighbour everything, top
-    # queries they have nothing specific to do with.
+    # One contribution per file, from its most strongly reached node.
+    # Summing every reached node let large hub files, which neighbour
+    # everything, top queries they have nothing specific to do with.
     best_reached: dict[str, int] = {}
     for node_id in sorted(reached):
         node = node_by_id.get(node_id)
@@ -482,12 +555,15 @@ _PATH_WEIGHT = 25
 _COVERAGE_WEIGHT = 12
 
 
-def _term_weights(terms: list[str], total_files: int, file_hits: dict[str, tuple]) -> dict[str, float]:
-    """Inverse document frequency over files: a rare query word is stronger evidence.
+def _term_weights(
+    terms: list[str], total_files: int, file_hits: dict[str, tuple]
+) -> dict[str, float]:
+    """Inverse document frequency over files: a rare query word is
+    stronger evidence.
 
-    "fish" in a task about fish shell completion points at one file; "completion"
-    points at a dozen. Treating them equally ranked whichever file matched the
-    common word most often.
+    "fish" in a task about fish shell completion points at one file;
+    "completion" points at a dozen. Treating them equally ranked
+    whichever file matched the common word most often.
     """
     df = dict.fromkeys(terms, 0)
     for path_hits, node_hits in file_hits.values():
@@ -544,9 +620,9 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
             ((sum(weights[t] for t in hits), hits, n) for hits, n in node_hits),
             key=lambda item: (-item[0], str(item[2].get("id"))),
         )
-        # A file is as relevant as its best match, not the sum of all of them.
-        # Summing let test files, with dozens of descriptively named cases,
-        # outrank the one source file the task is about.
+        # A file is as relevant as its best match, not the sum of all of
+        # them. Summing let test files, with dozens of descriptively
+        # named cases, outrank the one source file the task is about.
         best_weight, best_hits, best = matched[0] if matched else (0.0, frozenset(), None)
         covered = best_hits.union(*(hits for _, hits, _ in matched))
         score = (
@@ -561,14 +637,18 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         if path_hits:
             reasons.add("graph source file match")
         if best is not None:
-            # Topology of the best match only, for the same reason as above.
+            # Topology of the best match only, for the same reason as
+            # above.
             deg = degree.get(str(best.get("id")), 0)
             in_community = best.get("community") is not None
             topology_boost = min(25, deg * 5) + (5 if in_community else 0)
             if topology_boost:
                 score += topology_boost
                 detail = ", ".join(
-                    filter(None, (f"degree {deg}" if deg else "", "in a community" if in_community else ""))
+                    filter(
+                        None,
+                        (f"degree {deg}" if deg else "", "in a community" if in_community else ""),
+                    )
                 )
                 reasons.add(f"graph topology boost {topology_boost} ({detail})")
         by_file[src] = {
@@ -579,13 +659,17 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         }
         for node_weight, _, n in matched:
             node_id = str(n.get("id"))
-            matched_scores[node_id] = max(matched_scores.get(node_id, 0), int(round(_LABEL_WEIGHT * node_weight)))
+            matched_scores[node_id] = max(
+                matched_scores.get(node_id, 0), int(round(_LABEL_WEIGHT * node_weight))
+            )
 
     _expand_along_edges(nodes, links, matched_scores, by_file)
 
     rows = []
     for row in by_file.values():
-        row["score"], intent_reasons = apply_intent_adjustment(row["score"], row["path"], terms, graph=True)
+        row["score"], intent_reasons = apply_intent_adjustment(
+            row["score"], row["path"], terms, graph=True
+        )
 
         if row["score"] <= 0:
             continue
@@ -594,12 +678,14 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
         reason = ", ".join(sorted(row["reasons"]))
         if node_preview:
             reason += f"; nodes: {node_preview}"
-        rows.append({"path": row["path"], "score": row["score"], "reason": reason, "source": "graph"})
+        rows.append(
+            {"path": row["path"], "score": row["score"], "reason": reason, "source": "graph"}
+        )
     return sorted(rows, key=lambda r: (-r["score"], r["path"]))[:limit]
 
 
 def relationship_edges(root: Path, selected_paths: list[str], max_edges: int = 12) -> list[dict]:
-    """Graph edges with an endpoint in one of ``selected_paths``, in graph order."""
+    """Graph edges touching ``selected_paths``, in graph order."""
     g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
@@ -634,8 +720,9 @@ def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 1
     lines = []
     for e in relationship_edges(root, selected_paths, max_lines):
         line = (
-            f"- `{markdown_inline(e['source'])}` --{markdown_inline(e['relation'])}--> `{markdown_inline(e['target'])}` "
-            f"({markdown_inline(e['source_file'])} -> {markdown_inline(e['target_file'])})"
+            f"- `{markdown_inline(e['source'])}` --{markdown_inline(e['relation'])}-->"
+            f" `{markdown_inline(e['target'])}` ({markdown_inline(e['source_file'])} ->"
+            f" {markdown_inline(e['target_file'])})"
         )
         if e["confidence"]:
             line += f" [{markdown_inline(e['confidence'])}]"
@@ -646,19 +733,19 @@ def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 1
 def report_excerpt(root: Path, max_chars: int = 700, *, max_rows_per_section: int = 3) -> str:
     """Quote the graph report's headline sections, bounded.
 
-    This is secondary evidence in a context pack -- it corroborates the graph
-    relationships already listed above it. The full report can run to hundreds
-    of rows, so each section is capped; the artifact itself stays linked for an
-    agent that needs the rest.
+    This is secondary evidence in a context pack -- it corroborates the
+    graph relationships already listed above it. The full report can run
+    to hundreds of rows, so each section is capped; the artifact itself
+    stays linked for an agent that needs the rest.
     """
     path = report_path(root)
     if not path.exists():
         return ""
     text = path.read_text(encoding="utf-8", errors="replace")
     if text_mentions_ignored_path(text):
-        # Reports can quote source snippets. If a legacy report references a
-        # newly ignored tree, suppress it as a unit instead of guessing which
-        # adjacent lines came from that source.
+        # Reports can quote source snippets. If a legacy report
+        # references a newly ignored tree, suppress it as a unit instead
+        # of guessing which adjacent lines came from that source.
         return ""
     keep = []
     capture = False
@@ -688,11 +775,16 @@ def report_excerpt(root: Path, max_chars: int = 700, *, max_rows_per_section: in
             if rows_in_section <= max_rows_per_section:
                 bounded.append(line)
             elif rows_in_section == max_rows_per_section + 1:
-                bounded.append("- ... (truncated; see `.mimry/mimry-out/graph/GRAPH_REPORT.md` for the full list)")
+                bounded.append(
+                    "- ... (truncated; see `.mimry/mimry-out/graph/GRAPH_REPORT.md` for the full"
+                    " list)"
+                )
         keep = bounded
     excerpt_lines = keep or text[:max_chars].splitlines()
     safe_lines = [
-        line if line in {"## Community Hubs", "## God Nodes", "## Surprising Connections"} else markdown_inline(line)
+        line
+        if line in {"## Community Hubs", "## God Nodes", "## Surprising Connections"}
+        else markdown_inline(line)
         for line in excerpt_lines
     ]
     return "\n".join(safe_lines)[:max_chars]

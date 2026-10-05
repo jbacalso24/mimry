@@ -18,8 +18,9 @@ from mimry import installer
 def _posix(text: str) -> str:
     """Normalize printed paths for comparison.
 
-    MIMRY prints native paths, so Windows shows backslashes. Path *values* it
-    stores (rel_path) stay POSIX everywhere; only display strings differ.
+    MIMRY prints native paths, so Windows shows backslashes. Path
+    *values* it stores (rel_path) stay POSIX everywhere; only display
+    strings differ.
     """
     return text.replace("\\", "/")
 
@@ -44,8 +45,9 @@ _BASH = _posix_bash()
 
 
 def _norm_hook(text: str) -> str:
-    """Normalize a resolved launcher command: Windows resolves mimry to mimry.EXE, and an
-    absolute Windows path is shell-quoted, so strip the .EXE suffix and the surrounding quotes."""
+    """Normalize a resolved launcher command: Windows resolves mimry to
+    mimry.EXE, and an absolute Windows path is shell-quoted, so strip
+    the .EXE suffix and the surrounding quotes."""
     return text.replace(".EXE", "").replace(".exe", "").replace("'", "").replace('"', "")
 
 
@@ -54,7 +56,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
 
 
 def _row(output: str, label: str) -> str:
-    """The value of the first ``label  value`` table row in command output."""
+    """Value of the first ``label  value`` row in command output."""
     for line in output.splitlines():
         stripped = line.strip()
         if stripped.startswith(label + " "):
@@ -65,7 +67,9 @@ def _row(output: str, label: str) -> str:
 def _result_paths(output: str) -> list[str]:
     """Paths of numbered search results, in rank order."""
     return [
-        parts[1] for parts in (line.split() for line in output.splitlines()) if len(parts) == 2 and parts[0].isdigit()
+        parts[1]
+        for parts in (line.split() for line in output.splitlines())
+        if len(parts) == 2 and parts[0].isdigit()
     ]
 
 
@@ -94,7 +98,12 @@ def run_cli_from_cwd(work: Path, cache: Path, *args: str):
     env["PYTHONPATH"] = str(ROOT / "src")
     env["MIMRY_CACHE_HOME"] = str(cache)
     return subprocess.run(
-        [sys.executable, "-m", "mimry.cli", *args], cwd=work, env=env, text=True, capture_output=True, check=False
+        [sys.executable, "-m", "mimry.cli", *args],
+        cwd=work,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
     )
 
 
@@ -211,7 +220,9 @@ def test_install_lists_supported_agent_platforms(tmp_path):
 
 def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_path):
     repo = copy_fixture(tmp_path)
-    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--always-on")
+    res = run_cli(
+        repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--always-on"
+    )
 
     assert res.returncode == 0, res.stderr
     skill_dir = repo / ".codex" / "skills" / "mimry"
@@ -257,7 +268,9 @@ def test_install_project_claude_alias_writes_claude_code_skill(tmp_path):
 
 def test_install_dry_run_does_not_write(tmp_path):
     repo = copy_fixture(tmp_path)
-    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "hermes", "--dry-run")
+    res = run_cli(
+        repo, tmp_path / "cache", "install", "--project", "--platform", "hermes", "--dry-run"
+    )
 
     assert res.returncode == 0, res.stderr
     assert "Dry run" in res.stdout
@@ -315,13 +328,20 @@ def test_expanded_project_platform_paths(tmp_path):
         # copy include every earlier one, doubling the tree each time.
         platform_repo = tmp_path / "platforms" / platform
         shutil.copytree(repo, platform_repo)
-        res = run_cli(platform_repo, tmp_path / f"cache-{platform}", "install", "--project", "--platform", platform)
+        res = run_cli(
+            platform_repo,
+            tmp_path / f"cache-{platform}",
+            "install",
+            "--project",
+            "--platform",
+            platform,
+        )
         assert res.returncode == 0, res.stderr
         skill = platform_repo / rel
         assert skill.exists(), platform
-        assert "platform-specific MIMRY skill install" in skill.read_text(encoding="utf-8") or platform in {
-            "antigravity"
-        }
+        assert "platform-specific MIMRY skill install" in skill.read_text(
+            encoding="utf-8"
+        ) or platform in {"antigravity"}
 
 
 def _installed_hook_command(repo: Path, platform: str) -> str:
@@ -329,7 +349,9 @@ def _installed_hook_command(repo: Path, platform: str) -> str:
     assert cfg.hook_path is not None
     hook_file = repo / cfg.hook_path
     settings = json.loads(hook_file.read_text(encoding="utf-8"))
-    entries = [entry for entry in settings["hooks"]["PreToolUse"] if installer._is_mimry_hook(entry)]
+    entries = [
+        entry for entry in settings["hooks"]["PreToolUse"] if installer._is_mimry_hook(entry)
+    ]
     assert len(entries) == 1
     return entries[0]["hooks"][0]["command"]
 
@@ -338,8 +360,14 @@ def _installed_hook_command(repo: Path, platform: str) -> str:
 @pytest.mark.parametrize(
     ("windows_exe", "normalized_exe"),
     [
-        (r"C:\Users\ExampleUser\.local\bin\mimry.EXE", "C:/Users/ExampleUser/.local/bin/mimry.EXE"),
-        (r"C:\Users\Example User\.local\bin\mimry.EXE", "C:/Users/Example User/.local/bin/mimry.EXE"),
+        (
+            r"C:\Users\ExampleUser\.local\bin\mimry.EXE",
+            "C:/Users/ExampleUser/.local/bin/mimry.EXE",
+        ),
+        (
+            r"C:\Users\Example User\.local\bin\mimry.EXE",
+            "C:/Users/Example User/.local/bin/mimry.EXE",
+        ),
     ],
 )
 def test_install_hooks_serializes_windows_exe_for_posix_bash_and_stays_idempotent(
@@ -367,13 +395,16 @@ def test_install_hooks_serializes_windows_exe_for_posix_bash_and_stays_idempoten
     assert installer._remove_hooks(repo, cfg) is not None
     assert not any(
         installer._is_mimry_hook(entry)
-        for entry in json.loads((repo / cfg.hook_path).read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+        for entry in json.loads((repo / cfg.hook_path).read_text(encoding="utf-8"))["hooks"][
+            "PreToolUse"
+        ]
     )
 
 
 def test_claude_code_hook_matches_the_grep_tool(tmp_path):
-    """Claude Code's search tool is named Grep. A matcher of Bash|Read|Glob fired only on
-    shelled-out grep/rg, so the tool AGENT_RULES.md targets went unnudged."""
+    """Claude Code's search tool is named Grep. A matcher of
+    Bash|Read|Glob fired only on shelled-out grep/rg, so the tool
+    AGENT_RULES.md targets went unnudged."""
     repo = copy_fixture(tmp_path)
     cfg = installer.platforms()["claude-code"]
     installer._install_hooks(repo, cfg)
@@ -383,7 +414,9 @@ def test_claude_code_hook_matches_the_grep_tool(tmp_path):
     assert "Grep" in entry["matcher"].split("|")
 
 
-def test_generated_hook_command_executes_posix_launcher_with_spaces_and_quote_through_bash(tmp_path, monkeypatch):
+def test_generated_hook_command_executes_posix_launcher_with_spaces_and_quote_through_bash(
+    tmp_path, monkeypatch
+):
     repo = copy_fixture(tmp_path)
     launcher = tmp_path / "quoted user's bin" / "mimry"
     launcher.parent.mkdir()
@@ -410,54 +443,80 @@ def test_install_hooks_preserves_plain_path_launcher_fallback(tmp_path, monkeypa
 
 def test_install_project_codex_hooks_and_status_detect_broken_references(tmp_path):
     repo = copy_fixture(tmp_path)
-    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--hooks")
+    res = run_cli(
+        repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--hooks"
+    )
     assert res.returncode == 0, res.stderr
     hooks = repo / ".codex" / "hooks.json"
     assert hooks.exists()
     assert "mimry hook-check" in _norm_hook(hooks.read_text(encoding="utf-8"))
 
-    status = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status")
+    status = run_cli(
+        repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status"
+    )
     assert status.returncode == 0, status.stderr
     assert "OK  Hook" in status.stdout
     assert "OK  References" in status.stdout
 
     shutil.rmtree(repo / ".codex" / "skills" / "mimry" / "references")
-    broken = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status")
+    broken = run_cli(
+        repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status"
+    )
     assert broken.returncode == 0, broken.stderr
     assert "needs repair" in broken.stdout
     assert "x   References  missing or broken" in broken.stdout
-    assert "Run `mimry install --platform codex --project --always-on` to repair it." in broken.stdout
+    assert (
+        "Run `mimry install --platform codex --project --always-on` to repair it." in broken.stdout
+    )
 
 
 def test_uninstall_project_codex_removes_hooks_when_requested(tmp_path):
     repo = copy_fixture(tmp_path)
-    assert run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--hooks").returncode == 0
+    assert (
+        run_cli(
+            repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--hooks"
+        ).returncode
+        == 0
+    )
     assert (repo / ".codex" / "hooks.json").exists()
 
-    res = run_cli(repo, tmp_path / "cache", "uninstall", "--project", "--platform", "codex", "--hooks")
+    res = run_cli(
+        repo, tmp_path / "cache", "uninstall", "--project", "--platform", "codex", "--hooks"
+    )
 
     assert res.returncode == 0, res.stderr
-    assert "mimry hook-check" not in _norm_hook((repo / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+    assert "mimry hook-check" not in _norm_hook(
+        (repo / ".codex" / "hooks.json").read_text(encoding="utf-8")
+    )
 
 
 def test_claude_skill_body_is_platform_specific(tmp_path):
     repo = copy_fixture(tmp_path)
-    res = run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "claude-code", "--hooks")
+    res = run_cli(
+        repo, tmp_path / "cache", "install", "--project", "--platform", "claude-code", "--hooks"
+    )
     assert res.returncode == 0, res.stderr
     skill = (repo / ".claude" / "skills" / "mimry" / "SKILL.md").read_text(encoding="utf-8")
     assert "Claude Code:" in skill
     assert "$mimry" not in skill
-    assert "mimry hook-check" in _norm_hook((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert "mimry hook-check" in _norm_hook(
+        (repo / ".claude" / "settings.json").read_text(encoding="utf-8")
+    )
 
 
 @pytest.mark.parametrize(
     "payload",
     [
         pytest.param({"tool_input": {"command": "rg auth"}}, id="bash-shelled-rg"),
-        # A native search tool carries no "grep" in its payload -- the pattern is the
-        # caller's regex. Identified by tool_name or it is missed entirely.
-        pytest.param({"tool_name": "Grep", "tool_input": {"pattern": "resolve_imports"}}, id="grep-tool"),
-        pytest.param({"tool_name": "Glob", "tool_input": {"pattern": "src/**"}}, id="glob-tool-no-extension"),
+        # A native search tool carries no "grep" in its payload -- the
+        # pattern is the caller's regex. Identified by tool_name or it
+        # is missed entirely.
+        pytest.param(
+            {"tool_name": "Grep", "tool_input": {"pattern": "resolve_imports"}}, id="grep-tool"
+        ),
+        pytest.param(
+            {"tool_name": "Glob", "tool_input": {"pattern": "src/**"}}, id="glob-tool-no-extension"
+        ),
     ],
 )
 def test_hook_check_emits_nudge_when_mimry_exists(tmp_path, payload):
@@ -500,7 +559,13 @@ def test_hook_check_honors_root_and_never_fails(tmp_path):
     assert b"MIMRY is available" in hook("--root", str(repo)).stdout
     assert b"MIMRY is available" in hook(f"--root={repo}").stdout
     assert hook().stdout == b"", "without --root the hook looks at the working directory only"
-    for payload in (b"\xff\xfe not json", "rg \u00dd".encode(), b"[1, 2]", b'{"tool_input": "not a mapping"}', b""):
+    for payload in (
+        b"\xff\xfe not json",
+        "rg \u00dd".encode(),
+        b"[1, 2]",
+        b'{"tool_input": "not a mapping"}',
+        b"",
+    ):
         res = hook("--root", str(repo), payload=payload)
         assert res.returncode == 0 and res.stderr == b"", res.stderr
 
@@ -508,10 +573,15 @@ def test_hook_check_honors_root_and_never_fails(tmp_path):
 def test_uninstall_project_codex_removes_skill_references_and_always_on(tmp_path):
     repo = copy_fixture(tmp_path)
     assert (
-        run_cli(repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--always-on").returncode == 0
+        run_cli(
+            repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--always-on"
+        ).returncode
+        == 0
     )
 
-    res = run_cli(repo, tmp_path / "cache", "uninstall", "--project", "--platform", "codex", "--always-on")
+    res = run_cli(
+        repo, tmp_path / "cache", "uninstall", "--project", "--platform", "codex", "--always-on"
+    )
 
     assert res.returncode == 0, res.stderr
     assert not (repo / ".codex" / "skills" / "mimry" / "SKILL.md").exists()
@@ -521,7 +591,9 @@ def test_uninstall_project_codex_removes_skill_references_and_always_on(tmp_path
 
 def test_install_global_rejects_always_on(tmp_path):
     repo = copy_fixture(tmp_path)
-    res = run_cli(repo, tmp_path / "cache", "install", "--platform", "codex", "--always-on", "--dry-run")
+    res = run_cli(
+        repo, tmp_path / "cache", "install", "--platform", "codex", "--always-on", "--dry-run"
+    )
     assert res.returncode != 0, "Should reject --always-on even in --dry-run"
 
     res = run_cli(repo, tmp_path / "cache", "install", "--platform", "codex", "--always-on")
@@ -557,15 +629,19 @@ def _deny_read(path: Path):
     """Make a file genuinely unopenable, and return an undo callable.
 
     os.chmod cannot remove read access on Windows -- it only toggles the
-    read-only flag -- so a chmod(0) file stays readable there and the test would
-    silently assert nothing.
+    read-only flag -- so a chmod(0) file stays readable there and the
+    test would silently assert nothing.
     """
     if os.name != "nt":
         path.chmod(0)
         return lambda: path.chmod(0o600)
     principal = os.environ.get("USERNAME") or "Everyone"
-    subprocess.run(["icacls", str(path), "/deny", f"{principal}:(R)"], capture_output=True, check=False)
-    return lambda: subprocess.run(["icacls", str(path), "/remove:d", principal], capture_output=True, check=False)
+    subprocess.run(
+        ["icacls", str(path), "/deny", f"{principal}:(R)"], capture_output=True, check=False
+    )
+    return lambda: subprocess.run(
+        ["icacls", str(path), "/remove:d", principal], capture_output=True, check=False
+    )
 
 
 def test_index_skips_unreadable_files_instead_of_crashing(tmp_path):
@@ -603,7 +679,10 @@ def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_exampl
                 "type": "service_account",
                 "project_id": "demo",
                 "private_key_id": "key-id-123",
-                "private_key": "-----BEGIN PRIVATE KEY-----\\nSERVICE_ACCOUNT_SECRET_VALUE\\n-----END PRIVATE KEY-----\\n",
+                "private_key": (
+                    "-----BEGIN PRIVATE KEY-----\\nSERVICE_ACCOUNT_SECRET_VALUE\\n-----END PRIVATE"
+                    " KEY-----\\n"
+                ),
                 "client_email": "firebase-adminsdk@example.iam.gserviceaccount.com",
                 "client_secret": "GOOGLE_CLIENT_SECRET_VALUE",
             }
@@ -612,8 +691,12 @@ def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_exampl
     (repo / ".npmrc").write_text("//registry.npmjs.org/:_authToken=npm_secret_token_value\n")
     kube = repo / ".kube"
     kube.mkdir()
-    (kube / "config").write_text("apiVersion: v1\nusers:\n- name: prod\n  user:\n    token: kube_secret_token_value\n")
-    (repo / "deploy.sh").write_text("export GITHUB_TOKEN=ghp_shell_secret_token_value\necho deploy\n")
+    (kube / "config").write_text(
+        "apiVersion: v1\nusers:\n- name: prod\n  user:\n    token: kube_secret_token_value\n"
+    )
+    (repo / "deploy.sh").write_text(
+        "export GITHUB_TOKEN=ghp_shell_secret_token_value\necho deploy\n"
+    )
     (repo / ".env.example").write_text(
         "API_URL=https://should-not-be-indexed.example\nSECRET_TOKEN=env_example_secret_value\n"
     )
@@ -621,7 +704,12 @@ def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_exampl
 
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    assert run_cli(repo, cache, "context", "service account npm kube shell env SECRET_TOKEN").returncode == 0
+    assert (
+        run_cli(
+            repo, cache, "context", "service account npm kube shell env SECRET_TOKEN"
+        ).returncode
+        == 0
+    )
 
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])
@@ -630,11 +718,15 @@ def test_index_context_and_sqlite_exclude_credential_secrets_but_keep_env_exampl
     with sqlite3.connect(idx / "mimry.sqlite") as con:
         sqlite_text = "\n".join(
             " ".join(str(col) for col in row if col is not None)
-            for row in con.execute("select rel_path, filename, content_hint, metadata_text from files")
+            for row in con.execute(
+                "select rel_path, filename, content_hint, metadata_text from files"
+            )
         )
         sqlite_text += "\n" + "\n".join(
             " ".join(str(col) for col in row if col is not None)
-            for row in con.execute("select rel_path, filename, content_hint, metadata_text from files_fts")
+            for row in con.execute(
+                "select rel_path, filename, content_hint, metadata_text from files_fts"
+            )
         )
 
     for indexed_text in (files_text, sqlite_text, context_text):
@@ -760,7 +852,15 @@ def test_route_detects_risk_gates_for_sensitive_terms(tmp_path):
     res = run_cli(repo, cache, "route", query)
 
     assert res.returncode == 0, res.stderr
-    for gate in ("auth", "database", "migration", "billing", "deployment", "secrets", "scraping/legal/content rights"):
+    for gate in (
+        "auth",
+        "database",
+        "migration",
+        "billing",
+        "deployment",
+        "secrets",
+        "scraping/legal/content rights",
+    ):
         assert gate in res.stdout
 
 
@@ -887,7 +987,9 @@ def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
     assert "! No connection found between" in res.stdout
     assert "Try `mimry related" in res.stdout
 
-    broad_token_res = run_cli(repo, cache, "path", "nonexistent-surface", "another-missing-surface")
+    broad_token_res = run_cli(
+        repo, cache, "path", "nonexistent-surface", "another-missing-surface"
+    )
     assert broad_token_res.returncode == 0, broad_token_res.stderr
     assert "! No connection found between" in broad_token_res.stdout
     assert " connects to " not in broad_token_res.stdout
@@ -901,7 +1003,11 @@ def write_current_graph_artifacts(repo: Path):
         json.dumps(
             {
                 "nodes": [
-                    {"id": "middleware", "label": "middleware", "source_file": "src/auth/middleware.py"},
+                    {
+                        "id": "middleware",
+                        "label": "middleware",
+                        "source_file": "src/auth/middleware.py",
+                    },
                     {"id": "session", "label": "session", "source_file": "src/auth/session.py"},
                 ],
                 "edges": [{"source": "middleware", "target": "session", "relation": "imports"}],
@@ -911,11 +1017,13 @@ def write_current_graph_artifacts(repo: Path):
         encoding="utf-8",
     )
     (graph_dir / "GRAPH_REPORT.md").write_text(
-        "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit: `abc123`\n",
+        "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit:"
+        " `abc123`\n",
         encoding="utf-8",
     )
     (graph_dir / "manifest.json").write_text(
-        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}}) + "\n",
+        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}})
+        + "\n",
         encoding="utf-8",
     )
 
@@ -980,7 +1088,9 @@ testpaths = ["tests"]
         encoding="utf-8",
     )
     (repo / "tests").mkdir()
-    (repo / "tests" / "test_session.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    (repo / "tests" / "test_session.py").write_text(
+        "def test_ok():\n    assert True\n", encoding="utf-8"
+    )
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     write_current_graph_artifacts(repo)
@@ -1023,7 +1133,8 @@ def test_context_pack_degrades_when_graph_relationships_missing(tmp_path):
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    # Indexing always publishes a graph now, so degradation has to be provoked.
+    # Indexing always publishes a graph now, so degradation has to be
+    # provoked.
     shutil.rmtree(repo / ".mimry" / "mimry-out" / "graph")
 
     res = run_cli(repo, cache, "context", "auth session")
@@ -1056,7 +1167,8 @@ def test_preflight_keeps_stale_cached_context_fast_without_reindexing(tmp_path):
     write_current_graph_artifacts(repo)
     target = repo / "src" / "auth" / "session.py"
     target.write_text(
-        target.read_text(encoding="utf-8") + "\ndef preflight_marker():\n    return True\n", encoding="utf-8"
+        target.read_text(encoding="utf-8") + "\ndef preflight_marker():\n    return True\n",
+        encoding="utf-8",
     )
 
     res = run_cli(repo, cache, "preflight", "preflight marker auth session")
@@ -1101,14 +1213,17 @@ def test_status_reports_graph_artifact_health(tmp_path):
     graph_dir = repo / ".mimry" / "mimry-out" / "graph"
     graph_dir.mkdir(parents=True, exist_ok=True)
     (graph_dir / "graph.json").write_text(
-        '{"nodes": [{"id": "n1"}], "edges": [{"source": "n1", "target": "n1"}]}\n', encoding="utf-8"
+        '{"nodes": [{"id": "n1"}], "edges": [{"source": "n1", "target": "n1"}]}\n',
+        encoding="utf-8",
     )
     (graph_dir / "GRAPH_REPORT.md").write_text(
-        "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit: `abc123`\n",
+        "# Graph Report - fixture (2026-07-03)\n\n## Graph Freshness\n- Built from commit:"
+        " `abc123`\n",
         encoding="utf-8",
     )
     (graph_dir / "manifest.json").write_text(
-        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}}) + "\n",
+        json.dumps({"src/auth/session.py": {"mtime": target.stat().st_mtime, "ast_hash": "h"}})
+        + "\n",
         encoding="utf-8",
     )
 
@@ -1133,7 +1248,9 @@ def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
     (graph_dir / "GRAPH_REPORT.md").write_text("# Graph Report\n", encoding="utf-8")
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     (graph_dir / "manifest.json").write_text(
-        json.dumps({"src/auth/session.py": {"mtime": int(target.stat().st_mtime), "mimry_sha256": digest}}),
+        json.dumps(
+            {"src/auth/session.py": {"mtime": int(target.stat().st_mtime), "mimry_sha256": digest}}
+        ),
         encoding="utf-8",
     )
 
@@ -1146,7 +1263,8 @@ def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):
     target.write_bytes(bytes([content[0] ^ 1]) + content[1:])
     os.utime(target, ns=(original.st_atime_ns, original.st_mtime_ns))
 
-    # Plain status trusts unchanged metadata like git; --verify re-hashes.
+    # Plain status trusts unchanged metadata like git; --verify
+    # re-hashes.
     stale = run_cli(repo, cache, "status", "--verify")
     assert stale.returncode == 2, stale.stdout
     assert "is out of date - 1 file changed since the last index" in stale.stdout
@@ -1178,8 +1296,8 @@ def test_status_reports_missing_graph_artifact_without_changing_index_exit_code(
     assert run_cli(repo, cache, "index").returncode == 0
     graph_dir = repo / ".mimry" / "mimry-out" / "graph"
     graph_dir.mkdir(parents=True, exist_ok=True)
-    # Indexing always publishes graph.json now, so the missing-artifact path has
-    # to be created deliberately rather than assumed.
+    # Indexing always publishes graph.json now, so the missing-artifact
+    # path has to be created deliberately rather than assumed.
     (graph_dir / "graph.json").unlink(missing_ok=True)
     (graph_dir / "GRAPH_REPORT.md").write_text("# Graph Report - fixture\n", encoding="utf-8")
     (graph_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
@@ -1219,7 +1337,8 @@ def test_status_verify_detects_same_size_rewrite_with_restored_mtime(tmp_path):
     target.write_text(changed, encoding="utf-8")
     os.utime(target, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
-    # Plain status may trust this disguised edit's metadata, like git; --verify re-hashes.
+    # Plain status may trust this disguised edit's metadata, like git;
+    # --verify re-hashes.
     stale = run_cli(repo, cache, "status", "--verify")
     assert stale.returncode == 2
     assert "is out of date - 1 file changed since the last index" in stale.stdout
@@ -1231,7 +1350,9 @@ def test_status_detects_new_indexable_file(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
 
-    (repo / "src" / "auth" / "new_flow.py").write_text("def new_login_flow():\n    return True\n", encoding="utf-8")
+    (repo / "src" / "auth" / "new_flow.py").write_text(
+        "def new_login_flow():\n    return True\n", encoding="utf-8"
+    )
 
     stale = run_cli(repo, cache, "status")
 
@@ -1342,7 +1463,9 @@ def test_edit_intent_context_prefers_source_over_docs_and_migrations(tmp_path):
     (mig / "add_auth_token_to_users.py").write_text("auth login token user session " * 60)
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    ctx = run_cli(repo, cache, "context", "understand auth flow and where to edit login token user session")
+    ctx = run_cli(
+        repo, cache, "context", "understand auth flow and where to edit login token user session"
+    )
     assert ctx.returncode == 0, ctx.stderr
     text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text()
     first_section = text.split("### 2.", 1)[0]
@@ -1356,7 +1479,9 @@ def test_typescript_ast_extracts_tsx_symbols(tmp_path):
     repo = copy_fixture(tmp_path)
     src = repo / "src"
     (src / "LoginScreen.tsx").write_text(
-        'import React, { useState } from "react";\nexport function LoginScreen() {\n  const [token, setToken] = useState(null);\n  return <View><Text>Login</Text></View>;\n}\nconst HelperCard = () => <Text />;\n'
+        'import React, { useState } from "react";\nexport function LoginScreen() {\n  const'
+        " [token, setToken] = useState(null);\n  return <View><Text>Login</Text></View>;\n}\nconst"
+        " HelperCard = () => <Text />;\n"
     )
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
@@ -1379,7 +1504,11 @@ def test_framework_adapters_index_routes_endpoints_screens_schemas_and_docs(tmp_
         json.dumps(
             {
                 "packageManager": "pnpm@9.0.0",
-                "scripts": {"build": "next build", "test": "vitest run", "typecheck": "tsc --noEmit"},
+                "scripts": {
+                    "build": "next build",
+                    "test": "vitest run",
+                    "typecheck": "tsc --noEmit",
+                },
                 "dependencies": {"next": "15.0.0", "react": "19.0.0", "expo": "latest"},
             }
         ),
@@ -1387,28 +1516,48 @@ def test_framework_adapters_index_routes_endpoints_screens_schemas_and_docs(tmp_
     )
     next_dir = repo / "src" / "app" / "board" / "[cardId]"
     next_dir.mkdir(parents=True, exist_ok=True)
-    (next_dir / "page.tsx").write_text("export default function CardPage() { return <div /> }\n", encoding="utf-8")
+    (next_dir / "page.tsx").write_text(
+        "export default function CardPage() { return <div /> }\n", encoding="utf-8"
+    )
     api_dir = repo / "src" / "app" / "api" / "cards"
     api_dir.mkdir(parents=True, exist_ok=True)
-    (api_dir / "route.ts").write_text("export async function GET() { return Response.json({}) }\n", encoding="utf-8")
+    (api_dir / "route.ts").write_text(
+        "export async function GET() { return Response.json({}) }\n", encoding="utf-8"
+    )
     (repo / "api.py").write_text(
-        "from fastapi import FastAPI, APIRouter\napp = FastAPI()\nrouter = APIRouter()\n@app.get('/cards/{card_id}')\ndef read_card(card_id: str):\n    return {'id': card_id}\n@router.post('/cards')\ndef create_card():\n    return {}\n",
+        "from fastapi import FastAPI, APIRouter\napp = FastAPI()\nrouter ="
+        " APIRouter()\n@app.get('/cards/{card_id}')\ndef read_card(card_id: str):\n    return"
+        " {'id': card_id}\n@router.post('/cards')\ndef create_card():\n    return {}\n",
         encoding="utf-8",
     )
     (repo / "app.json").write_text(
-        json.dumps({"expo": {"name": "Fixture", "slug": "fixture", "scheme": "fixture", "ios": {}, "android": {}}}),
+        json.dumps(
+            {
+                "expo": {
+                    "name": "Fixture",
+                    "slug": "fixture",
+                    "scheme": "fixture",
+                    "ios": {},
+                    "android": {},
+                }
+            }
+        ),
         encoding="utf-8",
     )
     expo_route = repo / "app" / "cards"
     expo_route.mkdir(parents=True, exist_ok=True)
-    (expo_route / "[id].tsx").write_text("export default function CardScreen() { return null }\n", encoding="utf-8")
+    (expo_route / "[id].tsx").write_text(
+        "export default function CardScreen() { return null }\n", encoding="utf-8"
+    )
     (repo / "schema.sql").write_text(
         "CREATE TABLE cards (id INTEGER PRIMARY KEY, title TEXT, status TEXT);\n", encoding="utf-8"
     )
     docs = repo / "docs"
     docs.mkdir()
     (docs / "board.md").write_text(
-        "---\ntitle: Board API\ntags: [cards]\n---\n# Board card click route\nSee [[Card Schema]].\n", encoding="utf-8"
+        "---\ntitle: Board API\ntags: [cards]\n---\n# Board card click route\nSee [[Card"
+        " Schema]].\n",
+        encoding="utf-8",
     )
     cache = tmp_path / "cache"
 
@@ -1452,7 +1601,9 @@ def test_config_manifest_extracts_package_scripts_frameworks_and_env_names(tmp_p
         )
     )
     (repo / "AGENTS.md").write_text("# Rules\nAlways run pnpm test before commits.\npnpm build\n")
-    (repo / ".env.example").write_text("API_URL=https://example.test\nSECRET_TOKEN=super-secret-value\n")
+    (repo / ".env.example").write_text(
+        "API_URL=https://example.test\nSECRET_TOKEN=super-secret-value\n"
+    )
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
@@ -1543,7 +1694,9 @@ def test_feedback_records_cli_payload_normalizes_paths_and_stats(tmp_path):
     assert "Future searches for similar tasks will rank these files higher." in res.stdout
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     with sqlite3.connect(Path(ptr["indexPath"]) / "mimry.sqlite") as con:
-        row = con.execute("select query, opened_paths, changed_paths, missed_paths, outcome from feedback").fetchone()
+        row = con.execute(
+            "select query, opened_paths, changed_paths, missed_paths, outcome from feedback"
+        ).fetchone()
     assert row[0] == "fix auth session ranking"
     assert json.loads(row[1]) == ["src/auth/session.py"]
     assert json.loads(row[2]) == ["src/auth/middleware.py"]
@@ -1684,7 +1837,9 @@ def test_semantic_index_stores_local_chunks_without_sensitive_files(tmp_path):
     ptr = json.loads((repo / ".mimry" / "pointer.json").read_text())
     idx = Path(ptr["indexPath"])
     with sqlite3.connect(idx / "mimry.sqlite") as con:
-        chunks = con.execute("select rel_path, chunk_kind, chunk_text_preview from semantic_chunks").fetchall()
+        chunks = con.execute(
+            "select rel_path, chunk_kind, chunk_text_preview from semantic_chunks"
+        ).fetchall()
     assert chunks
     chunk_text = "\n".join(" ".join(str(part or "") for part in row) for row in chunks)
     assert "src/auth/session.py" in chunk_text

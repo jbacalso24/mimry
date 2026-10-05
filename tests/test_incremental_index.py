@@ -1,4 +1,7 @@
-"""Git-style reuse: stat-unchanged files skip re-reading, and the output never differs."""
+"""Git-style reuse: stat-unchanged files skip re-reading.
+
+The output never differs.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +18,14 @@ from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.storage import load_pointer
 
-ARTIFACTS = ("files.jsonl", "symbols.jsonl", "imports.jsonl", "exports.jsonl", "graph.json", "file-hashes.json")
+ARTIFACTS = (
+    "files.jsonl",
+    "symbols.jsonl",
+    "imports.jsonl",
+    "exports.jsonl",
+    "graph.json",
+    "file-hashes.json",
+)
 OLD_NS = 1_600_000_000 * 10**9
 
 
@@ -23,7 +33,9 @@ def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
     root = tmp_path / "repo"
     (root / "app").mkdir(parents=True)
-    (root / "app" / "a.py").write_text("import b\n\ndef alpha():\n    return b.beta()\n", encoding="utf-8")
+    (root / "app" / "a.py").write_text(
+        "import b\n\ndef alpha():\n    return b.beta()\n", encoding="utf-8"
+    )
     (root / "app" / "b.py").write_text("def beta():\n    return 2\n", encoding="utf-8")
     (root / "guide.md").write_text("# Demo\n\nSee [a](app/a.py).\n", encoding="utf-8")
     _age(root)
@@ -64,7 +76,9 @@ def test_incremental_reindex_reuses_unchanged_files_and_matches_full(tmp_path, m
     assert _index(root) == full
     assert adapted == []
 
-    (root / "app" / "b.py").write_text("def beta():\n    return 3\n\ndef gamma():\n    return 4\n", encoding="utf-8")
+    (root / "app" / "b.py").write_text(
+        "def beta():\n    return 3\n\ndef gamma():\n    return 4\n", encoding="utf-8"
+    )
     _age(root)
     incremental = _index(root)
     assert adapted == ["b.py"]
@@ -87,13 +101,15 @@ def test_freshness_trusts_stat_identity_but_rereads_racy_files(tmp_path, monkeyp
     assert index_freshness(root, ptr)["state"] == "current"
     assert reads == []
 
-    # An edit that keeps the size but moves the mtime is caught without --verify.
+    # An edit that keeps the size but moves the mtime is caught without
+    # --verify.
     target = root / "app" / "b.py"
     target.write_text(target.read_text(encoding="utf-8").replace("2", "5"), encoding="utf-8")
     assert index_freshness(root, ptr)["changed"] == ["app/b.py"]
 
-    # A file modified right before the scan is never trusted by metadata alone:
-    # a second same-tick rewrite would leave its identity unchanged.
+    # A file modified right before the scan is never trusted by metadata
+    # alone: a second same-tick rewrite would leave its identity
+    # unchanged.
     target.write_text("def beta():\n    return 2\n", encoding="utf-8")
     _index(root)
     reads.clear()
@@ -112,7 +128,8 @@ def test_status_verify_rehashes_every_file(tmp_path, monkeypatch):
 
     assert index_freshness(root, ptr)["state"] == "current"
     assert index_freshness(root, ptr, verify=True)["changed"] == ["app/b.py"]
-    # A full reindex re-reads it; an incremental one would trust it, like git.
+    # A full reindex re-reads it; an incremental one would trust it,
+    # like git.
     adapted = _count_adapts(monkeypatch)
     _index(root, full=True)
     assert sorted(adapted) == ["a.py", "b.py", "guide.md"]

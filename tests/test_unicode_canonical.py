@@ -6,18 +6,19 @@ and that the canonical path is used for all identity-bearing metadata.
 
 from __future__ import annotations
 
+import tempfile
 import unicodedata
 from pathlib import Path
-import tempfile
 
 import pytest
 
-from mimry.scanner import file_record
 from mimry.paths import canonical_rel_path
+from mimry.scanner import file_record
 
 
 def test_nfc_and_nfd_filenames_produce_identical_file_records():
-    """Same logical filename (e.g. café.py) in NFC vs NFD produces identical records.
+    """Same logical filename (e.g. café.py) in NFC vs NFD produces
+    identical records.
 
     MUST fail before the fix.
     """
@@ -32,13 +33,15 @@ def test_nfc_and_nfd_filenames_produce_identical_file_records():
             filename_nfc = "café.py"
             filename_nfd = "café.py"  # Decomposed form
 
-            # Verify they're different byte sequences but same logical name
+            # Verify they're different byte sequences but same logical
+            # name
             assert filename_nfc != filename_nfd
             assert unicodedata.normalize("NFC", filename_nfc) == filename_nfc
             assert unicodedata.normalize("NFD", filename_nfd) == filename_nfd
             assert unicodedata.normalize("NFC", filename_nfd) == filename_nfc
 
-            # Try to create both (some filesystems will normalize, that's ok)
+            # Try to create both (some filesystems will normalize,
+            # that's ok)
             nfc_path = root1 / filename_nfc
             try:
                 nfc_path.write_bytes(b"# coding: utf-8\ndef hello(): pass\n")
@@ -114,7 +117,7 @@ def test_nfd_root_produces_same_canonical_rel_path():
 
 
 def test_canonical_path_used_in_metadata():
-    """The canonical (NFC) path is used in all metadata identity fields."""
+    """Every metadata identity field uses the canonical (NFC) path."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
 

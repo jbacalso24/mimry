@@ -40,11 +40,18 @@ ROLE_PACKS = {
 ROLE_OWNS = {
     "backend": "API routes, services, auth, data models, migrations, jobs, and backend tests.",
     "frontend": "Web UI routes, React/Next components, browser flows, styles, and frontend tests.",
-    "mobile": "React Native/Expo screens, native config, share extensions, and device verification.",
-    "reviewer": "Review-only audit, evidence gathering, risk assessment, and non-mutating recommendations.",
+    "mobile": (
+        "React Native/Expo screens, native config, share extensions, and device verification."
+    ),
+    "reviewer": (
+        "Review-only audit, evidence gathering, risk assessment, and non-mutating recommendations."
+    ),
     "qa": "Reproduction, test coverage, regression checks, fixtures, and verification plans.",
     "docs": "Docs, README/help text, source-truth summaries, and release/handoff notes.",
-    "tooly": "MIMRY CLI/MCP/tooling, graph engine, indexing/search/context packs, and agent substrate work.",
+    "tooly": (
+        "MIMRY CLI/MCP/tooling, graph engine, indexing/search/context packs, and agent substrate"
+        " work."
+    ),
     "general": "Cross-cutting implementation where no single specialist lane dominates.",
 }
 
@@ -53,8 +60,27 @@ RISK_PATTERNS = {
     "database": ("database", "db", "sql", "postgres", "sqlite", "schema", "model"),
     "migration": ("migration", "migrate", "alembic", "prisma", "schema change"),
     "billing": ("billing", "payment", "checkout", "stripe", "invoice", "subscription"),
-    "deployment": ("deploy", "deployment", "release", "production", "prod", "ci", "docker", "kubernetes"),
-    "secrets": ("secret", "secrets", "token", "api key", "apikey", "credential", "credentials", "password", ".env"),
+    "deployment": (
+        "deploy",
+        "deployment",
+        "release",
+        "production",
+        "prod",
+        "ci",
+        "docker",
+        "kubernetes",
+    ),
+    "secrets": (
+        "secret",
+        "secrets",
+        "token",
+        "api key",
+        "apikey",
+        "credential",
+        "credentials",
+        "password",
+        ".env",
+    ),
     "scraping/legal/content rights": (
         "scrape",
         "scraping",
@@ -92,12 +118,43 @@ BACKEND_TERMS = {
     "worker",
     "job",
 }
-FRONTEND_TERMS = {"frontend", "web", "ui", "ux", "react", "next", "nextjs", "component", "page", "css", "browser"}
-MOBILE_TERMS = {"mobile", "expo", "ios", "android", "native", "react native", "share extension", "app.json"}
+FRONTEND_TERMS = {
+    "frontend",
+    "web",
+    "ui",
+    "ux",
+    "react",
+    "next",
+    "nextjs",
+    "component",
+    "page",
+    "css",
+    "browser",
+}
+MOBILE_TERMS = {
+    "mobile",
+    "expo",
+    "ios",
+    "android",
+    "native",
+    "react native",
+    "share extension",
+    "app.json",
+}
 REVIEWER_TERMS = {"review", "audit", "assess", "inspect", "security review", "code review"}
 QA_TERMS = {"test", "qa", "regression", "repro", "verify", "fixture", "pytest", "vitest"}
 DOCS_TERMS = {"docs", "documentation", "readme", "guide", "help", "changelog", "release notes"}
-TOOLY_TERMS = {"mimry", "tooly", "mcp", "graph", "index", "context pack", "cli", "routing", "route tool"}
+TOOLY_TERMS = {
+    "mimry",
+    "tooly",
+    "mcp",
+    "graph",
+    "index",
+    "context pack",
+    "cli",
+    "routing",
+    "route tool",
+}
 
 
 def normalize_agent(agent: str | None) -> str:
@@ -118,7 +175,14 @@ def _record_text(fresh: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     for rec in fresh.get("files", []):
         rel = rec.get("rel_path", "")
         if rel in selected:
-            parts.extend([rel, rec.get("adapter", ""), rec.get("metadata_text", ""), rec.get("content_hint", "")])
+            parts.extend(
+                [
+                    rel,
+                    rec.get("adapter", ""),
+                    rec.get("metadata_text", ""),
+                    rec.get("content_hint", ""),
+                ]
+            )
     return " ".join(parts).lower()
 
 
@@ -141,7 +205,9 @@ def _score_roles(
     }
     for role, terms in role_terms.items():
         query_matches = _contains(q, terms)
-        evidence_matches = [term for term in _contains(evidence, terms) if term not in query_matches]
+        evidence_matches = [
+            term for term in _contains(evidence, terms) if term not in query_matches
+        ]
         if query_matches:
             scores[role] += len(query_matches) * 14
             reasons[role].append("query terms: " + ", ".join(query_matches[:6]))
@@ -149,7 +215,8 @@ def _score_roles(
             scores[role] += min(len(evidence_matches), 4) * 3
             reasons[role].append("indexed file terms: " + ", ".join(evidence_matches[:4]))
 
-    # Intent verbs keep implementation tasks out of reviewer/qa/docs unless those are explicit.
+    # Intent verbs keep implementation tasks out of reviewer/qa/docs
+    # unless those are explicit.
     if re.search(r"\b(fix|implement|add|update|debug|refactor|build)\b", q):
         for role in ("backend", "frontend", "mobile", "tooly", "general"):
             scores[role] += 2
@@ -165,7 +232,8 @@ def _score_roles(
     if "mimry" in q or "tooly" in q:
         scores["tooly"] += 30
         reasons["tooly"].append("explicit MIMRY/Tooly ownership")
-    # MCP alone is a Tooly signal for MIMRY/tooling tasks, but avoid stealing ordinary backend API route work.
+    # MCP alone is a Tooly signal for MIMRY/tooling tasks, but avoid
+    # stealing ordinary backend API route work.
     if "mcp" in q and any(term in q for term in ("mimry", "tool", "route", "server")):
         scores["tooly"] += 10
         reasons["tooly"].append("MCP/tooling task signal")
@@ -192,8 +260,9 @@ def _score_roles(
 def detect_risk_gates(query: str, rows: list[dict[str, Any]] | None = None) -> list[str]:
     text = query.lower()
     if rows:
-        # Use paths as weak file evidence, but avoid reason labels such as
-        # "token match" creating false secret gates for ordinary lexical hits.
+        # Use paths as weak file evidence, but avoid reason labels such
+        # as "token match" creating false secret gates for ordinary
+        # lexical hits.
         text += " " + " ".join(row.get("path", "").lower() for row in rows)
     gates = []
     for gate, patterns in RISK_PATTERNS.items():
@@ -222,12 +291,19 @@ def risk_severity(gates: list[str]) -> dict[str, Any]:
         if grouped[candidate]:
             level = candidate
             break
-    return {"level": level, "high": grouped["high"], "medium": grouped["medium"], "low": grouped["low"]}
+    return {
+        "level": level,
+        "high": grouped["high"],
+        "medium": grouped["medium"],
+        "low": grouped["low"],
+    }
 
 
 def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[str]:
     commands: list[str] = []
-    command_re = re.compile(r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) command (?P<cmd>[^|]+)")
+    command_re = re.compile(
+        r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) command (?P<cmd>[^|]+)"
+    )
     doc_commands_re = re.compile(r"(?:^|\| )commands (?P<cmds>[^|]+)")
     for f in fresh.get("files", []):
         if "config-manifest" not in f.get("adapter", ""):
@@ -243,11 +319,25 @@ def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[
                 cmd = cmd.strip()
                 if cmd and any(
                     cmd.startswith(prefix)
-                    for prefix in ("uv ", "npm ", "pnpm ", "yarn ", "bun ", "pytest", "ruff", "make ", "just ")
+                    for prefix in (
+                        "uv ",
+                        "npm ",
+                        "pnpm ",
+                        "yarn ",
+                        "bun ",
+                        "pytest",
+                        "ruff",
+                        "make ",
+                        "just ",
+                    )
                 ):
                     if cmd not in commands:
                         commands.append(cmd)
-    preferred = [cmd for cmd in ("uv run ruff format .", "uv run ruff check .", "uv run pytest") if cmd in commands]
+    preferred = [
+        cmd
+        for cmd in ("uv run ruff format .", "uv run ruff check .", "uv run pytest")
+        if cmd in commands
+    ]
     rest = [cmd for cmd in commands if cmd not in preferred]
     selected = (preferred + rest)[:8]
     fallbacks = {
@@ -276,8 +366,12 @@ def route_payload(root: Path, ptr: dict[str, Any], query: str, limit: int = 8) -
     ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
     role, score = ranked[0]
     runner_up = ranked[1][1] if len(ranked) > 1 else 0
-    confidence = "high" if score >= 28 and score - runner_up >= 8 else "medium" if score >= 10 else "low"
-    reasons = reasons_by_role.get(role) or ["best available match from query terms and indexed file evidence"]
+    confidence = (
+        "high" if score >= 28 and score - runner_up >= 8 else "medium" if score >= 10 else "low"
+    )
+    reasons = reasons_by_role.get(role) or [
+        "best available match from query terms and indexed file evidence"
+    ]
     gates = detect_risk_gates(query, rows)
     risk = risk_severity(gates)
     safe_query = redact_sensitive_text(query)
@@ -304,7 +398,9 @@ def brief_path(root: Path, agent: str) -> Path:
     return output_dir(root) / "context" / f"brief-{agent}.md"
 
 
-def write_brief(root: Path, ptr: dict[str, Any], query: str, agent: str, limit: int = 8) -> tuple[Path, dict[str, Any]]:
+def write_brief(
+    root: Path, ptr: dict[str, Any], query: str, agent: str, limit: int = 8
+) -> tuple[Path, dict[str, Any]]:
     role = normalize_agent(agent)
     payload = route_payload(root, ptr, query, limit=limit)
     payload["agent"] = role
@@ -346,7 +442,11 @@ def write_brief(root: Path, ptr: dict[str, Any], query: str, agent: str, limit: 
         *[f"- `{cmd}`" for cmd in payload["suggested_verification"]],
         "",
         "## Source of truth reminder",
-        "MIMRY narrows context and proposes routing; source files, tests, build output, and operator approval gates remain the source of truth. Do not paste secrets or source dumps into handoffs.",
+        (
+            "MIMRY narrows context and proposes routing; source files, tests, build output, and"
+            " operator approval gates remain the source of truth. Do not paste secrets or source"
+            " dumps into handoffs."
+        ),
         "",
         "## Final report checklist",
         "- Context query and brief path used.",

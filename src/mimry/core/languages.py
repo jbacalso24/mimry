@@ -26,7 +26,12 @@ NODE_TYPES = {
     },
     "javascript": {
         "definitions": frozenset(
-            ["function_declaration", "class_declaration", "variable_declarator", "interface_declaration"]
+            [
+                "function_declaration",
+                "class_declaration",
+                "variable_declarator",
+                "interface_declaration",
+            ]
         ),
         "imports": frozenset(["import_statement"]),
         "calls": frozenset(["call_expression"]),
@@ -34,7 +39,12 @@ NODE_TYPES = {
     },
     "typescript": {
         "definitions": frozenset(
-            ["function_declaration", "class_declaration", "variable_declarator", "interface_declaration"]
+            [
+                "function_declaration",
+                "class_declaration",
+                "variable_declarator",
+                "interface_declaration",
+            ]
         ),
         "imports": frozenset(["import_statement"]),
         "calls": frozenset(["call_expression"]),
@@ -42,14 +52,21 @@ NODE_TYPES = {
     },
     "tsx": {
         "definitions": frozenset(
-            ["function_declaration", "class_declaration", "variable_declarator", "interface_declaration"]
+            [
+                "function_declaration",
+                "class_declaration",
+                "variable_declarator",
+                "interface_declaration",
+            ]
         ),
         "imports": frozenset(["import_statement"]),
         "calls": frozenset(["call_expression"]),
         "bases": frozenset(["class_heritage", "extends_type_clause"]),
     },
     "go": {
-        "definitions": frozenset(["function_declaration", "method_declaration", "type_declaration"]),
+        "definitions": frozenset(
+            ["function_declaration", "method_declaration", "type_declaration"]
+        ),
         "imports": frozenset(["import_declaration", "import_spec"]),
         "calls": frozenset(["call_expression"]),
     },
@@ -59,8 +76,8 @@ NODE_TYPES = {
         "calls": frozenset(["call_expression"]),
     },
     "csharp": {
-        # Interfaces, records and structs are first-class types in .NET; without them
-        # "what implements IFoo" has no node to point at.
+        # Interfaces, records and structs are first-class types in .NET;
+        # without them "what implements IFoo" has no node to point at.
         "definitions": frozenset(
             [
                 "class_declaration",
@@ -77,8 +94,9 @@ NODE_TYPES = {
         "bases": frozenset(["base_list"]),
     },
     "java": {
-        # Constructors are declared separately from methods; without them the
-        # wiring done in `new Foo(...)` has no caller to attribute.
+        # Constructors are declared separately from methods; without
+        # them the wiring done in `new Foo(...)` has no caller to
+        # attribute.
         "definitions": frozenset(
             [
                 "class_declaration",
@@ -91,8 +109,9 @@ NODE_TYPES = {
         ),
         "imports": frozenset(["import_declaration"]),
         "calls": frozenset(["method_invocation"]),
-        # Java splits heritage in two: `extends` is superclass, `implements` is
-        # super_interfaces. Listing only one silently halves the inheritance edges.
+        # Java splits heritage in two: `extends` is superclass,
+        # `implements` is super_interfaces. Listing only one silently
+        # halves the inheritance edges.
         "bases": frozenset(["superclass", "super_interfaces"]),
     },
     "php": {
@@ -107,15 +126,18 @@ NODE_TYPES = {
             ]
         ),
         "imports": frozenset(["namespace_use_declaration"]),
-        # Three call shapes: helper(), $this->method(), Static::method().
-        "calls": frozenset(["function_call_expression", "member_call_expression", "scoped_call_expression"]),
+        # Three call shapes: helper(), $this->method(),
+        # Static::method().
+        "calls": frozenset(
+            ["function_call_expression", "member_call_expression", "scoped_call_expression"]
+        ),
         "bases": frozenset(["base_clause", "class_interface_clause"]),
     },
 }
 
 
 def language_for(path: str | Path) -> str | None:
-    """Return the grammar name for a path's extension, or None if unsupported."""
+    """Grammar name for a path's extension, or None if unsupported."""
     if isinstance(path, str):
         path = Path(path)
     ext = path.suffix.lower()
@@ -146,10 +168,11 @@ def symbol_kind(language: str, node_kind: str) -> str:
 def _text(source: bytes, node: Any) -> str:
     """Extract a node's text.
 
-    `source` must be the UTF-8 *bytes*, because tree-sitter reports byte offsets.
-    Slicing the decoded str instead shifts every name by the number of extra bytes
-    ahead of it -- a UTF-8 BOM alone costs 2 characters, and Visual Studio writes
-    C#/TS files with a BOM by default, so `formattedNumber` came out `rmattedNumber`.
+    `source` must be the UTF-8 *bytes*, because tree-sitter reports byte
+    offsets. Slicing the decoded str instead shifts every name by the
+    number of extra bytes ahead of it -- a UTF-8 BOM alone costs 2
+    characters, and Visual Studio writes C#/TS files with a BOM by
+    default, so `formattedNumber` came out `rmattedNumber`.
     """
     return source[node.start_byte : node.end_byte].decode("utf-8", "replace")
 
@@ -179,8 +202,9 @@ def _children(node: Any):
 def _walk(node: Any):
     """Depth-first walk of tree, document order.
 
-    Iterative: a recursive generator hands every node up through one frame per
-    tree level, which made walking deep parse trees quadratic in their depth.
+    Iterative: a recursive generator hands every node up through one
+    frame per tree level, which made walking deep parse trees quadratic
+    in their depth.
     """
     stack = [node]
     while stack:
@@ -194,9 +218,13 @@ def _walk(node: Any):
 def _first_identifier(node: Any, source: str) -> str | None:
     """Find the first identifier-like child recursively."""
     kind = node.type
-    if kind in ("identifier", "type_identifier", "field_identifier", "property_identifier", "name") or kind.endswith(
-        "identifier"
-    ):
+    if kind in (
+        "identifier",
+        "type_identifier",
+        "field_identifier",
+        "property_identifier",
+        "name",
+    ) or kind.endswith("identifier"):
         return _text(source, node)
     for child in _children(node):
         found = _first_identifier(child, source)
@@ -208,12 +236,13 @@ def _first_identifier(node: Any, source: str) -> str | None:
 def _definition_name(node: Any, source: bytes) -> str | None:
     """The declared name, preferring the grammar's own `name` field.
 
-    _first_identifier returns the first identifier-like descendant, which on a
-    typed method declaration is the *return type*: Java `public String greet()`
-    indexed as `String`, and C# `public MyType Foo()` as `MyType` -- the method
-    disappeared and a phantom symbol took its place. Grammars label the declared
-    name with a `name` field, so ask for it and keep the positional scan only for
-    the nodes that have none (Rust `impl_item` names its subject `type`).
+    _first_identifier returns the first identifier-like descendant,
+    which on a typed method declaration is the *return type*: Java
+    `public String greet()` indexed as `String`, and C# `public MyType
+    Foo()` as `MyType` -- the method disappeared and a phantom symbol
+    took its place. Grammars label the declared name with a `name`
+    field, so ask for it and keep the positional scan only for the nodes
+    that have none (Rust `impl_item` names its subject `type`).
     """
     try:
         named = node.child_by_field_name("name")
@@ -260,8 +289,9 @@ def _is_exported(node: Any, language: str, source: str) -> bool:
                 return True
         return False
 
-    # C#: check for "public" in text. Checked on the bytes: ASCII survives
-    # UTF-8 decoding unchanged, and decoding a whole class per member was quadratic.
+    # C#: check for "public" in text. Checked on the bytes: ASCII
+    # survives UTF-8 decoding unchanged, and decoding a whole class per
+    # member was quadratic.
     if language == "csharp":
         return b"public" in source[node.start_byte : node.end_byte]
 
@@ -280,7 +310,13 @@ def _extract_module_from_import(import_text: str, language: str) -> str:
     return text.strip()
 
 
-_IDENTIFIER_KINDS = ("identifier", "type_identifier", "field_identifier", "property_identifier", "name")
+_IDENTIFIER_KINDS = (
+    "identifier",
+    "type_identifier",
+    "field_identifier",
+    "property_identifier",
+    "name",
+)
 
 
 def _is_identifier_kind(kind: str) -> bool:
@@ -288,16 +324,19 @@ def _is_identifier_kind(kind: str) -> bool:
 
 
 def _expression_name(node: Any, source: bytes) -> str | None:
-    """Reduce a callee expression to the identifier a caller would match on.
+    """Reduce a callee expression to the identifier a caller would match
+    on.
 
-    ponytail: positional heuristic, not name resolution. Upgrade to per-language
-    field lookups if a language needs more than "last segment wins".
+    ponytail: positional heuristic, not name resolution. Upgrade to
+    per-language field lookups if a language needs more than "last
+    segment wins".
     """
     kind = node.type
     if _is_identifier_kind(kind):
         return _text(source, node)
     if "generic" in kind:
-        # GetService<IFoo>() -- the method is the first segment, not the type argument.
+        # GetService<IFoo>() -- the method is the first segment, not the
+        # type argument.
         for child in _children(node):
             name = _expression_name(child, source)
             if name:
@@ -316,18 +355,20 @@ def _expression_name(node: Any, source: bytes) -> str | None:
 def _base_type_names(container: Any, source: bytes) -> list[str]:
     """Every base type named in a heritage clause, in source order.
 
-    Deliberately not a _walk: descending the whole subtree would also collect the
-    type arguments, so `IHandler<Command>` would yield `Command` as a second base.
-    Recurse only through the clause wrappers (TS splits extends/implements into two).
+    Deliberately not a _walk: descending the whole subtree would also
+    collect the type arguments, so `IHandler<Command>` would yield
+    `Command` as a second base. Recurse only through the clause wrappers
+    (TS splits extends/implements into two).
     """
     names: list[str] = []
 
     def visit(node: Any) -> None:
         for child in _children(node):
             kind = child.type
-            # TS splits extends/implements into two clauses; Java wraps its
-            # interface list in a type_list, so `implements G, R` would otherwise
-            # collapse to whichever name the reversed scan reached first.
+            # TS splits extends/implements into two clauses; Java wraps
+            # its interface list in a type_list, so `implements G, R`
+            # would otherwise collapse to whichever name the reversed
+            # scan reached first.
             if kind in ("extends_clause", "implements_clause", "extends_type_clause", "type_list"):
                 visit(child)
                 continue
@@ -342,17 +383,19 @@ def _base_type_names(container: Any, source: bytes) -> list[str]:
 def _callee_name(node: Any, source: bytes) -> str | None:
     """The called function's name, not the expression that produced it.
 
-    A call node's first child is the whole function expression. Using its text
-    verbatim turns `schemes.Where(x => ...)` into a multi-line blob -- unmatchable
-    as a call target, and large enough to drag file content into the record (one
-    such blob tripped the secret scanner and silently dropped the file from the
-    index). Take the final identifier, as the Python adapter does with `Attribute.attr`.
+    A call node's first child is the whole function expression. Using
+    its text verbatim turns `schemes.Where(x => ...)` into a multi-line
+    blob -- unmatchable as a call target, and large enough to drag file
+    content into the record (one such blob tripped the secret scanner
+    and silently dropped the file from the index). Take the final
+    identifier, as the Python adapter does with `Attribute.attr`.
     """
-    # Most grammars make the whole callee expression the first child, but Java's
-    # method_invocation and PHP's member/scoped calls put the object there and the
-    # method in a `name` field -- taking child 0 recorded `$this` and `Registry`
-    # as the callee. Ask for the field first; where it is absent (python, js, ts,
-    # go, rust, csharp) `function` is child 0, so nothing changes for them.
+    # Most grammars make the whole callee expression the first child,
+    # but Java's method_invocation and PHP's member/scoped calls put the
+    # object there and the method in a `name` field -- taking child 0
+    # recorded `$this` and `Registry` as the callee. Ask for the field
+    # first; where it is absent (python, js, ts, go, rust, csharp)
+    # `function` is child 0, so nothing changes for them.
     callee = None
     for field in ("name", "function"):
         try:
@@ -366,8 +409,8 @@ def _callee_name(node: Any, source: bytes) -> str | None:
     if callee is None:
         return None
     name = (_expression_name(callee, source) or "").strip()
-    # Anything still carrying whitespace is an expression we failed to reduce.
-    # Dropping it beats emitting an edge nothing can resolve.
+    # Anything still carrying whitespace is an expression we failed to
+    # reduce. Dropping it beats emitting an edge nothing can resolve.
     if not name or name.split() != [name]:
         return None
     return name
@@ -375,7 +418,7 @@ def _callee_name(node: Any, source: bytes) -> str | None:
 
 @functools.cache
 def _grammar(lang: str):
-    """The parser and fact query for ``lang``, built once per process."""
+    """Parser and fact query for ``lang``, built once per process."""
     from tree_sitter import Parser, Query, QueryError
     from tree_sitter_language_pack import get_language
 
@@ -388,7 +431,8 @@ def _grammar(lang: str):
             try:
                 Query(language, pattern)
             except QueryError:
-                # Not a node type of this grammar: the full walk never saw one either.
+                # Not a node type of this grammar: the full walk never
+                # saw one either.
                 continue
             patterns.append(pattern)
     return Parser(language), (Query(language, "\n".join(patterns)) if patterns else None)
@@ -402,20 +446,24 @@ def _depth(node: Any) -> int:
 
 
 def _captures(query: Any, root_node: Any) -> list[tuple[Any, str]]:
-    """``(node, category)`` for every fact node, in the order the full walk visited them.
+    """``(node, category)`` for every fact node, in the order the full
+    walk visited them.
 
-    Query captures are not returned in document order, so each category is
-    sorted into the walk's pre-order: earlier start first, then the enclosing
-    (longer) node, then -- only for identical spans -- the shallower one. The
-    walk handled a node's categories in definitions, imports, calls order, but
-    only the order within each category is observable.
+    Query captures are not returned in document order, so each category
+    is sorted into the walk's pre-order: earlier start first, then the
+    enclosing (longer) node, then -- only for identical spans -- the
+    shallower one. The walk handled a node's categories in definitions,
+    imports, calls order, but only the order within each category is
+    observable.
     """
     from tree_sitter import QueryCursor
 
     by_category = QueryCursor(query).captures(root_node)
     ordered = []
     for category in ("definitions", "imports", "calls"):
-        nodes = sorted(by_category.get(category, ()), key=lambda node: (node.start_byte, -node.end_byte))
+        nodes = sorted(
+            by_category.get(category, ()), key=lambda node: (node.start_byte, -node.end_byte)
+        )
         spans = [(node.start_byte, node.end_byte) for node in nodes]
         if len(set(spans)) != len(spans):
             nodes.sort(key=lambda node: (node.start_byte, -node.end_byte, _depth(node)))
@@ -457,8 +505,9 @@ def extract(path: str | Path, source: str) -> dict:
 
     try:
         parser, query = _grammar(lang)
-        # Every read is by byte offset, so bind to bytes once rather than at
-        # each _text call site -- one missed site is silent corruption.
+        # Every read is by byte offset, so bind to bytes once rather
+        # than at each _text call site -- one missed site is silent
+        # corruption.
         source = source.encode("utf-8")
         tree = parser.parse(source)
         root_node = tree.root_node
@@ -471,11 +520,16 @@ def extract(path: str | Path, source: str) -> dict:
             "status": f"parse_error:{exc.__class__.__name__}",
         }
 
-    # Only definition, import and call nodes carry facts. The query finds them
-    # natively, in document order per category; visiting every node from
-    # Python instead cost more than parsing. A node matching several categories
-    # is handled once per category, exactly as the full walk did.
-    facts = _captures(query, root_node) if query is not None else ((node, None) for node in _walk(root_node))
+    # Only definition, import and call nodes carry facts. The query
+    # finds them natively, in document order per category; visiting
+    # every node from Python instead cost more than parsing. A node
+    # matching several categories is handled once per category, exactly
+    # as the full walk did.
+    facts = (
+        _captures(query, root_node)
+        if query is not None
+        else ((node, None) for node in _walk(root_node))
+    )
     for node, category in facts:
         kind = node.type
 
@@ -497,8 +551,9 @@ def extract(path: str | Path, source: str) -> dict:
                             "exported": exported,
                         }
                     )
-                    # Heritage hangs directly off the type declaration. Functions have
-                    # no such child, so this never fires for them.
+                    # Heritage hangs directly off the type declaration.
+                    # Functions have no such child, so this never fires
+                    # for them.
                     for child in _children(node):
                         if child.type in base_kinds:
                             for base in _base_type_names(child, source):
@@ -519,8 +574,9 @@ def extract(path: str | Path, source: str) -> dict:
                     if module and module not in ('"', "'", "`"):
                         break
 
-            # Fallback: try to extract from identifier/scoped_identifier nodes
-            # (Python/Rust/C#/Java, and PHP's namespace_use_clause wrapper)
+            # Fallback: try to extract from identifier/scoped_identifier
+            # nodes (Python/Rust/C#/Java, and PHP's namespace_use_clause
+            # wrapper)
             if not module:
                 for child in _children(node):
                     child_kind = child.type

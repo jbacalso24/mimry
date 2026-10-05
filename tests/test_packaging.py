@@ -28,12 +28,20 @@ def test_wheel_metadata_carries_release_dependency_pins(tmp_path: Path):
     wheel, _ = _build(tmp_path)
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert TS_LANGUAGE_PACK_REQUIREMENT in project["project"]["dependencies"]
-    assert "tool" not in project or "uv" not in project["tool"] or "sources" not in project["tool"]["uv"]
+    assert (
+        "tool" not in project
+        or "uv" not in project["tool"]
+        or "sources" not in project["tool"]["uv"]
+    )
 
     with ZipFile(wheel) as archive:
-        metadata_name = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
+        metadata_name = next(
+            name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+        )
         metadata = BytesParser().parsebytes(archive.read(metadata_name))
-        entry_points_name = next(name for name in archive.namelist() if name.endswith(".dist-info/entry_points.txt"))
+        entry_points_name = next(
+            name for name in archive.namelist() if name.endswith(".dist-info/entry_points.txt")
+        )
         entry_points = archive.read(entry_points_name).decode("utf-8")
 
     assert TS_LANGUAGE_PACK_REQUIREMENT in metadata.get_all("Requires-Dist", [])
@@ -70,8 +78,12 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
     assert roots <= allowed_roots
     assert not any(forbidden_parts.intersection(path.parts[1:]) for path in payload_paths)
     assert not any(path.name == ".env" for path in payload_paths)
-    assert any(path.as_posix().endswith("scripts/agent_integration_smoke.py") for path in payload_paths)
-    assert any(path.as_posix().endswith("scripts/determinism_aggregate.py") for path in payload_paths)
+    assert any(
+        path.as_posix().endswith("scripts/agent_integration_smoke.py") for path in payload_paths
+    )
+    assert any(
+        path.as_posix().endswith("scripts/determinism_aggregate.py") for path in payload_paths
+    )
     assert any(path.as_posix().endswith("scripts/determinism_matrix.py") for path in payload_paths)
     assert any(path.as_posix().endswith("CONTRIBUTING.md") for path in payload_paths)
     assert any(path.as_posix().endswith("SECURITY.md") for path in payload_paths)

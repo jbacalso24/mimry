@@ -1,16 +1,17 @@
 """Path and identity utilities for MIMRY.
 
-CRITICAL: NFC normalization is the single canonical form for all paths and
-filenames used in identity-bearing metadata (file_id, rel_path, filename,
-extension, metadata_text, semantic chunks, and canonical digest).
+CRITICAL: NFC normalization is the single canonical form for all paths
+and filenames used in identity-bearing metadata (file_id, rel_path,
+filename, extension, metadata_text, semantic chunks, and canonical
+digest).
 
 This ensures that checkouts where the filesystem stores filenames in NFC
-vs NFD (a precomposed accented character vs the same letter followed by a
-combining accent) produce identical records, hashes, and search
+vs NFD (a precomposed accented character vs the same letter followed by
+a combining accent) produce identical records, hashes, and search
 indices. The raw native path is preserved only in the "path" field.
 
-All identity-bearing path fields MUST derive from canonical_rel_path() or
-Path(canonical_rel_path()).name / .suffix.
+All identity-bearing path fields MUST derive from canonical_rel_path()
+or Path(canonical_rel_path()).name / .suffix.
 """
 
 from __future__ import annotations
@@ -20,18 +21,19 @@ import json
 import os
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
 def now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def cache_home():
-    # Resolve the override first. Passing Path.home() as a get() default evaluates it
-    # eagerly, so an explicit MIMRY_CACHE_HOME still crashed in environments without a
-    # resolvable home directory (Windows sandboxes with no USERPROFILE).
+    # Resolve the override first. Passing Path.home() as a get() default
+    # evaluates it eagerly, so an explicit MIMRY_CACHE_HOME still
+    # crashed in environments without a resolvable home directory
+    # (Windows sandboxes with no USERPROFILE).
     configured = os.environ.get("MIMRY_CACHE_HOME")
     if configured:
         return Path(configured).expanduser()
@@ -81,9 +83,10 @@ def stable_id(*parts):
 def canonical_rel_path(path, root) -> str:
     """The canonical repository-relative identity of a file.
 
-    POSIX separators, NFC-normalized Unicode, case preserved. This is the single
-    normalization rule for sorting and identity on Linux, macOS, and Windows.
-    Sorting on the resulting str uses codepoint order, which is locale-independent.
+    POSIX separators, NFC-normalized Unicode, case preserved. This is
+    the single normalization rule for sorting and identity on Linux,
+    macOS, and Windows. Sorting on the resulting str uses codepoint
+    order, which is locale-independent.
     """
     rel = Path(path).relative_to(root).as_posix()
     return unicodedata.normalize("NFC", rel)
@@ -92,17 +95,19 @@ def canonical_rel_path(path, root) -> str:
 def canonical_cached_rel_path(value: object) -> str | None:
     """Canonicalize an untrusted cached repository path, or reject it.
 
-    Cached/legacy graph and retrieval artifacts may carry native separators or
-    redundant ``.`` components. They must compare in the same NFC/POSIX identity
-    domain as indexed paths. Absolute and traversal-bearing values are rejected
-    rather than resolved because they are unsafe at a repository deny boundary.
+    Cached/legacy graph and retrieval artifacts may carry native
+    separators or redundant ``.`` components. They must compare in the
+    same NFC/POSIX identity domain as indexed paths. Absolute and
+    traversal-bearing values are rejected rather than resolved because
+    they are unsafe at a repository deny boundary.
     """
     if not isinstance(value, str) or not value or "\x00" in value:
         return None
     portable = value.replace("\\", "/")
-    # Any leading Windows drive designator is outside the repository-relative
-    # identity domain. This includes drive-relative and malformed forms such as
-    # ``C:app/x``, ``C:.\\app\\x``, and ``C::app/x`` as well as ``C:/app/x``.
+    # Any leading Windows drive designator is outside the
+    # repository-relative identity domain. This includes drive-relative
+    # and malformed forms such as ``C:app/x``, ``C:.\\app\\x``, and
+    # ``C::app/x`` as well as ``C:/app/x``.
     if portable.startswith("/") or re.match(r"^[A-Za-z]:", portable):
         return None
     parts: list[str] = []

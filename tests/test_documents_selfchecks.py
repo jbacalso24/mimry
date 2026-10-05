@@ -1,7 +1,8 @@
-"""Office document extraction self-checks, moved out of a __main__ block.
+"""Office document extraction self-checks, moved out of a __main__
+block.
 
-Covers .docx/.xlsx text extraction, XML entity handling, tag stripping, and the
-fail-closed paths for corrupt and empty documents.
+Covers .docx/.xlsx text extraction, XML entity handling, tag stripping,
+and the fail-closed paths for corrupt and empty documents.
 """
 
 from __future__ import annotations

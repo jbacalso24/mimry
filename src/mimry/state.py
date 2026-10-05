@@ -8,28 +8,31 @@ import random
 import sqlite3
 import tempfile
 import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
-# Byte 0 of a lock file is the byte Windows range-locks. msvcrt locks are mandatory
-# rather than advisory, so a waiter cannot even READ a locked byte -- holder metadata
-# has to live after it or diagnostics are unavailable on Windows exactly when they
-# are most useful.
+# Byte 0 of a lock file is the byte Windows range-locks. msvcrt locks
+# are mandatory rather than advisory, so a waiter cannot even READ a
+# locked byte -- holder metadata has to live after it or diagnostics are
+# unavailable on Windows exactly when they are most useful.
 LOCK_METADATA_OFFSET = 1
 
-# Bumped to 4 when canonical IDs stopped deriving from the absolute checkout
-# path. Generations at 1-3 carry path-derived file, symbol, edge, and chunk
-# identities that no longer match anything this build computes.
+# Bumped to 4 when canonical IDs stopped deriving from the absolute
+# checkout path. Generations at 1-3 carry path-derived file, symbol,
+# edge, and chunk identities that no longer match anything this build
+# computes.
 GENERATION_SCHEMA_VERSION = "4"
-# Generation layouts whose identities predate the canonical-ID contract. They
-# are refused rather than partially reused: mixing old and new identities would
-# leave a graph whose edges point at nothing.
+# Generation layouts whose identities predate the canonical-ID contract.
+# They are refused rather than partially reused: mixing old and new
+# identities would leave a graph whose edges point at nothing.
 INCOMPATIBLE_IDENTITY_SCHEMAS = frozenset({"1", "2", "3"})
 GENERATION_MANIFEST = "generation.json"
-# Paths the indexer refused (secret-bearing or unreadable). Freshness reads this so a
-# refused file is not mistaken for one the user edited. Paths only -- never content.
+# Paths the indexer refused (secret-bearing or unreadable). Freshness
+# reads this so a refused file is not mistaken for one the user edited.
+# Paths only -- never content.
 UNINDEXABLE_FILE = "unindexable.json"
 GENERATION_ARTIFACTS = (
     "mimry.sqlite",
@@ -44,8 +47,10 @@ GENERATION_ARTIFACTS = (
 )
 
 
-def _restore_state_corruption_error(path: Path, detail: str, backup: Path | None) -> StateCorruptionError:
-    """Pickle helper to reconstruct StateCorruptionError with keyword argument."""
+def _restore_state_corruption_error(
+    path: Path, detail: str, backup: Path | None
+) -> StateCorruptionError:
+    """Pickle helper to rebuild StateCorruptionError with keywords."""
     return StateCorruptionError(path, detail, backup=backup)
 
 
@@ -62,7 +67,9 @@ def _restore_unsupported_index_schema_error(
     return UnsupportedIndexSchemaError(path, generation_id, schema_version)
 
 
-def _restore_state_lock_timeout_error(path: Path, timeout: float, holder: str) -> StateLockTimeoutError:
+def _restore_state_lock_timeout_error(
+    path: Path, timeout: float, holder: str
+) -> StateLockTimeoutError:
     """Pickle helper to reconstruct StateLockTimeoutError."""
     return StateLockTimeoutError(path, timeout, holder)
 
@@ -74,11 +81,15 @@ class StateCorruptionError(RuntimeError):
         self.path = Path(path)
         self.backup = backup
         self.detail = detail
-        recovery = f" No valid last-known-good backup was found at {backup}." if backup is not None else ""
+        recovery = (
+            f" No valid last-known-good backup was found at {backup}."
+            if backup is not None
+            else ""
+        )
         super().__init__(
-            f"Corrupt MIMRY state at {self.path}: {detail}.{recovery} "
-            "Preserve the corrupt file before moving it aside. Then rerun `mimry init --skip-graph` "
-            "for pointer state, or rerun `mimry index` to rebuild index sidecars."
+            f"Corrupt MIMRY state at {self.path}: {detail}.{recovery} Preserve the corrupt file"
+            " before moving it aside. Then rerun `mimry init --skip-graph` for pointer state, or"
+            " rerun `mimry index` to rebuild index sidecars."
         )
 
     def __reduce__(self):
@@ -86,14 +97,16 @@ class StateCorruptionError(RuntimeError):
 
 
 class IndexSchemaMigrationError(StateCorruptionError):
-    """Raised when an index predates the current canonical-identity schema.
+    """Raised when an index predates the current canonical-identity
+    schema.
 
-    Subclasses StateCorruptionError so every existing handler -- the CLI, the
-    MCP server, freshness -- keeps treating it as unusable state and keeps its
-    payload shape. Only the wording differs: nothing here is damaged, the index
-    is just older than the identity contract this build computes, and telling
-    someone upgrading MIMRY that their state is "corrupt" sends them hunting for
-    a fault that does not exist.
+    Subclasses StateCorruptionError so every existing handler -- the
+    CLI, the MCP server, freshness -- keeps treating it as unusable
+    state and keeps its payload shape. Only the wording differs: nothing
+    here is damaged, the index is just older than the identity contract
+    this build computes, and telling someone upgrading MIMRY that their
+    state is "corrupt" sends them hunting for a fault that does not
+    exist.
     """
 
     def __init__(self, path: Path, generation_id: str, schema_version: str):
@@ -104,14 +117,17 @@ class IndexSchemaMigrationError(StateCorruptionError):
         self.detail = f"index generation {generation_id} uses identity schema {schema_version}"
         RuntimeError.__init__(
             self,
-            f"MIMRY index generation {generation_id} was built under identity schema {schema_version}, which "
-            f"derived canonical IDs from the absolute checkout path. This build uses schema "
-            f"{GENERATION_SCHEMA_VERSION}, so the two cannot be mixed. Run `mimry index` to rebuild it. "
-            "Nothing is damaged and no source file is affected.",
+            f"MIMRY index generation {generation_id} was built under identity schema"
+            f" {schema_version}, which derived canonical IDs from the absolute checkout path. This"
+            f" build uses schema {GENERATION_SCHEMA_VERSION}, so the two cannot be mixed. Run"
+            " `mimry index` to rebuild it. Nothing is damaged and no source file is affected.",
         )
 
     def __reduce__(self):
-        return (_restore_index_schema_migration_error, (self.path, self.generation_id, self.schema_version))
+        return (
+            _restore_index_schema_migration_error,
+            (self.path, self.generation_id, self.schema_version),
+        )
 
 
 class UnsupportedIndexSchemaError(RuntimeError):
@@ -123,16 +139,20 @@ class UnsupportedIndexSchemaError(RuntimeError):
         self.schema_version = schema_version
         self.detail = f"index generation {generation_id} uses newer schema {schema_version}"
         super().__init__(
-            f"MIMRY index generation {generation_id} uses schema {schema_version}, but this client supports only "
-            f"schema {GENERATION_SCHEMA_VERSION}. Open it with a newer MIMRY client; source files are unaffected."
+            f"MIMRY index generation {generation_id} uses schema {schema_version}, but this client"
+            f" supports only schema {GENERATION_SCHEMA_VERSION}. Open it with a newer MIMRY"
+            " client; source files are unaffected."
         )
 
     def __reduce__(self):
-        return (_restore_unsupported_index_schema_error, (self.path, self.generation_id, self.schema_version))
+        return (
+            _restore_unsupported_index_schema_error,
+            (self.path, self.generation_id, self.schema_version),
+        )
 
 
 class StateLockTimeoutError(RuntimeError):
-    """Raised when a MIMRY state lock cannot be acquired in bounded time."""
+    """Raised when a state lock cannot be acquired in bounded time."""
 
     def __init__(self, path: Path, timeout: float, holder: str = ""):
         self.path = Path(path)
@@ -140,9 +160,9 @@ class StateLockTimeoutError(RuntimeError):
         self.holder = holder.strip()
         detail = f" Current lock metadata: {self.holder}." if self.holder else ""
         super().__init__(
-            f"Timed out after {timeout:.3f}s waiting for MIMRY state lock {self.path}."
-            f"{detail} Check for another running `mimry` process; if none exists, preserve the lock file "
-            "for diagnosis and retry."
+            f"Timed out after {timeout:.3f}s waiting for MIMRY state lock {self.path}.{detail}"
+            " Check for another running `mimry` process; if none exists, preserve the lock file"
+            " for diagnosis and retry."
         )
 
     def __reduce__(self):
@@ -157,7 +177,7 @@ def _directory_fsync_unsupported(exc: OSError) -> bool:
 
 
 def _fsync_directory(path: Path) -> None:
-    """Durably persist directory entries; propagate real I/O/storage failures."""
+    """Durably persist directory entries; raise real I/O failures."""
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
         fd = os.open(path, flags)
@@ -175,17 +195,19 @@ def _fsync_directory(path: Path) -> None:
 
 
 def fsync_tree(path: Path) -> None:
-    """Flush every regular file and directory in a completed staging tree."""
+    """Flush every regular file and dir in a completed staging tree."""
     path = Path(path)
     directories = [path]
     for entry in path.rglob("*"):
         if entry.is_dir():
             directories.append(entry)
         elif entry.is_file():
-            # Windows _commit() rejects a read-only descriptor with EBADF, so the staged
-            # file has to be opened for update there. POSIX fsyncs a read-only descriptor
-            # happily, and "rb+" would newly fail on a read-only staged file, so keep the
-            # original mode there rather than trading a Windows fix for a Linux one.
+            # Windows _commit() rejects a read-only descriptor with
+            # EBADF, so the staged file has to be opened for update
+            # there. POSIX fsyncs a read-only descriptor happily, and
+            # "rb+" would newly fail on a read-only staged file, so keep
+            # the original mode there rather than trading a Windows fix
+            # for a Linux one.
             with entry.open("rb+" if os.name == "nt" else "rb") as handle:
                 os.fsync(handle.fileno())
     for directory in reversed(directories):
@@ -193,18 +215,19 @@ def fsync_tree(path: Path) -> None:
 
 
 def replace_path(source: Path, target: Path, *, attempts: int = 12, delay: float = 0.05) -> None:
-    """``os.replace`` that rides out Windows' transient sharing violations.
+    """``os.replace`` that rides out Windows' transient sharing
+    violations.
 
-    POSIX renames atomically regardless of open handles. Windows does not:
-    os.replace raises WinError 5 (EACCES) while anything still holds a handle
-    on the target or inside a directory tree -- another process reading the
-    file, an antivirus or Search indexer scanning what MIMRY just wrote, or a
-    SQLite handle the OS has not finished releasing. The condition clears in
-    milliseconds.
+    POSIX renames atomically regardless of open handles. Windows does
+    not: os.replace raises WinError 5 (EACCES) while anything still
+    holds a handle on the target or inside a directory tree -- another
+    process reading the file, an antivirus or Search indexer scanning
+    what MIMRY just wrote, or a SQLite handle the OS has not finished
+    releasing. The condition clears in milliseconds.
 
     Retry with bounded backoff, then fail loudly. Never fall back to
-    copy-then-delete: that would expose a partially written target, which is
-    the exact failure the staged write exists to prevent.
+    copy-then-delete: that would expose a partially written target,
+    which is the exact failure the staged write exists to prevent.
     """
     for attempt in range(attempts):
         try:
@@ -217,7 +240,7 @@ def replace_path(source: Path, target: Path, *, attempts: int = 12, delay: float
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Replace *path* atomically without exposing a partial destination file."""
+    """Replace *path* atomically, never exposing a partial file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -246,7 +269,7 @@ def backup_path(path: Path) -> Path:
 
 
 def atomic_write_json(path: Path, payload: Any, *, keep_backup: bool = False) -> None:
-    """Atomically write JSON, retaining the previous committed value as LKG."""
+    """Atomically write JSON, keeping the last committed one as LKG."""
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     path = Path(path)
     previous: bytes | None = None
@@ -254,15 +277,20 @@ def atomic_write_json(path: Path, payload: Any, *, keep_backup: bool = False) ->
         previous = path.read_bytes()
     atomic_write_text(path, text)
     if keep_backup:
-        # The first write seeds recovery; later writes preserve the prior generation.
-        atomic_write_bytes(backup_path(path), previous if previous is not None else text.encode("utf-8"))
+        # The first write seeds recovery; later writes preserve the
+        # prior generation.
+        atomic_write_bytes(
+            backup_path(path), previous if previous is not None else text.encode("utf-8")
+        )
 
 
 def _parse_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise StateCorruptionError(path, f"invalid JSON at line {exc.lineno}, column {exc.colno}") from exc
+        raise StateCorruptionError(
+            path, f"invalid JSON at line {exc.lineno}, column {exc.colno}"
+        ) from exc
     except UnicodeError as exc:
         raise StateCorruptionError(path, "file is not valid UTF-8") from exc
 
@@ -275,7 +303,10 @@ def load_json_state(
     validator: Callable[[Any], bool] | None = None,
     expected: str = "valid JSON",
 ) -> tuple[Any, bool]:
-    """Load JSON state and optionally repair a corrupt target from its backup."""
+    """Load JSON state; optionally repair a corrupt target.
+
+    The repair restores the target from its backup.
+    """
     path = Path(path)
     if not path.exists():
         return default, False
@@ -316,20 +347,25 @@ def sha256_file(path: Path) -> str:
 
 
 def semantic_rows_checksum(rows: list[tuple[Any, ...]]) -> str:
-    """Hash semantic rows in a stable order for generation-coherence checks."""
+    """Hash semantic rows, stably ordered, for generation coherence."""
     encoded = json.dumps(sorted(rows), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
-def generation_manifest(generation_dir: Path, generation_id: str, created_at: str) -> dict[str, Any]:
+def generation_manifest(
+    generation_dir: Path, generation_id: str, created_at: str
+) -> dict[str, Any]:
     checksums = {}
     for name in GENERATION_ARTIFACTS:
         artifact = generation_dir / name
         if not artifact.is_file():
             raise StateCorruptionError(artifact, "required generation artifact is missing")
-        # SQLite remains writable for bounded local feedback. Its embedded
-        # generation ID is the coherence check; immutable sidecars use SHA-256.
-        checksums[name] = f"generation:{generation_id}" if name == "mimry.sqlite" else sha256_file(artifact)
+        # SQLite remains writable for bounded local feedback. Its
+        # embedded generation ID is the coherence check; immutable
+        # sidecars use SHA-256.
+        checksums[name] = (
+            f"generation:{generation_id}" if name == "mimry.sqlite" else sha256_file(artifact)
+        )
     return {
         "schemaVersion": GENERATION_SCHEMA_VERSION,
         "generationId": generation_id,
@@ -343,12 +379,14 @@ _READ_SCOPE: ContextVar[dict[tuple, Any] | None] = ContextVar("mimry_read_scope"
 
 @contextmanager
 def read_scope() -> Iterator[None]:
-    """Memoize generation-derived reads for one operation holding the shared lock.
+    """Memoize generation-derived reads for one operation holding the
+    shared lock.
 
-    While a reader holds the shared operation lock, publication and GC are
-    excluded, so the active generation cannot change underneath it. Repeating
-    generation validation or a full freshness scan inside that window only
-    re-reads the same immutable bytes. Nested scopes reuse the outer one.
+    While a reader holds the shared operation lock, publication and GC
+    are excluded, so the active generation cannot change underneath it.
+    Repeating generation validation or a full freshness scan inside that
+    window only re-reads the same immutable bytes. Nested scopes reuse
+    the outer one.
     """
     if _READ_SCOPE.get() is not None:
         yield
@@ -361,7 +399,10 @@ def read_scope() -> Iterator[None]:
 
 
 def scoped(key: tuple, compute: Callable[[], Any]) -> Any:
-    """Return ``compute()`` once per active read scope; outside a scope, always compute."""
+    """Return ``compute()`` once per active read scope.
+
+    Outside a scope, always compute.
+    """
     cache = _READ_SCOPE.get()
     if cache is None:
         return compute()
@@ -371,7 +412,10 @@ def scoped(key: tuple, compute: Callable[[], Any]) -> Any:
 
 
 def validate_generation(pointer: dict[str, Any]) -> None:
-    """Validate that pointer, immutable sidecars, and SQLite expose one generation."""
+    """Validate that all state exposes one generation.
+
+    Checks the pointer, the immutable sidecars, and SQLite.
+    """
     generation_id = pointer.get("generationId")
     if not generation_id:
         return  # legacy layout; migrated on the next successful index
@@ -386,7 +430,9 @@ def _validate_generation(pointer: dict[str, Any], generation_id: str) -> None:
     manifest_path = idx / GENERATION_MANIFEST
     manifest, _ = load_json_state(manifest_path)
     if not isinstance(manifest, dict) or manifest.get("generationId") != generation_id:
-        raise StateCorruptionError(manifest_path, f"generation ID does not match active pointer ({generation_id})")
+        raise StateCorruptionError(
+            manifest_path, f"generation ID does not match active pointer ({generation_id})"
+        )
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, dict):
         raise StateCorruptionError(manifest_path, "generation manifest has no artifact checksums")
@@ -402,16 +448,21 @@ def _validate_generation(pointer: dict[str, Any], generation_id: str) -> None:
             raise UnsupportedIndexSchemaError(manifest_path, generation_id, schema_version)
         raise StateCorruptionError(
             manifest_path,
-            f"unsupported generation schema {schema_version!r}; this build supports only {GENERATION_SCHEMA_VERSION}",
+            f"unsupported generation schema {schema_version!r}; this build supports only"
+            f" {GENERATION_SCHEMA_VERSION}",
         )
     required_artifacts = GENERATION_ARTIFACTS
     for name in required_artifacts:
         artifact = idx / name
         expected = artifacts.get(name)
         if not isinstance(expected, str):
-            raise StateCorruptionError(manifest_path, f"generation manifest has no checksum for {name}")
+            raise StateCorruptionError(
+                manifest_path, f"generation manifest has no checksum for {name}"
+            )
         if name != "mimry.sqlite" and sha256_file(artifact) != expected:
-            raise StateCorruptionError(artifact, f"checksum does not match generation {generation_id}")
+            raise StateCorruptionError(
+                artifact, f"checksum does not match generation {generation_id}"
+            )
     db = idx / "mimry.sqlite"
     con: sqlite3.Connection | None = None
     metadata: tuple[Any, ...] | None = None
@@ -422,7 +473,9 @@ def _validate_generation(pointer: dict[str, Any], generation_id: str) -> None:
             row = con.execute("select generation_id from index_generation limit 1").fetchone()
             semantic_checksum = None
         else:
-            row = con.execute("select generation_id, semantic_checksum from index_generation limit 1").fetchone()
+            row = con.execute(
+                "select generation_id, semantic_checksum from index_generation limit 1"
+            ).fetchone()
             semantic_checksum = row[1] if row else None
             metadata = con.execute(
                 "select generation_id, content_checksum from semantic_metadata where root_id = ?",
@@ -441,38 +494,50 @@ def _validate_generation(pointer: dict[str, Any], generation_id: str) -> None:
         if con is not None:
             con.close()
     if not row or row[0] != generation_id:
-        raise StateCorruptionError(db, f"SQLite generation does not match active pointer ({generation_id})")
+        raise StateCorruptionError(
+            db, f"SQLite generation does not match active pointer ({generation_id})"
+        )
     if schema_version != "1":
         if not semantic_checksum:
-            raise StateCorruptionError(db, f"SQLite generation {generation_id} has no semantic checksum")
+            raise StateCorruptionError(
+                db, f"SQLite generation {generation_id} has no semantic checksum"
+            )
         if not metadata or metadata[0] != generation_id or metadata[1] != semantic_checksum:
-            raise StateCorruptionError(db, f"semantic metadata does not match SQLite generation {generation_id}")
+            raise StateCorruptionError(
+                db, f"semantic metadata does not match SQLite generation {generation_id}"
+            )
         if any(semantic_row[-1] != generation_id for semantic_row in semantic_rows):
-            raise StateCorruptionError(db, f"semantic chunks do not match SQLite generation {generation_id}")
+            raise StateCorruptionError(
+                db, f"semantic chunks do not match SQLite generation {generation_id}"
+            )
         if semantic_rows_checksum(semantic_rows) != semantic_checksum:
-            raise StateCorruptionError(db, f"semantic checksum does not match SQLite generation {generation_id}")
+            raise StateCorruptionError(
+                db, f"semantic checksum does not match SQLite generation {generation_id}"
+            )
 
 
 def _lock_timeout(timeout: float | None) -> float:
     if timeout is None:
-        # 30s, not 10s. The registry lock serializes a read-modify-write across
-        # every concurrent MIMRY process, and Windows file locking is coarser
-        # and slower than POSIX -- 9 CI matrix cells on a shared runner can
-        # legitimately queue past 10s without anything being wrong. Still
-        # bounded, still actionable: a real deadlock fails with the holder's
-        # metadata rather than hanging.
+        # 30s, not 10s. The registry lock serializes a read-modify-write
+        # across every concurrent MIMRY process, and Windows file
+        # locking is coarser and slower than POSIX -- 9 CI matrix cells
+        # on a shared runner can legitimately queue past 10s without
+        # anything being wrong. Still bounded, still actionable: a real
+        # deadlock fails with the holder's metadata rather than hanging.
         raw = os.environ.get("MIMRY_LOCK_TIMEOUT_SECONDS", "30")
         try:
             timeout = float(raw)
         except ValueError as exc:
-            raise ValueError(f"MIMRY_LOCK_TIMEOUT_SECONDS must be a positive number, got {raw!r}") from exc
+            raise ValueError(
+                f"MIMRY_LOCK_TIMEOUT_SECONDS must be a positive number, got {raw!r}"
+            ) from exc
     if timeout <= 0:
         raise ValueError("MIMRY lock timeout must be greater than zero")
     return timeout
 
 
 def _effective_shared_lock(shared: bool, *, platform: str | None = None) -> bool:
-    """Return whether this platform can honor a requested shared lock."""
+    """Whether this platform can honor a requested shared lock."""
     return shared and (os.name if platform is None else platform) != "nt"
 
 
@@ -482,10 +547,11 @@ def file_lock(
 ) -> Iterator[None]:
     """Acquire a bounded advisory lock.
 
-    POSIX/macOS readers use ``flock(LOCK_SH)`` and writers use ``LOCK_EX``.
-    Windows has no shared ``msvcrt.locking`` mode, so readers deliberately use
-    the same exclusive one-byte lock as writers. This is less concurrent but
-    preserves generation lifetime and permits Windows-safe directory cleanup.
+    POSIX/macOS readers use ``flock(LOCK_SH)`` and writers use
+    ``LOCK_EX``. Windows has no shared ``msvcrt.locking`` mode, so
+    readers deliberately use the same exclusive one-byte lock as
+    writers. This is less concurrent but preserves generation lifetime
+    and permits Windows-safe directory cleanup.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -512,7 +578,10 @@ def file_lock(
                     fcntl.flock(handle.fileno(), mode | fcntl.LOCK_NB)
                 acquired = True
             except (BlockingIOError, OSError) as exc:
-                busy = isinstance(exc, BlockingIOError) or exc.errno in {errno.EACCES, errno.EAGAIN}
+                busy = isinstance(exc, BlockingIOError) or exc.errno in {
+                    errno.EACCES,
+                    errno.EAGAIN,
+                }
                 if not busy:
                     raise
                 if time.monotonic() >= deadline:
@@ -520,20 +589,28 @@ def file_lock(
                         handle.seek(LOCK_METADATA_OFFSET)
                         holder = handle.read(2048).decode("utf-8", errors="replace")
                     except OSError:
-                        # Never let a diagnostic read mask the real timeout error.
+                        # Never let a diagnostic read mask the real
+                        # timeout error.
                         holder = ""
                     raise StateLockTimeoutError(path, timeout, holder) from exc
-                # Jittered backoff: add +/-10% random jitter to poll_interval to reduce thundering herd
-                # under concurrent Windows contention. ponytail: jitter per-poll, add adaptive backoff if perf matters.
+                # Jittered backoff: add +/-10% random jitter to
+                # poll_interval to reduce thundering herd under
+                # concurrent Windows contention. ponytail: jitter
+                # per-poll, add adaptive backoff if perf matters.
                 jitter = random.uniform(0.9, 1.1)
                 sleep_time = min(poll_interval * jitter, max(0.0, deadline - time.monotonic()))
                 time.sleep(sleep_time)
         if not effective_shared:
-            # Truncate to the lock byte, not to zero, so the byte Windows has
-            # locked survives and holder metadata is rewritten after it.
+            # Truncate to the lock byte, not to zero, so the byte
+            # Windows has locked survives and holder metadata is
+            # rewritten after it.
             handle.seek(LOCK_METADATA_OFFSET)
             handle.truncate()
-            handle.write(json.dumps({"pid": os.getpid(), "acquiredAt": time.time()}, sort_keys=True).encode("utf-8"))
+            handle.write(
+                json.dumps({"pid": os.getpid(), "acquiredAt": time.time()}, sort_keys=True).encode(
+                    "utf-8"
+                )
+            )
             handle.flush()
         yield
     finally:
@@ -550,12 +627,16 @@ def file_lock(
 
 
 @contextmanager
-def exclusive_file_lock(path: Path, *, timeout: float | None = None, poll_interval: float = 0.05) -> Iterator[None]:
+def exclusive_file_lock(
+    path: Path, *, timeout: float | None = None, poll_interval: float = 0.05
+) -> Iterator[None]:
     with file_lock(path, shared=False, timeout=timeout, poll_interval=poll_interval):
         yield
 
 
 @contextmanager
-def shared_file_lock(path: Path, *, timeout: float | None = None, poll_interval: float = 0.05) -> Iterator[None]:
+def shared_file_lock(
+    path: Path, *, timeout: float | None = None, poll_interval: float = 0.05
+) -> Iterator[None]:
     with file_lock(path, shared=True, timeout=timeout, poll_interval=poll_interval):
         yield

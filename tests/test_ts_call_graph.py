@@ -11,7 +11,9 @@ from mimry.indexer import write_index
 from mimry.storage import load_pointer
 
 
-def _init_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]) -> tuple[Path, dict]:
+def _init_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]
+) -> tuple[Path, dict]:
     root = tmp_path / "repo"
     for rel_path, source in files.items():
         path = root / rel_path
@@ -28,7 +30,9 @@ def _index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str
     root, pointer = _init_repo(tmp_path, monkeypatch, files)
     write_index(root, pointer)
     index = Path(load_pointer(root)["indexPath"])
-    symbols = [json.loads(line) for line in (index / "symbols.jsonl").read_text().splitlines() if line]
+    symbols = [
+        json.loads(line) for line in (index / "symbols.jsonl").read_text().splitlines() if line
+    ]
     graph = json.loads((index / "graph.json").read_text(encoding="utf-8"))
     return symbols, graph
 
@@ -45,13 +49,16 @@ def _call_targets(graph: dict, symbols: list[dict], caller_name: str) -> set[str
 
 
 def test_ts_class_method_is_a_symbol_and_owns_its_calls(tmp_path, monkeypatch):
-    """A method that calls an imported function produces a method->function call edge
-    attributed to the method, not swallowed by the enclosing class."""
+    """A method that calls an imported function produces a
+    method->function call edge attributed to the method, not swallowed
+    by the enclosing class."""
     symbols, graph = _index(
         tmp_path,
         monkeypatch,
         {
-            "src/util.ts": ("export function greet(name: string): string { return 'Hi ' + name; }\n"),
+            "src/util.ts": (
+                "export function greet(name: string): string { return 'Hi ' + name; }\n"
+            ),
             "src/service.ts": (
                 "import { greet } from './util';\n"
                 "export class Greeter {\n"
@@ -68,13 +75,15 @@ def test_ts_class_method_is_a_symbol_and_owns_its_calls(tmp_path, monkeypatch):
 
 
 def test_js_require_import_resolves_cross_file_call(tmp_path, monkeypatch):
-    """A CommonJS require() import lets a call resolve across files the same way an
-    ES import does."""
+    """A CommonJS require() import lets a call resolve across files the
+    same way an ES import does."""
     symbols, graph = _index(
         tmp_path,
         monkeypatch,
         {
-            "src/util.js": "function greet(name) { return 'Hi ' + name; }\nmodule.exports = { greet };\n",
+            "src/util.js": (
+                "function greet(name) { return 'Hi ' + name; }\nmodule.exports = { greet };\n"
+            ),
             "src/legacy.js": (
                 "const { greet } = require('./util');\n"
                 "function announce(name) { return greet(name); }\n"
@@ -82,4 +91,6 @@ def test_js_require_import_resolves_cross_file_call(tmp_path, monkeypatch):
             ),
         },
     )
-    assert "greet" in _call_targets(graph, symbols, "announce"), "announce() should call greet() via require()"
+    assert "greet" in _call_targets(graph, symbols, "announce"), (
+        "announce() should call greet() via require()"
+    )

@@ -3,17 +3,23 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .feedback import apply_feedback_to_rows
 from .core.artifacts import graph_available, graph_rows
-from .intent import apply_exclusion_adjustment, apply_intent_adjustment, excluded_query_terms, query_terms
+from .feedback import apply_feedback_to_rows
+from .intent import (
+    apply_exclusion_adjustment,
+    apply_intent_adjustment,
+    excluded_query_terms,
+    query_terms,
+)
 from .paths import canonical_cached_rel_path
-from .semantic import merge_semantic_rows, semantic_rows
 from .security import filter_index_records
+from .semantic import merge_semantic_rows, semantic_rows
 from .storage import connect, load_jsonl, load_pointer
 
 
 def _fts_match_query(terms: list[str]) -> str:
-    # Prefix each normalized token for identifier/path fragments; quote to keep FTS syntax safe.
+    # Prefix each normalized token for identifier/path fragments; quote
+    # to keep FTS syntax safe.
     return " OR ".join(f'"{term}"*' for term in terms if term)
 
 
@@ -34,7 +40,8 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
         return {}
     scores: dict[str, tuple[int, str]] = {}
     for file_id, rank in rows:
-        # SQLite FTS5 bm25 returns lower-is-better negative-ish values. Convert to a bounded boost.
+        # SQLite FTS5 bm25 returns lower-is-better negative-ish values.
+        # Convert to a bounded boost.
         boost = max(8, min(80, int(abs(float(rank)) * 1000) + 18))
         scores[file_id] = (boost, "FTS/BM25 match")
     return scores
@@ -94,13 +101,16 @@ def _apply_exclusions(rows, q):
 
 def _without_excluded(rows, excluded_paths):
     canonical_excluded = {
-        canonical for path in excluded_paths if (canonical := canonical_cached_rel_path(path)) is not None
+        canonical
+        for path in excluded_paths
+        if (canonical := canonical_cached_rel_path(path)) is not None
     }
     retained = []
     for row in rows:
         canonical = canonical_cached_rel_path(row.get("rel_path") or row.get("path"))
-        # Imported/cached absolute or traversal-bearing paths are not valid
-        # repository candidates. Fail closed instead of resolving them.
+        # Imported/cached absolute or traversal-bearing paths are not
+        # valid repository candidates. Fail closed instead of resolving
+        # them.
         if canonical is None or canonical in canonical_excluded:
             continue
         retained.append(row)
@@ -116,7 +126,9 @@ def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded
     return _apply_exclusions(_without_excluded(ranked, excluded_paths), q)[:limit]
 
 
-def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=False, excluded_paths=None):
+def find_rows(
+    idx, q, limit=10, graph=False, root=None, root_id=None, semantic=False, excluded_paths=None
+):
     if excluded_paths is None and root is not None:
         ptr = load_pointer(root)
         if ptr is not None and Path(ptr["indexPath"]) == Path(idx):
@@ -165,7 +177,11 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
                     {
                         **r,
                         "reason": r["reason"]
-                        + (", MIMRY config-manifest operating context" if r["path"] in fallback_by_path else ""),
+                        + (
+                            ", MIMRY config-manifest operating context"
+                            if r["path"] in fallback_by_path
+                            else ""
+                        ),
                         **(
                             {"details": fallback_by_path[r["path"]].get("details", "")}
                             if r["path"] in fallback_by_path
@@ -176,9 +192,10 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
                 ],
                 excluded_paths,
             )
-            # A file found by BOTH the graph and the content index is better
-            # evidence than one found by either alone. Previously the graph row
-            # won and the content score was dropped on the floor.
+            # A file found by BOTH the graph and the content index is
+            # better evidence than one found by either alone. Previously
+            # the graph row won and the content score was dropped on the
+            # floor.
             merged = [dict(r) for r in rows]
             by_path = {r["path"]: r for r in merged}
             content_by_path = {r["path"]: r for r in fallback_rows}
@@ -200,6 +217,8 @@ def find_rows(idx, q, limit=10, graph=False, root=None, root_id=None, semantic=F
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
-            return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)
+            return _with_semantic(
+                ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths
+            )
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)

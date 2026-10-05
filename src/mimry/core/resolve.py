@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import posixpath
-from typing import Optional
 
 SYMBOL_KIND_PRIORITY = {"class": 0, "interface": 1, "function": 2, "method": 3, "sql_table": 4}
 
 
 def symbol_selection_key(symbol, rel_path=""):
-    """Total, documented order for resolving a symbol reference to one definition.
+    """Total, documented order for resolving a symbol reference to one
+    definition.
 
-    Kind priority first (a class beats a loose function of the same name), then
-    normalized repository-relative path, line start, line end, canonical symbol
-    id. Every field is canonical, so the winner never depends on input order.
+    Kind priority first (a class beats a loose function of the same
+    name), then normalized repository-relative path, line start, line
+    end, canonical symbol id. Every field is canonical, so the winner
+    never depends on input order.
     """
     return (
         SYMBOL_KIND_PRIORITY.get(symbol.get("kind"), 99),
@@ -26,13 +27,15 @@ def resolve_imports(imports: dict[str, list[str]], rel_paths: set[str]) -> list[
     """Resolve import strings to repo-relative target files.
 
     Args:
-        imports: Dict mapping importer rel_path to list of module strings
+        imports: Dict mapping importer rel_path to list of module
+            strings
         rel_paths: Set of all repo-relative file paths that exist
 
     Returns:
-        Sorted list of {"importer": str, "target": str, "confidence": str}.
-        Confidence is "EXTRACTED" (rule 1/2) or "INFERRED" (rule 3/4).
-        Unresolvable imports are dropped; no result for ambiguous rule-4 matches.
+        Sorted list of {"importer": str, "target": str,
+        "confidence": str}. Confidence is "EXTRACTED" (rule 1/2) or
+        "INFERRED" (rule 3/4). Unresolvable imports are dropped; no
+        result for ambiguous rule-4 matches.
     """
     results = []
 
@@ -56,7 +59,9 @@ def resolve_imports(imports: dict[str, list[str]], rel_paths: set[str]) -> list[
     return results
 
 
-def _resolve_import(importer: str, module: str, rel_paths: set[str], suffix_lookup: dict) -> Optional[dict]:
+def _resolve_import(
+    importer: str, module: str, rel_paths: set[str], suffix_lookup: dict
+) -> dict | None:
     """Try to resolve a single import against available paths.
 
     Returns {"path": str, "confidence": str} or None if unresolvable.
@@ -72,19 +77,21 @@ def _resolve_import(importer: str, module: str, rel_paths: set[str], suffix_look
     if module.startswith("./") or module.startswith("../"):
         return _rule1_relative(importer, module, rel_paths)
 
-    # Python relative import. The leading-dot count is ImportFrom.level, so one
-    # dot stays in the current package and each additional dot climbs a package.
+    # Python relative import. The leading-dot count is ImportFrom.level,
+    # so one dot stays in the current package and each additional dot
+    # climbs a package.
     if module.startswith("."):
         return _rule1_python_relative(importer, module, rel_paths)
 
     # Rule 2: Dotted absolute module (Python) - contains . and no /
     if "." in module and "/" not in module and importer.endswith(".py"):
         return _rule2_dotted_absolute(module, rel_paths)
-    # A dotted module from a non-Python importer is a Java/Kotlin-style package,
-    # not a module path. Rule 2 probes <module>.py and <module>/__init__.py, so
-    # returning its verdict for `com.app.model.User` discarded the import before
-    # rule 4 ever saw it. Rule 3 declines anything dotted, so control reaches the
-    # suffix match, which resolves it or emits nothing.
+    # A dotted module from a non-Python importer is a Java/Kotlin-style
+    # package, not a module path. Rule 2 probes <module>.py and
+    # <module>/__init__.py, so returning its verdict for
+    # `com.app.model.User` discarded the import before rule 4 ever saw
+    # it. Rule 3 declines anything dotted, so control reaches the suffix
+    # match, which resolves it or emits nothing.
 
     # Rule 3: Dotted/bare module relative to importer's package (Python)
     result = _rule3_relative_to_package(importer, module, rel_paths)
@@ -95,7 +102,7 @@ def _resolve_import(importer: str, module: str, rel_paths: set[str], suffix_look
     return _rule4_suffix_match(module, rel_paths, suffix_lookup)
 
 
-def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> Optional[dict]:
+def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> dict | None:
     """Rule 1: Relative specifier (JS/TS).
 
     Base = importer's directory
@@ -128,8 +135,8 @@ def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> Optional
     return None
 
 
-def _rule1_python_relative(importer: str, module: str, rel_paths: set[str]) -> Optional[dict]:
-    """Resolve a leading-dot Python import using its declared relative level."""
+def _rule1_python_relative(importer: str, module: str, rel_paths: set[str]) -> dict | None:
+    """Resolve a Python leading-dot import by its declared level."""
     level = len(module) - len(module.lstrip("."))
     module_name = module[level:]
     if not module_name:
@@ -144,7 +151,7 @@ def _rule1_python_relative(importer: str, module: str, rel_paths: set[str]) -> O
     return None
 
 
-def _rule2_dotted_absolute(module: str, rel_paths: set[str]) -> Optional[dict]:
+def _rule2_dotted_absolute(module: str, rel_paths: set[str]) -> dict | None:
     """Rule 2: Dotted absolute module (Python).
 
     Module contains . and no /
@@ -167,12 +174,12 @@ def _rule2_dotted_absolute(module: str, rel_paths: set[str]) -> Optional[dict]:
     return None
 
 
-def _rule3_relative_to_package(importer: str, module: str, rel_paths: set[str]) -> Optional[dict]:
+def _rule3_relative_to_package(importer: str, module: str, rel_paths: set[str]) -> dict | None:
     """Rule 3: Relative to importer's package (Python).
 
-    Try same as rule 2 but rooted at importer's directory.
-    This handles the case where scanner recorded `from .payments import x` as just `"payments"`.
-    Only applies to bare module names (no / or .).
+    Try same as rule 2 but rooted at importer's directory. This handles
+    the case where scanner recorded `from .payments import x` as just
+    `"payments"`. Only applies to bare module names (no / or .).
     Confidence: INFERRED
     """
     # Only apply to bare module names (no / or .)
@@ -197,12 +204,12 @@ def _rule3_relative_to_package(importer: str, module: str, rel_paths: set[str]) 
     return None
 
 
-def _rule4_suffix_match(module: str, rel_paths: set[str], suffix_lookup: dict) -> Optional[dict]:
+def _rule4_suffix_match(module: str, rel_paths: set[str], suffix_lookup: dict) -> dict | None:
     r"""Rule 4: Suffix match (Go, Rust, C#, bare JS specifiers).
 
-    Normalize module by replacing :: and . and \ with /
-    Find paths whose extension-stripped value ends with normalized suffix on path-segment boundary
-    If EXACTLY ONE match, emit with confidence INFERRED
+    Normalize module by replacing :: and . and \ with / Find paths whose
+    extension-stripped value ends with normalized suffix on path-segment
+    boundary If EXACTLY ONE match, emit with confidence INFERRED
     Otherwise emit nothing (never guess between candidates)
     """
     # Normalize the module
@@ -224,9 +231,9 @@ def _rule4_suffix_match(module: str, rel_paths: set[str], suffix_lookup: dict) -
 def _build_suffix_lookup(rel_paths: set[str]) -> dict:
     """Precompute suffix lookup for rule 4 efficiency.
 
-    Map from normalized suffix to list of matching paths.
-    A path matches if, when its extension is removed, the result ends with
-    the suffix on a path-segment boundary.
+    Map from normalized suffix to list of matching paths. A path matches
+    if, when its extension is removed, the result ends with the suffix
+    on a path-segment boundary.
     """
     suffix_lookup = {}
 
@@ -273,9 +280,9 @@ def resolve_calls(
 ) -> list[dict]:
     """Resolve call sites to the symbols they invoke.
 
-    Returns a sorted list of
-    {"caller_file", "caller_symbol", "target_file", "target_symbol", "confidence"}.
-    caller_symbol may be None when the call sits at module level.
+    Returns a sorted list of {"caller_file", "caller_symbol",
+    "target_file", "target_symbol", "confidence"}. caller_symbol may be
+    None when the call sits at module level.
     """
     results = []
 
@@ -310,7 +317,8 @@ def resolve_calls(
         # Get imports from this file
         imported_targets = imports_by_importer.get(file_path, set())
 
-        # Many calls share a line; the enclosing symbol depends on the line alone.
+        # Many calls share a line; the enclosing symbol depends on the
+        # line alone.
         caller_by_line: dict[int, dict | None] = {}
 
         for call in call_list:
@@ -342,7 +350,8 @@ def resolve_calls(
                     target_symbol = target_info["symbol"]
                     confidence = target_info["confidence"]
 
-                    # Never emit self-recursion (same symbol in same file)
+                    # Never emit self-recursion (same symbol in same
+                    # file)
                     if not (file_path == target_file and caller_symbol == target_symbol):
                         results.append(
                             {
@@ -358,14 +367,23 @@ def resolve_calls(
                     # First hit wins - don't try other candidates
                     break
 
-    # Sort deterministically by (caller_file, caller_symbol, target_file, target_symbol)
-    results.sort(key=lambda r: (r["caller_file"], r["caller_symbol"] or "", r["target_file"], r["target_symbol"]))
+    # Sort deterministically by (caller_file, caller_symbol,
+    # target_file, target_symbol)
+    results.sort(
+        key=lambda r: (
+            r["caller_file"],
+            r["caller_symbol"] or "",
+            r["target_file"],
+            r["target_symbol"],
+        )
+    )
 
     return results
 
 
 def _enclosing_symbol(file_symbols: list[dict], line: int) -> dict | None:
-    """The innermost symbol spanning ``line`` (largest line_start), with total tie-break.
+    """The innermost symbol spanning ``line`` (largest line_start), with
+    total tie-break.
 
     Among the symbols sharing the largest line_start, the first in
     symbol_selection_key order wins.
@@ -381,7 +399,10 @@ def _enclosing_symbol(file_symbols: list[dict], line: int) -> dict | None:
         if (
             innermost is None
             or line_start > innermost_start
-            or (line_start == innermost_start and symbol_selection_key(symbol) < symbol_selection_key(innermost))
+            or (
+                line_start == innermost_start
+                and symbol_selection_key(symbol) < symbol_selection_key(innermost)
+            )
         ):
             innermost, innermost_start = symbol, line_start
     return innermost
@@ -390,9 +411,9 @@ def _enclosing_symbol(file_symbols: list[dict], line: int) -> dict | None:
 def _generate_candidates(callee_name: str) -> list[str]:
     """Generate candidate identifiers from a callee name.
 
-    From "SessionRepository().extend_expiry", get ["extend_expiry", "SessionRepository"]
-    From "fmt.Println", get ["Println", "fmt"]
-    From "renew_login", get ["renew_login"]
+    From "SessionRepository().extend_expiry", get ["extend_expiry",
+    "SessionRepository"] From "fmt.Println", get ["Println", "fmt"] From
+    "renew_login", get ["renew_login"]
     """
     # Split on dots first
     parts = callee_name.split(".")
@@ -406,7 +427,8 @@ def _generate_candidates(callee_name: str) -> list[str]:
     if not parts:
         return []
 
-    # Return: last part first (the actual invoked name), then first part (if different)
+    # Return: last part first (the actual invoked name), then first part
+    # (if different)
     if len(parts) == 1:
         return parts
     else:
@@ -421,15 +443,17 @@ def resolve_inheritance(
     symbols_by_file: dict[str, list[dict]],
     import_edges: list[dict],
 ) -> list[dict]:
-    """Resolve `class Bar : BaseThing, IFoo` to the symbols those base types name.
+    """Resolve `class Bar : BaseThing, IFoo` to the symbols those base
+    types name.
 
-    Returns a sorted list of
-    {"child_file", "child_symbol", "base_file", "base_symbol", "confidence"}.
+    Returns a sorted list of {"child_file", "child_symbol", "base_file",
+    "base_symbol", "confidence"}.
 
-    Same resolution order and the same refusal to guess as resolve_calls: same file
-    wins, then exactly one imported file, otherwise nothing is emitted. In C# the
-    base type usually lives behind a namespace `using` rather than a path import, so
-    a large share stays unresolved by design rather than being invented.
+    Same resolution order and the same refusal to guess as
+    resolve_calls: same file wins, then exactly one imported file,
+    otherwise nothing is emitted. In C# the base type usually lives
+    behind a namespace `using` rather than a path import, so a large
+    share stays unresolved by design rather than being invented.
     """
     imports_by_importer: dict[str, set] = {}
     for edge in import_edges:
@@ -446,12 +470,14 @@ def resolve_inheritance(
             if name:
                 by_name.setdefault(name, []).append(symbol)
 
-    # Repo-wide index of type names, used only when the import graph cannot answer.
-    # C# reaches a base type through `using <namespace>`, not a path import, so
-    # path-based resolution finds almost nothing: on a real solution this took
-    # inherits edges from 5 to ~507. Restricted to type-like kinds and to names owned
-    # by exactly one file, so it resolves rather than guesses -- method names collide
-    # constantly, which is why calls deliberately do not get this fallback.
+    # Repo-wide index of type names, used only when the import graph
+    # cannot answer. C# reaches a base type through `using <namespace>`,
+    # not a path import, so path-based resolution finds almost nothing:
+    # on a real solution this took inherits edges from 5 to ~507.
+    # Restricted to type-like kinds and to names owned by exactly one
+    # file, so it resolves rather than guesses -- method names collide
+    # constantly, which is why calls deliberately do not get this
+    # fallback.
     type_owners: dict[str, set] = {}
     for file_path, symbols in symbols_by_file.items():
         for symbol in symbols:
@@ -468,18 +494,22 @@ def resolve_inheritance(
             base = entry.get("base")
             if not child or not base:
                 continue
-            target_info = _resolve_candidate(base, file_path, imported_targets, symbols_by_file_and_name)
+            target_info = _resolve_candidate(
+                base, file_path, imported_targets, symbols_by_file_and_name
+            )
             if not target_info:
                 owners = type_owners.get(base, ())
-                # Exactly one owner is unambiguous. Two or more is a genuine
-                # conflict: picking the lexicographically first would invent an
-                # edge the source never justified, so decline instead.
+                # Exactly one owner is unambiguous. Two or more is a
+                # genuine conflict: picking the lexicographically first
+                # would invent an edge the source never justified, so
+                # decline instead.
                 if len(owners) == 1:
                     owner = next(iter(sorted(owners)))
                     target_info = {"file": owner, "symbol": base, "confidence": "INFERRED"}
             if not target_info:
                 continue
-            # A type is not its own base; guards a self-edge when a name repeats.
+            # A type is not its own base; guards a self-edge when a name
+            # repeats.
             if file_path == target_info["file"] and child == target_info["symbol"]:
                 continue
             results.append(
@@ -492,7 +522,9 @@ def resolve_inheritance(
                 }
             )
 
-    results.sort(key=lambda r: (r["child_file"], r["child_symbol"], r["base_file"], r["base_symbol"]))
+    results.sort(
+        key=lambda r: (r["child_file"], r["child_symbol"], r["base_file"], r["base_symbol"])
+    )
     return results
 
 
@@ -501,7 +533,7 @@ def _resolve_candidate(
     caller_file: str,
     imported_targets: set,
     symbols_by_file_and_name: dict,
-) -> Optional[dict]:
+) -> dict | None:
     """Resolve a candidate identifier.
 
     Returns {"file": str, "symbol": str, "confidence": str} or None.
@@ -543,9 +575,10 @@ def _resolve_candidate(
             "confidence": "INFERRED",
         }
     elif len(found_files) > 1:
-        # Ambiguous: more than one file exports this name and nothing in the
-        # source picks between them. Declining is the contract; selecting the
-        # first sorted path would hide the conflict behind a stable-looking answer.
+        # Ambiguous: more than one file exports this name and nothing in
+        # the source picks between them. Declining is the contract;
+        # selecting the first sorted path would hide the conflict behind
+        # a stable-looking answer.
         return None
 
     # Found in no imported file.
@@ -555,7 +588,8 @@ def _resolve_candidate(
 def _pick_best_symbol(symbol_list: list[dict]) -> dict:
     """Pick the best symbol when multiple symbols have the same name.
 
-    Uses symbol_selection_key for a total order that never depends on input order.
+    Uses symbol_selection_key for a total order that never depends on
+    input order.
     """
     return min(symbol_list, key=symbol_selection_key)
 
@@ -563,7 +597,8 @@ def _pick_best_symbol(symbol_list: list[dict]) -> dict:
 def resolve_doc_links(doc_links: dict[str, list[str]], rel_paths: set[str]) -> list[dict]:
     """Resolve markdown link targets to repo files.
 
-    Returns sorted [{"source": rel_path, "target": rel_path, "confidence": str}].
+    Returns sorted [{"source": rel_path, "target": rel_path,
+    "confidence": str}].
     """
     results = []
 
@@ -588,7 +623,7 @@ def resolve_doc_links(doc_links: dict[str, list[str]], rel_paths: set[str]) -> l
     return results
 
 
-def _resolve_doc_link(source: str, target: str, rel_paths: set[str]) -> Optional[tuple[str, str]]:
+def _resolve_doc_link(source: str, target: str, rel_paths: set[str]) -> tuple[str, str] | None:
     """Resolve a single markdown link target.
 
     Returns (resolved_path, confidence) or None if unresolvable.
@@ -607,7 +642,8 @@ def _resolve_doc_link(source: str, target: str, rel_paths: set[str]) -> Optional
     if candidate in rel_paths:
         return (candidate, "EXTRACTED")
 
-    # Rule 3: Bare basename - unique match in rel_paths (handles wiki-link matching wiki-link.md)
+    # Rule 3: Bare basename - unique match in rel_paths (handles
+    # wiki-link matching wiki-link.md)
     if "/" not in target:
         basename_matches = []
         target_lower = target.lower()
@@ -629,11 +665,15 @@ def _resolve_doc_link(source: str, target: str, rel_paths: set[str]) -> Optional
     return None
 
 
-def resolve_table_refs(table_refs: dict[str, list[str]], table_symbols: dict[str, list[tuple[str, str]]]) -> list[dict]:
-    """Link files that query a table to the file whose schema defines it.
+def resolve_table_refs(
+    table_refs: dict[str, list[str]], table_symbols: dict[str, list[tuple[str, str]]]
+) -> list[dict]:
+    """Link files that query a table to the file whose schema defines
+    it.
 
-    table_symbols maps a lowercased table name to [(rel_path, symbol_id), ...].
-    Returns sorted [{"source": rel_path, "target_file": rel_path,
+    table_symbols maps a lowercased table name to [(rel_path,
+    symbol_id), ...]. Returns sorted [{"source": rel_path,
+    "target_file": rel_path,
                      "target_symbol_id": str, "confidence": str}].
     """
     results = []
@@ -657,7 +697,8 @@ def resolve_table_refs(table_refs: dict[str, list[str]], table_symbols: dict[str
                         }
                     )
             elif len(definitions) > 1:
-                # Multiple definitions; pick the one with earliest sorted path and symbol_id
+                # Multiple definitions; pick the one with earliest
+                # sorted path and symbol_id
                 sorted_defs = sorted(definitions, key=lambda d: (d[0], d[1]))
                 target_file, symbol_id = sorted_defs[0]
                 # Never emit edge from file to itself

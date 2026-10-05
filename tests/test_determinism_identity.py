@@ -8,13 +8,13 @@ from unittest.mock import patch
 
 import pytest
 
-from mimry.indexer import write_index, _collect
+from mimry.indexer import _collect, write_index
 from mimry.scanner import CanonicalPathCollisionError, scan
 from mimry.storage import register_root, save_pointer
 
 
 def _small_repo(root: Path) -> None:
-    """Build a small test repo with 6 files across 3 dirs for determinism testing."""
+    """Build a small repo, 6 files in 3 dirs, for determinism tests."""
     (root / "src").mkdir(parents=True, exist_ok=True)
     (root / "src" / "app.py").write_text("def main(): pass\n")
     (root / "src" / "config.py").write_text("DEBUG = True\n")
@@ -44,8 +44,9 @@ def _setup_pointer(root: Path, cache: Path, root_id: str) -> dict:
     return pointer
 
 
-# Deliberately not in canonical order: nested directories interleaved with root
-# files, so filesystem creation order and canonical order genuinely differ.
+# Deliberately not in canonical order: nested directories interleaved
+# with root files, so filesystem creation order and canonical order
+# genuinely differ.
 _CREATION_ORDER = [
     "zeta.py",
     "src/widget.py",
@@ -76,10 +77,10 @@ def _write_in_order(root: Path, names: list[str]) -> None:
 def test_scan_returns_canonical_order_directly(tmp_path: Path):
     """The scanner's own output order is the contract.
 
-    This must never sort the result before asserting: doing so is what let the
-    previous version of this test pass while `scan()` returned raw filesystem
-    order. The expectation is a literal list computed independently of the
-    scanner.
+    This must never sort the result before asserting: doing so is what
+    let the previous version of this test pass while `scan()` returned
+    raw filesystem order. The expectation is a literal list computed
+    independently of the scanner.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -87,12 +88,16 @@ def test_scan_returns_canonical_order_directly(tmp_path: Path):
 
     observed = [p.relative_to(repo).as_posix() for p in scan(repo)]
 
-    assert observed == _CANONICAL_ORDER, f"scan() must yield canonical order directly, got {observed}"
-    assert observed != _CREATION_ORDER, "creation order and canonical order must differ for this test to mean anything"
+    assert observed == _CANONICAL_ORDER, (
+        f"scan() must yield canonical order directly, got {observed}"
+    )
+    assert observed != _CREATION_ORDER, (
+        "creation order and canonical order must differ for this test to mean anything"
+    )
 
 
 def test_scan_order_independent_of_creation_order(tmp_path: Path):
-    """Two repos with identical content but opposite creation order scan alike."""
+    """Same content created in opposite order scans identically."""
     repo_a = tmp_path / "repo_a"
     repo_a.mkdir()
     _write_in_order(repo_a, _CREATION_ORDER)
@@ -129,7 +134,7 @@ def test_nfc_nfd_collision_fails_before_publication_and_names_both_paths(tmp_pat
 
 
 def test_full_index_identical_across_creation_order(tmp_path: Path):
-    """Complete index must be byte-for-byte identical regardless of file creation order."""
+    """The full index is byte-identical whatever the creation order."""
     cache = tmp_path / "cache"
     cache.mkdir()
 
@@ -192,7 +197,7 @@ def test_full_index_identical_across_creation_order(tmp_path: Path):
 
 
 def test_canonical_ids_identical_across_absolute_roots(tmp_path: Path):
-    """File and symbol IDs must be identical across different absolute checkout paths."""
+    """File and symbol IDs match across absolute checkout paths."""
     cache = tmp_path / "cache"
     cache.mkdir()
 
@@ -250,7 +255,7 @@ def test_canonical_ids_identical_across_absolute_roots(tmp_path: Path):
 
 
 def test_file_record_hash_matches_snapshot_bytes(tmp_path: Path):
-    """Recorded file hash must exactly match the bytes that were actually read."""
+    """The recorded file hash matches exactly the bytes read."""
     repo = tmp_path / "repo"
     repo.mkdir()
     test_file = repo / "test.py"
@@ -269,11 +274,13 @@ def test_file_record_hash_matches_snapshot_bytes(tmp_path: Path):
 
 
 def test_file_changed_during_read_is_not_indexed(tmp_path: Path):
-    """A file rewritten mid-parse must be refused, not recorded half-and-half.
+    """A file rewritten mid-parse must be refused, not recorded
+    half-and-half.
 
-    The record's hash, size, and mtime come from the snapshot taken before
-    parsing. If an adapter below saw different bytes, persisting the record
-    would claim evidence that never coexisted in any single version of the file.
+    The record's hash, size, and mtime come from the snapshot taken
+    before parsing. If an adapter below saw different bytes, persisting
+    the record would claim evidence that never coexisted in any single
+    version of the file.
     """
     from mimry import scanner
 
@@ -285,12 +292,13 @@ def test_file_changed_during_read_is_not_indexed(tmp_path: Path):
     original_enrich = scanner.enrich_framework_facts
 
     def rewrite_then_enrich(path, root, f, symbols, edges, source_data=None):
-        # Stand in for a real editor writing the file while MIMRY parses it.
-        # Mirrors the real signature, including the snapshot bytes adapters now
-        # receive, so the stub cannot drift from what adapt() actually calls.
-        # Append rather than overwrite: every edit must really change the bytes
-        # and size. Rewriting identical text leaves only mtime to differ, and on
-        # Windows two writes inside one timestamp tick share an mtime.
+        # Stand in for a real editor writing the file while MIMRY parses
+        # it. Mirrors the real signature, including the snapshot bytes
+        # adapters now receive, so the stub cannot drift from what
+        # adapt() actually calls. Append rather than overwrite: every
+        # edit must really change the bytes and size. Rewriting
+        # identical text leaves only mtime to differ, and on Windows two
+        # writes inside one timestamp tick share an mtime.
         if path.name == "volatile.py":
             with path.open("a") as fh:
                 fh.write("# edited while MIMRY was parsing" + chr(10))
@@ -300,8 +308,8 @@ def test_file_changed_during_read_is_not_indexed(tmp_path: Path):
         with pytest.raises(scanner.FileChangedError):
             scanner.adapt(volatile, repo)
 
-    # And through the collector it degrades to unindexable rather than raising
-    # or writing a mixed record.
+    # And through the collector it degrades to unindexable rather than
+    # raising or writing a mixed record.
     with patch.object(scanner, "enrich_framework_facts", rewrite_then_enrich):
         files, _, _, _, _, _, _, _, unindexable = _collect(repo)
 
@@ -310,7 +318,7 @@ def test_file_changed_during_read_is_not_indexed(tmp_path: Path):
 
 
 def test_adapt_hash_and_parser_input_come_from_the_same_bytes(tmp_path: Path):
-    """The recorded hash must describe exactly the source the symbols came from."""
+    """The recorded hash describes exactly the symbols' source."""
     from mimry import scanner
 
     repo = tmp_path / "repo"
@@ -327,7 +335,7 @@ def test_adapt_hash_and_parser_input_come_from_the_same_bytes(tmp_path: Path):
 
 
 def test_oversized_and_unreadable_files_still_skipped_gracefully(tmp_path: Path):
-    """Regression: oversized and unreadable files must still be skipped without crashing."""
+    """Regression: oversized/unreadable files are skipped, no crash."""
     repo = tmp_path / "repo"
     repo.mkdir()
 
@@ -364,12 +372,18 @@ def test_oversized_and_unreadable_files_still_skipped_gracefully(tmp_path: Path)
 
 
 def test_old_identity_schema_index_is_refused_with_an_actionable_error(tmp_path: Path):
-    """An index built before the canonical-ID contract must fail closed, not be reused.
+    """An index built before the canonical-ID contract must fail closed,
+    not be reused.
 
-    Its file, symbol, and chunk IDs were derived from the absolute checkout
-    path. Partially reusing it would leave a graph whose edges point at nothing.
+    Its file, symbol, and chunk IDs were derived from the absolute
+    checkout path. Partially reusing it would leave a graph whose edges
+    point at nothing.
     """
-    from mimry.state import GENERATION_SCHEMA_VERSION, IndexSchemaMigrationError, StateCorruptionError
+    from mimry.state import (
+        GENERATION_SCHEMA_VERSION,
+        IndexSchemaMigrationError,
+        StateCorruptionError,
+    )
 
     cache = tmp_path / "cache"
     cache.mkdir()
@@ -398,5 +412,6 @@ def test_old_identity_schema_index_is_refused_with_an_actionable_error(tmp_path:
     assert "identity schema 3" in message
     assert "mimry index" in message, "the error must name the command that fixes it"
     assert "corrupt" not in message.lower(), "a version bump is not damage; do not say corrupt"
-    # Existing handlers catch StateCorruptionError; this must stay inside that net.
+    # Existing handlers catch StateCorruptionError; this must stay
+    # inside that net.
     assert isinstance(excinfo.value, StateCorruptionError)

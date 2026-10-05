@@ -1,15 +1,16 @@
 """Tests for RED 2: snapshot integrity and adapter isolation.
 
 Ensures that:
-1. Metadata equality is not proof content did not change (hash verification)
+1. Metadata equality is not proof content did not change (hash
+   verification)
 2. Adapters never reopen the live file during indexing
 3. Hash and symbols derive from the same bytes
 """
 
 from __future__ import annotations
 
-import hashlib
 import builtins
+import hashlib
 import json
 import os
 import tempfile
@@ -19,19 +20,19 @@ from unittest.mock import patch
 
 import pytest
 
+from mimry.commands import cmd_init
+from mimry.indexer import write_index
 from mimry.scanner import (
     FileChangedError,
     adapt,
     file_record,
     read_snapshot,
 )
-from mimry.commands import cmd_init
-from mimry.indexer import write_index
 from mimry.storage import load_pointer
 
 
 def test_same_size_rewrite_during_snapshot_acquisition_is_rejected():
-    """A real rewrite between the two acquisition reads must fail closed."""
+    """A real rewrite between the two acquisition reads fails closed."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         test_file = root / "test.py"
@@ -138,14 +139,16 @@ def test_mutation_during_parsing_does_not_mix_evidence():
 def test_adapter_never_reopens_live_path():
     """Adapters must parse the captured bytes, never re-read the path.
 
-    The snapshot layer itself legitimately opens the file -- once to read, and
-    again to prove the content did not change underneath. That is bounded and
-    is the whole point. What must never happen is an adapter going back to the
-    filesystem afterwards, because by then the bytes it gets may be a different
-    version than the one that was hashed.
+    The snapshot layer itself legitimately opens the file -- once to
+    read, and again to prove the content did not change underneath. That
+    is bounded and is the whole point. What must never happen is an
+    adapter going back to the filesystem afterwards, because by then the
+    bytes it gets may be a different version than the one that was
+    hashed.
 
-    So: `Path.open` is counted and bounded, while `read_text`/`read_bytes` --
-    which only adapters use -- must not be called at all.
+    So: `Path.open` is counted and bounded, while
+    `read_text`/`read_bytes` -- which only adapters use -- must not be
+    called at all.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
@@ -163,29 +166,38 @@ def test_adapter_never_reopens_live_path():
 
         def forbidden_read_text(self, *args, **kwargs):
             reopens.append(("read_text", str(self)))
-            raise AssertionError(f"adapter re-read {self} via read_text instead of using the snapshot")
+            raise AssertionError(
+                f"adapter re-read {self} via read_text instead of using the snapshot"
+            )
 
         def forbidden_read_bytes(self, *args, **kwargs):
             reopens.append(("read_bytes", str(self)))
-            raise AssertionError(f"adapter re-read {self} via read_bytes instead of using the snapshot")
+            raise AssertionError(
+                f"adapter re-read {self} via read_bytes instead of using the snapshot"
+            )
 
         with (
             patch.object(Path, "open", counting_open),
             patch.object(Path, "read_text", forbidden_read_text),
             patch.object(Path, "read_bytes", forbidden_read_bytes),
         ):
-            record, symbols, _edges, _imports, _exports, _calls, _references = adapt(test_file, root)
+            record, symbols, _edges, _imports, _exports, _calls, _references = adapt(
+                test_file, root
+            )
 
         assert record is not None
         assert reopens == [], f"adapt() re-read the live path: {reopens}"
-        # Bounded: the snapshot reads, plus its verification re-read. Anything
-        # beyond the retry ceiling means something is reading per-adapter.
-        assert len(opens) <= 4, f"snapshot layer opened {test_file.name} {len(opens)} times: {opens}"
+        # Bounded: the snapshot reads, plus its verification re-read.
+        # Anything beyond the retry ceiling means something is reading
+        # per-adapter.
+        assert len(opens) <= 4, (
+            f"snapshot layer opened {test_file.name} {len(opens)} times: {opens}"
+        )
         assert [s["name"] for s in symbols] == ["foo"]
 
 
 def test_hash_and_symbols_derive_from_same_bytes():
-    """Verify that file_record hash and parsed symbols come from same snapshot."""
+    """file_record hash and parsed symbols come from one snapshot."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         test_file = root / "test.py"
@@ -307,5 +319,7 @@ def test_pipeline_rejects_file_swapped_to_outside_symlink_before_adaptation(tmp_
     published = Path(stats["index"])
     persisted = b"".join(path.read_bytes() for path in published.iterdir() if path.is_file())
     assert marker.encode() not in persisted
-    records = [json.loads(line) for line in (published / "files.jsonl").read_text().splitlines() if line]
+    records = [
+        json.loads(line) for line in (published / "files.jsonl").read_text().splitlines() if line
+    ]
     assert "safe.txt" not in {record["rel_path"] for record in records}

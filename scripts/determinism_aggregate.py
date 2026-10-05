@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """Compare determinism evidence collected from every CI matrix job.
 
-Each OS/Python job runs ``scripts/determinism_matrix.py --emit`` and uploads
-one JSON artifact. This job downloads them all and actually diffs them.
+Each OS/Python job runs ``scripts/determinism_matrix.py --emit`` and
+uploads one JSON artifact. This job downloads them all and actually
+diffs them.
 
 It fails when:
 
-* an expected OS/Python job did not produce an artifact (a skipped or crashed
-  platform must not read as agreement),
+* an expected OS/Python job did not produce an artifact (a skipped or
+  crashed platform must not read as agreement),
 * any compared field differs between platforms,
 * any compared field differs from the committed golden values.
 
-Structural agreement is not sufficient. The canonical digest can match while
-the retrieval ranking an agent reads, or the context pack it is handed, has
-moved -- so rankings and context are compared as first-class fields and a
-divergence prints the field that moved, not just a hash.
+Structural agreement is not sufficient. The canonical digest can match
+while the retrieval ranking an agent reads, or the context pack it is
+handed, has moved -- so rankings and context are compared as first-class
+fields and a divergence prints the field that moved, not just a hash.
 
     python scripts/determinism_aggregate.py --artifacts artifacts/ \
         --expect-os ubuntu-latest,macos-latest,windows-latest \
@@ -51,7 +52,9 @@ def collect(artifacts: Path) -> dict[str, dict]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--artifacts", required=True, type=Path)
     parser.add_argument("--expect-os", required=True, help="Comma-separated runner labels")
     parser.add_argument("--expect-python", required=True, help="Comma-separated Python versions")
@@ -66,7 +69,10 @@ def main() -> int:
 
     missing = sorted(expected - set(found))
     if missing:
-        print("MISSING DETERMINISM ARTIFACTS -- these matrix jobs produced no evidence:", file=sys.stderr)
+        print(
+            "MISSING DETERMINISM ARTIFACTS -- these matrix jobs produced no evidence:",
+            file=sys.stderr,
+        )
         for name in missing:
             print(f"  {name}", file=sys.stderr)
         print("\nA platform that did not report cannot be assumed to agree.", file=sys.stderr)
@@ -109,14 +115,18 @@ def main() -> int:
                         continue
                     found_diff = _first_difference(reference[raw], payload[raw], raw)
                     if found_diff:
-                        print(f"  first difference {reference_name} vs {name} -> {found_diff}", file=sys.stderr)
+                        print(
+                            f"  first difference {reference_name} vs {name} -> {found_diff}",
+                            file=sys.stderr,
+                        )
                         break
 
         expected_value = golden.get(GOLDEN_KEY[field])
         if expected_value is not None and reference[field] != expected_value:
             failed = True
             print(
-                f"\nGOLDEN MISMATCH in {field}\n  expected {expected_value}\n  actual   {reference[field]}",
+                f"\nGOLDEN MISMATCH in {field}\n  expected {expected_value}\n  actual  "
+                f" {reference[field]}",
                 file=sys.stderr,
             )
             raw = {"rankingsDigest": "rankings", "contextDigest": "contextLines"}.get(field)
@@ -128,7 +138,10 @@ def main() -> int:
     if failed:
         return 1
 
-    print(f"\nAll {len(found)} matrix jobs agree on every canonical field, and match the committed golden values.")
+    print(
+        f"\nAll {len(found)} matrix jobs agree on every canonical field, and match the committed"
+        " golden values."
+    )
     return 0
 
 

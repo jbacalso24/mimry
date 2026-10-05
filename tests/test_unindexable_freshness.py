@@ -1,23 +1,26 @@
-"""A file MIMRY refuses to index must not count as a file the user changed.
+"""A file MIMRY refuses to index must not count as a file the user
+changed.
 
-Found on a real 5,796-file C# solution: one file was refused by the adapter's secret
-guard, so it was absent from files.jsonl. Freshness treats "on disk but not indexed"
-as changed, so the index reported `stale` immediately after a successful reindex --
-permanently. graph_health marks the graph stale whenever index_state is not `current`,
-so `mimry path` refused to run at all, and `refresh` / `reindex` bounced the user
-between each other with no way out.
+Found on a real 5,796-file C# solution: one file was refused by the
+adapter's secret guard, so it was absent from files.jsonl. Freshness
+treats "on disk but not indexed" as changed, so the index reported
+`stale` immediately after a successful reindex -- permanently.
+graph_health marks the graph stale whenever index_state is not
+`current`, so `mimry path` refused to run at all, and `refresh` /
+`reindex` bounced the user between each other with no way out.
 
-The refusal is driven by content heuristics, so these tests inject the refusal
-directly rather than depending on which strings happen to trip the scanner.
+The refusal is driven by content heuristics, so these tests inject the
+refusal directly rather than depending on which strings happen to trip
+the scanner.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import unicodedata
 from pathlib import Path
 from types import SimpleNamespace
-import unicodedata
 
 import pytest
 
@@ -37,7 +40,9 @@ def _repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "app").mkdir(parents=True)
     (root / "app" / "clean.py").write_text("def go():\n    return 1\n", encoding="utf-8")
-    (root / "app" / "refused.py").write_text("def secret_thing():\n    return 2\n", encoding="utf-8")
+    (root / "app" / "refused.py").write_text(
+        "def secret_thing():\n    return 2\n", encoding="utf-8"
+    )
     return root
 
 
@@ -53,7 +58,10 @@ def _index(root: Path) -> dict:
 
 @pytest.fixture
 def refuse_one_file(monkeypatch: pytest.MonkeyPatch):
-    """Make the adapter refuse exactly one file, the way the secret guard does."""
+    """Make the adapter refuse exactly one file.
+
+    The same way the secret guard does.
+    """
     import mimry.indexer as indexer
 
     real_adapt = indexer.adapt
@@ -81,11 +89,15 @@ def test_refused_file_does_not_keep_the_index_stale(tmp_path: Path, refuse_one_f
 
 
 def test_refused_file_is_still_kept_out_of_the_index(tmp_path: Path, refuse_one_file) -> None:
-    """Recording the path must not smuggle the file's content back in."""
+    """Recording the path must not smuggle the content back in."""
     root = _repo(tmp_path)
     idx = Path(_index(root)["indexPath"])
 
-    indexed = {json.loads(line)["rel_path"] for line in (idx / "files.jsonl").read_text().splitlines() if line}
+    indexed = {
+        json.loads(line)["rel_path"]
+        for line in (idx / "files.jsonl").read_text().splitlines()
+        if line
+    }
     assert REFUSED not in indexed
     assert "app/clean.py" in indexed, "unrelated files must still be indexed"
 
@@ -95,7 +107,10 @@ def test_refused_file_is_still_kept_out_of_the_index(tmp_path: Path, refuse_one_
 
 
 def test_a_genuinely_edited_file_is_still_detected(tmp_path: Path) -> None:
-    """Guard the obvious over-correction: real changes must still mark the index stale."""
+    """Real changes must still mark the index stale.
+
+    Guards the obvious over-correction.
+    """
     root = _repo(tmp_path)
     ptr = _index(root)
 
@@ -106,8 +121,13 @@ def test_a_genuinely_edited_file_is_still_detected(tmp_path: Path) -> None:
     assert "app/added.py" in fresh["changed"]
 
 
-def test_current_freshness_does_not_repeat_secret_scans_for_indexed_bytes(tmp_path: Path, monkeypatch) -> None:
-    """Cached freshness hashes indexed bytes; it must not parse every file for secrets again."""
+def test_current_freshness_does_not_repeat_secret_scans_for_indexed_bytes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Cached freshness hashes the indexed bytes.
+
+    It must not parse every file for secrets again.
+    """
     root = _repo(tmp_path)
     ptr = _index(root)
 
@@ -128,8 +148,13 @@ def test_current_freshness_does_not_repeat_secret_scans_for_indexed_bytes(tmp_pa
     assert scanned == []
 
 
-def test_freshness_runs_once_per_read_scope_and_every_time_outside_one(tmp_path: Path, monkeypatch) -> None:
-    """brief/explain/route consult freshness repeatedly; one shared-lock scope pays for one pass."""
+def test_freshness_runs_once_per_read_scope_and_every_time_outside_one(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """brief/explain/route consult freshness repeatedly.
+
+    One shared-lock scope pays for one pass.
+    """
     import mimry.freshness as freshness
     from mimry.state import read_scope
     from mimry.storage import active_index_pointer
@@ -156,7 +181,9 @@ def test_freshness_runs_once_per_read_scope_and_every_time_outside_one(tmp_path:
     assert len(passes) == 3, "outside a read scope every call must re-check the live tree"
 
 
-def test_native_nfd_file_matches_indexed_nfc_identity_without_repeat_secret_scan(tmp_path: Path, monkeypatch) -> None:
+def test_native_nfd_file_matches_indexed_nfc_identity_without_repeat_secret_scan(
+    tmp_path: Path, monkeypatch
+) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     native_name = "cafe\u0301.py"
@@ -169,7 +196,9 @@ def test_native_nfd_file_matches_indexed_nfc_identity_without_repeat_secret_scan
     ptr = _index(root)
     indexed = {
         json.loads(line)["rel_path"]
-        for line in (Path(ptr["indexPath"]) / "files.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (Path(ptr["indexPath"]) / "files.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line
     }
     assert indexed == {canonical_name}
@@ -260,7 +289,12 @@ def test_secret_appended_beyond_snapshot_limit_is_stale_and_hidden_from_cached_r
     )
     assert all(row["path"] != "app/boundary.py" for row in rows)
 
-    assert cmd_preflight(SimpleNamespace(root=root, task="indexed boundary marker", force_refresh=False)) == 0
+    assert (
+        cmd_preflight(
+            SimpleNamespace(root=root, task="indexed boundary marker", force_refresh=False)
+        )
+        == 0
+    )
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
     assert "! Results may be out of date" in stdout
@@ -275,7 +309,9 @@ def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
     root = tmp_path / "repo"
     target = root / "src" / "auth" / "session.py"
     target.parent.mkdir(parents=True)
-    target.write_text("def authenticate_session():\n    return 'indexed-session-marker'\n", encoding="utf-8")
+    target.write_text(
+        "def authenticate_session():\n    return 'indexed-session-marker'\n", encoding="utf-8"
+    )
     ptr = _index(root)
     capsys.readouterr()
 
@@ -296,7 +332,12 @@ def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
     assert all(row["path"] != "src/auth/session.py" for row in rows)
 
     assert (
-        cmd_preflight(SimpleNamespace(root=root, task="authenticate session indexed marker", force_refresh=False)) == 0
+        cmd_preflight(
+            SimpleNamespace(
+                root=root, task="authenticate session indexed marker", force_refresh=False
+            )
+        )
+        == 0
     )
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
@@ -355,7 +396,7 @@ def test_indexed_file_that_becomes_unreadable_is_stale_and_hidden(tmp_path: Path
 
 
 def test_native_nfd_file_keeps_graph_current_in_status(tmp_path: Path, capsys) -> None:
-    """Graph health must open the NFD file on disk, not its NFC identity."""
+    """Graph health opens the NFD file on disk, not its NFC identity."""
     root = tmp_path / "repo"
     root.mkdir()
     native_name = unicodedata.normalize("NFD", "caf\u00e9.py")
@@ -372,11 +413,16 @@ def test_native_nfd_file_keeps_graph_current_in_status(tmp_path: Path, capsys) -
     assert "Graph       current," in stdout
 
 
-def test_files_skipped_for_secrets_are_reported_by_index_and_status(tmp_path: Path, capsys) -> None:
-    # A whole source file dropped for a secret-like line used to vanish without a
-    # word, which hid a detector false positive on the most important files.
+def test_files_skipped_for_secrets_are_reported_by_index_and_status(
+    tmp_path: Path, capsys
+) -> None:
+    # A whole source file dropped for a secret-like line used to vanish
+    # without a word, which hid a detector false positive on the most
+    # important files.
     root = _repo(tmp_path)
-    (root / "app" / "settings.py").write_text('API_TOKEN = "' + "x1y2z3" * 4 + '"\n', encoding="utf-8")
+    (root / "app" / "settings.py").write_text(
+        'API_TOKEN = "' + "x1y2z3" * 4 + '"\n', encoding="utf-8"
+    )
     ptr = _index(root)
     capsys.readouterr()
 
@@ -386,8 +432,9 @@ def test_files_skipped_for_secrets_are_reported_by_index_and_status(tmp_path: Pa
 
 
 def test_a_secret_verdict_from_older_code_is_checked_again(tmp_path: Path, monkeypatch) -> None:
-    # After an upgrade that stops a false positive, the skipped file must count as
-    # a change; trusting the old verdict kept it out of the index with "up to date".
+    # After an upgrade that stops a false positive, the skipped file
+    # must count as a change; trusting the old verdict kept it out of
+    # the index with "up to date".
     import mimry.reuse as reuse
     import mimry.security as security
 

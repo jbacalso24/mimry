@@ -5,11 +5,14 @@ import sys
 
 
 def build_parser():
-    # Imported here, not at module load: `hook-check` runs before every agent tool
-    # call and must not pay for the indexing stack it never uses.
+    # Imported here, not at module load: `hook-check` runs before every
+    # agent tool call and must not pay for the indexing stack it never
+    # uses.
     import argparse
 
+    from . import __version__
     from .commands import (
+        cmd_adapters,
         cmd_brief,
         cmd_cache_wipe,
         cmd_context,
@@ -18,7 +21,6 @@ def build_parser():
         cmd_feedback,
         cmd_find,
         cmd_index,
-        cmd_adapters,
         cmd_init,
         cmd_path,
         cmd_plan_check,
@@ -28,26 +30,34 @@ def build_parser():
         cmd_plan_split,
         cmd_plan_tree,
         cmd_preflight,
-        cmd_related,
         cmd_refresh,
-        cmd_route,
+        cmd_related,
         cmd_roots,
+        cmd_route,
         cmd_semantic,
         cmd_status,
         cmd_symbol,
         cmd_why,
     )
-    from . import __version__
     from .hook import cmd_hook_check
     from .installer import cmd_install, cmd_uninstall
 
     p = argparse.ArgumentParser(
-        prog="mimry", description="Local repo intelligence memory. Defaults --root to the current working directory."
+        prog="mimry",
+        description=(
+            "Local repo intelligence memory. Defaults --root to the current working directory."
+        ),
     )
     p.add_argument("--version", action="version", version=f"mimry {__version__}")
-    p.add_argument("--root", default=".", help="Repo/folder to operate on (default: current working directory)")
+    p.add_argument(
+        "--root",
+        default=".",
+        help="Repo/folder to operate on (default: current working directory)",
+    )
     sub = p.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("init", help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees")
+    s = sub.add_parser(
+        "init", help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees"
+    )
     s.add_argument("--root-type", default="repo")
     s.add_argument(
         "--skip-graph",
@@ -69,12 +79,16 @@ def build_parser():
     s.add_argument(
         "--force-refresh",
         action="store_true",
-        help="Run the slow full refresh path (graph build + MIMRY index) before context generation",
+        help=(
+            "Run the slow full refresh path (graph build + MIMRY index) before context generation"
+        ),
     )
     s.set_defaults(func=cmd_preflight)
     s = sub.add_parser("status")
     s.add_argument(
-        "--verify", action="store_true", help="Re-hash every file instead of trusting unchanged metadata, like git"
+        "--verify",
+        action="store_true",
+        help="Re-hash every file instead of trusting unchanged metadata, like git",
     )
     s.set_defaults(func=cmd_status)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
@@ -90,7 +104,8 @@ def build_parser():
     )
     s.set_defaults(func=cmd_find)
     s = sub.add_parser(
-        "semantic", help="Local-only semantic search over bounded path/symbol/adapter/content-hint chunks"
+        "semantic",
+        help="Local-only semantic search over bounded path/symbol/adapter/content-hint chunks",
     )
     s.add_argument("query", nargs="?", help='Query text, or "index"/"status"')
     s.add_argument("--limit", type=int, default=10)
@@ -100,15 +115,22 @@ def build_parser():
     s.add_argument("--limit", type=int, default=10)
     s.set_defaults(func=cmd_related)
     s = sub.add_parser(
-        "route", help="Recommend an agent role, context packs, risks, files, and verification for a task"
+        "route",
+        help="Recommend an agent role, context packs, risks, files, and verification for a task",
     )
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=8)
-    s.add_argument("--json", action="store_true", help="Print the structured route payload as JSON")
+    s.add_argument(
+        "--json", action="store_true", help="Print the structured route payload as JSON"
+    )
     s.set_defaults(func=cmd_route)
     s = sub.add_parser("brief", help="Write a role-aware markdown agent brief for a task")
     s.add_argument("query")
-    s.add_argument("--agent", required=True, help="Agent role: backend/frontend/mobile/reviewer/qa/docs/tooly/general")
+    s.add_argument(
+        "--agent",
+        required=True,
+        help="Agent role: backend/frontend/mobile/reviewer/qa/docs/tooly/general",
+    )
     s.add_argument("--limit", type=int, default=8)
     s.set_defaults(func=cmd_brief)
     s = sub.add_parser("symbol")
@@ -117,32 +139,51 @@ def build_parser():
     s = sub.add_parser("context")
     s.add_argument("query")
     s.add_argument(
-        "--semantic", action="store_true", help="Blend local-only semantic chunks into context file selection"
+        "--semantic",
+        action="store_true",
+        help="Blend local-only semantic chunks into context file selection",
     )
     s.set_defaults(func=cmd_context)
-    f = sub.add_parser("feedback", help="Record or inspect local agent usage feedback for this root")
+    f = sub.add_parser(
+        "feedback", help="Record or inspect local agent usage feedback for this root"
+    )
     f.add_argument("feedback_action", nargs="?", choices=("list", "show", "stats"))
     f.add_argument("feedback_id", nargs="?", help="Feedback ID for `mimry feedback show <id>`")
     f.add_argument("--query", help="Task query the agent worked on")
     f.add_argument(
-        "--context", help="Context pack path used for suggestions, usually .mimry/mimry-out/context/latest.md"
+        "--context",
+        help="Context pack path used for suggestions, usually .mimry/mimry-out/context/latest.md",
     )
-    f.add_argument("--suggested", help="Comma-separated suggested files; defaults to parsing --context when available")
+    f.add_argument(
+        "--suggested",
+        help="Comma-separated suggested files; defaults to parsing --context when available",
+    )
     f.add_argument("--opened", help="Comma-separated files opened/inspected")
     f.add_argument("--changed", help="Comma-separated files changed")
     f.add_argument("--missed", help="Comma-separated important files MIMRY missed")
     f.add_argument("--ignored", help="Comma-separated suggested files ignored as not useful")
-    f.add_argument("--verification", help="Short verification summary, e.g. 'uv run pytest -q passed'")
-    f.add_argument("--outcome", choices=("passed", "failed", "blocked", "partial", "unknown"), default="unknown")
+    f.add_argument(
+        "--verification", help="Short verification summary, e.g. 'uv run pytest -q passed'"
+    )
+    f.add_argument(
+        "--outcome",
+        choices=("passed", "failed", "blocked", "partial", "unknown"),
+        default="unknown",
+    )
     f.add_argument("--notes", help="Optional bounded note; no source contents or secrets")
     f.add_argument("--json", help="Read feedback payload JSON from a file")
     f.add_argument("--limit", type=int, default=10, help="Limit for `mimry feedback list`")
     f.set_defaults(func=cmd_feedback)
-    s = sub.add_parser("explain", help="Explain top files, symbols, relationship evidence, and verification for a task")
+    s = sub.add_parser(
+        "explain",
+        help="Explain top files, symbols, relationship evidence, and verification for a task",
+    )
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=5)
     s.set_defaults(func=cmd_explain)
-    s = sub.add_parser("path", help="Find a graph relationship path between two files/symbols/queries")
+    s = sub.add_parser(
+        "path", help="Find a graph relationship path between two files/symbols/queries"
+    )
     s.add_argument("source")
     s.add_argument("target")
     s.set_defaults(func=cmd_path)
@@ -153,9 +194,16 @@ def build_parser():
     s.set_defaults(func=cmd_why)
     s = sub.add_parser(
         "digest",
-        help="Print the canonical semantic digest of the active index (reproducible across roots and platforms)",
+        help=(
+            "Print the canonical semantic digest of the active index (reproducible across roots"
+            " and platforms)"
+        ),
     )
-    s.add_argument("--json", action="store_true", help="Print the normalized canonical state instead of its hash")
+    s.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the normalized canonical state instead of its hash",
+    )
     s.set_defaults(func=cmd_digest)
     plan = sub.add_parser("plan", help="Store and render deterministic recursive plan trees")
     plan_sub = plan.add_subparsers(dest="plan_command", required=True)
@@ -166,7 +214,12 @@ def build_parser():
     s = plan_sub.add_parser("split", help="Split a leaf into ordered child subplans")
     s.add_argument("plan_id")
     s.add_argument("node_id")
-    s.add_argument("--child", action="append", required=True, help="Child subplan; repeat to define sibling order")
+    s.add_argument(
+        "--child",
+        action="append",
+        required=True,
+        help="Child subplan; repeat to define sibling order",
+    )
     s.set_defaults(func=cmd_plan_split)
     s = plan_sub.add_parser("tree", help="Render a plan tree")
     s.add_argument("plan_id")
@@ -180,37 +233,75 @@ def build_parser():
     s = plan_sub.add_parser("digest", help="Print the plan's canonical semantic SHA-256")
     s.add_argument("plan_id")
     s.set_defaults(func=cmd_plan_digest)
-    plan_sub.add_parser("list", help="List local plan trees deterministically").set_defaults(func=cmd_plan_list)
+    plan_sub.add_parser("list", help="List local plan trees deterministically").set_defaults(
+        func=cmd_plan_list
+    )
     s = sub.add_parser("roots", help="List the folders MIMRY has indexed on this machine")
-    s.add_argument("--prune", action="store_true", help="Forget registered folders that no longer exist")
+    s.add_argument(
+        "--prune", action="store_true", help="Forget registered folders that no longer exist"
+    )
     s.set_defaults(func=cmd_roots)
     i = sub.add_parser(
-        "install", help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills"
+        "install",
+        help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills",
     )
     i.add_argument("--platform", help="Target platform: claude-code, codex, hermes, agents")
     i.add_argument(
-        "--project", action="store_true", help="Install into the current project instead of the user profile"
+        "--project",
+        action="store_true",
+        help="Install into the current project instead of the user profile",
     )
-    i.add_argument("--dry-run", action="store_true", help="Show the destination without writing files")
     i.add_argument(
-        "--always-on", action="store_true", help="With --project, also install project always-on instructions"
+        "--dry-run", action="store_true", help="Show the destination without writing files"
     )
-    i.add_argument("--hooks", action="store_true", help="With --project, also install supported PreToolUse hooks")
-    i.add_argument("--status", action="store_true", help="Check install health for the target platform/scope")
-    i.add_argument("--list-platforms", action="store_true", help="List supported install platforms and destinations")
+    i.add_argument(
+        "--always-on",
+        action="store_true",
+        help="With --project, also install project always-on instructions",
+    )
+    i.add_argument(
+        "--hooks",
+        action="store_true",
+        help="With --project, also install supported PreToolUse hooks",
+    )
+    i.add_argument(
+        "--status", action="store_true", help="Check install health for the target platform/scope"
+    )
+    i.add_argument(
+        "--list-platforms",
+        action="store_true",
+        help="List supported install platforms and destinations",
+    )
     i.set_defaults(func=cmd_install)
     u = sub.add_parser("uninstall", help="Remove a MIMRY agent skill install")
-    u.add_argument("--platform", required=True, help="Target platform: claude-code, codex, hermes, agents")
-    u.add_argument("--project", action="store_true", help="Remove from the current project instead of the user profile")
     u.add_argument(
-        "--always-on", action="store_true", help="With --project, also remove project always-on instructions"
+        "--platform", required=True, help="Target platform: claude-code, codex, hermes, agents"
     )
-    u.add_argument("--hooks", action="store_true", help="With --project, also remove supported PreToolUse hooks")
+    u.add_argument(
+        "--project",
+        action="store_true",
+        help="Remove from the current project instead of the user profile",
+    )
+    u.add_argument(
+        "--always-on",
+        action="store_true",
+        help="With --project, also remove project always-on instructions",
+    )
+    u.add_argument(
+        "--hooks",
+        action="store_true",
+        help="With --project, also remove supported PreToolUse hooks",
+    )
     u.set_defaults(func=cmd_uninstall)
-    sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(func=cmd_hook_check)
-    # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`: package
-    # runners such as uvx only launch the script named after the package.
-    sub.add_parser("mcp", help="Run the MIMRY MCP stdio server (same as mimry-mcp)").set_defaults(func=_cmd_mcp)
+    sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(
+        func=cmd_hook_check
+    )
+    # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`:
+    # package runners such as uvx only launch the script named after the
+    # package.
+    sub.add_parser("mcp", help="Run the MIMRY MCP stdio server (same as mimry-mcp)").set_defaults(
+        func=_cmd_mcp
+    )
     cache = sub.add_parser("cache")
     cs = cache.add_subparsers(required=True)
     w = cs.add_parser("wipe")
@@ -220,7 +311,10 @@ def build_parser():
     for name, command in sub.choices.items():
         if name not in {"hook-check", "plan", "cache", "mcp"}:
             command.add_argument(
-                "-v", "--verbose", action="store_true", help="Also show paths, scores and internal details"
+                "-v",
+                "--verbose",
+                action="store_true",
+                help="Also show paths, scores and internal details",
             )
     return p
 
@@ -228,15 +322,17 @@ def build_parser():
 def _cmd_mcp(a) -> int:
     from .mcp_server import main as run_mcp_server
 
-    # Tools default to the server's working directory, so --root picks the repo.
+    # Tools default to the server's working directory, so --root picks
+    # the repo.
     os.chdir(a.root)
     run_mcp_server([])
     return 0
 
 
 def _configure_console() -> None:
-    # Human output must not crash on strict Windows code pages. Structured
-    # artifacts keep their explicit UTF-8 writers and remain untouched.
+    # Human output must not crash on strict Windows code pages.
+    # Structured artifacts keep their explicit UTF-8 writers and remain
+    # untouched.
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if callable(reconfigure):
@@ -244,7 +340,7 @@ def _configure_console() -> None:
 
 
 def _hook_check_root(args) -> str | None:
-    """Return the root when argv is exactly ``[--root R] hook-check``, else None."""
+    """Root if argv is exactly ``[--root R] hook-check``, else None."""
     rest = list(args)
     root = "."
     if len(rest) >= 2 and rest[0] == "--root":

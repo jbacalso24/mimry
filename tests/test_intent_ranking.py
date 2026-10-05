@@ -48,9 +48,21 @@ def write_graph(root: Path) -> None:
             },
         ],
         "links": [
-            {"source": "doc-monitor-ams", "target": "docs-ams-dashboard", "relation": "references"},
-            {"source": "src-monitor-ams-dashboard", "target": "test-monitor-ams-dashboard", "relation": "tested_by"},
-            {"source": "src-monitor-ams-dashboard", "target": "doc-monitor-ams", "relation": "implements"},
+            {
+                "source": "doc-monitor-ams",
+                "target": "docs-ams-dashboard",
+                "relation": "references",
+            },
+            {
+                "source": "src-monitor-ams-dashboard",
+                "target": "test-monitor-ams-dashboard",
+                "relation": "tested_by",
+            },
+            {
+                "source": "src-monitor-ams-dashboard",
+                "target": "doc-monitor-ams",
+                "relation": "implements",
+            },
         ],
     }
     (graph_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
@@ -176,7 +188,9 @@ def test_migration_artifact_ranking_is_action_aware_and_explained(tmp_path):
     assert "migration intent boost" not in migration_row["reason"]
     assert "doc downrank for edit intent" not in concept_rows[0]["reason"]
 
-    explicit_edit_rows = graph_rows(tmp_path, "implement migration architecture design docs", limit=2)
+    explicit_edit_rows = graph_rows(
+        tmp_path, "implement migration architecture design docs", limit=2
+    )
     assert explicit_edit_rows[0]["path"] == "db/migrations/20260728_customer_audit_retention.sql"
     assert "migration intent boost" in explicit_edit_rows[0]["reason"]
     assert "doc downrank for edit intent" in explicit_edit_rows[1]["reason"]
@@ -201,8 +215,18 @@ def test_graph_rows_score_a_file_by_its_best_match_and_expansion_leaves_it_alone
     graph_dir.mkdir(parents=True, exist_ok=True)
     graph = {
         "nodes": [
-            {"id": "first", "label": "Widget first", "source_file": "src/widgets.py", "community": 10},
-            {"id": "second", "label": "Widget second", "source_file": "src/widgets.py", "community": 2},
+            {
+                "id": "first",
+                "label": "Widget first",
+                "source_file": "src/widgets.py",
+                "community": 10,
+            },
+            {
+                "id": "second",
+                "label": "Widget second",
+                "source_file": "src/widgets.py",
+                "community": 2,
+            },
             {"id": "helper-a", "label": "Helper A", "source_file": "src/a.py"},
             {"id": "helper-b", "label": "Helper B", "source_file": "src/b.py"},
         ],
@@ -218,18 +242,20 @@ def test_graph_rows_score_a_file_by_its_best_match_and_expansion_leaves_it_alone
     by_path = {row["path"]: row for row in rows}
     row = by_path["src/widgets.py"]
 
-    # Files reached along relationships now appear as additional lower-scored rows.
-    # helper-a and helper-b never match "widget" textually; they are here only
-    # because the matched nodes point at them, which is the whole point of a graph.
+    # Files reached along relationships now appear as additional
+    # lower-scored rows. helper-a and helper-b never match "widget"
+    # textually; they are here only because the matched nodes point at
+    # them, which is the whole point of a graph.
     assert set(by_path) == {"src/widgets.py", "src/a.py", "src/b.py"}
     assert by_path["src/a.py"]["score"] < row["score"]
     assert by_path["src/b.py"]["score"] < row["score"]
     assert "reached by MIMRY graph relationship" in by_path["src/a.py"]["reason"]
 
-    # The directly matched file keeps its exact score: expansion must not disturb it.
-    # "widget" is in 1 of 3 files, weight w = 1 + ln(4/2). Best node "first":
-    # 30w label + 25w path + 5 for a second matching node + 10 topology
-    # (degree 1, community) = 108, then +100 intent source boost.
+    # The directly matched file keeps its exact score: expansion must
+    # not disturb it. "widget" is in 1 of 3 files, weight w = 1 +
+    # ln(4/2). Best node "first": 30w label + 25w path + 5 for a second
+    # matching node + 10 topology (degree 1, community) = 108, then +100
+    # intent source boost.
     assert row["score"] == 208
     assert "graph topology boost 10 (degree 1, in a community)" in row["reason"]
 
@@ -240,8 +266,16 @@ def test_negative_scope_terms_do_not_boost_excluded_graph_paths_and_are_explaine
     shared = "marketing hero copy"
     graph = {
         "nodes": [
-            {"id": "frontend-hero", "label": shared, "source_file": "frontend/src/marketing/hero-section.tsx"},
-            {"id": "backend-hero", "label": shared, "source_file": "backend/services/marketing_hero.py"},
+            {
+                "id": "frontend-hero",
+                "label": shared,
+                "source_file": "frontend/src/marketing/hero-section.tsx",
+            },
+            {
+                "id": "backend-hero",
+                "label": shared,
+                "source_file": "backend/services/marketing_hero.py",
+            },
         ],
         "links": [],
     }
@@ -280,10 +314,14 @@ def test_negative_scope_terms_do_not_boost_excluded_graph_paths_and_are_explaine
         else:
             assert query == "frontend only, exclude backend"
 
-    assert excluded_query_terms("improve hero without touching backend while editing frontend") == ["backend"]
+    assert excluded_query_terms(
+        "improve hero without touching backend while editing frontend"
+    ) == ["backend"]
     assert excluded_query_terms("backend marketing hero copy") == []
     assert "backend" in query_terms("backend marketing hero copy")
-    positive_rows = find_rows(idx, "backend marketing hero copy", limit=2, graph=True, root=tmp_path)
+    positive_rows = find_rows(
+        idx, "backend marketing hero copy", limit=2, graph=True, root=tmp_path
+    )
     assert positive_rows[0]["path"] == "backend/services/marketing_hero.py"
     assert "excluded scope downrank" not in positive_rows[0]["reason"]
 
@@ -318,7 +356,10 @@ def test_positive_except_and_negated_exclude_constructions_keep_backend_positive
 
 
 def test_bounded_conjoined_negative_scopes_exclude_each_simple_term_and_stop_at_positive_clause():
-    assert excluded_query_terms("exclude backend and infrastructure") == ["backend", "infrastructure"]
+    assert excluded_query_terms("exclude backend and infrastructure") == [
+        "backend",
+        "infrastructure",
+    ]
     assert query_terms("exclude backend and infrastructure") == []
     assert excluded_query_terms("without touching backend and tests") == ["backend", "tests"]
     assert "backend" not in query_terms("without touching backend and tests")
@@ -357,7 +398,9 @@ def test_merged_graph_and_content_score_gets_one_final_exclusion_adjustment(tmp_
     )
 
     positive = find_rows(idx, "marketing hero copy", limit=10, graph=True, root=tmp_path)
-    negative = find_rows(idx, "marketing hero copy without touching backend", limit=10, graph=True, root=tmp_path)
+    negative = find_rows(
+        idx, "marketing hero copy without touching backend", limit=10, graph=True, root=tmp_path
+    )
 
     assert positive[0]["path"] == negative[0]["path"] == path
     assert negative[0]["score"] == max(1, int(positive[0]["score"] * 0.1))
@@ -367,7 +410,9 @@ def test_merged_graph_and_content_score_gets_one_final_exclusion_adjustment(tmp_
 def _graph(root: Path, nodes: list[dict], links: list[dict] | None = None) -> None:
     graph_dir = root / ".mimry" / "mimry-out" / "graph"
     graph_dir.mkdir(parents=True, exist_ok=True)
-    (graph_dir / "graph.json").write_text(json.dumps({"nodes": nodes, "links": links or []}), encoding="utf-8")
+    (graph_dir / "graph.json").write_text(
+        json.dumps({"nodes": nodes, "links": links or []}), encoding="utf-8"
+    )
 
 
 def _node(node_id: str, label: str, source_file: str) -> dict:
@@ -375,7 +420,9 @@ def _node(node_id: str, label: str, source_file: str) -> dict:
 
 
 def test_a_test_file_with_many_matching_cases_does_not_outrank_the_source(tmp_path):
-    cases = [_node(f"t{i}", f"test fish completion case {i}", "tests/test_fish.py") for i in range(12)]
+    cases = [
+        _node(f"t{i}", f"test fish completion case {i}", "tests/test_fish.py") for i in range(12)
+    ]
     _graph(tmp_path, [_node("src", "fish completion", "src/fish.py"), *cases])
 
     rows = graph_rows(tmp_path, "fish completion", limit=2)
@@ -394,7 +441,10 @@ def test_a_path_match_counts_once_per_file_not_once_per_node(tmp_path):
 
 
 def test_a_rare_query_word_outweighs_more_common_ones(tmp_path):
-    common = [_node(f"c{i}", "shell completion script", f"src/{name}.py") for i, name in enumerate("abcdefgh")]
+    common = [
+        _node(f"c{i}", "shell completion script", f"src/{name}.py")
+        for i, name in enumerate("abcdefgh")
+    ]
     _graph(tmp_path, [*common, _node("fish", "fish completion", "src/fish.py")])
 
     # Every file matches "completion"; only one matches "fish".
@@ -412,7 +462,9 @@ def test_a_hub_file_reached_from_many_matches_gets_one_contribution(tmp_path):
     rows = graph_rows(tmp_path, "session renew", limit=10)
     by_path = {row["path"]: row["score"] for row in rows}
 
-    assert by_path["src/utils.py"] < min(score for path, score in by_path.items() if path != "src/utils.py")
+    assert by_path["src/utils.py"] < min(
+        score for path, score in by_path.items() if path != "src/utils.py"
+    )
 
 
 def test_query_words_match_whole_tokens_with_short_inflections():
@@ -420,15 +472,31 @@ def test_query_words_match_whole_tokens_with_short_inflections():
     assert term_matches_token("completions", "completion")
     assert not term_matches_token("art", "start")
     assert not term_matches_token("args", "argsparser")
-    for term, token in (("token", "tokens"), ("parse", "parser"), ("render", "rendered"), ("cache", "caching")):
+    for term, token in (
+        ("token", "tokens"),
+        ("parse", "parser"),
+        ("render", "rendered"),
+        ("cache", "caching"),
+    ):
         assert term_matches_token(term, token), (term, token)
     # A shared prefix is not an inflection.
-    for term, token in (("auth", "author"), ("read", "ready"), ("sign", "signal"), ("time", "timeout")):
+    for term, token in (
+        ("auth", "author"),
+        ("read", "ready"),
+        ("sign", "signal"),
+        ("time", "timeout"),
+    ):
         assert not term_matches_token(term, token), (term, token)
 
 
 def test_requested_action_words_do_not_locate_code(tmp_path):
-    _graph(tmp_path, [_node("fixture", "fix fixtures", "tests/fixtures.py"), _node("w", "widget", "src/widget.py")])
+    _graph(
+        tmp_path,
+        [
+            _node("fixture", "fix fixtures", "tests/fixtures.py"),
+            _node("w", "widget", "src/widget.py"),
+        ],
+    )
 
     rows = graph_rows(tmp_path, "fix widget", limit=10)
 
@@ -448,20 +516,36 @@ def test_test_and_source_files_are_classified_across_languages():
     ):
         assert is_test_file(path), path
         assert not is_source_file(path), path
-    for path in ("command.go", "crates/ignore/src/walk.rs", "httpx/_client.py", "src/flask/app.py", "Contest.java"):
+    for path in (
+        "command.go",
+        "crates/ignore/src/walk.rs",
+        "httpx/_client.py",
+        "src/flask/app.py",
+        "Contest.java",
+    ):
         assert is_source_file(path), path
     for path in ("examples/tutorial/app.py", "vendor/lib/x.go", "docs/conf.py", "README.md"):
         assert not is_source_file(path), path
 
 
 def test_a_task_title_is_an_edit_unless_it_asks_to_explain():
-    for title in ("Deprecate the old flag", "Add support for fish shell", "Prevent duplicate headers"):
+    for title in (
+        "Deprecate the old flag",
+        "Add support for fish shell",
+        "Prevent duplicate headers",
+    ):
         assert is_edit_intent(query_terms(title)), title
     assert not is_edit_intent(query_terms("explain the session design"))
 
 
 def test_english_function_words_in_a_task_title_do_not_locate_code(tmp_path):
-    _graph(tmp_path, [_node("noise", "when their", "src/when.py"), _node("s", "session renew login", "src/session.py")])
+    _graph(
+        tmp_path,
+        [
+            _node("noise", "when their", "src/when.py"),
+            _node("s", "session renew login", "src/session.py"),
+        ],
+    )
 
     rows = graph_rows(tmp_path, "users being logged out when their login is renewed", limit=10)
 

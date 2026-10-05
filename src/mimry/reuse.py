@@ -1,12 +1,13 @@
 """Stat identities that let unchanged files skip re-reading, git-style.
 
-A generation records, per file, the stat identity of the exact snapshot it was
-built from. A live file whose lstat still matches is treated as unchanged
-without being read, like git's index. Two limits apply, both inherited from
-git: a rewrite that keeps size, inode and nanosecond mtime passes, and so can
-an edit landing within one timestamp tick of the scan (the racy case), which is
-why files modified shortly before the scan started are never trusted.
-``mimry status --verify`` and ``mimry index --full`` re-read everything.
+A generation records, per file, the stat identity of the exact snapshot
+it was built from. A live file whose lstat still matches is treated as
+unchanged without being read, like git's index. Two limits apply, both
+inherited from git: a rewrite that keeps size, inode and nanosecond
+mtime passes, and so can an edit landing within one timestamp tick of
+the scan (the racy case), which is why files modified shortly before the
+scan started are never trusted. ``mimry status --verify`` and ``mimry
+index --full`` re-read everything.
 """
 
 from __future__ import annotations
@@ -23,9 +24,9 @@ from .state import GENERATION_MANIFEST, sha256_file
 
 STAT_CACHE = "stat-cache.json"
 ADAPT_CACHE = "adapt-cache.jsonl"
-# Coarsest common mtime granularity (FAT). A file modified this close to the
-# scan start could be rewritten again inside the same tick without its mtime
-# moving, so its recorded identity proves nothing.
+# Coarsest common mtime granularity (FAT). A file modified this close to
+# the scan start could be rewritten again inside the same tick without
+# its mtime moving, so its recorded identity proves nothing.
 RACY_WINDOW_NS = 2_000_000_000
 INDEXED = "i"
 SENSITIVE = "s"
@@ -36,20 +37,29 @@ def identity(st) -> list[int]:
 
 
 class StatCache:
-    def __init__(self, scan_started_ns: int, entries: dict[str, list], fingerprint: str | None = None):
+    def __init__(
+        self, scan_started_ns: int, entries: dict[str, list], fingerprint: str | None = None
+    ):
         self.racy_after_ns = scan_started_ns - RACY_WINDOW_NS
         self.entries = entries
         self.fingerprint = fingerprint
 
     def trusts(self, rel_path: str, st, kind: str) -> bool:
-        """Whether ``st`` is the recorded, non-racy identity of ``rel_path``."""
+        """Whether ``st`` is the recorded identity of ``rel_path``.
+
+        The recorded identity must also be non-racy.
+        """
         entry = self.entries.get(rel_path)
         if kind == SENSITIVE and self.fingerprint != code_fingerprint():
-            # Unchanged bytes prove an unchanged file, not an unchanged verdict:
-            # the secret detector that made it may since have been fixed.
+            # Unchanged bytes prove an unchanged file, not an unchanged
+            # verdict: the secret detector that made it may since have
+            # been fixed.
             return False
         return (
-            entry is not None and entry[4] == kind and entry[:4] == identity(st) and st.st_mtime_ns < self.racy_after_ns
+            entry is not None
+            and entry[4] == kind
+            and entry[:4] == identity(st)
+            and st.st_mtime_ns < self.racy_after_ns
         )
 
 
@@ -63,9 +73,11 @@ def _cache_checksum(idx: Path, name: str) -> str | None:
 
 
 def _verified_bytes(idx: Path, name: str) -> bytes | None:
-    """Cache bytes whose checksum the generation manifest vouches for, else None.
+    """Cache bytes whose checksum the generation manifest vouches for,
+    else None.
 
-    Caches only ever skip work, so any doubt about one means doing the work.
+    Caches only ever skip work, so any doubt about one means doing the
+    work.
     """
     expected = _cache_checksum(idx, name)
     if expected is None:
@@ -83,13 +95,18 @@ def load_stat_cache(idx: Path) -> StatCache | None:
         return None
     try:
         payload = json.loads(data)
-        return StatCache(int(payload["scanStartedNs"]), dict(payload["entries"]), payload.get("fingerprint"))
+        return StatCache(
+            int(payload["scanStartedNs"]), dict(payload["entries"]), payload.get("fingerprint")
+        )
     except (ValueError, KeyError, TypeError):
         return None
 
 
 def load_adapt_cache(idx: Path, root: Path) -> dict[str, tuple[str, dict]] | None:
-    """Per-file ``(cache line, parsed row)`` by rel path, if built by this code for this root."""
+    """Per-file ``(cache line, parsed row)`` by rel path.
+
+    Only if built by this code for this root.
+    """
     data = _verified_bytes(idx, ADAPT_CACHE)
     if data is None:
         return None
@@ -104,7 +121,8 @@ def load_adapt_cache(idx: Path, root: Path) -> dict[str, tuple[str, dict]] | Non
 
 
 def adapt_cache_header(root: Path) -> dict[str, str]:
-    # Records embed the absolute path, so a moved checkout must not reuse them.
+    # Records embed the absolute path, so a moved checkout must not
+    # reuse them.
     return {"fingerprint": code_fingerprint(), "root": str(root)}
 
 
@@ -112,7 +130,7 @@ _FINGERPRINT: str | None = None
 
 
 def code_fingerprint() -> str:
-    """Identify everything adapter output depends on besides the file's bytes."""
+    """Everything adapter output depends on besides the file's bytes."""
     global _FINGERPRINT
     if _FINGERPRINT is None:
         digest = hashlib.sha256(f"{SCHEMA_VERSION}|{sys.version_info[:2]}".encode())

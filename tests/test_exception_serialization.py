@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 
 from mimry.state import (
-    StateLockTimeoutError,
-    StateCorruptionError,
     IndexSchemaMigrationError,
+    StateCorruptionError,
+    StateLockTimeoutError,
 )
 
 
 def test_state_lock_timeout_error_round_trips_through_pickle(tmp_path: Path):
-    """Pickle round-trip must preserve type, str(), .path, .timeout, .holder."""
+    """Pickle round-trip keeps type, str(), .path, .timeout, .holder."""
     exc = StateLockTimeoutError(tmp_path / "lock", 0.5, "holder-metadata")
     pickled = pickle.dumps(exc)
     restored = pickle.loads(pickled)
@@ -27,7 +27,7 @@ def test_state_lock_timeout_error_round_trips_through_pickle(tmp_path: Path):
 
 
 def test_state_corruption_error_round_trips_through_pickle(tmp_path: Path):
-    """Pickle round-trip must preserve type, str(), .path, .detail, .backup."""
+    """Pickle round-trip keeps type, str(), .path, .detail, .backup."""
     backup_path = tmp_path / "pointer.json.bak"
     exc = StateCorruptionError(tmp_path / "pointer.json", "invalid JSON", backup=backup_path)
     pickled = pickle.dumps(exc)
@@ -41,7 +41,10 @@ def test_state_corruption_error_round_trips_through_pickle(tmp_path: Path):
 
 
 def test_index_schema_migration_error_round_trips_through_pickle(tmp_path: Path):
-    """Pickle round-trip must preserve type, str(), .path, .generation_id, .schema_version."""
+    """Pickle round-trip keeps type, str() and every attribute.
+
+    Covers .path, .generation_id and .schema_version.
+    """
     exc = IndexSchemaMigrationError(tmp_path / "generation.json", "gen-123", "2")
     pickled = pickle.dumps(exc)
     restored = pickle.loads(pickled)
@@ -54,12 +57,18 @@ def test_index_schema_migration_error_round_trips_through_pickle(tmp_path: Path)
 
 
 def _worker_that_raises_lock_timeout(lock_path: str) -> None:
-    """Raise StateLockTimeoutError in a worker process. Module-level for pickle."""
+    """Raise StateLockTimeoutError in a worker process.
+
+    Module-level so it can be pickled.
+    """
     raise StateLockTimeoutError(Path(lock_path), 1.5, "worker-holder")
 
 
 def test_lock_timeout_error_crosses_a_process_pool(tmp_path: Path):
-    """StateLockTimeoutError must survive ProcessPoolExecutor round-trip with all metadata."""
+    """StateLockTimeoutError crosses ProcessPoolExecutor intact.
+
+    All metadata survives the round-trip.
+    """
     lock_path = str(tmp_path / "index.lock")
     with ProcessPoolExecutor(max_workers=1) as pool:
         future = pool.submit(_worker_that_raises_lock_timeout, lock_path)

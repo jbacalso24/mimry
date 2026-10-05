@@ -18,7 +18,9 @@ def test_real_mcp_stdio_protocol_round_trip_is_home_isolated(tmp_path: Path, mon
 
     import asyncio
 
-    result = asyncio.run(_protocol_smoke(repo, tmp_path / "cache", [sys.executable, "-m", "mimry.mcp_server"]))
+    result = asyncio.run(
+        _protocol_smoke(repo, tmp_path / "cache", [sys.executable, "-m", "mimry.mcp_server"])
+    )
     assert result["state"] == "PASS"
     assert result["find_paths"][0] == "src/entrypoint.py"
     assert not list(operator_home.rglob("*"))
@@ -51,7 +53,10 @@ def test_external_client_environment_is_credential_free_and_sandboxed(tmp_path: 
 
 
 def test_herdr_status_is_neutral_and_never_claims_proof(monkeypatch):
-    monkeypatch.setattr("mimry.agent_integration.shutil.which", lambda name: "/opt/herdr" if name == "herdr" else None)
+    monkeypatch.setattr(
+        "mimry.agent_integration.shutil.which",
+        lambda name: "/opt/herdr" if name == "herdr" else None,
+    )
     detected = _herdr_status()
     assert detected["state"] == "UNVERIFIED"
     assert detected["detected"] is True

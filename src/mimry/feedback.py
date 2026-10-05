@@ -47,7 +47,9 @@ def ensure_feedback_schema(con: sqlite3.Connection) -> None:
         )
         """
     )
-    con.execute("create index if not exists feedback_root_created_idx on feedback(root_id, created_at)")
+    con.execute(
+        "create index if not exists feedback_root_created_idx on feedback(root_id, created_at)"
+    )
 
 
 def _json_list(value: Any) -> list[Any]:
@@ -138,10 +140,12 @@ def _verification(value: Any) -> list[dict[str, str]]:
 
 
 def _redact_feedback_string(value: str) -> tuple[str, bool]:
-    """Redact likely secret values in user-supplied feedback text without erasing useful labels."""
+    """Redact likely secrets in user feedback, keeping useful labels."""
 
     redacted = BEARER_RE.sub(r"\1[REDACTED]", value)
-    redacted = SECRET_ASSIGNMENT_RE.sub(lambda m: f"{m.group('key')}{m.group('sep')}[REDACTED]", redacted)
+    redacted = SECRET_ASSIGNMENT_RE.sub(
+        lambda m: f"{m.group('key')}{m.group('sep')}[REDACTED]", redacted
+    )
     redacted = PASSWORD_WORD_RE.sub(lambda m: f"{m.group('key')} [REDACTED]", redacted)
     return redacted, redacted != value
 
@@ -228,7 +232,9 @@ def feedback_payload_from_args(root: Path, args: Any) -> dict[str, Any]:
     }
 
 
-def record_feedback(idx: Path, root_id: str, payload: dict[str, Any], *, lock: bool = True) -> dict[str, Any]:
+def record_feedback(
+    idx: Path, root_id: str, payload: dict[str, Any], *, lock: bool = True
+) -> dict[str, Any]:
     feedback_id = str(uuid.uuid4())
     created_at = now()
     base = idx.parent.parent if idx.parent.name == "generations" else idx
@@ -265,12 +271,23 @@ def record_feedback(idx: Path, root_id: str, payload: dict[str, Any], *, lock: b
                 )
         finally:
             con.close()
-    return {"feedback_id": feedback_id, "created_at": created_at, **payload, "schema_version": FEEDBACK_SCHEMA_VERSION}
+    return {
+        "feedback_id": feedback_id,
+        "created_at": created_at,
+        **payload,
+        "schema_version": FEEDBACK_SCHEMA_VERSION,
+    }
 
 
 def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
-    for key in ("suggested_paths", "opened_paths", "changed_paths", "missed_paths", "ignored_paths"):
+    for key in (
+        "suggested_paths",
+        "opened_paths",
+        "changed_paths",
+        "missed_paths",
+        "ignored_paths",
+    ):
         item[key] = json.loads(item[key] or "[]")
     item["verification"] = json.loads(item.pop("verification_json") or "[]")
     return item
@@ -285,7 +302,8 @@ def list_feedback(idx: Path, root_id: str, limit: int = 10) -> list[dict[str, An
     try:
         ensure_feedback_schema(con)
         rows = con.execute(
-            "select * from feedback where root_id = ? order by created_at desc, feedback_id desc limit ?",
+            "select * from feedback where root_id = ? order by created_at desc, feedback_id desc"
+            " limit ?",
             (root_id, max(1, limit)),
         ).fetchall()
         return [_decode_row(row) for row in rows]
@@ -336,7 +354,9 @@ def _similarity(query: str, past_query: str) -> float:
     return 0.0
 
 
-def feedback_rank_signals(idx: Path, root_id: str | None, query: str, *, limit: int = 200) -> dict[str, dict[str, Any]]:
+def feedback_rank_signals(
+    idx: Path, root_id: str | None, query: str, *, limit: int = 200
+) -> dict[str, dict[str, Any]]:
     if not root_id:
         return {}
     signals: dict[str, dict[str, Any]] = {}
@@ -361,7 +381,12 @@ def feedback_rank_signals(idx: Path, root_id: str | None, query: str, *, limit: 
 
 
 def apply_feedback_to_rows(
-    rows: list[dict[str, Any]], idx: Path, root_id: str | None, query: str, *, known_paths: set[str] | None = None
+    rows: list[dict[str, Any]],
+    idx: Path,
+    root_id: str | None,
+    query: str,
+    *,
+    known_paths: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     signals = feedback_rank_signals(idx, root_id, query)
     if not signals:

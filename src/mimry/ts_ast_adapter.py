@@ -21,7 +21,8 @@ def _language_for(path: Path) -> str:
 
 
 def _text(source: bytes, node: Any) -> str:
-    # UTF-8 bytes, not str: tree-sitter offsets are byte offsets. See core/languages.py::_text.
+    # UTF-8 bytes, not str: tree-sitter offsets are byte offsets. See
+    # core/languages.py::_text.
     return source[node.start_byte() : node.end_byte()].decode("utf-8", "replace")
 
 
@@ -47,8 +48,9 @@ def _children(node: Any):
 def _walk(node: Any):
     """Depth-first walk of tree, document order.
 
-    Iterative: a recursive generator hands every node up through one frame per
-    tree level, which made walking deep parse trees quadratic in their depth.
+    Iterative: a recursive generator hands every node up through one
+    frame per tree level, which made walking deep parse trees quadratic
+    in their depth.
     """
     stack = [node]
     while stack:
@@ -90,10 +92,12 @@ def _fallback_imports_exports(source: str) -> tuple[list[str], list[str]]:
 def parse_ts_like(
     path: Path, root: Path, file_record: dict[str, Any], source: str | None = None
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str], str]:
-    """Parse JS/TS/JSX/TSX with tree-sitter and return symbols/edges/imports/exports/status.
+    """Parse JS/TS/JSX/TSX with tree-sitter and return
+    symbols/edges/imports/exports/status.
 
-    Pass `source` (decoded text) to avoid reopening the file during indexing.
-    If source is None, will read from path (for non-indexing use).
+    Pass `source` (decoded text) to avoid reopening the file during
+    indexing. If source is None, will read from path (for non-indexing
+    use).
     """
     if not is_text(path):
         return [], [], [], [], "parse_error:non_text"
@@ -113,10 +117,13 @@ def parse_ts_like(
     except Exception as exc:
         return symbols, edges, imports, exports, f"parse_error:{exc.__class__.__name__}"
 
-    # The regex fallback above needed str; everything below indexes by byte offset.
+    # The regex fallback above needed str; everything below indexes by
+    # byte offset.
     source = source.encode("utf-8")
 
-    def add_symbol(name: str | None, kind: str, node: Any, exported: bool = False, confidence: float = 0.95) -> None:
+    def add_symbol(
+        name: str | None, kind: str, node: Any, exported: bool = False, confidence: float = 0.95
+    ) -> None:
         if not name:
             return
         key = (name, kind, _line(node))
@@ -157,8 +164,9 @@ def parse_ts_like(
         elif kind == "class_declaration":
             add_symbol(_first_identifier(node, source), "class", node, exported)
         elif kind == "method_definition":
-            # A method is the real call unit in OO JS/TS. Without it, calls inside a
-            # method attribute to the enclosing class and method calls have no target.
+            # A method is the real call unit in OO JS/TS. Without it,
+            # calls inside a method attribute to the enclosing class and
+            # method calls have no target.
             add_symbol(_first_identifier(node, source), "method", node)
         elif kind == "variable_declarator":
             name = _first_identifier(node, source)

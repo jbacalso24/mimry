@@ -1,7 +1,8 @@
 """PreToolUse hook helper.
 
-Claude Code runs this before every matched tool call, so it must stay cheap
-(stdlib only, nothing from the indexing stack) and must never fail the call.
+Claude Code runs this before every matched tool call, so it must stay
+cheap (stdlib only, nothing from the indexing stack) and must never fail
+the call.
 """
 
 from __future__ import annotations
@@ -27,8 +28,8 @@ def cmd_hook_check(a) -> int:
 
 
 def _hook_check(root: Path) -> None:
-    # Hook payloads are UTF-8 JSON. Reading bytes avoids the console code page,
-    # which on Windows cannot decode arbitrary command text.
+    # Hook payloads are UTF-8 JSON. Reading bytes avoids the console
+    # code page, which on Windows cannot decode arbitrary command text.
     raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
     command = ""
     tool_name = ""
@@ -46,9 +47,10 @@ def _hook_check(root: Path) -> None:
     except Exception:
         command = raw
     low = command.lower().replace("\\", "/")
-    # A native search tool is identified by name, not payload text: the Grep tool's pattern
-    # is the caller's regex, so substring-sniffing for "grep" never matched it. Read/Glob
-    # only ever matched by accident, when a path happened to end in a listed extension.
+    # A native search tool is identified by name, not payload text: the
+    # Grep tool's pattern is the caller's regex, so substring-sniffing
+    # for "grep" never matched it. Read/Glob only ever matched by
+    # accident, when a path happened to end in a listed extension.
     search_hit = tool_name in SEARCH_TOOLS or any(
         tok in low for tok in ("grep", "rg ", "ripgrep", "find ", "fd ", "ack ", "ag ")
     )
@@ -59,5 +61,11 @@ def _hook_check(root: Path) -> None:
     if not (search_hit or read_hit):
         return
     mimry_dir = root / ".mimry"
-    if (mimry_dir / "pointer.json").exists() or (mimry_dir / "mimry-out" / "context" / "latest.md").exists():
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": NUDGE}}))
+    if (mimry_dir / "pointer.json").exists() or (
+        mimry_dir / "mimry-out" / "context" / "latest.md"
+    ).exists():
+        print(
+            json.dumps(
+                {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": NUDGE}}
+            )
+        )

@@ -5,9 +5,9 @@ import os
 import shlex
 import shutil
 import sys
-from shutil import which
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
+from shutil import which
 
 from . import ui
 
@@ -53,11 +53,129 @@ _PLATFORM_ALIASES = {
     "codebuddy": "codebuddy",
 }
 _REFERENCES: dict[str, str] = {
-    "workflow.md": """# MIMRY workflow\n\nUse this when starting repo work, debugging, reviewing, or planning.\n\n## Fast path\n\n1. Run `mimry status`.\n2. Route the task with `mimry route \"<task>\"` to pick the likely agent lane, risk level, and next command.\n3. If current, ask a focused question with `mimry context \"<task>\"` or write a role brief with `mimry brief \"<task>\" --agent <role>`.\n4. If stale/missing, run `mimry preflight \"<task>\"`.\n5. Read `.mimry/mimry-out/context/latest.md` or `.mimry/mimry-out/context/brief-<agent>.md`.\n6. Inspect source files directly before editing.\n\n## Source of truth\n\nMIMRY narrows the search space. Source files, tests, build output, and user verification remain final truth.\n""",
-    "commands.md": """# MIMRY commands\n\nCommon commands:\n\n```bash\nmimry preflight \"<task>\"\nmimry route \"<task>\"\nmimry route \"<task>\" --json\nmimry brief \"<task>\" --agent <role>\nmimry status\nmimry refresh\nmimry context \"<task>\"\nmimry find \"<query>\"\nmimry related \"<query>\"\nmimry symbol \"<name>\"\nmimry why <file-or-symbol> --query \"<task>\"\nmimry path \"<source>\" \"<target>\"\nmimry semantic \"<query>\"\n```\n\nPrefer precise task queries over generic ones like `frontend` or `fix bug`.\n""",
-    "mcp.md": """# MIMRY MCP\n\nWhen MCP tools are available, prefer them over shell commands for lookup, preflight, context generation, and feedback.\n\nPrimary workflow tools:\n\n- `mimry_status(root?)`\n- `mimry_init(root?, root_type?, skip_graph?)`\n- `mimry_refresh(root?)`\n- `mimry_preflight(query, root?, force_refresh?)`\n- `mimry_route(query, root?, limit?)`\n- `mimry_brief(query, agent, root?, limit?)`\n- `mimry_context(query, root?, semantic?)`\n\nNavigation and explanation tools:\n\n- `mimry_find(query, root?, limit?, semantic?)`\n- `mimry_related(query, root?, limit?)`\n- `mimry_symbol(name, root?)`\n- `mimry_semantic(query, root?, limit?)`\n- `mimry_explain(query, root?, limit?)`\n- `mimry_path(source, target, root?)`\n- `mimry_why(surface, query, root?, limit?)`\n\nFeedback/tooling tools:\n\n- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, ignored?, verification?, outcome?, notes?)`\n- `mimry_list_adapters(active_only?)`\n\nRules:\n\n- Prefer `mimry_preflight` before broad search or repeated file reads.\n- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n- Use CLI fallback when MCP is unavailable or the agent host has not loaded the server.\n""",
-    "feedback.md": """# MIMRY feedback\n\nAfter meaningful verified work, record what mattered so future rankings improve.\n\n```bash\nmimry feedback --query \"<task>\" \\\n  --context .mimry/mimry-out/context/latest.md \\\n  --opened \"<files opened>\" \\\n  --changed \"<files changed>\" \\\n  --missed \"<important missed files>\" \\\n  --ignored \"<unhelpful suggestions>\" \\\n  --verification \"<command/result>\" \\\n  --outcome passed\n```\n\nDo not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.\n""",
-    "safety.md": """# MIMRY safety\n\nGood roots are focused repos, product folders, docs vaults, or curated active-work folders.\n\nBad roots:\n\n- `/`\n- a whole home directory\n- `C:\\`\n- `C:\\Users\\you`\n- system/config/cache folders\n- dependency directories such as `node_modules`\n\nGenerated paths such as `.mimry/`, `.mimry/mimry-out/`, `.git/`, and dependency caches are support artifacts, not source fixes.\n""",
+    "workflow.md": (
+        """# MIMRY workflow\n"""
+        """\n"""
+        """Use this when starting repo work, debugging, reviewing, or planning.\n"""
+        """\n"""
+        """## Fast path\n"""
+        """\n"""
+        """1. Run `mimry status`.\n"""
+        """2. Route the task with `mimry route \"<task>\"` to pick the likely agent lane, risk """
+        """level, and next command.\n"""
+        """3. If current, ask a focused question with `mimry context \"<task>\"` or write a """
+        """role brief with `mimry brief \"<task>\" --agent <role>`.\n"""
+        """4. If stale/missing, run `mimry preflight \"<task>\"`.\n"""
+        """5. Read `.mimry/mimry-out/context/latest.md` or """
+        """`.mimry/mimry-out/context/brief-<agent>.md`.\n"""
+        """6. Inspect source files directly before editing.\n"""
+        """\n"""
+        """## Source of truth\n"""
+        """\n"""
+        """MIMRY narrows the search space. Source files, tests, build output, and user """
+        """verification remain final truth.\n"""
+    ),
+    "commands.md": (
+        """# MIMRY commands\n"""
+        """\n"""
+        """Common commands:\n"""
+        """\n"""
+        """```bash\n"""
+        """mimry preflight \"<task>\"\n"""
+        """mimry route \"<task>\"\n"""
+        """mimry route \"<task>\" --json\n"""
+        """mimry brief \"<task>\" --agent <role>\n"""
+        """mimry status\n"""
+        """mimry refresh\n"""
+        """mimry context \"<task>\"\n"""
+        """mimry find \"<query>\"\n"""
+        """mimry related \"<query>\"\n"""
+        """mimry symbol \"<name>\"\n"""
+        """mimry why <file-or-symbol> --query \"<task>\"\n"""
+        """mimry path \"<source>\" \"<target>\"\n"""
+        """mimry semantic \"<query>\"\n"""
+        """```\n"""
+        """\n"""
+        """Prefer precise task queries over generic ones like `frontend` or `fix bug`.\n"""
+    ),
+    "mcp.md": (
+        """# MIMRY MCP\n"""
+        """\n"""
+        """When MCP tools are available, prefer them over shell commands for lookup, """
+        """preflight, context generation, and feedback.\n"""
+        """\n"""
+        """Primary workflow tools:\n"""
+        """\n"""
+        """- `mimry_status(root?)`\n"""
+        """- `mimry_init(root?, root_type?, skip_graph?)`\n"""
+        """- `mimry_refresh(root?)`\n"""
+        """- `mimry_preflight(query, root?, force_refresh?)`\n"""
+        """- `mimry_route(query, root?, limit?)`\n"""
+        """- `mimry_brief(query, agent, root?, limit?)`\n"""
+        """- `mimry_context(query, root?, semantic?)`\n"""
+        """\n"""
+        """Navigation and explanation tools:\n"""
+        """\n"""
+        """- `mimry_find(query, root?, limit?, semantic?)`\n"""
+        """- `mimry_related(query, root?, limit?)`\n"""
+        """- `mimry_symbol(name, root?)`\n"""
+        """- `mimry_semantic(query, root?, limit?)`\n"""
+        """- `mimry_explain(query, root?, limit?)`\n"""
+        """- `mimry_path(source, target, root?)`\n"""
+        """- `mimry_why(surface, query, root?, limit?)`\n"""
+        """\n"""
+        """Feedback/tooling tools:\n"""
+        """\n"""
+        """- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, """
+        """ignored?, verification?, outcome?, notes?)`\n"""
+        """- `mimry_list_adapters(active_only?)`\n"""
+        """\n"""
+        """Rules:\n"""
+        """\n"""
+        """- Prefer `mimry_preflight` before broad search or repeated file reads.\n"""
+        """- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n"""
+        """- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n"""
+        """- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n"""
+        """- Use CLI fallback when MCP is unavailable or the agent host has not loaded the """
+        """server.\n"""
+    ),
+    "feedback.md": (
+        """# MIMRY feedback\n"""
+        """\n"""
+        """After meaningful verified work, record what mattered so future rankings improve.\n"""
+        """\n"""
+        """```bash\n"""
+        """mimry feedback --query \"<task>\" \\\n"""
+        """  --context .mimry/mimry-out/context/latest.md \\\n"""
+        """  --opened \"<files opened>\" \\\n"""
+        """  --changed \"<files changed>\" \\\n"""
+        """  --missed \"<important missed files>\" \\\n"""
+        """  --ignored \"<unhelpful suggestions>\" \\\n"""
+        """  --verification \"<command/result>\" \\\n"""
+        """  --outcome passed\n"""
+        """```\n"""
+        """\n"""
+        """Do not paste raw secrets into feedback. MIMRY redacts likely secret values, but """
+        """prevention is better.\n"""
+    ),
+    "safety.md": (
+        """# MIMRY safety\n"""
+        """\n"""
+        """Good roots are focused repos, product folders, docs vaults, or curated active-work """
+        """folders.\n"""
+        """\n"""
+        """Bad roots:\n"""
+        """\n"""
+        """- `/`\n"""
+        """- a whole home directory\n"""
+        """- `C:\\`\n"""
+        """- `C:\\Users\\you`\n"""
+        """- system/config/cache folders\n"""
+        """- dependency directories such as `node_modules`\n"""
+        """\n"""
+        """Generated paths such as `.mimry/`, `.mimry/mimry-out/`, `.git/`, and dependency """
+        """caches are support artifacts, not source fixes.\n"""
+    ),
 }
 _ALWAYS_ON_MARKER = "## MIMRY"
 
@@ -258,15 +376,25 @@ def platform_table(*, verbose: bool = False) -> str:
     label_width = max(len(cfg.label) for cfg in configs)
     for cfg in configs:
         aliases = f"also: {', '.join(cfg.aliases)}" if cfg.aliases else ""
-        lines.append(f"  {cfg.key.ljust(width)}  {cfg.label.ljust(label_width)}  {ui.faint(aliases)}".rstrip())
+        lines.append(
+            (
+                f"  {cfg.key.ljust(width)}  {cfg.label.ljust(label_width)}  {ui.faint(aliases)}"
+            ).rstrip()
+        )
         if verbose:
             lines.append(f"    {'this project'.ljust(12)}  {cfg.project_path.as_posix()}")
             lines.append(f"    {'all projects'.ljust(12)}  {ui.display_path(cfg.global_path)}")
             if cfg.always_on_file:
-                lines.append(f"    {'always-on'.ljust(12)}  {cfg.always_on_file.as_posix()} (with --project)")
+                lines.append(
+                    f"    {'always-on'.ljust(12)}  {cfg.always_on_file.as_posix()} (with"
+                    " --project)"
+                )
     lines += [
         "",
-        "Install with `mimry install --platform <name>`. Add --project to install into this repo only.",
+        (
+            "Install with `mimry install --platform <name>`. Add --project to install into this"
+            " repo only."
+        ),
     ]
     if not verbose:
         lines.append("Use --verbose to see where each platform's skill is written.")
@@ -276,14 +404,27 @@ def platform_table(*, verbose: bool = False) -> str:
 def skill_body(platform_key: str) -> str:
     invocation = "$mimry" if platform_key == "codex" else "MIMRY"
     platform_notes = {
-        "claude-code": "Claude Code: use this skill with project `.claude/skills/mimry/` installs. Optional hooks can nudge before broad Bash/Read/Glob exploration.",
-        "codex": "Codex: invoke as `$mimry` when command-style skill invocation is available. Optional `.codex/hooks.json` can nudge before broad Bash exploration.",
-        "hermes": "Hermes: this skill is installed under `.hermes/skills/mimry/` or the Hermes profile skills directory. Prefer native MIMRY MCP tools when loaded.",
-        "agents": "Agent Skills: generic cross-framework skill install. Use the same MIMRY-first workflow even when the host has no native hooks.",
+        "claude-code": (
+            "Claude Code: use this skill with project `.claude/skills/mimry/` installs. Optional"
+            " hooks can nudge before broad Bash/Read/Glob exploration."
+        ),
+        "codex": (
+            "Codex: invoke as `$mimry` when command-style skill invocation is available. Optional"
+            " `.codex/hooks.json` can nudge before broad Bash exploration."
+        ),
+        "hermes": (
+            "Hermes: this skill is installed under `.hermes/skills/mimry/` or the Hermes profile"
+            " skills directory. Prefer native MIMRY MCP tools when loaded."
+        ),
+        "agents": (
+            "Agent Skills: generic cross-framework skill install. Use the same MIMRY-first"
+            " workflow even when the host has no native hooks."
+        ),
     }
     note = platform_notes.get(
         platform_key,
-        f"{platforms()[platform_key].label}: platform-specific MIMRY skill install using this host's skill directory convention.",
+        f"{platforms()[platform_key].label}: platform-specific MIMRY skill install using this"
+        " host's skill directory convention.",
     )
     return f"""---
 name: mimry
@@ -419,7 +560,7 @@ Load references when the task involves MCP, feedback, safety/root choice, stale 
 - Do not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.
 - Generated paths such as `.mimry/`, `.mimry/mimry-out/`, and `.git/` are support artifacts, not source fixes.
 - Never report success from MIMRY output alone. Verify with real source reads and the nearest tests/build/user-visible checks.
-"""
+"""  # noqa: E501 - Markdown written verbatim; its line breaks are content
 
 
 def always_on_body() -> str:
@@ -434,7 +575,7 @@ Rules:
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
-"""
+"""  # noqa: E501 - Markdown written verbatim; its line breaks are content
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -524,7 +665,7 @@ def _resolve_mimry_exe() -> str:
 
 
 def _hook_command() -> str:
-    """Build a command for hook hosts that execute command strings with POSIX Bash."""
+    """Build a command for hook hosts that run it with POSIX Bash."""
     executable = _resolve_mimry_exe()
     windows_absolute = PureWindowsPath(executable).is_absolute()
     if windows_absolute:
@@ -547,8 +688,9 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
         existing = {}
     command = _hook_command()
     hook = {
-        # Grep is Claude Code's search tool; omitting it meant the hook only fired on
-        # shelled-out `grep`/`rg`, never on the tool AGENT_RULES.md actually targets.
+        # Grep is Claude Code's search tool; omitting it meant the hook
+        # only fired on shelled-out `grep`/`rg`, never on the tool
+        # AGENT_RULES.md actually targets.
         "matcher": "Bash" if cfg.key == "codex" else "Bash|Read|Glob|Grep",
         "hooks": [{"type": "command", "command": command}],
     }
@@ -559,12 +701,13 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
 
 
 def _is_mimry_hook(entry: object) -> bool:
-    """Identify a MIMRY PreToolUse hook regardless of how the launcher resolved.
+    """Identify a MIMRY PreToolUse hook regardless of how the launcher
+    resolved.
 
-    The stored command embeds the resolved executable, which on Windows is
-    `mimry.EXE`. Matching the literal "mimry hook-check" therefore never matched
-    there: hooks duplicated on every install, uninstall never removed them, and
-    status always reported them missing.
+    The stored command embeds the resolved executable, which on Windows
+    is `mimry.EXE`. Matching the literal "mimry hook-check" therefore
+    never matched there: hooks duplicated on every install, uninstall
+    never removed them, and status always reported them missing.
     """
     text = str(entry).lower()
     return "hook-check" in text and "mimry" in text
@@ -633,7 +776,9 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
     ui.table(
         [
             (
-                ui.paint(ui.symbol("ok"), "ok") if result[name] else ui.paint(ui.symbol("fail"), "fail"),
+                ui.paint(ui.symbol("ok"), "ok")
+                if result[name]
+                else ui.paint(ui.symbol("fail"), "fail"),
                 label,
                 good if result[name] else bad,
             )
@@ -661,7 +806,8 @@ def install_skill(
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
     root = root.resolve()
-    # Refuse before writing anything, so a bad flag never leaves a half-done install.
+    # Refuse before writing anything, so a bad flag never leaves a
+    # half-done install.
     if always_on and not project:
         raise SystemExit(ui.error_text("--always-on only works with --project"))
     if hooks and not project:
@@ -672,10 +818,16 @@ def install_skill(
         extras.append(f"always-on instructions in {cfg.always_on_file.as_posix()}")
     hook_target = _install_hooks(root, cfg, dry_run=True) if hooks else None
     if hook_target:
-        extras.append(f"a hook in {cfg.hook_path.as_posix()} that nudges agents to use MIMRY before broad searches")
+        extras.append(
+            f"a hook in {cfg.hook_path.as_posix()} that nudges agents to use MIMRY before broad"
+            " searches"
+        )
     if dry_run:
         print("Dry run - nothing was written")
-        ui.detail(f"Would install the MIMRY skill for {cfg.label} ({_scope(project)}) at {_shown(dst, root, project)}")
+        ui.detail(
+            f"Would install the MIMRY skill for {cfg.label} ({_scope(project)}) at"
+            f" {_shown(dst, root, project)}"
+        )
         for extra in extras:
             ui.detail(f"Would add {extra}")
         if hooks and not hook_target:
@@ -731,7 +883,10 @@ def uninstall_skill(
         except OSError:
             break
     if not removed:
-        print(f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label} ({_scope(project)}).")
+        print(
+            f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label}"
+            f" ({_scope(project)})."
+        )
         return False
     ui.ok(f"Removed MIMRY for {cfg.label} ({_scope(project)})")
     for path in removed:
@@ -744,7 +899,8 @@ def uninstall_skill(
     if kept:
         flags = " ".join(flag for flag, _ in kept)
         ui.detail(
-            f"Kept {' and '.join(what for _, what in kept)}. Add {flags} to remove {'them' if len(kept) > 1 else 'it'} too."
+            f"Kept {' and '.join(what for _, what in kept)}. Add {flags} to remove"
+            f" {'them' if len(kept) > 1 else 'it'} too."
         )
     return True
 
@@ -764,7 +920,12 @@ def cmd_install(a) -> int:
         install_status(a.platform, project=a.project, root=Path(a.root))
         return 0
     install_skill(
-        a.platform, project=a.project, root=Path(a.root), dry_run=a.dry_run, always_on=a.always_on, hooks=a.hooks
+        a.platform,
+        project=a.project,
+        root=Path(a.root),
+        dry_run=a.dry_run,
+        always_on=a.always_on,
+        hooks=a.hooks,
     )
     return 0
 
@@ -772,5 +933,7 @@ def cmd_install(a) -> int:
 def cmd_uninstall(a) -> int:
     if not a.platform:
         raise SystemExit(ui.error_text("Choose a platform with --platform <name>"))
-    uninstall_skill(a.platform, project=a.project, root=Path(a.root), always_on=a.always_on, hooks=a.hooks)
+    uninstall_skill(
+        a.platform, project=a.project, root=Path(a.root), always_on=a.always_on, hooks=a.hooks
+    )
     return 0

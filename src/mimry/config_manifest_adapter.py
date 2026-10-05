@@ -9,7 +9,13 @@ from typing import Any
 COMMAND_KEYS = ("build", "test", "lint", "typecheck", "dev", "start", "migrate")
 DOC_NAMES = {"AGENTS.md", "CLAUDE.md", "README.md"}
 ENV_EXAMPLE_NAMES = {".env.example", ".env.sample", ".env.template", "env.example"}
-CONFIG_FILENAMES = {"package.json", "pyproject.toml", "tsconfig.json", "app.json", "app.config.json"}
+CONFIG_FILENAMES = {
+    "package.json",
+    "pyproject.toml",
+    "tsconfig.json",
+    "app.json",
+    "app.config.json",
+}
 CONFIG_PREFIXES = ("vite.config.", "next.config.", "app.config.")
 SECRET_NAME_RE = re.compile(r"(SECRET|TOKEN|PASSWORD|KEY|CREDENTIAL|PRIVATE)", re.IGNORECASE)
 ENV_NAME_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|$)")
@@ -111,7 +117,8 @@ def _package_json(text: str, root: Path) -> list[str]:
             matches = [name for name in script_names if name == command_key or command_key in name]
             if matches:
                 parts.append(
-                    f"{command_key} command " + "; ".join(_script_command(manager, name) for name in matches[:4])
+                    f"{command_key} command "
+                    + "; ".join(_script_command(manager, name) for name in matches[:4])
                 )
     frameworks = _frameworks_from_deps(set(deps))
     if frameworks:
@@ -147,12 +154,18 @@ def _pyproject_toml(text: str) -> list[str]:
     data = tomllib.loads(text or "")
     parts = []
     build_backend = (
-        data.get("build-system", {}).get("build-backend") if isinstance(data.get("build-system"), dict) else None
+        data.get("build-system", {}).get("build-backend")
+        if isinstance(data.get("build-system"), dict)
+        else None
     )
     if build_backend:
         parts.append(f"build backend {build_backend}")
     project = data.get("project") if isinstance(data.get("project"), dict) else {}
-    deps = set(_dependency_names(project.get("dependencies", []))) if isinstance(project, dict) else set()
+    deps = (
+        set(_dependency_names(project.get("dependencies", [])))
+        if isinstance(project, dict)
+        else set()
+    )
     optional = project.get("optional-dependencies", {}) if isinstance(project, dict) else {}
     if isinstance(optional, dict):
         for values in optional.values():
@@ -166,7 +179,10 @@ def _pyproject_toml(text: str) -> list[str]:
         parts.append("framework hints " + " ".join(frameworks))
     scripts = project.get("scripts", {}) if isinstance(project, dict) else {}
     if isinstance(scripts, dict) and scripts:
-        parts.append("entrypoints " + " ".join(f"{name}={target}" for name, target in sorted(scripts.items())))
+        parts.append(
+            "entrypoints "
+            + " ".join(f"{name}={target}" for name, target in sorted(scripts.items()))
+        )
     tool = data.get("tool", {}) if isinstance(data.get("tool"), dict) else {}
     commands = []
     if "pytest" in tool or "pytest" in deps:
@@ -251,7 +267,9 @@ def _doc_hints(text: str, name: str) -> list[str]:
 
 
 def _looks_like_command(line: str) -> bool:
-    return bool(re.match(r"^(uv|npm|pnpm|yarn|bun|python|pytest|ruff|mimry|make|just|cargo|go)\b", line))
+    return bool(
+        re.match(r"^(uv|npm|pnpm|yarn|bun|python|pytest|ruff|mimry|make|just|cargo|go)\b", line)
+    )
 
 
 def _sanitize_doc_line(line: str) -> str:

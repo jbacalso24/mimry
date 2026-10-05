@@ -39,15 +39,17 @@ from mimry.security import (
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
-# Structurally credential-like but deliberately inert and used only as a test canary.
+# Structurally credential-like but deliberately inert and used only as a
+# test canary.
 CANARY = "sk-" + "proj-" + "FAKECANARY" + ("0" * 24)
 VALUE_CANARY = "privacy-canary-value-123456789"
 QUERY_CANARY = f"TOKEN={VALUE_CANARY}"
 DEFENSIVE_MARKER = "MIMRY_TEST_" + "VALUE_123"
 OFFICE_CANARY = "OFFICE-CANARY-" + ("7" * 24)
-# Literal configuration values, built at run time like the canaries above so that
-# secret scanners reading this file see no hardcoded password. CONFIG_VALUE starts
-# lower case: ``$CONFIG_VALUE`` must read as a literal, not an environment reference.
+# Literal configuration values, built at run time like the canaries
+# above so that secret scanners reading this file see no hardcoded
+# password. CONFIG_VALUE starts lower case: ``$CONFIG_VALUE`` must read
+# as a literal, not an environment reference.
 CONFIG_VALUE = "mimry" + "-config-value-42"
 BASE64_VALUE = "cGFzc3dv" + "cmQ"  # base64 without its ``=`` padding
 HASH_GLUED_VALUE = "$PG#" + CONFIG_VALUE
@@ -70,7 +72,12 @@ def run_cli(repo: Path, cache: Path, *args: str) -> subprocess.CompletedProcess[
 
 def sqlite_dump(path: Path) -> str:
     with sqlite3.connect(path) as con:
-        names = [row[0] for row in con.execute("select name from sqlite_master where type in ('table', 'view')")]
+        names = [
+            row[0]
+            for row in con.execute(
+                "select name from sqlite_master where type in ('table', 'view')"
+            )
+        ]
         rendered = []
         for name in names:
             quoted = name.replace('"', '""')
@@ -131,7 +138,9 @@ def test_office_documents_redact_spaced_secret_labels_but_keep_safe_search_text(
     assert document.name in files_jsonl
     assert "roadmap milestone phoenix" in persisted.lower()
     assert "roadmap milestone phoenix" in generated.lower()
-    assert OFFICE_CANARY not in persisted + generated + context_result.stdout + context_result.stderr
+    assert (
+        OFFICE_CANARY not in persisted + generated + context_result.stdout + context_result.stderr
+    )
 
 
 @pytest.mark.parametrize("extension", [".docx", ".xlsx"])
@@ -156,7 +165,9 @@ def test_password_protected_office_member_is_skipped_without_aborting_extraction
     assert status.startswith("parse_error:")
 
 
-def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_policy(tmp_path: Path):
+def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_policy(
+    tmp_path: Path,
+):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "safe.py").write_text("print('safe')\n", encoding="utf-8")
@@ -179,8 +190,13 @@ def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_po
         assert text_mentions_ignored_path(path)
 
 
-def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(tmp_path: Path, monkeypatch):
-    """scan() must not walk inside ignored trees; the content guard lives in adapt() alone."""
+def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(
+    tmp_path: Path, monkeypatch
+):
+    """scan() must not walk inside ignored trees.
+
+    The content guard lives in adapt() alone.
+    """
     from mimry.indexer import _collect
     from mimry.paths import canonical_rel_path
     from mimry.scanner import scan_entries
@@ -190,8 +206,8 @@ def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(tmp_pa
     (repo / "node_modules" / "pkg" / "deep" / "index.js").write_text("x = 1\n", encoding="utf-8")
     (repo / "safe.py").write_text("print('safe')\n", encoding="utf-8")
     (repo / "leak.py").write_text(f"{QUERY_CANARY}\n", encoding="utf-8")
-    # Sensitive-looking directory names do not prune: only heavy-ignore names do,
-    # and every file below is still judged by its own name.
+    # Sensitive-looking directory names do not prune: only heavy-ignore
+    # names do, and every file below is still judged by its own name.
     (repo / ".env" / "lib").mkdir(parents=True)
     (repo / ".env" / "lib" / "venv_module.py").write_text("x = 2\n", encoding="utf-8")
     (repo / ".env" / "lib" / ".env").write_text("x = 3\n", encoding="utf-8")
@@ -207,18 +223,25 @@ def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(tmp_pa
     entries = scan_entries(repo)
     monkeypatch.undo()
 
-    assert [canonical for canonical, _ in entries] == [".env/lib/venv_module.py", "leak.py", "safe.py"]
+    assert [canonical for canonical, _ in entries] == [
+        ".env/lib/venv_module.py",
+        "leak.py",
+        "safe.py",
+    ]
     assert all(canonical == canonical_rel_path(path, repo) for canonical, path in entries)
-    assert [p for p in listed if p.startswith("node_modules")] == [], "ignored trees must never be listed"
+    assert [p for p in listed if p.startswith("node_modules")] == [], (
+        "ignored trees must never be listed"
+    )
     assert [path.name for path in scan(repo)] == ["venv_module.py", "leak.py", "safe.py"]
 
     files, *_, unindexable = _collect(repo)
     assert [record["rel_path"] for record in files] == [".env/lib/venv_module.py", "safe.py"]
-    # Unrecorded, so freshness re-checks the file and reports it once its secret is removed.
+    # Unrecorded, so freshness re-checks the file and reports it once
+    # its secret is removed.
     assert unindexable == []
 
 
-def test_sensitive_label_policy_covers_exact_variants_and_yaml_blocks_without_prose_false_positives():
+def test_sensitive_label_policy_covers_variants_and_yaml_without_prose_false_positives():
     sensitive_samples = (
         f"CONFIDENTIAL={DEFENSIVE_MARKER}\n",
         f"credentials: {DEFENSIVE_MARKER}\n",
@@ -277,8 +300,9 @@ def test_inline_and_multiline_assignments_are_fully_redacted_without_matching_pr
     assert redact_sensitive_text(unclosed) == 'auth = """[REDACTED]'
 
 
-# Each line once dropped a real source file from the index: flask's app.py,
-# httpx's _client.py and _config.py, zod's schemas.ts, ripgrep's glob.rs.
+# Each line once dropped a real source file from the index: flask's
+# app.py, httpx's _client.py and _config.py, zod's schemas.ts, ripgrep's
+# glob.rs.
 NAMED_OR_COMPUTED_CREDENTIALS_IN_CODE = (
     '"SECRET_KEY": None,\n',
     'self._authentication = kwargs.pop("authentication")\n',
@@ -300,7 +324,8 @@ NAMED_OR_COMPUTED_CREDENTIALS_IN_CODE = (
     "check(token == None)\n",
     'app.secret_key = "secret_key"\n',
     '"auth": ("auth", "oauth", "login", "session"),\n',
-    # Docstring prose after a colon, and type annotations across languages.
+    # Docstring prose after a colon, and type annotations across
+    # languages.
     '    auth: (optional) An auth tuple, e.g. ("user", "pass").\n',
     "    token: the user's token, e.g. 'abc'.\n",
     "pub fn new(token: &'a str, auth: Option<Auth<'a>>) -> Self {\n",
@@ -311,11 +336,15 @@ NAMED_OR_COMPUTED_CREDENTIALS_IN_CODE = (
     # A line that does not go on ends the value.
     'const token = process.env.TOKEN!\nconst name = "app-name"\n',
     'const token = getToken()\n  .trim()\nconst name = "app-name"\n',
-    '    :param private_key: a private key\n    :param name: the "display" name\n',  # not a ternary's else
+    "    :param private_key: a private key\n"
+    '    :param name: the "display" name\n',  # not a ternary's else
     'items.filter(token => token.value === "async")\n',  # an arrow function's parameter
     '    Authorization: OAuth realm="Photos",\n',  # prose, not a ``name: type = value`` annotation
     # Docstring sentences do not go on to the docstring's close.
-    '    """Args:\n        auth: Optional authentication handler.\n        name: A name.\n    """\n',
+    (
+        '    """Args:\n        auth: Optional authentication handler.\n        name: A name.\n   '
+        ' """\n'
+    ),
     '    """Args:\n        token: which token?\n    """\n',
 )
 LITERAL_CREDENTIALS_IN_CODE = (
@@ -332,7 +361,8 @@ LITERAL_CREDENTIALS_IN_CODE = (
     # Labels with a space in them only occur in comments and prose.
     f"# api key: {DEFENSIVE_MARKER}\n",
     f"// access token: {DEFENSIVE_MARKER}\n",
-    # Unquoted, but not readable as code: hyphenated words, or base64 padding.
+    # Unquoted, but not readable as code: hyphenated words, or base64
+    # padding.
     f"TOKEN={VALUE_CANARY}\n",
     f"api_key: {BASE64_VALUE}=\n",
     # A literal fallback is the value: the call only looks the key up.
@@ -350,7 +380,9 @@ LITERAL_CREDENTIALS_IN_CODE = (
     "AUTH_TOKEN_FALLBACKS = (\n"
     + "".join(f'    os.environ.get("DEPLOY_TOKEN_{n}"),\n' for n in range(130))
     + f'    "{DEFENSIVE_MARKER}",\n)\n',
-    "SECRET_KEYS = (\n" + "    # rotated quarterly by the platform team\n" * 120 + f'    "{DEFENSIVE_MARKER}",\n)\n',
+    "SECRET_KEYS = (\n"
+    + "    # rotated quarterly by the platform team\n" * 120
+    + f'    "{DEFENSIVE_MARKER}",\n)\n',
     # An expression that goes on to the next line.
     f'const authHeader = "Bearer " +\n  "{DEFENSIVE_MARKER}";\n',
     f'auth = "Basic " + \\\n    "{DEFENSIVE_MARKER}"\n',
@@ -359,12 +391,19 @@ LITERAL_CREDENTIALS_IN_CODE = (
     f'const authToken = isProd ? "" :\n  "{DEFENSIVE_MARKER}";\n',
     f"'token' => 'Bearer ' .\n    '{DEFENSIVE_MARKER}',\n",
 )
-# Literals the detector once let through outside parsed source, with the secret in each.
+# Literals the detector once let through outside parsed source, with the
+# secret in each.
 LITERAL_CREDENTIALS_IN_CONFIGURATION = (
-    (f"password: {BASE64_VALUE}=\n", BASE64_VALUE),  # base64 padding, not a ``name: type = value`` annotation
+    (
+        f"password: {BASE64_VALUE}=\n",
+        BASE64_VALUE,
+    ),  # base64 padding, not a ``name: type = value`` annotation
     (f"spring.datasource.password: {BASE64_VALUE}=\n", BASE64_VALUE),
     ("token: abc=123\n", "abc=123"),
-    (f'{{"password": "${CONFIG_VALUE}"}}\n', CONFIG_VALUE),  # a leading ``$``, but not a whole reference
+    (
+        f'{{"password": "${CONFIG_VALUE}"}}\n',
+        CONFIG_VALUE,
+    ),  # a leading ``$``, but not a whole reference
     (f"password: ${CONFIG_VALUE}\n", CONFIG_VALUE),
     (f'{{"api_key": "${{PREFIX}}{CONFIG_VALUE}"}}\n', CONFIG_VALUE),
     (f"PASSWORD=${CONFIG_VALUE}\n", CONFIG_VALUE),
@@ -379,7 +418,10 @@ LITERAL_CREDENTIALS_IN_CONFIGURATION = (
     (f'token: "none" || "{CONFIG_VALUE}"\n', CONFIG_VALUE),
     (f"password: {HASH_GLUED_VALUE}\n", CONFIG_VALUE),  # a comment starts after whitespace
     (f"DB_PASSWORD={COMMA_GLUED_VALUE}\n", CONFIG_VALUE),
-    (f'const credentials =\n  "deploy-bot:{CONFIG_VALUE}";\n', CONFIG_VALUE),  # a quoted scalar on the next line
+    (
+        f'const credentials =\n  "deploy-bot:{CONFIG_VALUE}";\n',
+        CONFIG_VALUE,
+    ),  # a quoted scalar on the next line
     (f'const authHeader = "Bearer " +\n  "{CONFIG_VALUE}";\n', CONFIG_VALUE),  # in a <script>
     (f'TOKEN="Bearer "{CONFIG_VALUE}\n', CONFIG_VALUE),  # shell joins adjacent words
     (f"password = '''''' {CONFIG_VALUE}\n", CONFIG_VALUE),
@@ -397,15 +439,18 @@ def test_literal_credentials_in_source_code_stay_sensitive_and_redacted():
         # Redaction stays conservative at every output boundary.
         redacted = redact_sensitive_text(line)
         assert DEFENSIVE_MARKER not in redacted and VALUE_CANARY not in redacted, redacted
-    # As in detect-secrets, a call's arguments are not its value, so these files
-    # are indexed; text taken from them is still redacted through the whole call.
+    # As in detect-secrets, a call's arguments are not its value, so
+    # these files are indexed; text taken from them is still redacted
+    # through the whole call.
     for line in (
         f'SECRET_KEY = os.environ.get("SECRET_KEY", "{DEFENSIVE_MARKER}")\n',
         f'token = jwt.encode(payload, "{DEFENSIVE_MARKER}", algorithm="HS256")\n',
         f'auth = "Basic " + base64.b64encode(b"admin:{DEFENSIVE_MARKER}").decode()\n',
-        # A value naming its own label marks a keyword table (see NAMED_OR_COMPUTED).
+        # A value naming its own label marks a keyword table (see
+        # NAMED_OR_COMPUTED).
         f'password = "password" or "{DEFENSIVE_MARKER}"\n',
-        f'API_TOKEN = os.environ.get(\n    "API_TOKEN", "{DEFENSIVE_MARKER}"\n)\n',  # as Black wraps it
+        # As Black wraps it.
+        f'API_TOKEN = os.environ.get(\n    "API_TOKEN", "{DEFENSIVE_MARKER}"\n)\n',
     ):
         assert not contains_sensitive_text(line, code=True), line
         assert DEFENSIVE_MARKER not in redact_sensitive_text(line), line
@@ -415,28 +460,37 @@ def test_configuration_literals_are_sensitive_and_redacted():
     for line, secret in LITERAL_CREDENTIALS_IN_CONFIGURATION:
         assert contains_sensitive_text(line), line
         assert secret not in redact_sensitive_text(line), line
-    assert redact_sensitive_text(f"'password' => '{CONFIG_VALUE}',\n") == "'password' => '[REDACTED]',\n"
+    assert (
+        redact_sensitive_text(f"'password' => '{CONFIG_VALUE}',\n")
+        == "'password' => '[REDACTED]',\n"
+    )
 
 
 def test_file_hints_are_redacted_line_by_line(tmp_path: Path):
-    # Hints join lines with spaces, which hid every line-anchored assignment
-    # from redaction. A docstring example is not code, so the file is indexed.
+    # Hints join lines with spaces, which hid every line-anchored
+    # assignment from redaction. A docstring example is not code, so the
+    # file is indexed.
     from mimry.scanner import text_hint
 
     source = tmp_path / "config.py"
-    source.write_text(f'"""Example .env:\n\nDATABASE_PASSWORD={DEFENSIVE_MARKER}\n"""\n', encoding="utf-8")
+    source.write_text(
+        f'"""Example .env:\n\nDATABASE_PASSWORD={DEFENSIVE_MARKER}\n"""\n', encoding="utf-8"
+    )
 
     assert not has_sensitive_content(source)
     assert DEFENSIVE_MARKER not in text_hint(source)
 
 
 def test_redacting_a_hint_again_keeps_it(tmp_path: Path):
-    # Every output boundary redacts again. Over lines joined into one, an exempt
-    # value (``4096``) ran on into the next line and took the hint with it.
+    # Every output boundary redacts again. Over lines joined into one,
+    # an exempt value (``4096``) ran on into the next line and took the
+    # hint with it.
     from mimry.scanner import text_hint
 
     source = tmp_path / "limits.py"
-    source.write_text("TOKEN_LIMIT = 4096\n\n\ndef count_tokens(text):\n    return len(text)\n", encoding="utf-8")
+    source.write_text(
+        "TOKEN_LIMIT = 4096\n\n\ndef count_tokens(text):\n    return len(text)\n", encoding="utf-8"
+    )
 
     hint = text_hint(source)
     assert "def count_tokens(text):" in hint
@@ -481,7 +535,8 @@ def test_configuration_values_are_literals_unless_null_numeric_or_a_reference():
         "DB_PASSWORD=${DB_PASSWORD}\n",
         "password: $DB_PASSWORD  # from the environment\n",
         "  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\r\n",  # Windows line endings
-        # Snippets in docs and scripts: an expression whose literals are not credentials.
+        # Snippets in docs and scripts: an expression whose literals are
+        # not credentials.
         'token = os.getenv("GITHUB_TOKEN") or ""\n',
         'api_key = os.getenv("OPENAI_API_KEY", None)\n',
         "apiKey: process.env.OPENAI_API_KEY!,\n",
@@ -492,8 +547,8 @@ def test_configuration_values_are_literals_unless_null_numeric_or_a_reference():
         'Authorization: OAuth realm="Photos",\n',
     ):
         assert not contains_sensitive_text(line), line
-    # Text is read line by line, so these files are indexed; what leaves MIMRY
-    # is redacted as source is read, across lines.
+    # Text is read line by line, so these files are indexed; what leaves
+    # MIMRY is redacted as source is read, across lines.
     for line in (
         f'const authHeader = "Bearer "\n  + "{CONFIG_VALUE}";\n',
         f'API_TOKEN = os.environ.get(\n    "API_TOKEN", "{CONFIG_VALUE}"\n)\n',
@@ -554,7 +609,10 @@ def test_yaml_quoted_multiline_scalars_accept_blank_and_same_indent_lines_withou
     yaml = pytest.importorskip("yaml")
     samples = (
         (
-            f'root:\n  password: "first\n\n    {DEFENSIVE_MARKER}\n    last" # retained\n  public: retained\n',
+            (
+                f'root:\n  password: "first\n\n    {DEFENSIVE_MARKER}\n    last" # retained\n '
+                " public: retained\n"
+            ),
             'root:\n  password: "[REDACTED]" # retained\n  public: retained\n',
         ),
         (
@@ -576,15 +634,18 @@ def test_yaml_quoted_multiline_scalars_handle_escapes_doubling_comments_and_uncl
     yaml = pytest.importorskip("yaml")
     closed_samples = (
         f'password: "first \\"quoted\\"\n{DEFENSIVE_MARKER}\nlast" # retained\npublic: retained\n',
-        f"credentials: 'first ''quoted''\n{DEFENSIVE_MARKER}\nlast' # retained\npublic: retained\n",
+        (
+            f"credentials: 'first ''quoted''\n{DEFENSIVE_MARKER}\nlast' # retained\npublic:"
+            " retained\n"
+        ),
     )
     for text in closed_samples:
         assert DEFENSIVE_MARKER in str(yaml.safe_load(text))
         assert contains_sensitive_text(text)
         redacted = redact_sensitive_text(text)
-        assert redacted.splitlines()[0].endswith('[REDACTED]" # retained') or redacted.splitlines()[0].endswith(
-            "[REDACTED]' # retained"
-        )
+        assert redacted.splitlines()[0].endswith(
+            '[REDACTED]" # retained'
+        ) or redacted.splitlines()[0].endswith("[REDACTED]' # retained")
         assert DEFENSIVE_MARKER not in redacted
         assert "public: retained" in redacted
 
@@ -636,7 +697,8 @@ print(json.dumps(timings))
     )
     assert result.returncode == 0, result.stderr
     timings = json.loads(result.stdout)
-    # Ratios against the smallest wall-clock sample are noisy across CI hosts.
+    # Ratios against the smallest wall-clock sample are noisy across CI
+    # hosts.
     assert timings[-1] <= 3.0, timings
 
 
@@ -645,7 +707,9 @@ def test_nested_typescript_object_secret_scan_is_bounded():
 from mimry.security import contains_sensitive_text, redact_sensitive_text
 
 text = "const fixture = {\\n  label: 'ordinary',\\n" + "".join(
-    "    item: 'ordinary',\\n      nested: 'ordinary',\\n        value: 'ordinary',\\n" for _ in range(12)
+    "    item: 'ordinary',\\n      nested: 'ordinary',\\n"
+    "        value: 'ordinary',\\n"
+    for _ in range(12)
 ) + "};\\n"
 assert not contains_sensitive_text(text)
 assert redact_sensitive_text(text) == text
@@ -680,7 +744,9 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
     }
     for name, content in labeled_files.items():
         (repo / name).write_text(content, encoding="utf-8")
-    (repo / "ordinary.md").write_text("The authentication flow is ordinary prose.\nauthor: Jane Example\n")
+    (repo / "ordinary.md").write_text(
+        "The authentication flow is ordinary prose.\nauthor: Jane Example\n"
+    )
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
 
@@ -698,7 +764,11 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
 
     pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     index = Path(pointer["indexPath"])
-    owned = all_text_files(index) + all_text_files(repo / ".mimry" / "mimry-out") + sqlite_dump(index / "mimry.sqlite")
+    owned = (
+        all_text_files(index)
+        + all_text_files(repo / ".mimry" / "mimry-out")
+        + sqlite_dump(index / "mimry.sqlite")
+    )
     assert DEFENSIVE_MARKER not in owned
     indexed = (index / "files.jsonl").read_text(encoding="utf-8")
     assert all(name not in indexed for name in labeled_files)
@@ -718,7 +788,9 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
 def test_fake_standalone_token_has_zero_matches_across_owned_surfaces(tmp_path: Path, monkeypatch):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
-    (repo / "notes.md").write_text(f"# harmless notes\nstandalone canary: {CANARY}\n", encoding="utf-8")
+    (repo / "notes.md").write_text(
+        f"# harmless notes\nstandalone canary: {CANARY}\n", encoding="utf-8"
+    )
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
 
@@ -759,7 +831,12 @@ def test_sensitive_home_roots_and_descendants_are_rejected(tmp_path: Path, monke
     home.mkdir()
     monkeypatch.setattr("mimry.security.Path.home", lambda: home)
 
-    for root in (home / ".config", home / ".config" / "app", home / ".cache", home / ".ssh" / "nested"):
+    for root in (
+        home / ".config",
+        home / ".config" / "app",
+        home / ".cache",
+        home / ".ssh" / "nested",
+    ):
         with pytest.raises(ValueError, match="sensitive user-data root"):
             safe_root(root)
 
@@ -768,9 +845,10 @@ def test_sensitive_home_roots_and_descendants_are_rejected(tmp_path: Path, monke
 
     env = os.environ.copy()
     env["HOME"] = str(home)
-    # Python's ntpath.expanduser reads USERPROFILE (then HOMEDRIVE+HOMEPATH) and
-    # ignores HOME entirely, so on Windows the subprocess would resolve the real
-    # home and never see these paths as sensitive.
+    # Python's ntpath.expanduser reads USERPROFILE (then
+    # HOMEDRIVE+HOMEPATH) and ignores HOME entirely, so on Windows the
+    # subprocess would resolve the real home and never see these paths
+    # as sensitive.
     env["USERPROFILE"] = str(home)
     env["HOMEDRIVE"] = home.drive
     env["HOMEPATH"] = str(home)[len(home.drive) :]
@@ -802,7 +880,8 @@ def test_bare_secret_assignments_never_reach_index_or_graph(tmp_path: Path, monk
     for name, content in assignments.items():
         (repo / name).write_text(content, encoding="utf-8")
     (repo / ".env.example").write_text(
-        f"TOKEN={VALUE_CANARY}\nPASSWORD={VALUE_CANARY}\nAPI_KEY={VALUE_CANARY}\n", encoding="utf-8"
+        f"TOKEN={VALUE_CANARY}\nPASSWORD={VALUE_CANARY}\nAPI_KEY={VALUE_CANARY}\n",
+        encoding="utf-8",
     )
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
@@ -833,8 +912,9 @@ def test_whole_file_streaming_detects_late_source_and_generated_canaries(tmp_pat
     artifact = generated / "graph.json"
     payload = f'{{"API_KEY":"{VALUE_CANARY}"}}\n'.encode()
     with artifact.open("wb") as handle:
-        # Put the key across a stream-chunk boundary after 5.5 MB of sparse
-        # NUL content, proving both binary normalization and overlap handling.
+        # Put the key across a stream-chunk boundary after 5.5 MB of
+        # sparse NUL content, proving both binary normalization and
+        # overlap handling.
         handle.seek((STREAM_CHUNK_BYTES * 84) - 4)
         handle.write(payload)
     assert tree_contains_sensitive_content(generated)

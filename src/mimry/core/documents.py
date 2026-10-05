@@ -4,8 +4,8 @@ import html
 import io
 import re
 import zipfile
-from xml.etree import ElementTree
 from pathlib import Path
+from xml.etree import ElementTree
 
 # Extensions for office document files that MIMRY can extract text from.
 DOCUMENT_EXTENSIONS = {".docx", ".xlsx"}
@@ -15,16 +15,16 @@ MAX_XLSX_TOTAL_BYTES = 20 * 1024 * 1024
 MAX_XLSX_COMPRESSION_RATIO = 100
 
 
-class DocumentResourceLimit(ValueError):
+class DocumentResourceLimitError(ValueError):
     pass
 
 
-class UnsafeDocumentXML(ValueError):
+class UnsafeDocumentXMLError(ValueError):
     pass
 
 
 def is_document(path: str | Path) -> bool:
-    """True when the path is an Office container MIMRY can read text from."""
+    """True for an Office container MIMRY can read text from."""
     if isinstance(path, str):
         path = Path(path)
     return path.suffix.lower() in DOCUMENT_EXTENSIONS
@@ -35,22 +35,28 @@ def extract_document_text(
 ) -> tuple[str, str]:
     """Return (text, status) for an Office container.
 
-    status is "ok" or "parse_error:<Reason>", mirroring core/languages.py.
+    status is "ok" or "parse_error:<Reason>", mirroring
+    core/languages.py.
 
     Extracts text from:
     - .docx: word/document.xml, <w:t> elements
     - .xlsx: shared strings and worksheet inline strings
 
-    DOCX uses bounded regex extraction. XLSX uses the stdlib XML parser over
-    bounded ZIP members; ElementTree does not resolve external entities.
+    DOCX uses bounded regex extraction. XLSX uses the stdlib XML parser
+    over bounded ZIP members; ElementTree does not resolve external
+    entities.
 
-    Pass `data` (bytes) to parse already-captured bytes without reopening the file.
-    If data is None and path is provided, will open and read the path.
+    Pass `data` (bytes) to parse already-captured bytes without
+    reopening the file. If data is None and path is provided, will open
+    and read the path.
 
     Hard safety limits:
-    - Opens with zipfile.ZipFile; BadZipFile or OSError returns error status
-    - Never iterates and extracts whole archive; reads only specific members
-    - Guards against zip bombs: skips members with uncompressed size > 5 MB
+    - Opens with zipfile.ZipFile; BadZipFile or OSError returns error
+      status
+    - Never iterates and extracts whole archive; reads only specific
+      members
+    - Guards against zip bombs: skips members with uncompressed size > 5
+      MB
     - Also caps actual read to 5 MB to be safe
     - Ignores members with .. or / in name (path traversal)
     - Truncates final text to limit characters
@@ -96,9 +102,9 @@ def extract_document_text(
                 collapsed = " ".join(text.split())[:limit]
                 return (collapsed, "ok")
 
-    except DocumentResourceLimit:
+    except DocumentResourceLimitError:
         return ("", "parse_error:ResourceLimit")
-    except UnsafeDocumentXML:
+    except UnsafeDocumentXMLError:
         return ("", "parse_error:UnsafeXML")
     except zipfile.BadZipFile as e:
         return ("", f"parse_error:{e.__class__.__name__}")
@@ -107,7 +113,10 @@ def extract_document_text(
 
 
 def _read_member(zf: zipfile.ZipFile, member_name: str) -> bytes | None:
-    """Read one expected Office member with a hard cap and no password guess."""
+    """Read one expected Office member under a hard cap.
+
+    Never guesses a password.
+    """
 
     try:
         info = zf.getinfo(member_name)
@@ -119,8 +128,8 @@ def _read_member(zf: zipfile.ZipFile, member_name: str) -> bytes | None:
         with zf.open(info, "r", pwd=None) as member:
             data = member.read(MAX_MEMBER_BYTES + 1)
     except (OSError, RuntimeError, NotImplementedError, ValueError, zipfile.BadZipFile):
-        # Encrypted, unsupported, and corrupt members are unindexable rather than
-        # fatal to the surrounding repository refresh.
+        # Encrypted, unsupported, and corrupt members are unindexable
+        # rather than fatal to the surrounding repository refresh.
         return None
     return data if len(data) <= MAX_MEMBER_BYTES else None
 
@@ -151,12 +160,12 @@ def _extract_docx_text(zf: zipfile.ZipFile) -> str:
 def _safe_xml(data: bytes) -> bytes:
     upper = data.replace(b"\x00", b"").upper()
     if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
-        raise UnsafeDocumentXML("DTD and entity declarations are not allowed in Office XML")
+        raise UnsafeDocumentXMLError("DTD and entity declarations are not allowed in Office XML")
     return data
 
 
 def _extract_xlsx_text(zf: zipfile.ZipFile, *, limit: int) -> str:
-    """Extract shared and inline strings with aggregate archive/XML bounds."""
+    """Shared and inline strings, with aggregate archive/XML bounds."""
 
     def local_name(tag: str) -> str:
         return tag.rsplit("}", 1)[-1]
@@ -173,12 +182,17 @@ def _extract_xlsx_text(zf: zipfile.ZipFile, *, limit: int) -> str:
         key=lambda info: info.filename,
     )
     if len(worksheets) > MAX_XLSX_WORKSHEETS:
-        raise DocumentResourceLimit("too many worksheet XML members")
-    candidates = [info for info in zf.infolist() if info.filename == "xl/sharedStrings.xml"] + worksheets
+        raise DocumentResourceLimitError("too many worksheet XML members")
+    candidates = [
+        info for info in zf.infolist() if info.filename == "xl/sharedStrings.xml"
+    ] + worksheets
     if sum(info.file_size for info in candidates) > MAX_XLSX_TOTAL_BYTES:
-        raise DocumentResourceLimit("cumulative XLSX XML size exceeds limit")
-    if any(info.file_size / max(1, info.compress_size) > MAX_XLSX_COMPRESSION_RATIO for info in candidates):
-        raise DocumentResourceLimit("XLSX XML compression ratio exceeds limit")
+        raise DocumentResourceLimitError("cumulative XLSX XML size exceeds limit")
+    if any(
+        info.file_size / max(1, info.compress_size) > MAX_XLSX_COMPRESSION_RATIO
+        for info in candidates
+    ):
+        raise DocumentResourceLimitError("XLSX XML compression ratio exceeds limit")
 
     texts: list[str] = []
     extracted_chars = 0
@@ -198,11 +212,14 @@ def _extract_xlsx_text(zf: zipfile.ZipFile, *, limit: int) -> str:
             root = ElementTree.fromstring(_safe_xml(shared))
             items = [node for node in root.iter() if local_name(node.tag) == "si"]
             for item in items:
-                value = "".join(node.text or "" for node in item.iter() if local_name(node.tag) == "t")
+                value = "".join(
+                    node.text or "" for node in item.iter() if local_name(node.tag) == "t"
+                )
                 if append(value):
                     return " ".join(texts)
-            # Some minimal producers/tests omit the sst/si wrappers while still
-            # placing text nodes in the standard sharedStrings member.
+            # Some minimal producers/tests omit the sst/si wrappers
+            # while still placing text nodes in the standard
+            # sharedStrings member.
             if not items:
                 for node in root.iter():
                     if local_name(node.tag) == "t" and node.text and append(node.text):
@@ -218,7 +235,11 @@ def _extract_xlsx_text(zf: zipfile.ZipFile, *, limit: int) -> str:
             root = ElementTree.fromstring(_safe_xml(data))
         except ElementTree.ParseError:
             continue
-        for cell in (node for node in root.iter() if local_name(node.tag) == "c" and node.get("t") == "inlineStr"):
+        for cell in (
+            node
+            for node in root.iter()
+            if local_name(node.tag) == "c" and node.get("t") == "inlineStr"
+        ):
             value = "".join(node.text or "" for node in cell.iter() if local_name(node.tag) == "t")
             if append(value):
                 return " ".join(texts)

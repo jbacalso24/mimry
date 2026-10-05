@@ -1,8 +1,9 @@
 """Class hierarchy is a first-class relationship, especially in .NET.
 
-53% of the type declarations in a real 955-file C# solution declare a base type or
-interface. Without these edges the graph cannot answer "what implements IFoo", which
-is the question DI-by-convention registration is built on.
+53% of the type declarations in a real 955-file C# solution declare a
+base type or interface. Without these edges the graph cannot answer
+"what implements IFoo", which is the question DI-by-convention
+registration is built on.
 """
 
 from __future__ import annotations
@@ -23,13 +24,21 @@ from mimry.storage import load_pointer
 @pytest.mark.parametrize(
     "suffix,source,expected",
     [
-        (".cs", "interface IFoo {} class Bar : BaseThing, IFoo { }", {("Bar", "BaseThing"), ("Bar", "IFoo")}),
+        (
+            ".cs",
+            "interface IFoo {} class Bar : BaseThing, IFoo { }",
+            {("Bar", "BaseThing"), ("Bar", "IFoo")},
+        ),
         (
             ".ts",
             "class Bar extends BaseThing implements IFoo, IBaz {}",
             {("Bar", "BaseThing"), ("Bar", "IFoo"), ("Bar", "IBaz")},
         ),
-        (".py", "class Bar(BaseThing, Mixin):\n    pass\n", {("Bar", "BaseThing"), ("Bar", "Mixin")}),
+        (
+            ".py",
+            "class Bar(BaseThing, Mixin):\n    pass\n",
+            {("Bar", "BaseThing"), ("Bar", "Mixin")},
+        ),
         # The type argument is not a base type.
         (".cs", "class H : IHandler<MyCommand> { }", {("H", "IHandler")}),
     ],
@@ -55,7 +64,7 @@ def test_interfaces_are_indexed_as_symbols(tmp_path: Path) -> None:
 
 
 def test_resolution_declines_when_the_base_is_unknown() -> None:
-    """Same refusal to guess as calls: an unresolvable base emits nothing."""
+    """Like calls, an unresolvable base emits nothing; no guessing."""
     inherits = {"a.cs": [{"type": "Bar", "base": "SomethingExternal", "line": 1}]}
     symbols = {"a.cs": [{"name": "Bar", "kind": "class", "line_start": 1, "line_end": 2}]}
 
@@ -76,24 +85,32 @@ def test_inherits_edges_reach_the_published_graph(tmp_path: Path) -> None:
     assert pointer is not None
     write_index(root, pointer)
 
-    graph = json.loads((root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8"))
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
     labels = {n["id"]: n.get("label") for n in graph["nodes"]}
     pairs = {
-        (labels.get(e["source"]), labels.get(e["target"])) for e in graph["edges"] if e.get("relation") == "inherits"
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e.get("relation") == "inherits"
     }
 
     assert ("Handler", "IHandler") in pairs, sorted(p for p in pairs if p[0])
 
 
 def test_base_type_resolves_repo_wide_when_unique() -> None:
-    """C# reaches a base through `using`, not a path import, so path resolution fails.
+    """C# reaches a base through `using`, not a path import, so path
+    resolution fails.
 
-    A name owned by exactly one file in the repo is determined, not guessed.
+    A name owned by exactly one file in the repo is determined, not
+    guessed.
     """
     inherits = {"app/handler.cs": [{"type": "Handler", "base": "IHandler", "line": 1}]}
     symbols = {
         "app/handler.cs": [{"name": "Handler", "kind": "class", "line_start": 1, "line_end": 2}],
-        "app/contracts.cs": [{"name": "IHandler", "kind": "interface", "line_start": 1, "line_end": 2}],
+        "app/contracts.cs": [
+            {"name": "IHandler", "kind": "interface", "line_start": 1, "line_end": 2}
+        ],
     }
 
     edges = resolve_inheritance(inherits, symbols, [])
@@ -104,7 +121,7 @@ def test_base_type_resolves_repo_wide_when_unique() -> None:
 
 
 def test_ambiguous_base_name_still_declines() -> None:
-    """Two files own the name -> emit nothing, same contract as calls."""
+    """Two files own the name -> emit nothing, as calls do."""
     inherits = {"app/handler.cs": [{"type": "Handler", "base": "IHandler", "line": 1}]}
     symbols = {
         "app/handler.cs": [{"name": "Handler", "kind": "class", "line_start": 1, "line_end": 2}],

@@ -19,7 +19,9 @@ from mimry.search import _without_excluded
         "c:",
     ],
 )
-def test_canonical_cached_path_rejects_any_leading_windows_drive_designator(candidate: str) -> None:
+def test_canonical_cached_path_rejects_any_leading_windows_drive_designator(
+    candidate: str,
+) -> None:
     assert canonical_cached_rel_path(candidate) is None
 
 
@@ -44,7 +46,9 @@ def test_canonical_cached_path_preserves_interior_colons(candidate: str, expecte
         "cafe\u0301/clean.py",
     ],
 )
-def test_every_cached_candidate_source_obeys_canonical_excluded_path_boundary(source: str, candidate: str) -> None:
+def test_every_cached_candidate_source_obeys_canonical_excluded_path_boundary(
+    source: str, candidate: str
+) -> None:
     excluded = "café/clean.py" if "cafe" in candidate else "app/clean.py"
     rows = [{"path": candidate, "score": 50, "reason": source, "source": source}]
 
@@ -64,7 +68,9 @@ def test_every_cached_candidate_source_obeys_canonical_excluded_path_boundary(so
         "\\\\server\\share\\app\\clean.py",
     ],
 )
-def test_exclusion_boundary_fails_closed_on_traversal_and_absolute_candidate_paths(candidate: str) -> None:
+def test_exclusion_boundary_fails_closed_on_traversal_and_absolute_candidate_paths(
+    candidate: str,
+) -> None:
     rows = [{"path": candidate, "score": 50, "reason": "imported cache"}]
 
     assert _without_excluded(rows, {"app/clean.py"}) == []

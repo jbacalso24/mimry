@@ -25,7 +25,9 @@ def test_source_write_text_calls_use_utf8_encoding():
     assert offenders == []
 
 
-def test_cp1252_human_console_degrades_safely_but_utf8_artifacts_preserve_unicode(tmp_path, monkeypatch):
+def test_cp1252_human_console_degrades_safely_but_utf8_artifacts_preserve_unicode(
+    tmp_path, monkeypatch
+):
     raw_out, raw_err = io.BytesIO(), io.BytesIO()
     out = io.TextIOWrapper(raw_out, encoding="cp1252", errors="strict")
     err = io.TextIOWrapper(raw_err, encoding="cp1252", errors="strict")

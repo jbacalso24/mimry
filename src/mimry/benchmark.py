@@ -1,4 +1,4 @@
-"""Deterministic retrieval-usefulness benchmark for MIMRY agent workflows."""
+"""Deterministic retrieval-usefulness benchmark for agent workflows."""
 
 from __future__ import annotations
 
@@ -33,12 +33,13 @@ DEFAULT_THRESHOLDS = {
     "context_token_proxy_max": 2500,
 }
 _ENV_ALLOWLIST = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SYSTEMROOT")
-# A `mimry find` result line: right-aligned rank, two spaces, repository path.
+# A `mimry find` result line: right-aligned rank, two spaces, repository
+# path.
 _RESULT_RE = re.compile(r"^ +\d+  (\S.*)$")
 
 
 def token_proxy(text: str) -> int:
-    """Return an explicitly approximate token count: ceil(UTF-8 bytes / 4)."""
+    """Explicitly approximate token count: ceil(UTF-8 bytes / 4)."""
     return math.ceil(len(text.encode("utf-8")) / 4)
 
 
@@ -57,7 +58,9 @@ def recall_at_k(paths: list[str], grades: dict[str, int], k: int = 5) -> float:
 
 def percentile(values: list[float], fraction: float) -> float:
     ordered = sorted(values)
-    return ordered[min(len(ordered) - 1, math.ceil(fraction * len(ordered)) - 1)] if ordered else 0.0
+    return (
+        ordered[min(len(ordered) - 1, math.ceil(fraction * len(ordered)) - 1)] if ordered else 0.0
+    )
 
 
 def load_cases(path: Path, fixture: Path) -> list[dict[str, Any]]:
@@ -72,7 +75,11 @@ def load_cases(path: Path, fixture: Path) -> list[dict[str, Any]]:
         if not isinstance(case_id, str) or not case_id or case_id in seen:
             raise ValueError("case IDs must be unique non-empty strings")
         seen.add(case_id)
-        if not isinstance(case.get("query"), str) or not case["query"].strip() or not isinstance(grades, dict):
+        if (
+            not isinstance(case.get("query"), str)
+            or not case["query"].strip()
+            or not isinstance(grades, dict)
+        ):
             raise ValueError(f"case {case_id} has an invalid query or grades")
         if case.get("expect_empty"):
             if grades:
@@ -81,7 +88,12 @@ def load_cases(path: Path, fixture: Path) -> list[dict[str, Any]]:
             raise ValueError(f"positive case {case_id} requires a grade-3 primary file")
         for rel, grade in grades.items():
             candidate = Path(rel)
-            if candidate.is_absolute() or ".." in candidate.parts or grade not in {1, 2, 3} or rel not in fixture_files:
+            if (
+                candidate.is_absolute()
+                or ".." in candidate.parts
+                or grade not in {1, 2, 3}
+                or rel not in fixture_files
+            ):
                 raise ValueError(f"case {case_id} has unsafe/missing path or invalid grade: {rel}")
         for rel in case.get("decoys", []):
             if rel not in fixture_files:
@@ -94,9 +106,10 @@ def _env(sandbox: Path) -> dict[str, str]:
     env.update(
         {
             "HOME": str(sandbox / "home"),
-            # Windows resolves Path.home() from USERPROFILE, not HOME. Without it the
-            # sandbox has no resolvable home and safe_root() raises. Point it at the
-            # sandbox so isolation holds and the guard stays strict.
+            # Windows resolves Path.home() from USERPROFILE, not HOME.
+            # Without it the sandbox has no resolvable home and
+            # safe_root() raises. Point it at the sandbox so isolation
+            # holds and the guard stays strict.
             "USERPROFILE": str(sandbox / "home"),
             "XDG_CACHE_HOME": str(sandbox / "xdg-cache"),
             "XDG_CONFIG_HOME": str(sandbox / "xdg-config"),
@@ -105,23 +118,26 @@ def _env(sandbox: Path) -> dict[str, str]:
             "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
             "PYTHONNOUSERSITE": "1",
             "NO_COLOR": "1",
-            # Output marks follow the stream encoding. Pin it so the measured
-            # token proxy is the same on every platform, not cp1252 on Windows.
+            # Output marks follow the stream encoding. Pin it so the
+            # measured token proxy is the same on every platform, not
+            # cp1252 on Windows.
             "PYTHONIOENCODING": "utf-8",
         }
     )
     for key in ("HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "MIMRY_CACHE_HOME", "TMPDIR"):
         Path(env[key]).mkdir(parents=True, exist_ok=True)
 
-    # tree-sitter-language-pack resolves its grammar cache through the platform
-    # cache directory. The allowlist above strips the Windows variables that
-    # feed it, and the sandbox HOME has no AppData tree, so the lookup failed
-    # with "Could not determine system cache directory". That surfaced as
-    # parse_error:RuntimeError on every .ts/.tsx file: the benchmark kept
-    # running and scored an index with zero TypeScript symbols.
+    # tree-sitter-language-pack resolves its grammar cache through the
+    # platform cache directory. The allowlist above strips the Windows
+    # variables that feed it, and the sandbox HOME has no AppData tree,
+    # so the lookup failed with "Could not determine system cache
+    # directory". That surfaced as parse_error:RuntimeError on every
+    # .ts/.tsx file: the benchmark kept running and scored an index with
+    # zero TypeScript symbols.
     #
-    # Give the sandbox its own AppData tree instead of reaching for the real
-    # one. Isolation holds -- nothing here points outside the sandbox.
+    # Give the sandbox its own AppData tree instead of reaching for the
+    # real one. Isolation holds -- nothing here points outside the
+    # sandbox.
     local_appdata = Path(env["HOME"]) / "AppData" / "Local"
     roaming_appdata = Path(env["HOME"]) / "AppData" / "Roaming"
     local_appdata.mkdir(parents=True, exist_ok=True)
@@ -132,14 +148,17 @@ def _env(sandbox: Path) -> dict[str, str]:
 
 
 # A crash guard, not the quality bar. Retrieval speed is judged by the
-# find_p95_ms / context_p95_ms thresholds (1000ms / 1500ms), which are frozen
-# and still fail a slow run. This ceiling only stops one transient stall on a
-# contended machine from voiding every measured case, which is strictly worse
-# information than a recorded latency failure.
+# find_p95_ms / context_p95_ms thresholds (1000ms / 1500ms), which are
+# frozen and still fail a slow run. This ceiling only stops one
+# transient stall on a contended machine from voiding every measured
+# case, which is strictly worse information than a recorded latency
+# failure.
 _COMMAND_TIMEOUT_SECONDS = int(os.environ.get("MIMRY_BENCHMARK_COMMAND_TIMEOUT", "60"))
 
 
-def _run(repo: Path, env: dict[str, str], *args: str, timeout: int | None = None) -> tuple[str, str, float]:
+def _run(
+    repo: Path, env: dict[str, str], *args: str, timeout: int | None = None
+) -> tuple[str, str, float]:
     timeout = _COMMAND_TIMEOUT_SECONDS if timeout is None else timeout
     started = time.perf_counter_ns()
     result = subprocess.run(
@@ -161,7 +180,9 @@ def _run(repo: Path, env: dict[str, str], *args: str, timeout: int | None = None
     return result.stdout, result.stderr, elapsed_ms
 
 
-def _assert_canary_absent(sandbox: Path, planted_file: Path, canary: str, streams: list[str]) -> None:
+def _assert_canary_absent(
+    sandbox: Path, planted_file: Path, canary: str, streams: list[str]
+) -> None:
     marker = canary.encode("utf-8")
     if any(canary in stream for stream in streams):
         raise RuntimeError("privacy canary leaked into benchmark command output")
@@ -173,17 +194,23 @@ def _assert_canary_absent(sandbox: Path, planted_file: Path, canary: str, stream
         except OSError:
             continue
         if leaked:
-            raise RuntimeError(f"privacy canary leaked into benchmark persistence: {path.relative_to(sandbox)}")
+            raise RuntimeError(
+                f"privacy canary leaked into benchmark persistence: {path.relative_to(sandbox)}"
+            )
 
 
 def _paths(stdout: str) -> list[str]:
-    return [match.group(1).strip() for line in stdout.splitlines() if (match := _RESULT_RE.match(line))]
+    return [
+        match.group(1).strip() for line in stdout.splitlines() if (match := _RESULT_RE.match(line))
+    ]
 
 
 def _graph_size(repo: Path) -> tuple[int, int] | None:
-    """Node and edge counts of the published graph artifact; None when it is missing.
+    """Node and edge counts of the published graph artifact; None when
+    it is missing.
 
-    Read from the artifact, not scraped from `mimry status`, whose wording is for people.
+    Read from the artifact, not scraped from `mimry status`, whose
+    wording is for people.
     """
     health = graph_health(repo)
     return (health["graph_nodes"], health["graph_edges"]) if health["graph_exists"] else None
@@ -197,20 +224,25 @@ def _digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def benchmark_input_digests(cases_path: Path, fixture: Path, *, source_root: Path | None = None) -> dict[str, str]:
-    """Bind benchmark evidence to fixture, cases, and retrieval source bytes."""
+def benchmark_input_digests(
+    cases_path: Path, fixture: Path, *, source_root: Path | None = None
+) -> dict[str, str]:
+    """Bind evidence to fixture, cases and retrieval source bytes."""
     source_root = Path(__file__).resolve().parent if source_root is None else source_root
     source = hashlib.sha256()
     for path in sorted(source_root.rglob("*.py")):
         source.update(path.relative_to(source_root).as_posix().encode("utf-8"))
-        # Git may materialize text with native line endings. Provenance is about
-        # source content, not checkout EOL policy, so hash normalized text.
+        # Git may materialize text with native line endings. Provenance
+        # is about source content, not checkout EOL policy, so hash
+        # normalized text.
         source.update(path.read_text(encoding="utf-8").encode("utf-8"))
     cases = json.loads(cases_path.read_text(encoding="utf-8"))
     return {
         "fixture_sha256": _digest(fixture),
         "cases_sha256": hashlib.sha256(
-            json.dumps(cases, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            json.dumps(cases, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
         ).hexdigest(),
         "retrieval_source_sha256": source.hexdigest(),
     }
@@ -243,9 +275,10 @@ def evaluate(
         graph_nodes, graph_edges = 0, 0
         init_out, init_err, init_ms = _run(repo, env, "init", "--skip-graph")
         index_out, index_err, index_ms = _run(repo, env, "index", timeout=300)
-        # The native engine always builds the graph inside `index`. `graph` is
-        # retained as a public runner argument, but report what actually ran
-        # rather than claiming a no-graph run that never happened.
+        # The native engine always builds the graph inside `index`.
+        # `graph` is retained as a public runner argument, but report
+        # what actually ran rather than claiming a no-graph run that
+        # never happened.
         graph_status_out, graph_status_err, _ = _run(repo, env, "status", timeout=60)
         graph_size = _graph_size(repo)
         graph_enabled = graph_size is not None
@@ -266,13 +299,17 @@ def evaluate(
         for case in cases:
             samples, paths, find_output = [], [], ""
             for _ in range(repeat + 1):
-                find_output, find_err, elapsed = _run(repo, env, "find", case["query"], "--limit", "5")
+                find_output, find_err, elapsed = _run(
+                    repo, env, "find", case["query"], "--limit", "5"
+                )
                 paths, samples = _paths(find_output), [*samples, elapsed]
                 all_output.extend((find_output, find_err))
             find_case = samples[1:]
             find_latencies.extend(find_case)
             context_out, context_err, context_ms = _run(repo, env, "context", case["query"])
-            context_text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+            context_text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(
+                encoding="utf-8"
+            )
             context_latencies.append(context_ms)
             all_output.extend((context_out, context_err, context_text))
             grades, decoys = case["grades"], set(case.get("decoys", []))
@@ -302,7 +339,8 @@ def evaluate(
         "recall_at_5": sum(c["recall_at_5"] for c in positive) / len(positive),
         "primary_hit_at_3": sum(c["primary_hit_at_3"] for c in positive) / len(positive),
         "decoy_rate_at_5": sum(c["decoys_at_5"] for c in positive) / max(1, retrieved_slots),
-        "abstention_accuracy": sum(bool(c["abstained"]) for c in abstention) / max(1, len(abstention)),
+        "abstention_accuracy": sum(bool(c["abstained"]) for c in abstention)
+        / max(1, len(abstention)),
         "find_p95_ms": percentile(find_latencies, 0.95),
         "context_p95_ms": percentile(context_latencies, 0.95),
         "context_token_proxy_max": max(c["context_token_proxy"] for c in case_reports),
@@ -310,9 +348,12 @@ def evaluate(
     checks = {
         "ndcg_at_5": aggregates["ndcg_at_5"] >= DEFAULT_THRESHOLDS["ndcg_at_5_min"],
         "recall_at_5": aggregates["recall_at_5"] >= DEFAULT_THRESHOLDS["recall_at_5_min"],
-        "primary_hit_at_3": aggregates["primary_hit_at_3"] >= DEFAULT_THRESHOLDS["primary_hit_at_3_min"],
-        "decoy_rate_at_5": aggregates["decoy_rate_at_5"] <= DEFAULT_THRESHOLDS["decoy_rate_at_5_max"],
-        "abstention_accuracy": aggregates["abstention_accuracy"] >= DEFAULT_THRESHOLDS["abstention_accuracy_min"],
+        "primary_hit_at_3": aggregates["primary_hit_at_3"]
+        >= DEFAULT_THRESHOLDS["primary_hit_at_3_min"],
+        "decoy_rate_at_5": aggregates["decoy_rate_at_5"]
+        <= DEFAULT_THRESHOLDS["decoy_rate_at_5_max"],
+        "abstention_accuracy": aggregates["abstention_accuracy"]
+        >= DEFAULT_THRESHOLDS["abstention_accuracy_min"],
         "context_token_proxy_max": aggregates["context_token_proxy_max"]
         <= DEFAULT_THRESHOLDS["context_token_proxy_max"],
     }
@@ -320,13 +361,16 @@ def evaluate(
         checks.update(
             {
                 "find_p95_ms": aggregates["find_p95_ms"] <= DEFAULT_THRESHOLDS["find_p95_ms_max"],
-                "context_p95_ms": aggregates["context_p95_ms"] <= DEFAULT_THRESHOLDS["context_p95_ms_max"],
+                "context_p95_ms": aggregates["context_p95_ms"]
+                <= DEFAULT_THRESHOLDS["context_p95_ms_max"],
             }
         )
     return {
         "schema_version": SCHEMA_VERSION,
         "profile": "quick-local-index",
-        "claim_boundary": "retrieval usefulness proxy; not agent task completion or model-token savings",
+        "claim_boundary": (
+            "retrieval usefulness proxy; not agent task completion or model-token savings"
+        ),
         **benchmark_input_digests(cases_path, fixture),
         "python": sys.version.split()[0],
         "platform": platform.platform(),
@@ -340,9 +384,10 @@ def evaluate(
         "engine": engine,
         "graph_enabled": graph_enabled,
         "graph_build_ms": graph_build_ms,
-        # Total wall clock to a queryable index WITH a graph. The native engine folds
-        # graph construction into indexing, so comparing graph_build_ms alone would
-        # flatter it; this counts everything either engine needs.
+        # Total wall clock to a queryable index WITH a graph. The native
+        # engine folds graph construction into indexing, so comparing
+        # graph_build_ms alone would flatter it; this counts everything
+        # either engine needs.
         "setup_total_ms": init_ms + index_ms + graph_build_ms,
         "graph_nodes": graph_nodes,
         "graph_edges": graph_edges,
@@ -355,12 +400,17 @@ _LATENCY_CASE_FIELDS = {"find_median_ms", "context_ms"}
 
 def _equal_metric(actual: Any, expected: Any) -> bool:
     if isinstance(expected, float):
-        return isinstance(actual, (int, float)) and math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-12)
+        return isinstance(actual, (int, float)) and math.isclose(
+            actual, expected, rel_tol=1e-12, abs_tol=1e-12
+        )
     return actual == expected
 
 
 def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> None:
-    """Recompute report evidence from frozen cases and reject inconsistent state."""
+    """Recompute report evidence from frozen cases.
+
+    Reject any state that does not match it.
+    """
     if report.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("report schema_version is unsupported")
     if report.get("thresholds") != DEFAULT_THRESHOLDS:
@@ -373,7 +423,9 @@ def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> 
     stored_cases = report.get("cases")
     if not isinstance(stored_cases, list) or len(stored_cases) != len(expected_cases):
         raise ValueError("report cases do not match frozen cases")
-    fixture_files = {path.relative_to(fixture).as_posix() for path in fixture.rglob("*") if path.is_file()}
+    fixture_files = {
+        path.relative_to(fixture).as_posix() for path in fixture.rglob("*") if path.is_file()
+    }
     for expected, stored in zip(expected_cases, stored_cases, strict=True):
         if not isinstance(stored, dict) or stored.get("id") != expected["id"]:
             raise ValueError("report case IDs do not match frozen cases")
@@ -382,7 +434,9 @@ def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> 
         ):
             raise ValueError(f"case {expected['id']} query/expect_empty mismatch")
         paths = stored.get("paths")
-        if not isinstance(paths, list) or any(not isinstance(path, str) or path not in fixture_files for path in paths):
+        if not isinstance(paths, list) or any(
+            not isinstance(path, str) or path not in fixture_files for path in paths
+        ):
             raise ValueError(f"case {expected['id']} paths are invalid")
         grades, decoys = expected["grades"], set(expected.get("decoys", []))
         recomputed = {
@@ -404,7 +458,8 @@ def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> 
         "recall_at_5": sum(case["recall_at_5"] for case in positive) / len(positive),
         "primary_hit_at_3": sum(case["primary_hit_at_3"] for case in positive) / len(positive),
         "decoy_rate_at_5": sum(case["decoys_at_5"] for case in positive) / max(1, retrieved_slots),
-        "abstention_accuracy": sum(bool(case["abstained"]) for case in abstention) / max(1, len(abstention)),
+        "abstention_accuracy": sum(bool(case["abstained"]) for case in abstention)
+        / max(1, len(abstention)),
         "context_token_proxy_max": max(case["context_token_proxy"] for case in stored_cases),
     }
     aggregates = report.get("aggregates")
@@ -420,9 +475,12 @@ def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> 
     recomputed_checks = {
         "ndcg_at_5": aggregates["ndcg_at_5"] >= DEFAULT_THRESHOLDS["ndcg_at_5_min"],
         "recall_at_5": aggregates["recall_at_5"] >= DEFAULT_THRESHOLDS["recall_at_5_min"],
-        "primary_hit_at_3": aggregates["primary_hit_at_3"] >= DEFAULT_THRESHOLDS["primary_hit_at_3_min"],
-        "decoy_rate_at_5": aggregates["decoy_rate_at_5"] <= DEFAULT_THRESHOLDS["decoy_rate_at_5_max"],
-        "abstention_accuracy": aggregates["abstention_accuracy"] >= DEFAULT_THRESHOLDS["abstention_accuracy_min"],
+        "primary_hit_at_3": aggregates["primary_hit_at_3"]
+        >= DEFAULT_THRESHOLDS["primary_hit_at_3_min"],
+        "decoy_rate_at_5": aggregates["decoy_rate_at_5"]
+        <= DEFAULT_THRESHOLDS["decoy_rate_at_5_max"],
+        "abstention_accuracy": aggregates["abstention_accuracy"]
+        >= DEFAULT_THRESHOLDS["abstention_accuracy_min"],
         "find_p95_ms": aggregates["find_p95_ms"] <= DEFAULT_THRESHOLDS["find_p95_ms_max"],
         "context_p95_ms": aggregates["context_p95_ms"] <= DEFAULT_THRESHOLDS["context_p95_ms_max"],
         "context_token_proxy_max": aggregates["context_token_proxy_max"]
@@ -436,7 +494,7 @@ def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> 
 
 
 def deterministic_projection(report: dict[str, Any]) -> dict[str, Any]:
-    """Return only quality evidence expected to match across platforms/runs."""
+    """Only quality evidence expected to match across platforms/runs."""
     top_fields = (
         "schema_version",
         "profile",
@@ -454,10 +512,14 @@ def deterministic_projection(report: dict[str, Any]) -> dict[str, Any]:
     )
     projection = {field: report.get(field) for field in top_fields}
     projection["aggregates"] = {
-        key: value for key, value in report.get("aggregates", {}).items() if key not in _LATENCY_AGGREGATES
+        key: value
+        for key, value in report.get("aggregates", {}).items()
+        if key not in _LATENCY_AGGREGATES
     }
     projection["checks"] = {
-        key: value for key, value in report.get("checks", {}).items() if key not in _LATENCY_AGGREGATES
+        key: value
+        for key, value in report.get("checks", {}).items()
+        if key not in _LATENCY_AGGREGATES
     }
     projection["cases"] = [
         {key: value for key, value in case.items() if key not in _LATENCY_CASE_FIELDS}
@@ -470,8 +532,8 @@ COMPARE_METRICS = ("ndcg_at_5", "recall_at_5", "primary_hit_at_3")
 
 
 def compare(current: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
-    """Compare a run against a recorded baseline. Higher is better for COMPARE_METRICS;
-    lower is better for decoy_rate_at_5."""
+    """Compare a run against a recorded baseline. Higher is better for
+    COMPARE_METRICS; lower is better for decoy_rate_at_5."""
     result = {
         "regressed": False,
         "baseline_engine": baseline.get("engine"),
@@ -515,21 +577,36 @@ def compare(current: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]
 
 def main(argv: list[str] | None = None) -> int:
     project = Path(__file__).resolve().parents[2]
-    parser = argparse.ArgumentParser(description="Run MIMRY's deterministic agent retrieval benchmark.")
+    parser = argparse.ArgumentParser(
+        description="Run MIMRY's deterministic agent retrieval benchmark."
+    )
     parser.add_argument("--cases", type=Path, default=project / "benchmarks" / "cases.v1.json")
-    parser.add_argument("--fixture", type=Path, default=project / "benchmarks" / "fixtures" / "agent_repo")
+    parser.add_argument(
+        "--fixture", type=Path, default=project / "benchmarks" / "fixtures" / "agent_repo"
+    )
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--no-latency-gate", action="store_true")
     parser.add_argument("--json-output", type=Path)
     parser.add_argument("--out", type=Path, help="Alias for --json-output")
-    parser.add_argument("--graph", action="store_true", help="Explicitly select native graph mode (enabled by default)")
+    parser.add_argument(
+        "--graph",
+        action="store_true",
+        help="Explicitly select native graph mode (enabled by default)",
+    )
     parser.add_argument("--engine", type=str, default="core", help="Engine label for the report")
     parser.add_argument("--compare", type=Path, help="Path to baseline JSON for comparison")
-    parser.add_argument("--validate-report", type=Path, help="Validate an existing report instead of running benchmark")
+    parser.add_argument(
+        "--validate-report",
+        type=Path,
+        help="Validate an existing report instead of running benchmark",
+    )
     parser.add_argument(
         "--deterministic-against",
         type=Path,
-        help="Require --validate-report deterministic evidence to equal this report, ignoring latency/platform metadata",
+        help=(
+            "Require --validate-report deterministic evidence to equal this report, ignoring"
+            " latency/platform metadata"
+        ),
     )
     args = parser.parse_args(argv)
     output_path = args.out or args.json_output

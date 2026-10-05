@@ -10,7 +10,7 @@ _DATA_EXTENSIONS = frozenset(["sql", "json", "yaml", "yml", "toml", "ini", "cfg"
 
 
 def _file_category(path: str) -> str:
-    """Bucket a path so a code->doc edge can outrank a code->code one."""
+    """Bucket a path so code->doc edges can outrank code->code ones."""
     ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
     if ext in _CODE_EXTENSIONS:
         return "code"
@@ -25,17 +25,21 @@ def _top_level_dir(path: str) -> str:
     return path.split("/")[0] if "/" in path else path
 
 
-def _surprise_score(edge: dict, source_node: dict, target_node: dict, degree: dict) -> tuple[int, list[str]]:
+def _surprise_score(
+    edge: dict, source_node: dict, target_node: dict, degree: dict
+) -> tuple[int, list[str]]:
     """Rank a cross-community edge by how non-obvious it is.
 
-    Every candidate already crosses a community boundary, so that fact earns no
-    points here -- it is the filter, not a discriminator. Scoring is pure integer
-    arithmetic on graph facts, so it stays deterministic across runs and platforms.
+    Every candidate already crosses a community boundary, so that fact
+    earns no points here -- it is the filter, not a discriminator.
+    Scoring is pure integer arithmetic on graph facts, so it stays
+    deterministic across runs and platforms.
     """
     score = 0
     reasons: list[str] = []
 
-    # Resolved rather than stated: the reader cannot verify it by reading one line.
+    # Resolved rather than stated: the reader cannot verify it by
+    # reading one line.
     if edge.get("confidence") == "INFERRED":
         score += 2
         reasons.append("inferred, not stated in source")
@@ -69,8 +73,10 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
 
     Format is constrained by readers in artifacts.py:
     - Line 1 is read as report_title
-    - A line starting with "- Built from commit:" is parsed for the commit hash
-    - Sections under ## Community Hubs, ## God Nodes, ## Surprising Connections are extracted
+    - A line starting with "- Built from commit:" is parsed for the
+      commit hash
+    - Sections under ## Community Hubs, ## God Nodes, ## Surprising
+      Connections are extracted
     """
 
     # Default title if not provided
@@ -142,7 +148,8 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
         lines.append("- none")
     lines.append("")
 
-    # Section: Community Hubs (highest-degree node per community, top 10 communities by size)
+    # Section: Community Hubs (highest-degree node per community, top 10
+    # communities by size)
     lines.append("## Community Hubs")
     if nodes and communities:
         # Group nodes by community
@@ -158,9 +165,10 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
             comm_nodes = nodes_by_community[comm_id]
             if not comm_nodes:
                 continue
-            # min, not max: the key negates degree so ascending order puts the
-            # highest-degree node first. max() here would select the least
-            # connected node in the community, which is the opposite of a hub.
+            # min, not max: the key negates degree so ascending order
+            # puts the highest-degree node first. max() here would
+            # select the least connected node in the community, which is
+            # the opposite of a hub.
             hub = min(
                 comm_nodes,
                 key=lambda n: (
@@ -173,7 +181,9 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
 
         # Limit to top 10 communities by size
         community_hubs.sort(key=lambda x: -x[2])  # Sort by node count descending
-        community_hubs = sorted(community_hubs[:10], key=lambda x: x[0])  # Re-sort by community id ascending
+        community_hubs = sorted(
+            community_hubs[:10], key=lambda x: x[0]
+        )  # Re-sort by community id ascending
 
         for comm_id, hub, node_count_in_community in community_hubs:
             hub_id = str(hub.get("id", "?"))
@@ -181,16 +191,19 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
             source_file = markdown_inline(hub.get("source_file", "?"))
             deg = degree.get(hub_id, 0)
             lines.append(
-                f"- community {markdown_inline(comm_id)}: `{label}` ({source_file}) - degree {deg}, {node_count_in_community} nodes"
+                f"- community {markdown_inline(comm_id)}: `{label}` ({source_file}) - degree"
+                f" {deg}, {node_count_in_community} nodes"
             )
     else:
         lines.append("- none")
     lines.append("")
 
-    # Section: Surprising Connections (edges crossing communities, ranked)
+    # Section: Surprising Connections (edges crossing communities,
+    # ranked)
     #
-    # Sorting these alphabetically returned an arbitrary 10 of however many cross
-    # the boundary, not the 10 worth reading. Rank by surprise instead, and say why.
+    # Sorting these alphabetically returned an arbitrary 10 of however
+    # many cross the boundary, not the 10 worth reading. Rank by
+    # surprise instead, and say why.
     lines.append("## Surprising Connections")
     scored_edges = []
     for edge in edges:
@@ -210,8 +223,9 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
         scored_edges.append((score, reasons, edge, source_node, target_node))
 
     if scored_edges:
-        # Highest score first; (source, target, relation) breaks every tie, so the
-        # ordering is total and the file stays byte-identical across rebuilds.
+        # Highest score first; (source, target, relation) breaks every
+        # tie, so the ordering is total and the file stays
+        # byte-identical across rebuilds.
         scored_edges.sort(
             key=lambda item: (
                 -item[0],
@@ -227,8 +241,9 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
             source_file = markdown_inline(source_node.get("source_file", "?"))
             target_file = markdown_inline(target_node.get("source_file", "?"))
             relation = markdown_inline(edge.get("relation", "relates"))
-            # reasons are built from fixed strings and category names, never from
-            # node text, so the only untrusted values on this line are the five above.
+            # reasons are built from fixed strings and category names,
+            # never from node text, so the only untrusted values on this
+            # line are the five above.
             why = "; ".join(reasons) if reasons else "crosses a community boundary"
             lines.append(
                 f"- `{source_label}` --{relation}--> `{target_label}` "
@@ -243,10 +258,11 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
 
 
 def build_manifest(files: list[dict]) -> dict:
-    """Return {rel_path: {"mtime": float, "mimry_sha256": str}} for indexed files.
+    """Return {rel_path: {"mtime": float, "mimry_sha256": str}} for
+    indexed files.
 
-    Reshapes file records from scanner output. Skips any record missing rel_path or hash.
-    Keys are sorted for deterministic serialization.
+    Reshapes file records from scanner output. Skips any record missing
+    rel_path or hash. Keys are sorted for deterministic serialization.
     """
     manifest = {}
 

@@ -1,13 +1,14 @@
-"""The context pack is an agent contract, not a token budget to spend down.
+"""The context pack is an agent contract, not a token budget to spend
+down.
 
-A previous token reduction cut the pack ~36% when ~14% was needed, and paid for
-it by deleting two whole sections agents are told to rely on. Those two
-sections cost 170 of 2969 tokens -- 5.7% -- so deleting them bought almost
-nothing and broke the contract for six tests.
+A previous token reduction cut the pack ~36% when ~14% was needed, and
+paid for it by deleting two whole sections agents are told to rely on.
+Those two sections cost 170 of 2969 tokens -- 5.7% -- so deleting them
+bought almost nothing and broke the contract for six tests.
 
-These tests pin both halves of the requirement: every contract section stays,
-AND the pack stays inside the token floor. Meeting one by sacrificing the other
-is the failure mode being guarded against.
+These tests pin both halves of the requirement: every contract section
+stays, AND the pack stays inside the token floor. Meeting one by
+sacrificing the other is the failure mode being guarded against.
 """
 
 from __future__ import annotations
@@ -28,8 +29,9 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "benchmarks" / "fixtures" / "agent_repo"
 CASES = ROOT / "benchmarks" / "cases.v1.json"
 
-# Every heading an agent is instructed to read. Renaming one silently breaks
-# downstream parsing just as badly as deleting it, so the exact text is pinned.
+# Every heading an agent is instructed to read. Renaming one silently
+# breaks downstream parsing just as badly as deleting it, so the exact
+# text is pinned.
 REQUIRED_SECTIONS = (
     "## Query",
     "## Status Summary",
@@ -98,7 +100,7 @@ def test_final_report_checklist_keeps_its_obligations(indexed_fixture):
 
 
 def test_untrusted_excerpt_label_survives_token_reduction(indexed_fixture):
-    """The label is a prompt-injection guard, not prose to compress away."""
+    """The label is a prompt-injection guard, not prose to compress."""
     packs = [_pack(indexed_fixture, query) for query in _queries()]
     with_excerpt = [p for p in packs if "excerpt" in p.lower()]
     assert with_excerpt, "no pack contained an excerpt; fixture no longer exercises this path"
@@ -107,28 +109,43 @@ def test_untrusted_excerpt_label_survives_token_reduction(indexed_fixture):
 
 
 def test_risk_notes_keep_the_privacy_and_truth_guidance(indexed_fixture):
-    body = _pack(indexed_fixture, _queries()[0]).split("## Risk Notes", 1)[1].split("##", 1)[0].lower()
+    body = (
+        _pack(indexed_fixture, _queries()[0])
+        .split("## Risk Notes", 1)[1]
+        .split("##", 1)[0]
+        .lower()
+    )
     assert "secret" in body, "risk notes no longer warn about secrets"
     assert "truth" in body, "risk notes no longer state that source is the truth"
 
 
 def test_context_token_proxy_stays_within_the_floor(indexed_fixture):
-    """Both halves at once: under the ceiling WITH every section present."""
+    """Both halves at once: under the ceiling WITH every section."""
     ceiling = DEFAULT_THRESHOLDS["context_token_proxy_max"]
-    worst = max(((token_proxy(_pack(indexed_fixture, q)), q) for q in _queries()), key=lambda pair: pair[0])
-    assert worst[0] <= ceiling, f"context pack is {worst[0]} tokens for {worst[1]!r}, ceiling is {ceiling}"
+    worst = max(
+        ((token_proxy(_pack(indexed_fixture, q)), q) for q in _queries()), key=lambda pair: pair[0]
+    )
+    assert worst[0] <= ceiling, (
+        f"context pack is {worst[0]} tokens for {worst[1]!r}, ceiling is {ceiling}"
+    )
 
 
 def test_reading_order_does_not_duplicate_the_reason_strings(indexed_fixture):
     """The specific redundancy that paid for the deleted sections.
 
     Reading Order repeated each file's whole reason string verbatim from
-    Relevant Files -- 517 of 2969 tokens, three times what the two deleted
-    sections cost together.
+    Relevant Files -- 517 of 2969 tokens, three times what the two
+    deleted sections cost together.
     """
     pack = _pack(indexed_fixture, _queries()[0])
-    reasons = [line.split("Reason:", 1)[1].strip() for line in pack.splitlines() if line.startswith("Reason:")]
+    reasons = [
+        line.split("Reason:", 1)[1].strip()
+        for line in pack.splitlines()
+        if line.startswith("Reason:")
+    ]
     assert reasons, "fixture produced no Reason lines; test would be vacuous"
     reading_order = pack.split("## Suggested Reading Order", 1)[1].split("##", 1)[0]
     repeated = [r for r in reasons if len(r) > 40 and r in reading_order]
-    assert repeated == [], f"Reading Order repeats {len(repeated)} full reason string(s) already in Relevant Files"
+    assert repeated == [], (
+        f"Reading Order repeats {len(repeated)} full reason string(s) already in Relevant Files"
+    )

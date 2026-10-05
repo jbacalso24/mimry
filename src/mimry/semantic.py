@@ -45,7 +45,10 @@ def ensure_semantic_schema(con: sqlite3.Connection) -> None:
     chunk_columns = {row[1] for row in con.execute("pragma table_info(semantic_chunks)")}
     if "generation_id" not in chunk_columns:
         con.execute("alter table semantic_chunks add column generation_id text")
-    con.execute("create index if not exists semantic_chunks_root_path_idx on semantic_chunks(root_id, rel_path)")
+    con.execute(
+        "create index if not exists semantic_chunks_root_path_idx on semantic_chunks(root_id,"
+        " rel_path)"
+    )
     con.execute(
         """
         create table if not exists semantic_metadata(
@@ -111,7 +114,9 @@ def _chunk_text_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
 
 
-def _chunk(root_id: str, file_id: str, rel_path: str, kind: str, text: str, created_at: str) -> dict[str, Any] | None:
+def _chunk(
+    root_id: str, file_id: str, rel_path: str, kind: str, text: str, created_at: str
+) -> dict[str, Any] | None:
     if contains_sensitive_text(text) or contains_sensitive_text(rel_path):
         return None
     text = redact_sensitive_text(text)
@@ -120,9 +125,10 @@ def _chunk(root_id: str, file_id: str, rel_path: str, kind: str, text: str, crea
     if not preview or not vector:
         return None
     return {
-        # Canonical semantic identity, so it must not carry root_id: that is a
-        # uuid4 minted by `mimry init`, and two identical checkouts would then
-        # disagree on every chunk id. Same rule as file_id and the checkout path.
+        # Canonical semantic identity, so it must not carry root_id:
+        # that is a uuid4 minted by `mimry init`, and two identical
+        # checkouts would then disagree on every chunk id. Same rule as
+        # file_id and the checkout path.
         "chunk_id": stable_id(SCHEMA_VERSION, rel_path, kind, _chunk_text_hash(text)),
         "root_id": root_id,
         "file_id": file_id,
@@ -151,11 +157,15 @@ def _semantic_chunks_for_file(
     metadata = file_rec.get("metadata_text", "") or ""
     if metadata and metadata != file_rec.get("content_hint", ""):
         candidates.append(("adapter_fact", metadata))
-    symbol_names = " ".join(sym.get("name", "") for sym in symbols if sym.get("file_id") == file_id)
+    symbol_names = " ".join(
+        sym.get("name", "") for sym in symbols if sym.get("file_id") == file_id
+    )
     if symbol_names:
         candidates.append(("symbol", f"{rel_path} {symbol_names}"))
     if file_rec.get("extension") in {".md", ".mdx", ".rst"}:
-        headings = " ".join(part for part in metadata.split(" | ") if "markdown headings" in part.lower())
+        headings = " ".join(
+            part for part in metadata.split(" | ") if "markdown headings" in part.lower()
+        )
         if headings:
             candidates.append(("doc_heading", headings))
 
@@ -176,32 +186,42 @@ def _semantic_chunks_for_file(
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
-def file_semantic_chunks(file_rec: dict[str, Any], symbols: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def file_semantic_chunks(
+    file_rec: dict[str, Any], symbols: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """One file's chunks, independent of the root and build time.
 
-    ``symbols`` must be the file's symbols in symbols.jsonl order. The root_id
-    and created_at placeholders are filled in by build_semantic_index.
+    ``symbols`` must be the file's symbols in symbols.jsonl order. The
+    root_id and created_at placeholders are filled in by
+    build_semantic_index.
     """
     return _semantic_chunks_for_file("", file_rec, symbols, "")
 
 
 def build_semantic_index(
-    idx: Path, root_id: str, generation_id: str | None = None, precomputed: dict[str, list] | None = None
+    idx: Path,
+    root_id: str,
+    generation_id: str | None = None,
+    precomputed: dict[str, list] | None = None,
 ) -> dict[str, Any]:
     """Rebuild the generation's semantic chunks.
 
-    ``precomputed`` maps file_id to file_semantic_chunks() output for files
-    whose chunks were already derived (in index workers, or reused); the rest
-    are computed here. Either way the rows are identical.
+    ``precomputed`` maps file_id to file_semantic_chunks() output for
+    files whose chunks were already derived (in index workers, or
+    reused); the rest are computed here. Either way the rows are
+    identical.
     """
     precomputed = precomputed or {}
     files = _load_jsonl(idx / "files.jsonl")
     symbols = _load_jsonl(idx / "symbols.jsonl")
-    # Group once: filtering the full symbol list per file was quadratic, and
-    # dominated indexing on large repositories. Order within a file is preserved.
+    # Group once: filtering the full symbol list per file was quadratic,
+    # and dominated indexing on large repositories. Order within a file
+    # is preserved.
     symbols_by_file: dict[Any, list[dict[str, Any]]] = {}
     for sym in symbols:
         symbols_by_file.setdefault(sym.get("file_id"), []).append(sym)
@@ -210,7 +230,9 @@ def build_semantic_index(
     for file_rec in files:
         known = precomputed.get(file_rec["file_id"])
         if known is not None:
-            chunks.extend({**chunk, "root_id": root_id, "created_at": created_at} for chunk in known)
+            chunks.extend(
+                {**chunk, "root_id": root_id, "created_at": created_at} for chunk in known
+            )
             continue
         file_symbols = symbols_by_file.get(file_rec["file_id"], [])
         chunks.extend(_semantic_chunks_for_file(root_id, file_rec, file_symbols, created_at))
@@ -222,7 +244,9 @@ def build_semantic_index(
         if "semantic_checksum" not in generation_columns:
             con.execute("alter table index_generation add column semantic_checksum text")
         if generation_id is None:
-            generation_row = con.execute("select generation_id from index_generation limit 1").fetchone()
+            generation_row = con.execute(
+                "select generation_id from index_generation limit 1"
+            ).fetchone()
             generation_id = generation_row[0] if generation_row else None
         checksum_rows = [
             (
@@ -287,24 +311,37 @@ def build_semantic_index(
     }
 
 
-def semantic_health(idx: Path, root_id: str | None, expected_files: int | None = None) -> dict[str, Any]:
+def semantic_health(
+    idx: Path, root_id: str | None, expected_files: int | None = None
+) -> dict[str, Any]:
     if not root_id or not (idx / "mimry.sqlite").exists():
         return {"status": "missing", "backend": SEMANTIC_BACKEND, "chunks": 0, "indexed_at": None}
     con = sqlite3.connect(idx / "mimry.sqlite")
     con.row_factory = sqlite3.Row
     try:
         ensure_semantic_schema(con)
-        row = con.execute("select * from semantic_metadata where root_id = ?", (root_id,)).fetchone()
+        row = con.execute(
+            "select * from semantic_metadata where root_id = ?", (root_id,)
+        ).fetchone()
         if not row:
-            return {"status": "missing", "backend": SEMANTIC_BACKEND, "chunks": 0, "indexed_at": None}
+            return {
+                "status": "missing",
+                "backend": SEMANTIC_BACKEND,
+                "chunks": 0,
+                "indexed_at": None,
+            }
         chunks = int(row["chunk_count"] or 0)
         policy_excluded_chunks = sum(
             1
-            for chunk in con.execute("select rel_path from semantic_chunks where root_id = ?", (root_id,))
+            for chunk in con.execute(
+                "select rel_path from semantic_chunks where root_id = ?", (root_id,)
+            )
             if path_has_ignored_part(chunk["rel_path"])
         )
         status = "current" if chunks > 0 else "missing"
-        if policy_excluded_chunks or (expected_files is not None and expected_files > 0 and chunks < expected_files):
+        if policy_excluded_chunks or (
+            expected_files is not None and expected_files > 0 and chunks < expected_files
+        ):
             status = "stale"
         return {
             "status": status,
@@ -332,7 +369,8 @@ def semantic_rows(
     try:
         ensure_semantic_schema(con)
         rows = con.execute(
-            "select chunk_id, rel_path, chunk_kind, chunk_text_preview, vector_json from semantic_chunks where root_id = ? order by rel_path, chunk_kind, chunk_id",
+            "select chunk_id, rel_path, chunk_kind, chunk_text_preview, vector_json from"
+            " semantic_chunks where root_id = ? order by rel_path, chunk_kind, chunk_id",
             (root_id,),
         ).fetchall()
     finally:
@@ -349,7 +387,8 @@ def semantic_rows(
         sim = cosine_sparse(qvec, vec)
         preview = row["chunk_text_preview"] or ""
         if sim <= 0:
-            # Deterministic hash vectors can collide; require at least weak lexical fallback for explainability.
+            # Deterministic hash vectors can collide; require at least
+            # weak lexical fallback for explainability.
             overlap = qterms & set(_tokens(preview))
             if not overlap:
                 continue
@@ -367,7 +406,13 @@ def semantic_rows(
         }.get(kind, "semantic match")
         entry = by_file.setdefault(
             path,
-            {"path": path, "score": 0, "reasons": set(), "semantic_details": [], "source": "semantic"},
+            {
+                "path": path,
+                "score": 0,
+                "reasons": set(),
+                "semantic_details": [],
+                "source": "semantic",
+            },
         )
         entry["score"] += score
         entry["reasons"].add(label)
@@ -392,11 +437,14 @@ def merge_semantic_rows(
             boost = min(35, max(8, int(row["score"] * 0.35)))
             existing["score"] += boost
             existing["reason"] = (
-                f"{existing.get('reason', '')}, {row['reason']}" if existing.get("reason") else row["reason"]
+                f"{existing.get('reason', '')}, {row['reason']}"
+                if existing.get("reason")
+                else row["reason"]
             )
             if row.get("details") and not existing.get("details"):
                 existing["details"] = row["details"]
         else:
-            # Keep semantic-only candidates useful but below strong exact/graph evidence.
+            # Keep semantic-only candidates useful but below strong
+            # exact/graph evidence.
             by_path[row["path"]] = {**row, "score": min(row["score"], 80)}
     return sorted(by_path.values(), key=lambda r: (-r["score"], r["path"]))[:limit]

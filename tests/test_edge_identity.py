@@ -1,13 +1,15 @@
 """Edge IDs must be unambiguous, and must fail closed when they are not.
 
-The graph already rejects conflicting file and symbol IDs. Raw edges -- the
-records `scanner.adapt()` emits with an `edge_id` -- were not checked at all, so
-two edges claiming the same identity but pointing somewhere different were
-accepted and later collapsed by a dict overwrite or `insert or replace`, with
-the winner decided by input order.
+The graph already rejects conflicting file and symbol IDs. Raw edges --
+the records `scanner.adapt()` emits with an `edge_id` -- were not
+checked at all, so two edges claiming the same identity but pointing
+somewhere different were accepted and later collapsed by a dict
+overwrite or `insert or replace`, with the winner decided by input
+order.
 
-These tests cover the helper AND the real index pipeline, because enforcing
-this only inside `build_graph` would leave the persistence path bypassable.
+These tests cover the helper AND the real index pipeline, because
+enforcing this only inside `build_graph` would leave the persistence
+path bypassable.
 """
 
 from __future__ import annotations
@@ -24,7 +26,9 @@ from mimry.indexer import write_index
 from mimry.storage import register_root, save_pointer
 
 
-def _edge(edge_id="e1", source_id="f1", target_id="s1", edge_type="defines", confidence=1.0, **extra):
+def _edge(
+    edge_id="e1", source_id="f1", target_id="s1", edge_type="defines", confidence=1.0, **extra
+):
     return {
         "edge_id": edge_id,
         "source_type": "file",
@@ -77,7 +81,10 @@ class TestEdgeIdentityPolicy:
         ],
     )
     def test_conflicting_edge_ids_rejected_for_each_differing_field(self, field, value):
-        """Any canonical field differing under one ID is ambiguous, not just endpoints."""
+        """Any canonical field differing under one ID is ambiguous.
+
+        Not just endpoints.
+        """
         edges = [_edge(), _edge(**{field: value})]
         with pytest.raises(DuplicateIdentityError):
             validate_edge_identity(edges)
@@ -98,7 +105,7 @@ class TestEdgeIdentityPolicy:
             assert json.dumps(validate_edge_identity(shuffled), sort_keys=True) == forward
 
     def test_conflict_error_text_is_stable_under_reversal(self):
-        """A conflict must report the same message whichever order it arrived in."""
+        """A conflict reports one message in any arrival order."""
         pair = [_edge(target_id="s1"), _edge(target_id="s2")]
         with pytest.raises(DuplicateIdentityError) as forward:
             validate_edge_identity(list(pair))
@@ -108,12 +115,22 @@ class TestEdgeIdentityPolicy:
 
     def test_graph_construction_rejects_conflicting_edge_ids(self):
         files = [{"file_id": "f1", "rel_path": "a.py", "extension": ".py"}]
-        symbols = [{"symbol_id": "s1", "file_id": "f1", "name": "foo", "kind": "function", "language": "python"}]
+        symbols = [
+            {
+                "symbol_id": "s1",
+                "file_id": "f1",
+                "name": "foo",
+                "kind": "function",
+                "language": "python",
+            }
+        ]
         with pytest.raises(DuplicateIdentityError):
-            GraphEngine().build_graph(files, symbols, [_edge(target_id="s1"), _edge(target_id="s2")])
+            GraphEngine().build_graph(
+                files, symbols, [_edge(target_id="s1"), _edge(target_id="s2")]
+            )
 
     def test_file_and_symbol_duplicate_policies_unchanged(self):
-        """Regression guard: the pre-existing node policies still fail closed."""
+        """Regression guard: old node policies still fail closed."""
         engine = GraphEngine()
         with pytest.raises(DuplicateIdentityError):
             engine.build_graph(
@@ -128,8 +145,20 @@ class TestEdgeIdentityPolicy:
             engine.build_graph(
                 [{"file_id": "f1", "rel_path": "a.py", "extension": ".py"}],
                 [
-                    {"symbol_id": "s1", "file_id": "f1", "name": "foo", "kind": "function", "language": "python"},
-                    {"symbol_id": "s1", "file_id": "f1", "name": "bar", "kind": "function", "language": "python"},
+                    {
+                        "symbol_id": "s1",
+                        "file_id": "f1",
+                        "name": "foo",
+                        "kind": "function",
+                        "language": "python",
+                    },
+                    {
+                        "symbol_id": "s1",
+                        "file_id": "f1",
+                        "name": "bar",
+                        "kind": "function",
+                        "language": "python",
+                    },
                 ],
                 [],
             )
@@ -154,10 +183,13 @@ class TestEdgeIdentityThroughRealPipeline:
         real_adapt = scanner_module.adapt
 
         def conflicting_adapt(path, root, snapshot=None):
-            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root, snapshot)
-            # Both files now claim the same edge identity but point at different
-            # targets -- exactly the ambiguity that used to be resolved by
-            # whichever file the scanner happened to reach last.
+            f, symbols, edges, imports, exports, calls, references = real_adapt(
+                path, root, snapshot
+            )
+            # Both files now claim the same edge identity but point at
+            # different targets -- exactly the ambiguity that used to be
+            # resolved by whichever file the scanner happened to reach
+            # last.
             edges = [
                 {
                     "edge_id": "collision",
@@ -185,7 +217,9 @@ class TestEdgeIdentityThroughRealPipeline:
         real_adapt = scanner_module.adapt
 
         def empty_edge_adapt(path, root, snapshot=None):
-            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root, snapshot)
+            f, symbols, edges, imports, exports, calls, references = real_adapt(
+                path, root, snapshot
+            )
             if edges:
                 edges[0]["edge_id"] = "  "
             return f, symbols, edges, imports, exports, calls, references
@@ -204,7 +238,9 @@ class TestEdgeIdentityThroughRealPipeline:
         real_adapt = scanner_module.adapt
 
         def conflicting_adapt(path, root, snapshot=None):
-            f, symbols, _edges, imports, exports, calls, references = real_adapt(path, root, snapshot)
+            f, symbols, _edges, imports, exports, calls, references = real_adapt(
+                path, root, snapshot
+            )
             edges = [
                 {
                     "edge_id": "collision",
@@ -225,10 +261,12 @@ class TestEdgeIdentityThroughRealPipeline:
 
         generations = cache / "indexes" / "root-nopublish" / "generations"
         published = [p for p in generations.iterdir()] if generations.is_dir() else []
-        assert published == [], f"a generation was published despite a fatal edge conflict: {published}"
+        assert published == [], (
+            f"a generation was published despite a fatal edge conflict: {published}"
+        )
 
     def test_exact_duplicate_edges_survive_the_real_pipeline(self, tmp_path, monkeypatch):
-        """Harmless duplicates must not break indexing -- only conflicts fail."""
+        """Harmless duplicates index fine; only conflicts fail."""
         repo = self._repo(tmp_path)
         ptr = _setup_pointer(repo, tmp_path / "cache", "root-dupe-ok")
 
@@ -237,7 +275,9 @@ class TestEdgeIdentityThroughRealPipeline:
         real_adapt = scanner_module.adapt
 
         def duplicating_adapt(path, root, snapshot=None):
-            f, symbols, edges, imports, exports, calls, references = real_adapt(path, root, snapshot)
+            f, symbols, edges, imports, exports, calls, references = real_adapt(
+                path, root, snapshot
+            )
             return f, symbols, edges + list(edges), imports, exports, calls, references
 
         monkeypatch.setattr("mimry.indexer.adapt", duplicating_adapt)

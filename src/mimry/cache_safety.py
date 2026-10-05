@@ -38,11 +38,17 @@ def validated_cache_home(current_root: Path | None = None) -> Path:
     if resolved == home:
         raise UnsafeCachePathError("Refusing to wipe home directory as MIMRY cache")
     if resolved in {cwd, project_root}:
-        raise UnsafeCachePathError("Refusing to wipe current working directory or MIMRY repo as cache")
+        raise UnsafeCachePathError(
+            "Refusing to wipe current working directory or MIMRY repo as cache"
+        )
     if root is not None and resolved == root:
         raise UnsafeCachePathError("Refusing to wipe current root as MIMRY cache")
 
-    mimry_looking = resolved.name == "mimry" or (resolved / "roots.json").exists() or (resolved / "indexes").exists()
+    mimry_looking = (
+        resolved.name == "mimry"
+        or (resolved / "roots.json").exists()
+        or (resolved / "indexes").exists()
+    )
     if resolved.exists() and not mimry_looking:
         raise UnsafeCachePathError(f"Refusing to wipe non-MIMRY-looking cache path: {resolved}")
     return resolved
@@ -56,7 +62,9 @@ def validated_current_index_path(index_path: Path, current_root: Path | None = N
         raise UnsafeCachePathError(f"MIMRY index path must be absolute: {idx}")
     resolved_idx = idx.resolve(strict=False)
     if resolved_idx == indexes_base or not _is_relative_to(resolved_idx, indexes_base):
-        raise UnsafeCachePathError(f"Refusing to wipe index outside MIMRY indexes cache: {resolved_idx}")
+        raise UnsafeCachePathError(
+            f"Refusing to wipe index outside MIMRY indexes cache: {resolved_idx}"
+        )
     return resolved_idx
 
 
@@ -66,12 +74,16 @@ def validated_current_root_cache_path(
     generation_id: str | None,
     current_root: Path | None = None,
 ) -> Path:
-    """Validate the pointer's exact root/generation scope, then return its root cache."""
+    """Validate the pointer's exact root/generation scope.
+
+    Then return its root cache.
+    """
     base = validated_current_index_path(cache_home() / "indexes" / root_id, current_root)
     pointed = validated_current_index_path(index_path, current_root)
     expected = base if generation_id is None else base / "generations" / generation_id
     if pointed != expected.resolve(strict=False):
         raise UnsafeCachePathError(
-            f"Refusing to wipe cache: pointer index path {pointed} does not match current root scope {expected}"
+            f"Refusing to wipe cache: pointer index path {pointed} does not match current root"
+            f" scope {expected}"
         )
     return base

@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
 """Prove the *real* MIMRY pipeline is reproducible.
 
-The older cross-platform check hashed a graph built from fixed in-memory input.
-That proved the graph engine was portable but exercised no scanner, no parser,
-no SQLite, and no context pack -- exactly the layers where filesystem order,
-absolute paths, and hash seeds leak in.
+The older cross-platform check hashed a graph built from fixed in-memory
+input. That proved the graph engine was portable but exercised no
+scanner, no parser, no SQLite, and no context pack -- exactly the layers
+where filesystem order, absolute paths, and hash seeds leak in.
 
 This drives the whole pipeline over a frozen fixture repository:
 
-    filesystem scan -> Python/TS/Java/PHP/Go/SQL/Markdown parsing -> symbols and
-    line pointers -> imports/exports/calls/references -> graph and communities
+    filesystem scan
+    -> Python/TS/Java/PHP/Go/SQL/Markdown parsing
+    -> symbols and line pointers
+    -> imports/exports/calls/references
+    -> graph and communities
     -> SQLite/FTS -> local semantic index -> context pack
 
-...once per permutation, each in its own clean process with its own cache, and
-compares the canonical semantic digest plus a few ordered outputs.
+...once per permutation, each in its own clean process with its own
+cache, and compares the canonical semantic digest plus a few ordered
+outputs.
 
-Permutations cover file-creation order, absolute checkout root, PYTHONHASHSEED,
-repeated clean-cache runs, and locale/timezone.
+Permutations cover file-creation order, absolute checkout root,
+PYTHONHASHSEED, repeated clean-cache runs, and locale/timezone.
 
     python scripts/determinism_matrix.py
     python scripts/determinism_matrix.py --update-golden
@@ -42,9 +46,10 @@ sys.path.insert(0, str(REPO / "src"))
 
 from mimry.digest import canonical_digest, canonical_state, normalize_context  # noqa: E402
 
-# Canonical fields every permutation and every platform must agree on. The
-# structural digest alone is not enough: it can match while the ranking an
-# agent actually reads, or the context pack it is handed, has moved.
+# Canonical fields every permutation and every platform must agree on.
+# The structural digest alone is not enough: it can match while the
+# ranking an agent actually reads, or the context pack it is handed, has
+# moved.
 COMPARED_FIELDS = ("digest", "rankingsDigest", "contextDigest")
 
 
@@ -54,14 +59,20 @@ def _digest_of(value: object) -> str:
 
 
 def fixture_files() -> list[str]:
-    """Canonical relative paths of the frozen fixture, in canonical order."""
+    """Canonical relative paths of the frozen fixture.
+
+    Returned in canonical order.
+    """
     return sorted(
-        p.relative_to(FIXTURE).as_posix() for p in FIXTURE.rglob("*") if p.is_file() and p.name != ".gitattributes"
+        p.relative_to(FIXTURE).as_posix()
+        for p in FIXTURE.rglob("*")
+        if p.is_file() and p.name != ".gitattributes"
     )
 
 
 def materialize(target: Path, *, reverse: bool) -> None:
-    """Copy the fixture into ``target``, creating files in the requested order.
+    """Copy the fixture into ``target``, creating files in the requested
+    order.
 
     Creation order is the whole point: on most filesystems it determines
     readdir order, which is what leaked into artifacts before.
@@ -77,11 +88,12 @@ def materialize(target: Path, *, reverse: bool) -> None:
         dest.write_bytes((FIXTURE / name).read_bytes())
 
 
-# ---------------------------------------------------------------- worker side
+# ----------------------------------------------------------------
+# worker side
 
 
 def run_worker(root: str, out: str) -> int:
-    """Index ``root`` from scratch and write its canonical outputs to ``out``."""
+    """Index ``root`` afresh; write its canonical outputs to ``out``."""
     from mimry.commands import cmd_context, cmd_index, cmd_init
     from mimry.search import find_rows
     from mimry.storage import load_pointer
@@ -99,15 +111,22 @@ def run_worker(root: str, out: str) -> int:
     queries = ["session login refresh", "payment checkout", "user model", "sessions table"]
     rankings = {}
     for query in queries:
-        rows = find_rows(idx, query, limit=8, graph=True, root=root_path, root_id=ptr["rootId"], semantic=True)
+        rows = find_rows(
+            idx, query, limit=8, graph=True, root=root_path, root_id=ptr["rootId"], semantic=True
+        )
         rankings[query] = [{"path": r["path"], "reason": r["reason"]} for r in rows]
 
-    cmd_context(argparse.Namespace(root=str(root_path), query="session refresh flow", semantic=True))
-    context = (root_path / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
-    # Mask the four operational values by their actual value -- not by shape.
-    # Pattern-masking every timestamp-looking or hex-looking token also erased
-    # canonical content, and dropping whole lines containing "Generated" threw
-    # away MIMRY's own risk guidance. See mimry.digest.normalize_context.
+    cmd_context(
+        argparse.Namespace(root=str(root_path), query="session refresh flow", semantic=True)
+    )
+    context = (root_path / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(
+        encoding="utf-8"
+    )
+    # Mask the four operational values by their actual value -- not by
+    # shape. Pattern-masking every timestamp-looking or hex-looking
+    # token also erased canonical content, and dropping whole lines
+    # containing "Generated" threw away MIMRY's own risk guidance. See
+    # mimry.digest.normalize_context.
     context_lines = normalize_context(
         context,
         root=root_path,
@@ -122,8 +141,9 @@ def run_worker(root: str, out: str) -> int:
         "rankings": rankings,
         "contextLines": context_lines,
     }
-    # Per-field digests travel to the aggregate CI job so a divergence names the
-    # field that moved instead of only reporting "the hash differs".
+    # Per-field digests travel to the aggregate CI job so a divergence
+    # names the field that moved instead of only reporting "the hash
+    # differs".
     payload["rankingsDigest"] = _digest_of(rankings)
     payload["contextDigest"] = _digest_of(context_lines)
     Path(out).write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
@@ -131,7 +151,8 @@ def run_worker(root: str, out: str) -> int:
     return 0
 
 
-# ---------------------------------------------------------------- driver side
+# ----------------------------------------------------------------
+# driver side
 
 PERMUTATIONS = [
     # label,                 reverse, env overrides
@@ -146,10 +167,15 @@ PERMUTATIONS = [
 ]
 
 
-def run_permutation(workspace: Path, label: str, index: int, reverse: bool, env_overrides: dict) -> dict:
-    """One clean process, one clean cache, one fresh absolute checkout root."""
-    # A distinct, differently-shaped absolute root per permutation is what
-    # catches identities derived from the checkout path.
+def run_permutation(
+    workspace: Path, label: str, index: int, reverse: bool, env_overrides: dict
+) -> dict:
+    """One clean process, one clean cache, one fresh checkout root.
+
+    The checkout root is an absolute path.
+    """
+    # A distinct, differently-shaped absolute root per permutation is
+    # what catches identities derived from the checkout path.
     root = workspace / f"root-{index:02d}-{label}" / "nested" / "checkout"
     materialize(root, reverse=reverse)
 
@@ -172,7 +198,7 @@ def run_permutation(workspace: Path, label: str, index: int, reverse: bool, env_
 
 
 def _first_difference(expected: object, actual: object, path: str = "") -> str | None:
-    """Locate the first differing leaf so a failure names a field, not a hash."""
+    """First differing leaf, so a failure names a field, not a hash."""
     if isinstance(expected, dict) and isinstance(actual, dict):
         for key in sorted(set(expected) | set(actual)):
             if key not in expected:
@@ -219,12 +245,18 @@ def _print_golden_diff(golden: dict, baseline: dict) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--root", help=argparse.SUPPRESS)
     parser.add_argument("--out", help=argparse.SUPPRESS)
-    parser.add_argument("--update-golden", action="store_true", help="Rewrite the committed golden digest")
-    parser.add_argument("--emit", help="Also write this platform's digest to a JSON file for CI aggregation")
+    parser.add_argument(
+        "--update-golden", action="store_true", help="Rewrite the committed golden digest"
+    )
+    parser.add_argument(
+        "--emit", help="Also write this platform's digest to a JSON file for CI aggregation"
+    )
     args = parser.parse_args()
 
     if args.worker:
@@ -244,7 +276,9 @@ def main() -> int:
             if len(set(values.values())) == 1:
                 continue
             diverged = True
-            print(f"\nDIVERGENCE -- {field} is not identical across permutations:", file=sys.stderr)
+            print(
+                f"\nDIVERGENCE -- {field} is not identical across permutations:", file=sys.stderr
+            )
             for label, value in sorted(values.items()):
                 print(f"  {label:22s} {value}", file=sys.stderr)
         if diverged:
@@ -259,9 +293,9 @@ def main() -> int:
         print(f"platform          {sys.platform} / python {sys.version.split()[0]}")
 
         if args.emit:
-            # Carry the full evidence, not just the hashes: the aggregate job
-            # needs the raw values to print a field-level diff when a platform
-            # disagrees.
+            # Carry the full evidence, not just the hashes: the
+            # aggregate job needs the raw values to print a field-level
+            # diff when a platform disagrees.
             Path(args.emit).write_text(
                 json.dumps(
                     {

@@ -4,27 +4,27 @@ import json
 import os
 import shutil
 import sqlite3
-import time
 import subprocess
 import sys
+import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from .core.build import GraphEngine, validate_edge_identity, canonicalize_edges
+from .config_manifest_adapter import is_config_manifest
+from .constants import SCHEMA_VERSION
+from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
 from .core.cluster import assign_communities
+from .core.report import build_manifest, render_report
 from .core.resolve import (
-    resolve_imports,
     resolve_calls,
     resolve_doc_links,
+    resolve_imports,
     resolve_inheritance,
     resolve_table_refs,
 )
-from .core.report import render_report, build_manifest
-from .paths import idx_path, now, pointer_file, graph_output_dir
-from .constants import SCHEMA_VERSION
-from .config_manifest_adapter import is_config_manifest
+from .paths import graph_output_dir, idx_path, now, pointer_file
 from .reuse import (
     ADAPT_CACHE,
     INDEXED,
@@ -37,28 +37,35 @@ from .reuse import (
     load_adapt_cache,
     load_stat_cache,
 )
-from .scanner import adapt, read_snapshot, scan_stats, FileChangedError, SensitiveContentError, UnopenableFileError
+from .scanner import (
+    FileChangedError,
+    SensitiveContentError,
+    UnopenableFileError,
+    adapt,
+    read_snapshot,
+    scan_stats,
+)
 from .security import sanitize_data
 from .semantic import build_semantic_index, file_semantic_chunks
 from .state import (
     GENERATION_MANIFEST,
     UNINDEXABLE_FILE,
-    backup_path,
+    StateCorruptionError,
+    _fsync_directory,
     atomic_write_json,
     atomic_write_text,
+    backup_path,
     fsync_tree,
-    StateCorruptionError,
     generation_manifest,
     load_json_state,
     replace_path,
     validate_generation,
-    _fsync_directory,
 )
 from .storage import active_index_pointer, connect, register_root, save_pointer, write_jsonl
 
 
 def _fault(point: str) -> None:
-    """Deterministic subprocess-only crash hook used by recovery tests."""
+    """Deterministic subprocess-only crash hook for recovery tests."""
     if os.environ.get("MIMRY_FAULT_POINT") == point:
         os._exit(91)
 
@@ -92,8 +99,9 @@ def _seed_database(previous: Path, staging: Path) -> None:
         dst.close()
         src.close()
     except sqlite3.Error:
-        # Index data is rebuildable. A damaged legacy DB must not be copied into
-        # a new generation; sidecar corruption is still surfaced on normal reads.
+        # Index data is rebuildable. A damaged legacy DB must not be
+        # copied into a new generation; sidecar corruption is still
+        # surfaced on normal reads.
         try:
             (staging / "mimry.sqlite").unlink()
         except FileNotFoundError:
@@ -101,7 +109,10 @@ def _seed_database(previous: Path, staging: Path) -> None:
 
 
 class _Progress:
-    """One self-overwriting status line on stderr, only for an interactive terminal."""
+    """One self-overwriting status line on stderr.
+
+    Only for an interactive terminal.
+    """
 
     def __init__(self, enabled: bool):
         self.enabled = enabled
@@ -134,37 +145,47 @@ def _jsonl_line(row) -> str:
 
 
 def _symbol_order(symbol: dict) -> tuple:
-    return (symbol["file_id"], symbol["name"], symbol["kind"], symbol.get("line_start") or 0, symbol["symbol_id"])
+    return (
+        symbol["file_id"],
+        symbol["name"],
+        symbol["kind"],
+        symbol.get("line_start") or 0,
+        symbol["symbol_id"],
+    )
 
 
 SKIPPED = "skipped"
 UNINDEXABLE = "unindexable"
-# Below this many files, worker start-up (a fresh interpreter importing the
-# parsers) costs more than it saves.
+# Below this many files, worker start-up (a fresh interpreter importing
+# the parsers) costs more than it saves.
 PARALLEL_MIN_FILES = 64
 
 
 def _adapt_file(path: Path, root: Path, rel_path: str) -> tuple[str, list | None, str | None]:
     """Adapt one file into ``(outcome, stat identity, cache line)``.
 
-    Runs in worker processes, so it returns only picklable, already-sanitized
-    data; the line is exactly what an incremental run later replays.
+    Runs in worker processes, so it returns only picklable,
+    already-sanitized data; the line is exactly what an incremental run
+    later replays.
     """
     try:
         snapshot = read_snapshot(path, root=root)
         output = adapt(path, root, snapshot)
     except UnopenableFileError:
-        # Locked or ACL-protected: skipped like ignored files, not refused.
+        # Locked or ACL-protected: skipped like ignored files, not
+        # refused.
         return SKIPPED, None, None
     except SensitiveContentError:
         return SENSITIVE, identity(snapshot[1]), None
     except (FileChangedError, OSError, UnicodeError, ValueError):
-        # adapt() also raises ValueError when its output carries sensitive data.
+        # adapt() also raises ValueError when its output carries
+        # sensitive data.
         return UNINDEXABLE, None, None
     row = sanitize_data({"rel_path": rel_path, "out": output})
-    # Semantic chunks derive from exactly the persisted (sanitized) record and
-    # its symbols in symbols.jsonl order, so they are computed here, in parallel,
-    # and replayed on reuse instead of being rebuilt serially for every file.
+    # Semantic chunks derive from exactly the persisted (sanitized)
+    # record and its symbols in symbols.jsonl order, so they are
+    # computed here, in parallel, and replayed on reuse instead of being
+    # rebuilt serially for every file.
     file_rec, file_symbols = row["out"][0], row["out"][1]
     row["chunks"] = file_semantic_chunks(file_rec, sorted(file_symbols, key=_symbol_order))
     return INDEXED, identity(snapshot[1]), json.dumps(row, sort_keys=True)
@@ -176,13 +197,13 @@ def _index_workers(file_count: int) -> int:
         return max(1, min(int(configured), 61))
     if file_count < PARALLEL_MIN_FILES:
         return 1
-    # ponytail: capped because each worker holds its own parsers; raise it if
-    # indexing stays CPU-bound on bigger machines.
+    # ponytail: capped because each worker holds its own parsers; raise
+    # it if indexing stays CPU-bound on bigger machines.
     return max(1, min(os.cpu_count() or 1, 16))
 
 
 def _adapt_all(root: Path, todo: list[tuple[str, Path]], progress, total: int) -> list:
-    """Adapt ``todo`` in order, across worker processes when it is large."""
+    """Adapt ``todo`` in order, across worker processes when large."""
     done_offset = total - len(todo)
     workers = _index_workers(len(todo))
     if workers > 1:
@@ -191,15 +212,20 @@ def _adapt_all(root: Path, todo: list[tuple[str, Path]], progress, total: int) -
             with ProcessPoolExecutor(max_workers=workers) as pool:
                 chunksize = max(1, len(todo) // (workers * 8))
                 mapped = pool.map(
-                    _adapt_file, [p for _, p in todo], [root] * len(todo), [r for r, _ in todo], chunksize=chunksize
+                    _adapt_file,
+                    [p for _, p in todo],
+                    [root] * len(todo),
+                    [r for r, _ in todo],
+                    chunksize=chunksize,
                 )
                 for number, result in enumerate(mapped, 1):
                     progress(f"MIMRY: indexing {done_offset + number}/{total} files")
                     results.append(result)
             return results
         except (OSError, BrokenProcessPool):
-            # No usable worker processes (sandboxed or resource-limited host):
-            # adaptation is pure, so redoing it in-process gives the same result.
+            # No usable worker processes (sandboxed or resource-limited
+            # host): adaptation is pure, so redoing it in-process gives
+            # the same result.
             pass
     results = []
     for number, (rel_path, path) in enumerate(todo, 1):
@@ -208,18 +234,22 @@ def _adapt_all(root: Path, todo: list[tuple[str, Path]], progress, total: int) -
     return results
 
 
-def _collect(root: Path, *, previous: Path | None = None, record: dict | None = None, progress=None):
-    """Adapt every candidate file; reuse ``previous`` output for stat-unchanged ones.
+def _collect(
+    root: Path, *, previous: Path | None = None, record: dict | None = None, progress=None
+):
+    """Adapt every candidate file; reuse ``previous`` output for
+    stat-unchanged ones.
 
-    ``record``, when given, receives the new generation's stat identities and
-    per-file adapter output for the next incremental run.
+    ``record``, when given, receives the new generation's stat
+    identities and per-file adapter output for the next incremental run.
     """
     progress = progress or _Progress(False)
     stat_cache = load_stat_cache(previous) if previous is not None else None
     adapt_cache = load_adapt_cache(previous, root) if stat_cache is not None else None
     stat_entries: dict[str, list] = {}
     # Serialized as each file is adapted, before anything downstream can
-    # touch the records, so a later reuse replays exactly what adapt() returned.
+    # touch the records, so a later reuse replays exactly what adapt()
+    # returned.
     adapt_lines: list[str] = []
     files = []
     symbols = []
@@ -229,11 +259,13 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
     calls = {}
     references = {}
     symbols_by_file = {}
-    # Paths deliberately kept out of the index: secret-bearing or unreadable. They are
-    # recorded so freshness can tell "MIMRY refused this" from "the user changed this".
-    # Without it a single secret-bearing file reports as changed on every run, the index
-    # never reaches `current`, and that pins graph health to stale -- which disables
-    # `mimry path` entirely. Content never leaves this list; only the path is kept.
+    # Paths deliberately kept out of the index: secret-bearing or
+    # unreadable. They are recorded so freshness can tell "MIMRY refused
+    # this" from "the user changed this". Without it a single
+    # secret-bearing file reports as changed on every run, the index
+    # never reaches `current`, and that pins graph health to stale --
+    # which disables `mimry path` entirely. Content never leaves this
+    # list; only the path is kept.
     unindexable: list[str] = []
 
     def _note_unindexable(path: Path) -> None:
@@ -243,15 +275,15 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
             pass
 
     progress("MIMRY: scanning files", force=True)
-    # No open probe here: the snapshot read opens each file once, and a file
-    # that cannot be opened is skipped at that point instead.
+    # No open probe here: the snapshot read opens each file once, and a
+    # file that cannot be opened is skipped at that point instead.
     candidates = scan_stats(root, probe_open=False)
     reused: dict[str, tuple[str, dict] | None] = {}
     chunks_by_file_id: dict[str, list] = {}
     todo: list[tuple[str, Path]] = []
     for rel_path, path, live in candidates:
-        # Config manifests read sibling lockfiles, so their output is not a
-        # function of their own bytes alone; always re-adapt them.
+        # Config manifests read sibling lockfiles, so their output is
+        # not a function of their own bytes alone; always re-adapt them.
         if adapt_cache is not None and not is_config_manifest(path):
             if stat_cache.trusts(rel_path, live, INDEXED) and rel_path in adapt_cache:
                 reused[rel_path] = adapt_cache[rel_path]
@@ -262,7 +294,13 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
                 stat_entries[rel_path] = stat_cache.entries[rel_path]
                 continue
         todo.append((rel_path, path))
-    adapted = dict(zip((rel for rel, _ in todo), _adapt_all(root, todo, progress, len(candidates)), strict=True))
+    adapted = dict(
+        zip(
+            (rel for rel, _ in todo),
+            _adapt_all(root, todo, progress, len(candidates)),
+            strict=True,
+        )
+    )
 
     for rel_path, path, _live in candidates:
         if rel_path in reused:
@@ -275,8 +313,9 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
             if outcome == SKIPPED:
                 continue
             if outcome == SENSITIVE:
-                # Secret-bearing source stays unrecorded, so freshness re-checks it
-                # and reports it once its bytes become indexable again.
+                # Secret-bearing source stays unrecorded, so freshness
+                # re-checks it and reports it once its bytes become
+                # indexable again.
                 stat_entries[rel_path] = [*stat_identity, SENSITIVE]
                 continue
             if outcome == UNINDEXABLE:
@@ -288,7 +327,15 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
         output = row["out"]
         if row.get("chunks") is not None:
             chunks_by_file_id[output[0]["file_id"]] = row["chunks"]
-        file_rec, file_symbols, file_edges, file_imports, file_exports, file_calls, file_references = output
+        (
+            file_rec,
+            file_symbols,
+            file_edges,
+            file_imports,
+            file_exports,
+            file_calls,
+            file_references,
+        ) = output
         files.append(file_rec)
         symbols += file_symbols
         edges += file_edges
@@ -300,8 +347,13 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
             calls[file_rec["rel_path"]] = file_calls
         if file_symbols:
             symbols_by_file[file_rec["rel_path"]] = file_symbols
-        # Accumulate references only if there's at least one non-empty list
-        if file_references.get("doc_links") or file_references.get("table_refs") or file_references.get("inherits"):
+        # Accumulate references only if there's at least one non-empty
+        # list
+        if (
+            file_references.get("doc_links")
+            or file_references.get("table_refs")
+            or file_references.get("inherits")
+        ):
             references[file_rec["rel_path"]] = file_references
 
     # Sort all collections for determinism
@@ -322,27 +374,44 @@ def _collect(root: Path, *, previous: Path | None = None, record: dict | None = 
     imports = dict(sorted(imports.items()))
     exports = dict(sorted(exports.items()))
     calls_items = [
-        (k, sorted(v, key=lambda c: (c.get("name", ""), c.get("line") or 0))) for k, v in sorted(calls.items())
+        (k, sorted(v, key=lambda c: (c.get("name", ""), c.get("line") or 0)))
+        for k, v in sorted(calls.items())
     ]
     calls = dict(calls_items)
     symbols_by_file = dict(sorted(symbols_by_file.items()))
     references = dict(sorted(references.items()))
 
-    # The persistence boundary, not just graph construction. Enforcing this only
-    # inside build_graph would leave every other consumer of _collect -- and any
-    # future writer -- free to persist an ambiguous edge ID.
+    # The persistence boundary, not just graph construction. Enforcing
+    # this only inside build_graph would leave every other consumer of
+    # _collect -- and any future writer -- free to persist an ambiguous
+    # edge ID.
     edges = validate_edge_identity(edges)
 
     if record is not None:
         record["stat_entries"] = stat_entries
         record["adapt_lines"] = adapt_lines
         record["chunks"] = chunks_by_file_id
-        # What the previous generation was built from, to recognise a no-op run.
-        record["previous_lines"] = [line for line, _row in adapt_cache.values()] if adapt_cache is not None else None
-        record["previous_kinds"] = (
-            {rel: entry[4] for rel, entry in stat_cache.entries.items()} if stat_cache is not None else None
+        # What the previous generation was built from, to recognise a
+        # no-op run.
+        record["previous_lines"] = (
+            [line for line, _row in adapt_cache.values()] if adapt_cache is not None else None
         )
-    return files, symbols, edges, imports, exports, calls, symbols_by_file, references, sorted(set(unindexable))
+        record["previous_kinds"] = (
+            {rel: entry[4] for rel, entry in stat_cache.entries.items()}
+            if stat_cache is not None
+            else None
+        )
+    return (
+        files,
+        symbols,
+        edges,
+        imports,
+        exports,
+        calls,
+        symbols_by_file,
+        references,
+        sorted(set(unindexable)),
+    )
 
 
 def _edge(source: str, target: str, relation: str, confidence) -> dict:
@@ -374,10 +443,14 @@ def _table_symbols(files, symbols) -> dict:
 
 
 def _split_references(references) -> tuple[dict, dict, dict]:
-    """Fan the per-file references bag out into one dict per relationship kind."""
+    """Split the per-file references bag into one dict per relation."""
     doc_links, table_refs, inherits = {}, {}, {}
     for rel_path, data in (references or {}).items():
-        for key, sink in (("doc_links", doc_links), ("table_refs", table_refs), ("inherits", inherits)):
+        for key, sink in (
+            ("doc_links", doc_links),
+            ("table_refs", table_refs),
+            ("inherits", inherits),
+        ):
             if data.get(key):
                 sink[rel_path] = data[key]
     return doc_links, table_refs, inherits
@@ -399,8 +472,12 @@ def _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids) -> list[
     for e in resolve_calls(calls, symbols_by_file, import_edges):
         if e.get("caller_symbol") is None or e.get("target_symbol") is None:
             continue
-        caller = e.get("caller_symbol_id") or symbol_ids.get((e["caller_file"], e["caller_symbol"]))
-        target = e.get("target_symbol_id") or symbol_ids.get((e["target_file"], e["target_symbol"]))
+        caller = e.get("caller_symbol_id") or symbol_ids.get(
+            (e["caller_file"], e["caller_symbol"])
+        )
+        target = e.get("target_symbol_id") or symbol_ids.get(
+            (e["target_file"], e["target_symbol"])
+        )
         if caller and target:
             edges.append(_edge(f"symbol:{caller}", f"symbol:{target}", "calls", e["confidence"]))
     return edges
@@ -433,28 +510,39 @@ def _table_ref_graph_edges(table_refs, table_symbols, file_id_of) -> list[dict]:
     for e in resolve_table_refs(table_refs, table_symbols):
         source, target = file_id_of.get(e["source"]), e.get("target_symbol_id")
         if source and target:
-            edges.append(_edge(f"file:{source}", f"symbol:{target}", "references", e["confidence"]))
+            edges.append(
+                _edge(f"file:{source}", f"symbol:{target}", "references", e["confidence"])
+            )
     return edges
 
 
 def _finalize_graph(graph) -> dict:
     """Drop dangling edges, cluster, and sort.
 
-    The sort is not cosmetic: graph.json is checksummed by the generation manifest,
-    so an unstable order would break generation coherence.
+    The sort is not cosmetic: graph.json is checksummed by the
+    generation manifest, so an unstable order would break generation
+    coherence.
     """
     node_ids = {n["id"] for n in graph["nodes"]}
-    graph["edges"] = [e for e in graph["edges"] if e.get("source") in node_ids and e.get("target") in node_ids]
-    # (source, target, relation) is not a total key: equal-endpoint edges that
-    # differ only in confidence kept insertion order. canonicalize_edges applies
-    # the documented EXTRACTED-over-INFERRED policy and a total sort key.
+    graph["edges"] = [
+        e for e in graph["edges"] if e.get("source") in node_ids and e.get("target") in node_ids
+    ]
+    # (source, target, relation) is not a total key: equal-endpoint
+    # edges that differ only in confidence kept insertion order.
+    # canonicalize_edges applies the documented EXTRACTED-over-INFERRED
+    # policy and a total sort key.
     graph["edges"] = canonicalize_edges(graph["edges"])
-    graph["nodes"] = sorted(assign_communities(graph["nodes"], graph["edges"]), key=lambda n: n["id"])
+    graph["nodes"] = sorted(
+        assign_communities(graph["nodes"], graph["edges"]), key=lambda n: n["id"]
+    )
     return graph
 
 
 def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references):
-    """Assemble the relationship graph: defines + imports + calls + inherits + references."""
+    """Assemble the relationship graph.
+
+    defines + imports + calls + inherits + references.
+    """
     graph = GraphEngine().build_graph(files, symbols, edges, imports=imports, exports=exports)
 
     rel_paths = {f["rel_path"] for f in files}
@@ -467,13 +555,18 @@ def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by
     graph["edges"] += _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids)
     graph["edges"] += _inheritance_graph_edges(inherits, symbols_by_file, import_edges, symbol_ids)
     graph["edges"] += _doc_link_graph_edges(doc_links, rel_paths, file_id_of)
-    graph["edges"] += _table_ref_graph_edges(table_refs, _table_symbols(files, symbols), file_id_of)
+    graph["edges"] += _table_ref_graph_edges(
+        table_refs, _table_symbols(files, symbols), file_id_of
+    )
 
     return _finalize_graph(graph)
 
 
 def _remove_tree(path: Path) -> None:
-    """Remove a cache tree completely or fail instead of reporting false success."""
+    """Remove a cache tree completely or fail.
+
+    Never reports a false success.
+    """
     if path.is_symlink():
         path.unlink()
     else:
@@ -496,10 +589,12 @@ def _pointer_generation(pointer: object, base: Path) -> str | None:
 
 
 def _cleanup_generations(root: Path, base: Path, current: dict | None = None) -> None:
-    """Retain only pointer-current + readable LKG and remove crash leftovers.
+    """Retain only pointer-current + readable LKG and remove crash
+    leftovers.
 
-    The caller must hold ``base/operation.lock`` exclusively so staging and final generation
-    cleanup cannot race publication or a current-root cache wipe.
+    The caller must hold ``base/operation.lock`` exclusively so staging
+    and final generation cleanup cannot race publication or a
+    current-root cache wipe.
     """
     generations = base / "generations"
     generations.mkdir(parents=True, exist_ok=True)
@@ -528,21 +623,27 @@ def _cleanup_generations(root: Path, base: Path, current: dict | None = None) ->
 
 
 def _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable) -> dict | None:
-    """The active generation's stats when this run would republish it unchanged.
+    """The active generation's stats when this run would republish it
+    unchanged.
 
-    Every published artifact is a function of the per-file adapter lines, the
-    refused paths and the sensitive-file set, so when all three match the
-    previous run the graph, semantic index and sidecars would come out byte for
-    byte the same. Keep the generation instead of rebuilding it. Any doubt --
-    missing graph artifacts, a generation that fails validation, a manifest
-    from before this check -- means publishing normally.
+    Every published artifact is a function of the per-file adapter
+    lines, the refused paths and the sensitive-file set, so when all
+    three match the previous run the graph, semantic index and sidecars
+    would come out byte for byte the same. Keep the generation instead
+    of rebuilding it. Any doubt -- missing graph artifacts, a generation
+    that fails validation, a manifest from before this check -- means
+    publishing normally.
     """
     if previous is None or record["previous_lines"] != record["adapt_lines"]:
         return None
-    if record["previous_kinds"] != {rel: entry[4] for rel, entry in record["stat_entries"].items()}:
+    if record["previous_kinds"] != {
+        rel: entry[4] for rel, entry in record["stat_entries"].items()
+    }:
         return None
     out = graph_output_dir(root)
-    if not all((out / name).is_file() for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json")):
+    if not all(
+        (out / name).is_file() for name in ("graph.json", "GRAPH_REPORT.md", "manifest.json")
+    ):
         return None
     try:
         validate_generation(ptr)
@@ -564,7 +665,10 @@ def _unchanged_generation(root, ptr, previous, record, files, symbols, unindexab
 
 
 def _changes(ptr: dict, files: list[dict]) -> dict | None:
-    """Paths added, changed and removed since the active generation; None on a first index."""
+    """Paths added, changed and removed since the active generation.
+
+    None on a first index.
+    """
     if not ptr.get("generationId"):
         return None
     try:
@@ -573,7 +677,10 @@ def _changes(ptr: dict, files: list[dict]) -> dict | None:
         return None
     if not isinstance(before, dict):
         return None
-    old = {path: entry.get("hash") if isinstance(entry, dict) else None for path, entry in before.items()}
+    old = {
+        path: entry.get("hash") if isinstance(entry, dict) else None
+        for path, entry in before.items()
+    }
     new = {file_rec["rel_path"]: file_rec["hash"] for file_rec in files}
     return {
         "added": sorted(new.keys() - old.keys()),
@@ -585,10 +692,10 @@ def _changes(ptr: dict, files: list[dict]) -> dict | None:
 def write_index(root, ptr, *, full: bool = False):
     """Build and publish a new generation.
 
-    Files whose lstat still matches the previous generation's recorded snapshot
-    reuse its adapter output instead of being read and parsed again; ``full``
-    re-adapts every file. Either way the published artifacts are identical when
-    the tree is.
+    Files whose lstat still matches the previous generation's recorded
+    snapshot reuse its adapter output instead of being read and parsed
+    again; ``full`` re-adapts every file. Either way the published
+    artifacts are identical when the tree is.
     """
     root = Path(root)
     progress = _Progress(_stderr_is_tty())
@@ -596,8 +703,9 @@ def write_index(root, ptr, *, full: bool = False):
     generations = base / "generations"
     base.mkdir(parents=True, exist_ok=True)
 
-    # The exclusive operation lock serializes publication/legacy migration and
-    # prevents GC from deleting generations retained by shared readers.
+    # The exclusive operation lock serializes publication/legacy
+    # migration and prevents GC from deleting generations retained by
+    # shared readers.
     with active_index_pointer(
         root,
         exclusive=True,
@@ -605,13 +713,16 @@ def write_index(root, ptr, *, full: bool = False):
         normalize_stale_index_path=True,
     ) as active:
         if not active or active.get("rootId") != ptr.get("rootId"):
-            raise RuntimeError("MIMRY root pointer changed while waiting for the operation lock; retry indexing")
+            raise RuntimeError(
+                "MIMRY root pointer changed while waiting for the operation lock; retry indexing"
+            )
         ptr = active
 
-        # A pointer written under an older identity schema names a generation whose
-        # file, symbol, and chunk IDs were derived from the absolute checkout path.
-        # Drop it rather than seeding the new generation's SQLite from it, which
-        # would carry stale rows keyed by IDs nothing else in this build produces.
+        # A pointer written under an older identity schema names a
+        # generation whose file, symbol, and chunk IDs were derived from
+        # the absolute checkout path. Drop it rather than seeding the
+        # new generation's SQLite from it, which would carry stale rows
+        # keyed by IDs nothing else in this build produces.
         if ptr.get("schemaVersion") not in (None, SCHEMA_VERSION):
             ptr = {**ptr, "indexPath": str(base), "lastIndexedAt": None}
             ptr.pop("generationId", None)
@@ -619,21 +730,35 @@ def write_index(root, ptr, *, full: bool = False):
         _cleanup_generations(root, base, ptr)
         previous = None if full or not ptr.get("generationId") else Path(ptr["indexPath"])
         record: dict = {}
-        # Taken before the first file is read: any file modified after this
-        # instant is racy and never trusted by its stat identity alone.
+        # Taken before the first file is read: any file modified after
+        # this instant is racy and never trusted by its stat identity
+        # alone.
         scan_started_ns = time.time_ns()
         try:
-            files, symbols, edges, imports, exports, calls, symbols_by_file, references, unindexable = _collect(
-                root, previous=previous, record=record, progress=progress
-            )
+            (
+                files,
+                symbols,
+                edges,
+                imports,
+                exports,
+                calls,
+                symbols_by_file,
+                references,
+                unindexable,
+            ) = _collect(root, previous=previous, record=record, progress=progress)
             changes = _changes(ptr, files)
-            # Unrecorded as well as unindexable: report every file kept out.
-            skipped = len(unindexable) + sum(entry[4] == SENSITIVE for entry in record["stat_entries"].values())
+            # Unrecorded as well as unindexable: report every file kept
+            # out.
+            skipped = len(unindexable) + sum(
+                entry[4] == SENSITIVE for entry in record["stat_entries"].values()
+            )
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
                 return {**kept, "changes": changes, "unindexable": skipped}
             progress("MIMRY: building graph", force=True)
-            graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references)
+            graph = _build_core_graph(
+                files, symbols, edges, imports, exports, calls, symbols_by_file, references
+            )
         finally:
             progress.done()
         generation_id = uuid.uuid4().hex
@@ -699,8 +824,14 @@ def write_index(root, ptr, *, full: bool = False):
 
             write_jsonl(staging / "files.jsonl", files)
             write_jsonl(staging / "symbols.jsonl", symbols)
-            write_jsonl(staging / "imports.jsonl", [{"file": key, "imports": value} for key, value in imports.items()])
-            write_jsonl(staging / "exports.jsonl", [{"file": key, "exports": value} for key, value in exports.items()])
+            write_jsonl(
+                staging / "imports.jsonl",
+                [{"file": key, "imports": value} for key, value in imports.items()],
+            )
+            write_jsonl(
+                staging / "exports.jsonl",
+                [{"file": key, "exports": value} for key, value in exports.items()],
+            )
             atomic_write_json(staging / "dependencies.json", imports)
             atomic_write_json(staging / "graph.json", graph)
             atomic_write_json(staging / UNINDEXABLE_FILE, unindexable)
@@ -720,11 +851,18 @@ def write_index(root, ptr, *, full: bool = False):
                 "entries": record["stat_entries"],
                 "fingerprint": code_fingerprint(),
             }
-            atomic_write_text(staging / STAT_CACHE, json.dumps(stat_cache, separators=(",", ":"), sort_keys=True))
+            atomic_write_text(
+                staging / STAT_CACHE, json.dumps(stat_cache, separators=(",", ":"), sort_keys=True)
+            )
             header = json.dumps(adapt_cache_header(root), sort_keys=True)
-            atomic_write_text(staging / ADAPT_CACHE, "".join(f"{line}\n" for line in [header, *record["adapt_lines"]]))
+            atomic_write_text(
+                staging / ADAPT_CACHE,
+                "".join(f"{line}\n" for line in [header, *record["adapt_lines"]]),
+            )
             progress("MIMRY: building semantic index", force=True)
-            semantic = build_semantic_index(staging, ptr["rootId"], generation_id, precomputed=record["chunks"])
+            semantic = build_semantic_index(
+                staging, ptr["rootId"], generation_id, precomputed=record["chunks"]
+            )
             _fault("after-sidecars")
 
             progress("MIMRY: publishing index", force=True)
@@ -757,7 +895,9 @@ def write_index(root, ptr, *, full: bool = False):
             out = graph_output_dir(root)
             out.mkdir(parents=True, exist_ok=True)
             atomic_write_json(out / "graph.json", graph)
-            atomic_write_text(out / "GRAPH_REPORT.md", render_report(graph, commit=_git_commit(root)))
+            atomic_write_text(
+                out / "GRAPH_REPORT.md", render_report(graph, commit=_git_commit(root))
+            )
             atomic_write_json(out / "manifest.json", build_manifest(files))
         except BaseException:
             if staging.exists() or staging.is_symlink():
