@@ -12,10 +12,12 @@ class DuplicateIdentityError(ValueError):
 
 
 def edge_sort_key(edge: dict) -> tuple:
-    """Total order over canonical edge fields. No two distinct edges tie.
+    """Total order over canonical edge fields. No two distinct edges
+    tie.
 
-    Includes all fields on the edge dict to ensure metadata participates in ordering.
-    Serializes extra fields as a sorted JSON string for byte-stable comparison.
+    Includes all fields on the edge dict to ensure metadata participates
+    in ordering. Serializes extra fields as a sorted JSON string for
+    byte-stable comparison.
     """
     canonical_fields = {"source", "target", "relation", "confidence"}
     source = edge.get("source", "")
@@ -34,9 +36,9 @@ def raw_edge_sort_key(edge: dict) -> tuple:
     """Total order over a raw (pre-graph) edge record.
 
     Raw edges carry an ``edge_id`` and typed endpoints rather than the
-    ``source``/``target`` strings a built graph uses. Every field participates,
-    so the order -- and therefore any error message derived from it -- is
-    identical under reversed or shuffled input.
+    ``source``/``target`` strings a built graph uses. Every field
+    participates, so the order -- and therefore any error message
+    derived from it -- is identical under reversed or shuffled input.
     """
     return (
         str(edge.get("edge_id", "")),
@@ -53,20 +55,24 @@ def raw_edge_sort_key(edge: dict) -> tuple:
 def validate_edge_identity(edges: list[dict]) -> list[dict]:
     """Enforce edge-ID integrity before canonicalization or persistence.
 
-    Policy: two records sharing an ``edge_id`` claim to be the same edge.
+    Policy: two records sharing an ``edge_id`` claim to be the same
+    edge.
 
-    * Every canonical field equal -> an exact duplicate. Collapsed to one.
-    * Any field different -- endpoints, relation, confidence, origin, or extra
-      metadata -- -> the ID is ambiguous, and MIMRY fails closed with
-      :class:`DuplicateIdentityError`.
+    * Every canonical field equal -> an exact duplicate. Collapsed to
+      one.
+    * Any field different -- endpoints, relation, confidence, origin, or
+      extra metadata -- -> the ID is ambiguous, and MIMRY fails closed
+      with :class:`DuplicateIdentityError`.
 
     The alternative is what MIMRY used to do: let a dict overwrite or an
-    ``insert or replace`` pick a winner by arrival order, which makes the graph
-    depend on filesystem traversal order and hides a real extractor bug.
+    ``insert or replace`` pick a winner by arrival order, which makes
+    the graph depend on filesystem traversal order and hides a real
+    extractor bug.
 
-    Records without an ``edge_id`` pass through untouched -- those are graph
-    edges synthesized by the resolvers, whose identity is
-    ``(source, target, relation)`` and which :func:`canonicalize_edges` owns.
+    Records without an ``edge_id`` pass through untouched -- those are
+    graph edges synthesized by the resolvers, whose identity is
+    ``(source, target, relation)`` and which :func:`canonicalize_edges`
+    owns.
 
     Returns the surviving edges in total order.
     """
@@ -81,7 +87,9 @@ def validate_edge_identity(edges: list[dict]) -> list[dict]:
             continue
         edge_id = edge["edge_id"]
         if not isinstance(edge_id, str) or not edge_id.strip():
-            raise DuplicateIdentityError("An explicit edge_id must be a non-empty string; MIMRY will not persist it.")
+            raise DuplicateIdentityError(
+                "An explicit edge_id must be a non-empty string; MIMRY will not persist it."
+            )
         groups[edge_id].append(edge)
 
     survivors: list[dict] = []
@@ -91,11 +99,11 @@ def validate_edge_identity(edges: list[dict]) -> list[dict]:
         conflicting = next((candidate for candidate in group if candidate != first), None)
         if conflicting is not None:
             raise DuplicateIdentityError(
-                f"Conflicting records share edge_id {edge_id!r}. An edge ID must identify exactly one edge.\n"
-                f"  {json.dumps(first, sort_keys=True, default=str)}\n"
-                f"  {json.dumps(conflicting, sort_keys=True, default=str)}\n"
-                "Fix the extractor so each edge gets a distinct ID, or make the duplicate records identical. "
-                "MIMRY will not guess which one is correct."
+                f"Conflicting records share edge_id {edge_id!r}. An edge ID must identify exactly"
+                f" one edge.\n  {json.dumps(first, sort_keys=True, default=str)}\n "
+                f" {json.dumps(conflicting, sort_keys=True, default=str)}\nFix the extractor so"
+                " each edge gets a distinct ID, or make the duplicate records identical. MIMRY"
+                " will not guess which one is correct."
             )
         survivors.append(first)
 
@@ -105,12 +113,13 @@ def validate_edge_identity(edges: list[dict]) -> list[dict]:
 def canonicalize_edges(edges: list[dict]) -> list[dict]:
     """Deduplicate equivalent edges and return them in total order.
 
-    Policy: edges are identified by (source, target, relation). When two edges
-    share that identity, EXTRACTED evidence wins over INFERRED, because
-    EXTRACTED means the relation was read directly from source rather than
-    guessed. Edges identical in every field are collapsed. Edges that differ in
-    a field other than confidence are NOT merged -- they are kept and separated
-    by the total sort key, so no genuine conflict is hidden.
+    Policy: edges are identified by (source, target, relation). When two
+    edges share that identity, EXTRACTED evidence wins over INFERRED,
+    because EXTRACTED means the relation was read directly from source
+    rather than guessed. Edges identical in every field are collapsed.
+    Edges that differ in a field other than confidence are NOT merged --
+    they are kept and separated by the total sort key, so no genuine
+    conflict is hidden.
     """
     # Group edges by (source, target, relation)
     groups = {}
@@ -126,7 +135,8 @@ def canonicalize_edges(edges: list[dict]) -> list[dict]:
         # Sort by confidence: EXTRACTED first, then INFERRED
         group.sort(key=lambda e: (e.get("confidence") != "EXTRACTED", edge_sort_key(e)))
 
-        # Keep track of seen edges (excluding confidence) to deduplicate identical ones
+        # Keep track of seen edges (excluding confidence) to deduplicate
+        # identical ones
         seen = set()
         for edge in group:
             # Create a hashable version of the edge excluding confidence
@@ -149,10 +159,11 @@ class GraphEngine:
     def build_graph(self, files, symbols, edges, imports=None, exports=None) -> dict:
         """Build a graph from files, symbols, and edges.
 
-        Deduplicates nodes and edges: exact duplicates (all fields equal) are
-        silently collapsed; records with same ID but any differing field raise
-        DuplicateIdentityError. Edges are ordered by a total key that includes
-        all fields, so results are byte-stable under input reordering.
+        Deduplicates nodes and edges: exact duplicates (all fields
+        equal) are silently collapsed; records with same ID but any
+        differing field raise DuplicateIdentityError. Edges are ordered
+        by a total key that includes all fields, so results are
+        byte-stable under input reordering.
 
         Args:
             files: List of file dicts with file_id, rel_path, extension
@@ -164,8 +175,8 @@ class GraphEngine:
         Returns:
             Dict with keys: engine, nodes, edges, clusters
         """
-        # Fail closed on ambiguous edge IDs before anything downstream can
-        # collapse them by arrival order.
+        # Fail closed on ambiguous edge IDs before anything downstream
+        # can collapse them by arrival order.
         edges = validate_edge_identity(edges)
 
         # Build a lookup from file_id to rel_path
@@ -191,8 +202,9 @@ class GraphEngine:
                 "type": "file",
                 "kind": file_type,
                 "file_type": file_type,
-                # A file has no single line. Kept on every node so consumers can
-                # read one field instead of branching on node type.
+                # A file has no single line. Kept on every node so
+                # consumers can read one field instead of branching on
+                # node type.
                 "line": None,
                 "community": 0,
             }
@@ -228,8 +240,9 @@ class GraphEngine:
                 "type": "symbol",
                 "kind": s["kind"],
                 "file_type": s["language"],
-                # Scanners already carry line_start (ts_ast_adapter, core.languages);
-                # without it every graph answer points at a file, not a location.
+                # Scanners already carry line_start (ts_ast_adapter,
+                # core.languages); without it every graph answer points
+                # at a file, not a location.
                 "line": s.get("line_start"),
                 "community": 0,
             }
@@ -253,7 +266,8 @@ class GraphEngine:
             source_id = f"{e['source_type']}:{e['source_id']}"
             target_id = f"{e['target_type']}:{e['target_id']}"
 
-            # Drop any edge whose source or target is not in the node set
+            # Drop any edge whose source or target is not in the node
+            # set
             if source_id not in node_ids or target_id not in node_ids:
                 continue
 

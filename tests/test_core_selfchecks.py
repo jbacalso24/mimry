@@ -420,7 +420,9 @@ class TestResolveImportsSelfChecks:
     def test_imports_java_package(self):
         """8b. Dotted module that rule 2 cannot place reaches rule 4."""
         nested_paths = {"src/main/java/com/app/model/User.java", "src/mimry/core/build.py"}
-        test_java = resolve_imports({"src/main/java/com/app/svc/Svc.java": ["com.app.model.User"]}, nested_paths)
+        test_java = resolve_imports(
+            {"src/main/java/com/app/svc/Svc.java": ["com.app.model.User"]}, nested_paths
+        )
         assert len(test_java) == 1
         assert test_java[0]["target"] == "src/main/java/com/app/model/User.java"
         assert test_java[0]["confidence"] == "INFERRED"

@@ -37,8 +37,8 @@ def test_init_bootstraps_safe_graph_output(tmp_path):
 
     assert res.returncode == 0, res.stderr
     visible_graph_dir = repo / ".mimry" / "mimry-out" / "graph"
-    # init bootstraps the output location; the graph itself is built by index,
-    # which is the only thing that parses the tree.
+    # init bootstraps the output location; the graph itself is built by
+    # index, which is the only thing that parses the tree.
     assert visible_graph_dir.is_dir()
     assert not (visible_graph_dir / "graph.json").exists()
 
@@ -72,7 +72,9 @@ def test_refresh_runs_graph_index_and_status(tmp_path):
     assert "Graph       current," in status.stdout
 
     changed_source = repo / "src" / "auth" / "session.py"
-    changed_source.write_text(changed_source.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
+    changed_source.write_text(
+        changed_source.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8"
+    )
     stale_status = _run(repo, env, "status", "--verbose")
 
     assert stale_status.returncode == 2, stale_status.stderr

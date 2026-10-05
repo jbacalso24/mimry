@@ -5,7 +5,7 @@ language_for, definitions, imports, calls, inheritance edges, and line
 pointers work correctly.
 """
 
-from mimry.core.languages import language_for, extract
+from mimry.core.languages import extract, language_for
 
 
 class TestLanguageFor:
@@ -310,14 +310,17 @@ def test_java_extracts_definitions_imports_and_calls(tmp_path):
     assert len(result["calls"]) > 0, "No calls in java"
     assert all(d["name"] for d in result["definitions"]), "Empty names in definitions"
     java_names = {d["name"] for d in result["definitions"]}
-    assert {"UserService", "Greeter", "greet"} <= java_names, f"missing java definitions: {java_names}"
+    assert {"UserService", "Greeter", "greet"} <= java_names, (
+        f"missing java definitions: {java_names}"
+    )
     assert "com.app.model.User" in {i["module"] for i in result["imports"]}, (
         f"java import not captured: {result['imports']}"
     )
 
 
 def test_java_extends_and_implements_both_produce_edges(tmp_path):
-    # extends and implements are separate grammar nodes; both must produce edges.
+    # extends and implements are separate grammar nodes; both must
+    # produce edges.
     result = _extract(tmp_path, "UserService.java", JAVA_SOURCE)
     java_bases = {(i["type"], i["base"]) for i in result["inherits"]}
     assert ("UserService", "BaseService") in java_bases, f"missing extends edge: {java_bases}"
@@ -332,11 +335,14 @@ def test_php_extracts_definitions_imports_and_calls(tmp_path):
     assert len(result["calls"]) > 0, "No calls in php"
     assert all(d["name"] for d in result["definitions"]), "Empty names in definitions"
     php_names = {d["name"] for d in result["definitions"]}
-    assert {"UserService", "Speaker", "Loggable", "helper_fn"} <= php_names, f"missing php definitions: {php_names}"
+    assert {"UserService", "Speaker", "Loggable", "helper_fn"} <= php_names, (
+        f"missing php definitions: {php_names}"
+    )
 
 
 def test_php_all_three_call_shapes_land(tmp_path):
-    # All three PHP call shapes must land, not just the bare function call.
+    # All three PHP call shapes must land, not just the bare function
+    # call.
     result = _extract(tmp_path, "UserService.php", PHP_SOURCE)
     php_calls = {c["name"] for c in result["calls"]}
     assert {"helper_fn", "make", "speak"} <= php_calls, f"missing php call shapes: {php_calls}"
@@ -354,6 +360,11 @@ def test_extracted_symbols_carry_line_pointers(tmp_path):
     for name, source in (("UserService.java", JAVA_SOURCE), ("UserService.php", PHP_SOURCE)):
         result = _extract(tmp_path, name, source)
         for definition in result["definitions"]:
-            assert isinstance(definition["line_start"], int), f"{name}: {definition['name']} has no line_start"
+            assert isinstance(definition["line_start"], int), (
+                f"{name}: {definition['name']} has no line_start"
+            )
             assert definition["line_start"] >= 1
-            assert definition["line_end"] is None or definition["line_end"] >= definition["line_start"]
+            assert (
+                definition["line_end"] is None
+                or definition["line_end"] >= definition["line_start"]
+            )

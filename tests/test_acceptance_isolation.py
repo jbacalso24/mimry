@@ -9,14 +9,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from mimry.commands import cmd_context, cmd_find, cmd_init, cmd_symbol
+from mimry.core.artifacts import graph_health, graph_rows, report_excerpt
 from mimry.freshness import index_freshness
-from mimry.core.artifacts import graph_health, report_excerpt, graph_rows
 from mimry.indexer import write_index
 from mimry.mcp_server import mimry_context, mimry_find, mimry_semantic, mimry_status, mimry_symbol
 from mimry.paths import graph_output_dir
 from mimry.scanner import scan
 from mimry.storage import load_pointer
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SENTINEL = "ACCEPTANCE_ONLY_SENTINEL_4F2A"
@@ -76,7 +75,9 @@ def test_acceptance_tests_are_absent_from_default_index_and_agent_outputs(tmp_pa
         if path.is_file() and path.suffix != ".sqlite"
     )
     persisted += sqlite_text(index / "mimry.sqlite")
-    generated = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    generated = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(
+        encoding="utf-8"
+    )
     for owned_output in (persisted, generated):
         assert SENTINEL not in owned_output
         assert "test_hidden_contract.py" not in owned_output
@@ -105,22 +106,36 @@ def test_existing_index_becomes_stale_when_policy_newly_ignores_acceptance_tests
     write_index(repo, pointer)
     pointer = load_pointer(repo)
     assert pointer is not None
-    assert "acceptance_tests/test_hidden.py" in (Path(pointer["indexPath"]) / "files.jsonl").read_text(encoding="utf-8")
+    assert "acceptance_tests/test_hidden.py" in (
+        Path(pointer["indexPath"]) / "files.jsonl"
+    ).read_text(encoding="utf-8")
 
     monkeypatch.setattr(security, "HEAVY_IGNORES", current_policy)
     freshness = index_freshness(repo, pointer)
     assert freshness["state"] == "stale"
     assert freshness["missing"] == []
     assert freshness["policy_excluded_count"] == 1
-    assert all("acceptance_tests" not in record.get("rel_path", "") for record in freshness["files"])
+    assert all(
+        "acceptance_tests" not in record.get("rel_path", "") for record in freshness["files"]
+    )
     assert all(symbol["name"] != "hidden_acceptance_symbol" for symbol in freshness["symbols"])
 
     capsys.readouterr()
-    assert cmd_find(SimpleNamespace(root=repo, query="hidden_acceptance_symbol", limit=10, semantic=False)) == 0
+    assert (
+        cmd_find(
+            SimpleNamespace(root=repo, query="hidden_acceptance_symbol", limit=10, semantic=False)
+        )
+        == 0
+    )
     assert cmd_symbol(SimpleNamespace(root=repo, name="hidden_acceptance_symbol")) == 0
-    assert cmd_context(SimpleNamespace(root=repo, query="hidden acceptance contract", semantic=True)) == 0
+    assert (
+        cmd_context(SimpleNamespace(root=repo, query="hidden acceptance contract", semantic=True))
+        == 0
+    )
     cli_output = capsys.readouterr().out
-    context_output = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    context_output = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(
+        encoding="utf-8"
+    )
     assert SENTINEL not in cli_output + context_output
     assert "acceptance_tests/test_hidden.py" not in cli_output + context_output
 
@@ -149,9 +164,9 @@ def test_existing_index_becomes_stale_when_policy_newly_ignores_acceptance_tests
     write_index(repo, pointer)
     pointer = load_pointer(repo)
     assert pointer is not None
-    assert "acceptance_tests/test_hidden.py" not in (Path(pointer["indexPath"]) / "files.jsonl").read_text(
-        encoding="utf-8"
-    )
+    assert "acceptance_tests/test_hidden.py" not in (
+        Path(pointer["indexPath"]) / "files.jsonl"
+    ).read_text(encoding="utf-8")
 
 
 def test_existing_graph_artifacts_filter_acceptance_sources_and_report(tmp_path: Path) -> None:

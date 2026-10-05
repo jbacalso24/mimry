@@ -39,17 +39,21 @@ def test_benchmark_result_is_passing_and_stable():
 
     # Must be in PASS state
     assert report.get("state") == "PASS", (
-        f"Benchmark state is {report.get('state')}, not PASS. Thresholds: {report.get('aggregates')}"
+        f"Benchmark state is {report.get('state')}, not PASS. Thresholds:"
+        f" {report.get('aggregates')}"
     )
 
-    # Evidence must be stale as soon as the fixture, gold cases, or scoring and
-    # retrieval implementation changes.
+    # Evidence must be stale as soon as the fixture, gold cases, or
+    # scoring and retrieval implementation changes.
     for key, current_digest in benchmark_input_digests(cases_path, fixture_path).items():
         assert report.get(key) == current_digest, f"Benchmark provenance changed for {key}"
 
-    # Every threshold must match frozen defaults (prevent silent weakening)
+    # Every threshold must match frozen defaults (prevent silent
+    # weakening)
     reported_thresholds = report.get("thresholds", {})
-    assert reported_thresholds == DEFAULT_THRESHOLDS, "Committed thresholds differ from frozen DEFAULT_THRESHOLDS"
+    assert reported_thresholds == DEFAULT_THRESHOLDS, (
+        "Committed thresholds differ from frozen DEFAULT_THRESHOLDS"
+    )
 
     # All checks must pass
     checks = report.get("checks", {})
@@ -57,7 +61,9 @@ def test_benchmark_result_is_passing_and_stable():
         key if key == "context_token_proxy_max" else key.removesuffix("_min").removesuffix("_max")
         for key in DEFAULT_THRESHOLDS
     }
-    assert set(checks) == expected_checks, "Committed PASS does not contain exactly one check for every frozen floor"
+    assert set(checks) == expected_checks, (
+        "Committed PASS does not contain exactly one check for every frozen floor"
+    )
     for check_name, passed in checks.items():
         assert passed, f"Check {check_name} failed in committed benchmark result"
 
@@ -96,7 +102,9 @@ def test_benchmark_provenance_changes_with_fixture_cases_and_source(tmp_path):
     assert cases_changed["cases_sha256"] != fixture_changed["cases_sha256"]
 
     benchmark_source = source / "benchmark.py"
-    benchmark_source.write_text(benchmark_source.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    benchmark_source.write_text(
+        benchmark_source.read_text(encoding="utf-8") + "\n", encoding="utf-8"
+    )
     source_changed = benchmark_input_digests(cases, fixture, source_root=source)
     assert source_changed["retrieval_source_sha256"] != cases_changed["retrieval_source_sha256"]
 
@@ -122,7 +130,8 @@ def test_report_validator_rejects_tampered_deterministic_evidence(mutation, expe
     report = json.loads((project / "benchmarks" / "result.core.json").read_text(encoding="utf-8"))
     report.update(
         benchmark_input_digests(
-            project / "benchmarks" / "cases.v1.json", project / "benchmarks" / "fixtures" / "agent_repo"
+            project / "benchmarks" / "cases.v1.json",
+            project / "benchmarks" / "fixtures" / "agent_repo",
         )
     )
     mutation(report)

@@ -1,15 +1,17 @@
-"""Context normalization must mask the operational envelope and nothing else.
+"""Context normalization must mask the operational envelope and nothing
+else.
 
 The determinism matrix compares context packs across permutations and
-platforms. To do that it has to blank out values that legitimately differ --
-the absolute root, the generation UUID, the index path, the indexed-at
-timestamp -- while leaving every canonical fact intact.
+platforms. To do that it has to blank out values that legitimately
+differ -- the absolute root, the generation UUID, the index path, the
+indexed-at timestamp -- while leaving every canonical fact intact.
 
-The earlier implementation dropped whole lines that contained the root or the
-word "Generated" and rewrote any 32-character hex token. That is broad textual
-masking: it silently discarded real semantic guidance (MIMRY's own risk note
-about generated/cache paths) and could erase canonical content hashes. These
-tests pin the narrow, field-aware behavior instead.
+The earlier implementation dropped whole lines that contained the root
+or the word "Generated" and rewrote any 32-character hex token. That is
+broad textual masking: it silently discarded real semantic guidance
+(MIMRY's own risk note about generated/cache paths) and could erase
+canonical content hashes. These tests pin the narrow, field-aware
+behavior instead.
 """
 
 from __future__ import annotations
@@ -34,7 +36,10 @@ def test_absolute_root_is_replaced_without_dropping_the_line():
 
 
 def test_generation_id_and_timestamp_are_replaced_in_place():
-    line = f"- Index: current (last indexed: {ENVELOPE['indexed_at']}; generation {ENVELOPE['generation_id']})"
+    line = (
+        f"- Index: current (last indexed: {ENVELOPE['indexed_at']}; generation"
+        f" {ENVELOPE['generation_id']})"
+    )
     out = normalize_context(line, **ENVELOPE)
     assert "<generation>" in out and "<timestamp>" in out
     assert "- Index: current (last indexed:" in out
@@ -42,7 +47,10 @@ def test_generation_id_and_timestamp_are_replaced_in_place():
 
 def test_semantic_guidance_containing_generated_is_preserved():
     """MIMRY's own risk note is canonical guidance, not an operational field."""
-    line = "- Generated/cache paths (`.mimry/`, `.git/`, caches, build outputs) are support artifacts; do not edit them as source fixes."
+    line = (
+        "- Generated/cache paths (`.mimry/`, `.git/`, caches, build outputs) are support"
+        " artifacts; do not edit them as source fixes."
+    )
     assert normalize_context(line, **ENVELOPE) == line
 
 
@@ -61,8 +69,8 @@ def test_unrelated_timestamp_is_preserved():
 def test_root_like_substring_that_is_not_the_root_is_preserved():
     line = "- See /home/ci/work/checkout-plan.md for the design"
     out = normalize_context(line, **ENVELOPE)
-    # The real root is a path prefix of this string but not this path; the
-    # trailing "-plan.md" must not be orphaned onto a "<root>" stem.
+    # The real root is a path prefix of this string but not this path;
+    # the trailing "-plan.md" must not be orphaned onto a "<root>" stem.
     assert "checkout-plan.md" in out
 
 

@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from . import ui
-from .feedback import ensure_feedback_schema
 from .cache_safety import UnsafeCachePathError, validated_current_root_cache_path
+from .feedback import ensure_feedback_schema
 from .paths import idx_path, pointer_file, roots_file
 from .security import sanitize_data
 from .semantic import ensure_semantic_schema
@@ -68,7 +68,10 @@ def _load_pointer_unlocked(
         recover_backup=True,
         validator=lambda value: (
             isinstance(value, dict)
-            and all(isinstance(value.get(key), str) and value[key] for key in ("rootId", "rootPath", "indexPath"))
+            and all(
+                isinstance(value.get(key), str) and value[key]
+                for key in ("rootId", "rootPath", "indexPath")
+            )
         ),
         expected="a pointer object with non-empty rootId, rootPath, and indexPath strings",
     )
@@ -112,15 +115,19 @@ def active_index_pointer(
     validate: bool = True,
     normalize_stale_index_path: bool = False,
 ):
-    """Resolve and retain the active generation for one complete operation.
+    """Resolve and retain the active generation for one complete
+    operation.
 
-    The pointer is sampled once to locate the stable per-root lock, then loaded
-    again under that lock. Publications, GC, feedback writes, and current-cache
-    wipes take the exclusive side; readers retain the shared side until every
-    generation artifact they use has been consumed.
+    The pointer is sampled once to locate the stable per-root lock, then
+    loaded again under that lock. Publications, GC, feedback writes, and
+    current-cache wipes take the exclusive side; readers retain the
+    shared side until every generation artifact they use has been
+    consumed.
     """
     if normalize_stale_index_path and not exclusive:
-        raise ValueError("stale index paths may only be normalized under an exclusive operation lock")
+        raise ValueError(
+            "stale index paths may only be normalized under an exclusive operation lock"
+        )
 
     root = Path(root).resolve()
     initial = load_pointer(root, validate_active_generation=False)
@@ -128,27 +135,38 @@ def active_index_pointer(
         yield None
         return
     if normalize_stale_index_path:
-        # Index/rebuild is the migration boundary for pointers copied from an
-        # old profile/cache home. Lock only the root's cache in the *current*
-        # MIMRY_CACHE_HOME; never lock, read, or delete through the stale path.
-        base = validated_current_root_cache_path(idx_path(initial["rootId"]), initial["rootId"], None, root)
+        # Index/rebuild is the migration boundary for pointers copied
+        # from an old profile/cache home. Lock only the root's cache in
+        # the *current* MIMRY_CACHE_HOME; never lock, read, or delete
+        # through the stale path.
+        base = validated_current_root_cache_path(
+            idx_path(initial["rootId"]), initial["rootId"], None, root
+        )
     else:
         base = validated_current_root_cache_path(
             Path(initial["indexPath"]), initial["rootId"], initial.get("generationId"), root
         )
     lock = exclusive_file_lock if exclusive else shared_file_lock
-    # Readers memoize generation validation and freshness from the moment the
-    # shared lock is held; writers change the generation and never memoize.
+    # Readers memoize generation validation and freshness from the
+    # moment the shared lock is held; writers change the generation and
+    # never memoize.
     with lock(base / "operation.lock"), nullcontext() if exclusive else read_scope():
         current = load_pointer(root, validate_active_generation=validate)
         if not current:
-            raise UnsafeCachePathError("MIMRY root pointer disappeared while waiting for the operation lock")
+            raise UnsafeCachePathError(
+                "MIMRY root pointer disappeared while waiting for the operation lock"
+            )
         if current.get("rootId") != initial.get("rootId"):
-            raise UnsafeCachePathError("MIMRY root index scope changed while waiting for the operation lock; retry")
+            raise UnsafeCachePathError(
+                "MIMRY root index scope changed while waiting for the operation lock; retry"
+            )
         if normalize_stale_index_path:
             try:
                 current_base = validated_current_root_cache_path(
-                    Path(current["indexPath"]), current["rootId"], current.get("generationId"), root
+                    Path(current["indexPath"]),
+                    current["rootId"],
+                    current.get("generationId"),
+                    root,
                 )
             except UnsafeCachePathError:
                 current = {**current, "indexPath": str(base), "lastIndexedAt": None}
@@ -159,7 +177,9 @@ def active_index_pointer(
                 Path(current["indexPath"]), current["rootId"], current.get("generationId"), root
             )
         if current_base != base:
-            raise UnsafeCachePathError("MIMRY root index scope changed while waiting for the operation lock; retry")
+            raise UnsafeCachePathError(
+                "MIMRY root index scope changed while waiting for the operation lock; retry"
+            )
         yield current
 
 
@@ -185,10 +205,13 @@ def _dedupe_roots(roots: Any, *, preferred: dict[str, Any] | None = None) -> lis
             continue
         entry = dict(raw)
         key = _canonical_root_path(entry["rootPath"])
-        if preferred is not None and (key == preferred_key or str(entry["rootId"]) == preferred_id):
+        if preferred is not None and (
+            key == preferred_key or str(entry["rootId"]) == preferred_id
+        ):
             # The root-local pointer is authoritative when a root is
-            # registered. Remove both stale path aliases and stale locations
-            # for its root ID before inserting the preferred record below.
+            # registered. Remove both stale path aliases and stale
+            # locations for its root ID before inserting the preferred
+            # record below.
             continue
         entry["rootPath"] = str(Path(entry["rootPath"]).expanduser().resolve(strict=False))
         current = by_path.get(key)
@@ -207,7 +230,9 @@ def _load_root_registry_unlocked() -> tuple[dict[str, Any], bool]:
         p,
         default={"roots": []},
         recover_backup=True,
-        validator=lambda value: isinstance(value, dict) and isinstance(value.get("roots", []), list),
+        validator=lambda value: (
+            isinstance(value, dict) and isinstance(value.get("roots", []), list)
+        ),
         expected="an object containing a roots array",
     )
     if recovered:
@@ -264,7 +289,10 @@ def connect(idx):
 
 def write_jsonl(path, rows):
     redacted: dict[str, str] = {}
-    atomic_write_text(path, "".join(json.dumps(sanitize_data(row, redacted), sort_keys=True) + "\n" for row in rows))
+    atomic_write_text(
+        path,
+        "".join(json.dumps(sanitize_data(row, redacted), sort_keys=True) + "\n" for row in rows),
+    )
 
 
 def load_jsonl(path):
@@ -272,8 +300,14 @@ def load_jsonl(path):
     if not path.exists():
         return []
     try:
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
     except json.JSONDecodeError as exc:
-        raise StateCorruptionError(path, f"invalid JSONL at line {exc.lineno}, column {exc.colno}") from exc
+        raise StateCorruptionError(
+            path, f"invalid JSONL at line {exc.lineno}, column {exc.colno}"
+        ) from exc
     except UnicodeError as exc:
         raise StateCorruptionError(path, "file is not valid UTF-8") from exc

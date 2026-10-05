@@ -36,11 +36,13 @@ def enrich_framework_facts(
 ) -> dict[str, Any]:
     """Attach deterministic framework facts to an indexed file record.
 
-    The structured facts live in metadata_text/content_hint so existing FTS, ranking,
-    context packs, and MCP outputs can use them without a new storage migration.
+    The structured facts live in metadata_text/content_hint so existing
+    FTS, ranking, context packs, and MCP outputs can use them without a
+    new storage migration.
 
-    Pass `source_data` (bytes) to avoid reopening the file during indexing.
-    If source_data is None, will read from path (for non-indexing use).
+    Pass `source_data` (bytes) to avoid reopening the file during
+    indexing. If source_data is None, will read from path (for
+    non-indexing use).
     """
     rel = path.relative_to(root).as_posix()
     ext = path.suffix.lower()
@@ -60,11 +62,15 @@ def enrich_framework_facts(
             facts.extend(expo_facts)
 
     if ext == ".py":
-        fastapi_facts = fastapi_endpoint_facts(path, root, file_record, symbols, edges, source=source_text)
+        fastapi_facts = fastapi_endpoint_facts(
+            path, root, file_record, symbols, edges, source=source_text
+        )
         if fastapi_facts:
             adapters.append("fastapi")
             facts.extend(fastapi_facts)
-        sql_facts = sql_schema_facts_from_text(source_text or _read_text(path), path, root, file_record, symbols, edges)
+        sql_facts = sql_schema_facts_from_text(
+            source_text or _read_text(path), path, root, file_record, symbols, edges
+        )
         if sql_facts:
             adapters.append("sql-schema")
             facts.extend(sql_facts)
@@ -78,7 +84,9 @@ def enrich_framework_facts(
                 facts.insert(0, extract_config_metadata(path, root, data=source_data))
 
     if ext == ".sql":
-        sql_facts = sql_schema_facts_from_text(source_text or _read_text(path), path, root, file_record, symbols, edges)
+        sql_facts = sql_schema_facts_from_text(
+            source_text or _read_text(path), path, root, file_record, symbols, edges
+        )
         adapters.append("sql-schema")
         facts.extend(sql_facts or ["sql schema file"])
 
@@ -99,7 +107,9 @@ def enrich_framework_facts(
     file_record["adapter"] = primary
     addition = " | ".join(facts)
     file_record["metadata_text"] = _join_text(file_record.get("metadata_text", ""), addition)
-    file_record["content_hint"] = _join_text(file_record.get("content_hint", ""), addition, limit=2000)
+    file_record["content_hint"] = _join_text(
+        file_record.get("content_hint", ""), addition, limit=2000
+    )
     return file_record
 
 
@@ -121,7 +131,9 @@ def nextjs_app_router_facts(rel: str) -> list[str]:
         facts.append("nextjs dynamic route segments " + " ".join(dynamic_segments))
     if kind == "api":
         facts.append(f"nextjs api route {route}")
-    facts.append("verification hint nextjs use package scripts: build lint typecheck test when present")
+    facts.append(
+        "verification hint nextjs use package scripts: build lint typecheck test when present"
+    )
     return facts
 
 
@@ -153,7 +165,12 @@ def fastapi_endpoint_facts(
 ) -> list[str]:
     if source is None:
         source = _read_text(path)
-    if "FastAPI" not in source and "APIRouter" not in source and "@app." not in source and "@router." not in source:
+    if (
+        "FastAPI" not in source
+        and "APIRouter" not in source
+        and "@app." not in source
+        and "@router." not in source
+    ):
         return []
     try:
         tree = ast.parse(source)
@@ -180,7 +197,8 @@ def fastapi_endpoint_facts(
                 continue
             method, route_path = route
             facts.append(
-                f"fastapi endpoint {method.upper()} {route_path} function {node.name} file {path.relative_to(root).as_posix()}"
+                f"fastapi endpoint {method.upper()} {route_path} function {node.name} file"
+                f" {path.relative_to(root).as_posix()}"
             )
             _add_framework_symbol(
                 file_record,
@@ -204,7 +222,11 @@ def _fastapi_decorator(node: ast.AST, owners: set[str]) -> tuple[str, str] | Non
     owner = _ast_call_name(node.func.value)
     if owner not in owners:
         return None
-    if not node.args or not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+    if (
+        not node.args
+        or not isinstance(node.args[0], ast.Constant)
+        or not isinstance(node.args[0].value, str)
+    ):
         return None
     return method, node.args[0].value
 
@@ -258,7 +280,10 @@ def expo_router_facts(rel: str) -> list[str]:
     if stem != "index":
         route_parts.append(stem)
     route = _route_from_segments(route_parts)
-    return [f"expo router route {route} kind {kind} screen {Path(rel).stem} file {rel}", "react native mobile surface"]
+    return [
+        f"expo router route {route} kind {kind} screen {Path(rel).stem} file {rel}",
+        "react native mobile surface",
+    ]
 
 
 def sql_schema_facts_from_text(
@@ -333,13 +358,15 @@ def markdown_doc_facts(path: Path, root: Path, text: str | None = None) -> list[
 
 
 def markdown_link_targets(path: Path, root: Path, source: str | None = None) -> list[str]:
-    """Return raw link targets found in a markdown file: md links and wiki links.
+    """Return raw link targets found in a markdown file: md links and
+    wiki links.
 
-    Filters out external URLs (http://, https://, etc.) and same-page anchors.
-    Returns sorted, de-duplicated list, capped at 50.
+    Filters out external URLs (http://, https://, etc.) and same-page
+    anchors. Returns sorted, de-duplicated list, capped at 50.
 
-    Pass `source` (decoded text) to avoid reopening the file during indexing.
-    If source is None, will read from path (for non-indexing use).
+    Pass `source` (decoded text) to avoid reopening the file during
+    indexing. If source is None, will read from path (for non-indexing
+    use).
     """
     text = source if source is not None else _read_text(path)
     targets = set()
@@ -379,7 +406,8 @@ def sql_table_references(text: str) -> list[str]:
     Rules:
     - Take the last dotted segment (public.sessions -> sessions)
     - Strip surrounding quotes/backticks/brackets
-    - Ignore SQL keywords that follow (SELECT, WHERE, SET, VALUES, ON, AS, INTO)
+    - Ignore SQL keywords that follow (SELECT, WHERE, SET, VALUES, ON,
+      AS, INTO)
     - Return sorted, de-duplicated, capped at 50
     """
     tables = set()
@@ -470,7 +498,8 @@ def _read_text(path: Path) -> str:
 
 
 def _join_text(existing: str, addition: str, *, limit: int | None = None) -> str:
-    # Readers split facts on " | ". The line break keeps output redaction from
-    # reading the addition as the value of an assignment on the hint's last line.
+    # Readers split facts on " | ". The line break keeps output
+    # redaction from reading the addition as the value of an assignment
+    # on the hint's last line.
     text = "\n | ".join(part for part in (existing, addition) if part)
     return text[:limit] if limit else text

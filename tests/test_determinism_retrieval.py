@@ -6,10 +6,15 @@ import sqlite3
 import pytest
 
 from mimry.feedback import ensure_feedback_schema, list_feedback
-from mimry.search import _fts_scores
-from mimry.semantic import semantic_rows, ensure_semantic_schema, SEMANTIC_BACKEND, SEMANTIC_SCHEMA_VERSION
-from mimry.storage import connect
 from mimry.paths import now
+from mimry.search import _fts_scores
+from mimry.semantic import (
+    SEMANTIC_BACKEND,
+    SEMANTIC_SCHEMA_VERSION,
+    ensure_semantic_schema,
+    semantic_rows,
+)
+from mimry.storage import connect
 
 
 @pytest.fixture
@@ -71,7 +76,8 @@ def test_fts_cutoff_survivors_independent_of_insertion_order(tmp_idx):
                 ),
             )
             con_forward.execute(
-                "insert into files_fts(file_id, rel_path, filename, extension, content_hint, metadata_text) values (?,?,?,?,?,?)",
+                "insert into files_fts(file_id, rel_path, filename, extension, content_hint,"
+                " metadata_text) values (?,?,?,?,?,?)",
                 (
                     f["file_id"],
                     f["rel_path"],
@@ -99,7 +105,8 @@ def test_fts_cutoff_survivors_independent_of_insertion_order(tmp_idx):
                 ),
             )
             con_reverse.execute(
-                "insert into files_fts(file_id, rel_path, filename, extension, content_hint, metadata_text) values (?,?,?,?,?,?)",
+                "insert into files_fts(file_id, rel_path, filename, extension, content_hint,"
+                " metadata_text) values (?,?,?,?,?,?)",
                 (
                     f["file_id"],
                     f["rel_path"],
@@ -168,7 +175,8 @@ def test_fts_result_ordering_stable_across_repeat_builds(tmp_idx):
                 ),
             )
             con.execute(
-                "insert into files_fts(file_id, rel_path, filename, extension, content_hint, metadata_text) values (?,?,?,?,?,?)",
+                "insert into files_fts(file_id, rel_path, filename, extension, content_hint,"
+                " metadata_text) values (?,?,?,?,?,?)",
                 (
                     f["file_id"],
                     f["rel_path"],
@@ -195,7 +203,8 @@ def test_feedback_list_cutoff_deterministic_for_tied_timestamps(tmp_idx):
 
     root_id = "test-root"
 
-    # Create two feedback scenarios with same timestamps but different insertion order
+    # Create two feedback scenarios with same timestamps but different
+    # insertion order
     idx1 = tmp_idx / "feedback1"
     idx2 = tmp_idx / "feedback2"
 
@@ -317,8 +326,9 @@ def test_semantic_chunk_read_order_is_canonical(tmp_idx):
 
     root_id = "test-root"
 
-    # Create two indices with semantic chunks in different insertion orders
-    # Use ONE file with MULTIPLE chunk kinds to test preview ordering
+    # Create two indices with semantic chunks in different insertion
+    # orders Use ONE file with MULTIPLE chunk kinds to test preview
+    # ordering
     idx_forward = tmp_idx / "semantic_fwd"
     idx_reverse = tmp_idx / "semantic_rev"
 
@@ -486,7 +496,9 @@ def test_semantic_chunk_read_order_is_canonical(tmp_idx):
     details_fwd = rows_fwd[0]["details"]
     details_rev = rows_rev[0]["details"]
 
-    assert details_fwd == details_rev, f"Different details:\nforward: {details_fwd}\nreverse: {details_rev}"
+    assert details_fwd == details_rev, (
+        f"Different details:\nforward: {details_fwd}\nreverse: {details_rev}"
+    )
 
 
 def test_semantic_equal_scores_tie_break_on_rel_path(tmp_idx):
@@ -679,7 +691,9 @@ def test_exact_match_outranks_semantic_only_match(tmp_idx):
 
     # The semantic-only entry should have score <= 80
     assert len(rows) > 0
-    assert rows[0]["score"] <= 80, f"Semantic-only score should be capped at 80, got {rows[0]['score']}"
+    assert rows[0]["score"] <= 80, (
+        f"Semantic-only score should be capped at 80, got {rows[0]['score']}"
+    )
 
 
 def _write_files_jsonl(idx, records):
@@ -718,11 +732,13 @@ def _write_files_jsonl(idx, records):
 
 
 def test_search_reason_strings_are_deterministic(tmp_path):
-    """Reason strings must be byte-identical across repeat runs and reversed record order.
+    """Reason strings must be byte-identical across repeat runs and
+    reversed record order.
 
-    A reason is what an agent actually reads to decide whether to open a file.
-    If a set iteration or a tied cutoff reaches it, the explanation changes
-    between runs even though the ranking looks stable.
+    A reason is what an agent actually reads to decide whether to open a
+    file. If a set iteration or a tied cutoff reaches it, the
+    explanation changes between runs even though the ranking looks
+    stable.
     """
     from mimry.search import find_rows
 
@@ -737,7 +753,8 @@ def test_search_reason_strings_are_deterministic(tmp_path):
             "content_hint": "session login refresh handler",
             "metadata_text": f"src/session/module_{i:03d}.py session login refresh",
         }
-        # More tied rows than the FTS cutoff of 80, so the cutoff is actually exercised.
+        # More tied rows than the FTS cutoff of 80, so the cutoff is
+        # actually exercised.
         for i in range(120)
     ]
 
@@ -750,24 +767,41 @@ def test_search_reason_strings_are_deterministic(tmp_path):
     forward_rows = find_rows(forward, query, limit=10)
     reverse_rows = find_rows(reverse, query, limit=10)
 
-    assert [(r["path"], r["reason"]) for r in forward_rows] == [(r["path"], r["reason"]) for r in reverse_rows]
+    assert [(r["path"], r["reason"]) for r in forward_rows] == [
+        (r["path"], r["reason"]) for r in reverse_rows
+    ]
     # And stable when the very same index is queried twice.
     assert forward_rows == find_rows(forward, query, limit=10)
 
 
 def test_semantic_chunk_ids_do_not_depend_on_the_machine_local_root_id(tmp_path):
-    """chunk_id is canonical semantic identity, so a uuid4 must not reach it.
+    """chunk_id is canonical semantic identity, so a uuid4 must not
+    reach it.
 
-    root_id is minted by `mimry init` with uuid.uuid4(). Deriving chunk_id from
-    it makes two identical checkouts of the same repository disagree on every
-    semantic identity, which is the same defect as deriving file_id from the
-    absolute checkout path.
+    root_id is minted by `mimry init` with uuid.uuid4(). Deriving
+    chunk_id from it makes two identical checkouts of the same
+    repository disagree on every semantic identity, which is the same
+    defect as deriving file_id from the absolute checkout path.
     """
     from mimry.semantic import _chunk
 
     created_at = now()
-    left = _chunk("11111111-1111-1111-1111-111111111111", "fid", "src/a.py", "path", "src/a.py session", created_at)
-    right = _chunk("22222222-2222-2222-2222-222222222222", "fid", "src/a.py", "path", "src/a.py session", created_at)
+    left = _chunk(
+        "11111111-1111-1111-1111-111111111111",
+        "fid",
+        "src/a.py",
+        "path",
+        "src/a.py session",
+        created_at,
+    )
+    right = _chunk(
+        "22222222-2222-2222-2222-222222222222",
+        "fid",
+        "src/a.py",
+        "path",
+        "src/a.py session",
+        created_at,
+    )
 
     assert left is not None and right is not None
     assert left["chunk_id"] == right["chunk_id"]

@@ -1,7 +1,8 @@
 """Deterministic, repo-scoped recursive plan trees.
 
-This module stores and renders explicit user-authored tree data. It does not
-create, refine, schedule, execute, or track completion of planning work.
+This module stores and renders explicit user-authored tree data. It does
+not create, refine, schedule, execute, or track completion of planning
+work.
 """
 
 from __future__ import annotations
@@ -11,9 +12,10 @@ import json
 import re
 import sys
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .paths import mdir, pointer_file
 from .state import atomic_write_json, exclusive_file_lock, shared_file_lock
@@ -53,7 +55,9 @@ class InvalidPlanError(PlanError):
 def normalize_text(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("plan text must be a string")
-    normalized = unicodedata.normalize("NFC", value.replace("\r\n", "\n").replace("\r", "\n")).strip()
+    normalized = unicodedata.normalize(
+        "NFC", value.replace("\r\n", "\n").replace("\r", "\n")
+    ).strip()
     if not normalized:
         raise ValueError("plan text must not be empty")
     return normalized
@@ -127,7 +131,10 @@ def split_leaf(plan: dict[str, Any], node_id: str, children: Iterable[str]) -> l
         raise PlanMutationError(str(exc)) from exc
     if not child_texts:
         raise PlanMutationError("split requires at least one non-empty child")
-    child_ids = [child_node_id(plan["planId"], node_id, index, text) for index, text in enumerate(child_texts)]
+    child_ids = [
+        child_node_id(plan["planId"], node_id, index, text)
+        for index, text in enumerate(child_texts)
+    ]
     if len(set(child_ids)) != len(child_ids):
         raise PlanMutationError("split produced duplicate child IDs")
     additions = {
@@ -159,14 +166,18 @@ def _validate_identity_derivations(
         if value != expected:
             errors.add(
                 PlanValidationError(
-                    "plan_id_integrity", f"planId does not match schema/name/root text; expected {expected!r}"
+                    "plan_id_integrity",
+                    f"planId does not match schema/name/root text; expected {expected!r}",
                 )
             )
     if isinstance(root, str):
         expected = root_node_id(value)
         if root != expected:
             errors.add(
-                PlanValidationError("root_id_integrity", f"root ID does not derive from planId; expected {expected!r}")
+                PlanValidationError(
+                    "root_id_integrity",
+                    f"root ID does not derive from planId; expected {expected!r}",
+                )
             )
     for parent_id in sorted(adjacency):
         for index, child in enumerate(adjacency[parent_id]):
@@ -178,13 +189,17 @@ def _validate_identity_derivations(
                 errors.add(
                     PlanValidationError(
                         "child_id_integrity",
-                        f"child {child!r} at {parent_id!r}[{index}] does not match derived ID {expected!r}",
+                        f"child {child!r} at {parent_id!r}[{index}] does not match derived ID"
+                        f" {expected!r}",
                     )
                 )
 
 
 def _validate_reachability(
-    root: str, nodes: dict[str, Any], adjacency: dict[str, list[str]], errors: set[PlanValidationError]
+    root: str,
+    nodes: dict[str, Any],
+    adjacency: dict[str, list[str]],
+    errors: set[PlanValidationError],
 ) -> None:
     reachable: set[str] = set()
     active: set[str] = set()
@@ -238,7 +253,10 @@ def validate_plan(payload: Any) -> list[PlanValidationError]:
         and unicodedata.normalize("NFC", name) == name
     )
     if not valid_name:
-        error("invalid_name", "name must be a non-empty NFC slug without whitespace or path separators")
+        error(
+            "invalid_name",
+            "name must be a non-empty NFC slug without whitespace or path separators",
+        )
     root = payload.get("root")
     valid_root_id = isinstance(root, str) and _NODE_ID.fullmatch(root) is not None
     if not valid_root_id:
@@ -280,7 +298,9 @@ def validate_plan(payload: Any) -> list[PlanValidationError]:
             valid_text[key] = text
         children = node.get("children")
         if not isinstance(children, list) or any(not isinstance(child, str) for child in children):
-            error("invalid_children", f"node {key!r} children must be an ordered array of node IDs")
+            error(
+                "invalid_children", f"node {key!r} children must be an ordered array of node IDs"
+            )
             continue
         adjacency[key] = children
         seen: set[str] = set()
@@ -333,7 +353,9 @@ def canonical_plan(plan: dict[str, Any]) -> dict[str, Any]:
 
 
 def plan_digest(plan: dict[str, Any]) -> str:
-    blob = json.dumps(canonical_plan(plan), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    blob = json.dumps(
+        canonical_plan(plan), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -349,7 +371,10 @@ def render_terminal(plan: dict[str, Any]) -> str:
         stack.append((children[index], "", index == len(children) - 1))
     while stack:
         node_id, prefix, last = stack.pop()
-        lines.append(f"{prefix}{'`-- ' if last else '|-- '}{_display_text(nodes[node_id]['text'])} [{node_id}]")
+        lines.append(
+            f"{prefix}{'`-- ' if last else '|-- '}{_display_text(nodes[node_id]['text'])}"
+            f" [{node_id}]"
+        )
         child_prefix = prefix + ("    " if last else "|   ")
         children = nodes[node_id]["children"]
         for index in range(len(children) - 1, -1, -1):
@@ -385,7 +410,7 @@ def write_plan_output(text: str) -> None:
     stream.write(text)
 
 
-class _DuplicatePlanKey(ValueError):
+class _DuplicatePlanKeyError(ValueError):
     pass
 
 
@@ -394,18 +419,24 @@ def _load_plan_json(path: Path) -> Any:
         result: dict[str, Any] = {}
         for key, value in pairs:
             if key in result:
-                raise _DuplicatePlanKey(key)
+                raise _DuplicatePlanKeyError(key)
             result[key] = value
         return result
 
     try:
         return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=strict_object)
-    except _DuplicatePlanKey as exc:
+    except _DuplicatePlanKeyError as exc:
         raise InvalidPlanError(
-            [PlanValidationError("duplicate_key", f"plan JSON object contains duplicate key: {exc.args[0]!r}")]
+            [
+                PlanValidationError(
+                    "duplicate_key", f"plan JSON object contains duplicate key: {exc.args[0]!r}"
+                )
+            ]
         ) from exc
     except json.JSONDecodeError as exc:
-        raise PlanError(f"invalid_json: invalid JSON at line {exc.lineno}, column {exc.colno}") from exc
+        raise PlanError(
+            f"invalid_json: invalid JSON at line {exc.lineno}, column {exc.colno}"
+        ) from exc
     except UnicodeError as exc:
         raise PlanError("invalid_json: file is not valid UTF-8") from exc
 
@@ -438,7 +469,9 @@ class PlanStore:
         if errors:
             raise InvalidPlanError(errors)
         if payload["planId"] != plan_id:
-            raise InvalidPlanError([PlanValidationError("plan_id_mismatch", "file name and planId differ")])
+            raise InvalidPlanError(
+                [PlanValidationError("plan_id_mismatch", "file name and planId differ")]
+            )
         return payload
 
     def load(self, plan_id: str) -> dict[str, Any]:
@@ -460,7 +493,9 @@ class PlanStore:
             atomic_write_json(path, canonical_plan(plan))
         return plan
 
-    def split(self, plan_id: str, node_id: str, children: Iterable[str]) -> tuple[dict[str, Any], list[str]]:
+    def split(
+        self, plan_id: str, node_id: str, children: Iterable[str]
+    ) -> tuple[dict[str, Any], list[str]]:
         self._require_initialized()
         with exclusive_file_lock(self.lock_path):
             plan = self._load_unlocked(plan_id)

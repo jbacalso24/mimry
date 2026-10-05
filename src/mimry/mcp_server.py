@@ -6,8 +6,8 @@ import io
 import sys
 from functools import wraps
 from inspect import signature
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from fastmcp import FastMCP
@@ -23,9 +23,10 @@ from mimry.commands import (
     cmd_why,
     require,
 )
-from mimry.digest import canonical_digest
-from mimry.freshness import index_freshness
 from mimry.core.artifacts import graph_health
+from mimry.digest import canonical_digest
+from mimry.feedback import feedback_payload_from_args, record_feedback
+from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.plan import (
@@ -39,22 +40,29 @@ from mimry.plan import (
 )
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
+from mimry.security import (
+    filter_index_records,
+    redact_sensitive_text,
+    safe_root,
+    sanitize_data,
+    sanitize_query,
+)
 from mimry.semantic import semantic_health, semantic_rows
-from mimry.security import filter_index_records, redact_sensitive_text, safe_root, sanitize_data, sanitize_query
 from mimry.state import (
+    GENERATION_SCHEMA_VERSION,
+    IndexSchemaMigrationError,
     StateCorruptionError,
     StateLockTimeoutError,
-    IndexSchemaMigrationError,
-    GENERATION_SCHEMA_VERSION,
     UnsupportedIndexSchemaError,
 )
-from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.storage import RootIdentityError, active_index_pointer, load_jsonl, load_pointer
 
 mcp = FastMCP("MIMRY")
 
 
-def _schema_upgrade_error_payload(exc: IndexSchemaMigrationError, *, root: Path | None = None) -> dict[str, Any]:
+def _schema_upgrade_error_payload(
+    exc: IndexSchemaMigrationError, *, root: Path | None = None
+) -> dict[str, Any]:
     """Handle IndexSchemaMigrationError: schema upgrade needed, not corruption."""
     message = str(exc)
     return {
@@ -74,7 +82,9 @@ def _schema_upgrade_error_payload(exc: IndexSchemaMigrationError, *, root: Path 
     }
 
 
-def _unsupported_schema_error_payload(exc: UnsupportedIndexSchemaError, *, root: Path | None = None) -> dict[str, Any]:
+def _unsupported_schema_error_payload(
+    exc: UnsupportedIndexSchemaError, *, root: Path | None = None
+) -> dict[str, Any]:
     message = str(exc)
     return {
         "returncode": 2,
@@ -107,7 +117,9 @@ def _state_error_payload(exc: StateCorruptionError, *, root: Path | None = None)
             "backup": str(exc.backup) if exc.backup else None,
             "detail": exc.detail,
         },
-        "recommended": "Preserve the corrupt state file and follow the recovery action in state_error.",
+        "recommended": (
+            "Preserve the corrupt state file and follow the recovery action in state_error."
+        ),
     }
 
 
@@ -121,17 +133,24 @@ def _state_guard(func):
         except UnsupportedIndexSchemaError as exc:
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
             return sanitize_data(
-                _unsupported_schema_error_payload(exc, root=_root(root) if isinstance(root, str) else None)
+                _unsupported_schema_error_payload(
+                    exc, root=_root(root) if isinstance(root, str) else None
+                )
             )
         except IndexSchemaMigrationError as exc:
-            # Must catch before StateCorruptionError since it's a subclass
+            # Must catch before StateCorruptionError since it's a
+            # subclass
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
             return sanitize_data(
-                _schema_upgrade_error_payload(exc, root=_root(root) if isinstance(root, str) else None)
+                _schema_upgrade_error_payload(
+                    exc, root=_root(root) if isinstance(root, str) else None
+                )
             )
         except StateCorruptionError as exc:
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
-            return sanitize_data(_state_error_payload(exc, root=_root(root) if isinstance(root, str) else None))
+            return sanitize_data(
+                _state_error_payload(exc, root=_root(root) if isinstance(root, str) else None)
+            )
         except StateLockTimeoutError as exc:
             return sanitize_data(
                 {
@@ -156,7 +175,10 @@ def _state_guard(func):
                         "recorded_root": str(exc.recorded_root),
                         "current_root": str(exc.current_root),
                     },
-                    "recommended": "Do not share one root ID/cache across copied roots; initialize a distinct root.",
+                    "recommended": (
+                        "Do not share one root ID/cache across copied roots; initialize a distinct"
+                        " root."
+                    ),
                 }
             )
 
@@ -171,11 +193,14 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
             code = func(args)
         except UnsupportedIndexSchemaError as exc:
             print(f"MIMRY index requires a newer MIMRY client: {exc}", file=sys.stderr)
-            payload = _unsupported_schema_error_payload(exc, root=_root(getattr(args, "root", None)))
+            payload = _unsupported_schema_error_payload(
+                exc, root=_root(getattr(args, "root", None))
+            )
             payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
             return sanitize_data(payload)
         except IndexSchemaMigrationError as exc:
-            # Must catch before StateCorruptionError since it's a subclass
+            # Must catch before StateCorruptionError since it's a
+            # subclass
             print(f"MIMRY index schema outdated: {exc}", file=sys.stderr)
             payload = _schema_upgrade_error_payload(exc, root=_root(getattr(args, "root", None)))
             payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
@@ -200,7 +225,9 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
                     },
                 }
             )
-    return sanitize_data({"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
+    return sanitize_data(
+        {"returncode": int(code or 0), "stdout": stdout.getvalue(), "stderr": stderr.getvalue()}
+    )
 
 
 def _root(root: str | None) -> Path:
@@ -235,7 +262,10 @@ def _status_payload_unchecked(root_path: Path, verify: bool = False) -> dict[str
     missing = fresh["missing"]
     state = fresh["state"]
     graph = graph_health(
-        root_path, index_state=state, verified_hashes=fresh["verified_hashes"], native_paths=fresh.get("native_paths")
+        root_path,
+        index_state=state,
+        verified_hashes=fresh["verified_hashes"],
+        native_paths=fresh.get("native_paths"),
     )
     payload = {
         "initialized": True,
@@ -261,10 +291,11 @@ def _status_payload(root_path: Path, verify: bool = False) -> dict[str, Any]:
     except UnsupportedIndexSchemaError as exc:
         return _unsupported_schema_error_payload(exc, root=root_path)
     except IndexSchemaMigrationError as exc:
-        # Must precede StateCorruptionError: it is a subclass, and this inner
-        # handler runs before _state_guard ever sees the exception. Status is
-        # the tool agents call first, so misreporting a routine schema upgrade
-        # as corruption here is what sends them off preserving a healthy index.
+        # Must precede StateCorruptionError: it is a subclass, and this
+        # inner handler runs before _state_guard ever sees the
+        # exception. Status is the tool agents call first, so
+        # misreporting a routine schema upgrade as corruption here is
+        # what sends them off preserving a healthy index.
         return _schema_upgrade_error_payload(exc, root=root_path)
     except StateCorruptionError as exc:
         return _state_error_payload(exc, root=root_path)
@@ -282,7 +313,8 @@ def mimry_list_adapters(active_only: bool = False) -> dict[str, Any]:
 def mimry_status(root: str | None = None, verify: bool = False) -> dict[str, Any]:
     """Return MIMRY initialization and index freshness for a root.
 
-    Freshness trusts unchanged file metadata, like git; ``verify`` re-hashes every file.
+    Freshness trusts unchanged file metadata, like git; ``verify``
+    re-hashes every file.
     """
     return _status_payload(_root(root), verify)
 
@@ -293,9 +325,12 @@ def mimry_reindex(root: str | None = None, full: bool = False) -> dict[str, Any]
     """Rebuild the local MIMRY index for a root; ``full`` re-parses unchanged files too."""
     root_path = _root(root)
     stats = write_index(root_path, require(root_path, validate=False), full=full)
-    # Counts, not path lists: a branch switch can change thousands of files.
+    # Counts, not path lists: a branch switch can change thousands of
+    # files.
     changes = stats.get("changes")
-    stats["changes"] = {kind: len(paths) for kind, paths in changes.items()} if changes is not None else None
+    stats["changes"] = (
+        {kind: len(paths) for kind, paths in changes.items()} if changes is not None else None
+    )
     return {"root": str(root_path), **stats}
 
 
@@ -327,12 +362,15 @@ def mimry_refresh(root: str | None = None) -> dict[str, Any]:
 
 @mcp.tool
 @_state_guard
-def mimry_preflight(query: str, root: str | None = None, force_refresh: bool = False) -> dict[str, Any]:
+def mimry_preflight(
+    query: str, root: str | None = None, force_refresh: bool = False
+) -> dict[str, Any]:
     """Fast readiness check and task context generation, matching CLI preflight."""
     root_path = _root(root)
     query = sanitize_query(query)
     payload = _capture_command(
-        cmd_preflight, SimpleNamespace(root=str(root_path), task=query, force_refresh=force_refresh)
+        cmd_preflight,
+        SimpleNamespace(root=str(root_path), task=query, force_refresh=force_refresh),
     )
     status = _status_payload(root_path)
     payload.update(
@@ -351,13 +389,26 @@ def mimry_preflight(query: str, root: str | None = None, force_refresh: bool = F
 @mcp.tool
 @_state_guard
 @_index_operation()
-def mimry_find(query: str, root: str | None = None, limit: int = 10, semantic: bool = False) -> dict[str, Any]:
+def mimry_find(
+    query: str, root: str | None = None, limit: int = 10, semantic: bool = False
+) -> dict[str, Any]:
     """Search indexed files with ranking reasons."""
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows = find_rows(Path(ptr["indexPath"]), query, limit, root=root_path, root_id=ptr.get("rootId"), semantic=semantic)
-    payload = {"query": redact_sensitive_text(query), "root": str(root_path), "results": sanitize_data(rows)}
+    rows = find_rows(
+        Path(ptr["indexPath"]),
+        query,
+        limit,
+        root=root_path,
+        root_id=ptr.get("rootId"),
+        semantic=semantic,
+    )
+    payload = {
+        "query": redact_sensitive_text(query),
+        "root": str(root_path),
+        "results": sanitize_data(rows),
+    }
     if semantic:
         payload["semantic"] = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))
     return payload
@@ -389,8 +440,14 @@ def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows = find_rows(Path(ptr["indexPath"]), query, limit, True, root=root_path, root_id=ptr.get("rootId"))
-    return {"query": redact_sensitive_text(query), "root": str(root_path), "results": sanitize_data(rows)}
+    rows = find_rows(
+        Path(ptr["indexPath"]), query, limit, True, root=root_path, root_id=ptr.get("rootId")
+    )
+    return {
+        "query": redact_sensitive_text(query),
+        "root": str(root_path),
+        "results": sanitize_data(rows),
+    }
 
 
 @mcp.tool
@@ -476,7 +533,9 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
 def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[str, Any]:
     """Explain top files, symbols, graph evidence, and verification hints for a task."""
     root_path = _root(root)
-    return _capture_command(cmd_explain, SimpleNamespace(root=str(root_path), query=sanitize_query(query), limit=limit))
+    return _capture_command(
+        cmd_explain, SimpleNamespace(root=str(root_path), query=sanitize_query(query), limit=limit)
+    )
 
 
 @mcp.tool
@@ -486,18 +545,27 @@ def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, A
     root_path = _root(root)
     return _capture_command(
         cmd_path,
-        SimpleNamespace(root=str(root_path), source=sanitize_query(source), target=sanitize_query(target)),
+        SimpleNamespace(
+            root=str(root_path), source=sanitize_query(source), target=sanitize_query(target)
+        ),
     )
 
 
 @mcp.tool
 @_state_guard
-def mimry_why(surface: str, query: str, root: str | None = None, limit: int = 25) -> dict[str, Any]:
+def mimry_why(
+    surface: str, query: str, root: str | None = None, limit: int = 25
+) -> dict[str, Any]:
     """Explain why a file or symbol ranked for a task query."""
     root_path = _root(root)
     return _capture_command(
         cmd_why,
-        SimpleNamespace(root=str(root_path), surface=sanitize_query(surface), query=sanitize_query(query), limit=limit),
+        SimpleNamespace(
+            root=str(root_path),
+            surface=sanitize_query(surface),
+            query=sanitize_query(query),
+            limit=limit,
+        ),
     )
 
 
@@ -564,7 +632,10 @@ def _digest_payload_unchecked(root_path: Path) -> dict[str, Any]:
         "canonical_state": {
             "digest": digest,
             "schema_version": GENERATION_SCHEMA_VERSION,
-            "note": "These fields are deterministic and reproducible across repositories with identical content.",
+            "note": (
+                "These fields are deterministic and reproducible across repositories with"
+                " identical content."
+            ),
         },
         "operational_metadata": {
             "generation_id": ptr.get("generationId"),
@@ -626,14 +697,22 @@ def mimry_plan_tree(plan_id: str, root: str | None = None) -> dict[str, Any]:
 @_state_guard
 def mimry_plan_check(plan_id: str, root: str | None = None) -> dict[str, Any]:
     """Validate a stored plan tree without changing it."""
-    return _plan_read(lambda: {"plan_id": PlanStore(_root(root)).load(plan_id)["planId"], "valid": True, "errors": []})
+    return _plan_read(
+        lambda: {
+            "plan_id": PlanStore(_root(root)).load(plan_id)["planId"],
+            "valid": True,
+            "errors": [],
+        }
+    )
 
 
 @mcp.tool
 @_state_guard
 def mimry_plan_digest(plan_id: str, root: str | None = None) -> dict[str, Any]:
     """Return the canonical semantic SHA-256 for a stored plan tree."""
-    return _plan_read(lambda: {"plan_id": plan_id, "digest": plan_digest(PlanStore(_root(root)).load(plan_id))})
+    return _plan_read(
+        lambda: {"plan_id": plan_id, "digest": plan_digest(PlanStore(_root(root)).load(plan_id))}
+    )
 
 
 @mcp.tool

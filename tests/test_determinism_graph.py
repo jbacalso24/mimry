@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import random
-from mimry.core.build import GraphEngine, DuplicateIdentityError, edge_sort_key, canonicalize_edges
+
+from mimry.core.build import DuplicateIdentityError, GraphEngine, canonicalize_edges, edge_sort_key
 from mimry.core.resolve import symbol_selection_key
 
 
@@ -47,8 +48,20 @@ class TestDuplicateNodeIdentity:
         engine = GraphEngine()
         files = [{"file_id": "f1", "rel_path": "a.py", "extension": ".py"}]
         symbols = [
-            {"symbol_id": "s1", "file_id": "f1", "name": "foo", "kind": "function", "language": "python"},
-            {"symbol_id": "s1", "file_id": "f1", "name": "bar", "kind": "function", "language": "python"},
+            {
+                "symbol_id": "s1",
+                "file_id": "f1",
+                "name": "foo",
+                "kind": "function",
+                "language": "python",
+            },
+            {
+                "symbol_id": "s1",
+                "file_id": "f1",
+                "name": "bar",
+                "kind": "function",
+                "language": "python",
+            },
         ]
         edges = []
 
@@ -127,8 +140,20 @@ class TestEdgeDeterminism:
     def test_edge_metadata_participates_in_sort_key(self):
         """Edges differing only in an extra metadata field sort stably."""
         edges = [
-            {"source": "f1", "target": "f2", "relation": "calls", "confidence": "EXTRACTED", "extra": "b"},
-            {"source": "f1", "target": "f2", "relation": "calls", "confidence": "EXTRACTED", "extra": "a"},
+            {
+                "source": "f1",
+                "target": "f2",
+                "relation": "calls",
+                "confidence": "EXTRACTED",
+                "extra": "b",
+            },
+            {
+                "source": "f1",
+                "target": "f2",
+                "relation": "calls",
+                "confidence": "EXTRACTED",
+                "extra": "a",
+            },
         ]
 
         sorted_edges = canonicalize_edges(edges)
@@ -145,8 +170,20 @@ class TestEdgeDeterminism:
             {"file_id": "f3", "rel_path": "c.py", "extension": ".py"},
         ]
         symbols = [
-            {"symbol_id": "s1", "file_id": "f1", "name": "foo", "kind": "function", "language": "python"},
-            {"symbol_id": "s2", "file_id": "f2", "name": "bar", "kind": "class", "language": "python"},
+            {
+                "symbol_id": "s1",
+                "file_id": "f1",
+                "name": "foo",
+                "kind": "function",
+                "language": "python",
+            },
+            {
+                "symbol_id": "s2",
+                "file_id": "f2",
+                "name": "bar",
+                "kind": "class",
+                "language": "python",
+            },
         ]
         edges = [
             {
@@ -189,8 +226,20 @@ class TestSymbolResolutionTies:
 
     def test_symbol_selection_key_is_total(self):
         """symbol_selection_key produces a total order."""
-        sym1 = {"name": "foo", "kind": "function", "line_start": 10, "line_end": 20, "symbol_id": "s1"}
-        sym2 = {"name": "foo", "kind": "function", "line_start": 10, "line_end": 20, "symbol_id": "s2"}
+        sym1 = {
+            "name": "foo",
+            "kind": "function",
+            "line_start": 10,
+            "line_end": 20,
+            "symbol_id": "s1",
+        }
+        sym2 = {
+            "name": "foo",
+            "kind": "function",
+            "line_start": 10,
+            "line_end": 20,
+            "symbol_id": "s2",
+        }
 
         key1 = symbol_selection_key(sym1)
         key2 = symbol_selection_key(sym2)
@@ -198,15 +247,40 @@ class TestSymbolResolutionTies:
         # Different symbol_ids should produce different keys
         assert key1 != key2
 
-    # A real tie: four candidates in ONE file, all enclosing the call line, all
-    # sharing line_start so "innermost wins" cannot decide it. Only the
-    # documented total key can. The previous version of this test gave each file
-    # a single symbol, so shuffling was a no-op and it asserted nothing.
+    # A real tie: four candidates in ONE file, all enclosing the call
+    # line, all sharing line_start so "innermost wins" cannot decide it.
+    # Only the documented total key can. The previous version of this
+    # test gave each file a single symbol, so shuffling was a no-op and
+    # it asserted nothing.
     _TIED_CALLERS = [
-        {"name": "outer_method", "kind": "method", "line_start": 1, "line_end": 20, "symbol_id": "sD"},
-        {"name": "outer_fn", "kind": "function", "line_start": 1, "line_end": 20, "symbol_id": "sC"},
-        {"name": "OuterIface", "kind": "interface", "line_start": 1, "line_end": 20, "symbol_id": "sB"},
-        {"name": "OuterClass", "kind": "class", "line_start": 1, "line_end": 20, "symbol_id": "sA"},
+        {
+            "name": "outer_method",
+            "kind": "method",
+            "line_start": 1,
+            "line_end": 20,
+            "symbol_id": "sD",
+        },
+        {
+            "name": "outer_fn",
+            "kind": "function",
+            "line_start": 1,
+            "line_end": 20,
+            "symbol_id": "sC",
+        },
+        {
+            "name": "OuterIface",
+            "kind": "interface",
+            "line_start": 1,
+            "line_end": 20,
+            "symbol_id": "sB",
+        },
+        {
+            "name": "OuterClass",
+            "kind": "class",
+            "line_start": 1,
+            "line_end": 20,
+            "symbol_id": "sA",
+        },
     ]
 
     def _resolve_with(self, callers):
@@ -216,7 +290,15 @@ class TestSymbolResolutionTies:
             {"main.py": [{"name": "helper", "line": 5}]},
             {
                 "main.py": list(callers),
-                "utils.py": [{"name": "helper", "kind": "function", "line_start": 1, "line_end": 3, "symbol_id": "sH"}],
+                "utils.py": [
+                    {
+                        "name": "helper",
+                        "kind": "function",
+                        "line_start": 1,
+                        "line_end": 3,
+                        "symbol_id": "sH",
+                    }
+                ],
             },
             [{"importer": "main.py", "target": "utils.py"}],
         )
@@ -241,13 +323,27 @@ class TestSymbolResolutionTies:
         for seed in (0, 1, 7, 42, 1234, 99991):
             shuffled = list(self._TIED_CALLERS)
             random.Random(seed).shuffle(shuffled)
-            assert self._resolve_with(shuffled) == forward, f"selection moved under shuffle seed {seed}"
+            assert self._resolve_with(shuffled) == forward, (
+                f"selection moved under shuffle seed {seed}"
+            )
 
     def test_innermost_enclosing_symbol_still_wins_when_line_start_differs(self):
         """The tie-break must not override the primary rule."""
         callers = [
-            {"name": "OuterClass", "kind": "class", "line_start": 1, "line_end": 20, "symbol_id": "sA"},
-            {"name": "inner_fn", "kind": "function", "line_start": 4, "line_end": 8, "symbol_id": "sZ"},
+            {
+                "name": "OuterClass",
+                "kind": "class",
+                "line_start": 1,
+                "line_end": 20,
+                "symbol_id": "sA",
+            },
+            {
+                "name": "inner_fn",
+                "kind": "function",
+                "line_start": 4,
+                "line_end": 8,
+                "symbol_id": "sZ",
+            },
         ]
         result = self._resolve_with(callers)
         assert result[0]["caller_symbol"] == "inner_fn"
@@ -260,12 +356,32 @@ class TestSymbolResolutionTies:
         result = resolve_calls(
             {"main.py": [{"name": "process", "line": 5}]},
             {
-                "main.py": [{"name": "main", "kind": "function", "line_start": 1, "line_end": 20, "symbol_id": "s3"}],
+                "main.py": [
+                    {
+                        "name": "main",
+                        "kind": "function",
+                        "line_start": 1,
+                        "line_end": 20,
+                        "symbol_id": "s3",
+                    }
+                ],
                 "utils.py": [
-                    {"name": "process", "kind": "function", "line_start": 1, "line_end": 10, "symbol_id": "s1"}
+                    {
+                        "name": "process",
+                        "kind": "function",
+                        "line_start": 1,
+                        "line_end": 10,
+                        "symbol_id": "s1",
+                    }
                 ],
                 "helpers.py": [
-                    {"name": "process", "kind": "function", "line_start": 1, "line_end": 10, "symbol_id": "s2"}
+                    {
+                        "name": "process",
+                        "kind": "function",
+                        "line_start": 1,
+                        "line_end": 10,
+                        "symbol_id": "s2",
+                    }
                 ],
             },
             [
@@ -273,7 +389,9 @@ class TestSymbolResolutionTies:
                 {"importer": "main.py", "target": "helpers.py"},
             ],
         )
-        assert result == [], "two equally good targets in different files must be declined, not guessed"
+        assert result == [], (
+            "two equally good targets in different files must be declined, not guessed"
+        )
 
 
 class TestEdgeSortKey:
@@ -294,8 +412,22 @@ class TestEdgeSortKey:
 
     def test_edge_sort_key_byte_stable(self):
         """edge_sort_key serializes consistently."""
-        edge1 = {"source": "f1", "target": "f2", "relation": "calls", "confidence": "EXTRACTED", "x": 1, "y": 2}
-        edge2 = {"source": "f1", "target": "f2", "relation": "calls", "confidence": "EXTRACTED", "y": 2, "x": 1}
+        edge1 = {
+            "source": "f1",
+            "target": "f2",
+            "relation": "calls",
+            "confidence": "EXTRACTED",
+            "x": 1,
+            "y": 2,
+        }
+        edge2 = {
+            "source": "f1",
+            "target": "f2",
+            "relation": "calls",
+            "confidence": "EXTRACTED",
+            "y": 2,
+            "x": 1,
+        }
 
         key1 = edge_sort_key(edge1)
         key2 = edge_sort_key(edge2)

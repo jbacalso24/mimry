@@ -41,14 +41,18 @@ def test_adapter_for_extension_routes_known_code_extensions():
 def test_nextjs_app_router_extracts_route_facts():
     facts = nextjs_app_router_facts("src/app/board/[cardId]/page.tsx")
 
-    assert "nextjs app router route /board/:cardId kind page file src/app/board/[cardId]/page.tsx" in facts
+    assert (
+        "nextjs app router route /board/:cardId kind page file src/app/board/[cardId]/page.tsx"
+        in facts
+    )
     assert any("dynamic route segments [cardId]" in fact for fact in facts)
 
 
 def test_markdown_docs_extracts_frontmatter_headings_and_wiki_links(tmp_path):
     doc = tmp_path / "decision.md"
     doc.write_text(
-        "---\ntitle: Board Routes\ntype: adr\ntags: [next, fastapi]\n---\n# Route Map\nSee [[Backend API]] and [Schema](schema.md).\n",
+        "---\ntitle: Board Routes\ntype: adr\ntags: [next, fastapi]\n---\n# Route Map\nSee"
+        " [[Backend API]] and [Schema](schema.md).\n",
         encoding="utf-8",
     )
 

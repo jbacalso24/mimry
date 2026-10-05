@@ -41,7 +41,9 @@ def initialized_repo(tmp_path: Path) -> Path:
     return root
 
 
-def new_plan(root: Path, text: str = "Ship feature", *, name: str | None = None) -> tuple[str, str]:
+def new_plan(
+    root: Path, text: str = "Ship feature", *, name: str | None = None
+) -> tuple[str, str]:
     args = ["plan", "new", text]
     if name:
         args += ["--name", name]
@@ -56,8 +58,9 @@ def deep_chain(depth: int) -> dict:
     plan = create_plan("node 0", "deep")
     parent_id = plan["root"]
     for index in range(1, depth):
-        # Use the same production derivation helper as split_leaf without paying
-        # O(depth²) for 1,999 separately validated mutations.
+        # Use the same production derivation helper as split_leaf
+        # without paying O(depth²) for 1,999 separately validated
+        # mutations.
         text = f"node {index}"
         child_id = child_node_id(plan["planId"], parent_id, 0, text)
         plan["nodes"][parent_id]["children"] = [child_id]
@@ -111,7 +114,9 @@ def test_user_scenario_recursively_splits_leaves_and_renders_stable_tree(tmp_pat
 def test_golden_json_markdown_and_digest(tmp_path: Path):
     root = initialized_repo(tmp_path)
     plan_id, root_id = new_plan(root, "Café\r\nlaunch", name="Launch Plan")
-    code, split_out, _ = run(root, "plan", "split", plan_id, root_id, "--child", "Design", "--child", "Build")
+    code, split_out, _ = run(
+        root, "plan", "split", plan_id, root_id, "--child", "Design", "--child", "Build"
+    )
     assert code == 0
     child_ids = [line.split(": ", 1)[1] for line in split_out.splitlines()[1:]]
 
@@ -130,8 +135,10 @@ def test_golden_json_markdown_and_digest(tmp_path: Path):
         },
     }
     assert json_out == json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    assert run(root, "plan", "tree", plan_id, "--md")[1] == (
-        f"# Café launch\n\n- Café launch `{root_id}`\n  - Design `{child_ids[0]}`\n  - Build `{child_ids[1]}`\n"
+    assert (
+        run(root, "plan", "tree", plan_id, "--md")[1]
+        == f"# Café launch\n\n- Café launch `{root_id}`\n  - Design `{child_ids[0]}`\n  - Build"
+        f" `{child_ids[1]}`\n"
     )
     digest = run(root, "plan", "digest", plan_id)[1].strip()
     assert digest == plan_digest(payload)
@@ -219,8 +226,16 @@ def test_validation_reports_stable_sorted_errors_and_future_schema_fails_closed(
     errors = validate_plan(malformed)
     codes = [error.code for error in errors]
     assert codes == sorted(codes)
-    assert {"duplicate_child", "invalid_name", "invalid_plan_id", "missing_child", "orphan"} <= set(codes)
-    assert [(error.code, error.message) for error in errors] == sorted((error.code, error.message) for error in errors)
+    assert {
+        "duplicate_child",
+        "invalid_name",
+        "invalid_plan_id",
+        "missing_child",
+        "orphan",
+    } <= set(codes)
+    assert [(error.code, error.message) for error in errors] == sorted(
+        (error.code, error.message) for error in errors
+    )
     future = {**malformed, "schemaVersion": "999"}
     assert [error.code for error in validate_plan(future)] == ["unsupported_schema"]
 
@@ -317,7 +332,9 @@ def test_concurrent_splits_are_serialized_and_one_conflicting_split_fails(tmp_pa
     assert validate_plan(store.load(plan_id)) == []
 
 
-def test_two_thousand_node_chain_checks_renders_projects_and_digests_without_recursion(tmp_path: Path):
+def test_two_thousand_node_chain_checks_renders_projects_and_digests_without_recursion(
+    tmp_path: Path,
+):
     depth = 2_000
     plan = deep_chain(depth)
     assert validate_plan(plan) == []
@@ -361,13 +378,18 @@ def _tamper_child_id(plan: dict) -> None:
 @pytest.mark.parametrize(
     ("mutation", "expected_code"),
     [
-        (lambda plan: plan["nodes"][plan["root"]].__setitem__("text", "tampered root text"), "plan_id_integrity"),
+        (
+            lambda plan: plan["nodes"][plan["root"]].__setitem__("text", "tampered root text"),
+            "plan_id_integrity",
+        ),
         (lambda plan: plan.__setitem__("planId", "plan-" + "0" * 24), "plan_id_integrity"),
         (_tamper_root_id, "root_id_integrity"),
         (_tamper_child_id, "child_id_integrity"),
     ],
 )
-def test_tampered_identity_fails_closed_across_cli_list_digest_and_mcp(tmp_path: Path, mutation, expected_code: str):
+def test_tampered_identity_fails_closed_across_cli_list_digest_and_mcp(
+    tmp_path: Path, mutation, expected_code: str
+):
     from mimry import mcp_server
 
     root = initialized_repo(tmp_path)
@@ -380,7 +402,12 @@ def test_tampered_identity_fails_closed_across_cli_list_digest_and_mcp(tmp_path:
     original_plan_id = create_plan("Root", "identity")["planId"]
     store.path(original_plan_id).write_text(json.dumps(plan), encoding="utf-8")
 
-    for args in (("tree", original_plan_id), ("check", original_plan_id), ("digest", original_plan_id), ("list",)):
+    for args in (
+        ("tree", original_plan_id),
+        ("check", original_plan_id),
+        ("digest", original_plan_id),
+        ("list",),
+    ):
         code, _, err = run(root, "plan", *args)
         assert code == 2
         assert expected_code in err
@@ -434,11 +461,23 @@ def test_strict_plan_json_rejects_duplicate_keys_and_unknown_fields_across_surfa
 
 
 @pytest.mark.parametrize("projection", [(), ("--md",), ("--json",)])
-def test_redirected_plan_projection_bytes_are_utf8_under_utf8_and_cp1252(tmp_path: Path, projection: tuple[str, ...]):
+def test_redirected_plan_projection_bytes_are_utf8_under_utf8_and_cp1252(
+    tmp_path: Path, projection: tuple[str, ...]
+):
     root = initialized_repo(tmp_path)
     plan_id, _ = new_plan(root, "Café — 東京", name="encoding")
     module_root = Path(__file__).resolve().parents[1] / "src"
-    command = [sys.executable, "-m", "mimry.cli", "--root", str(root), "plan", "tree", plan_id, *projection]
+    command = [
+        sys.executable,
+        "-m",
+        "mimry.cli",
+        "--root",
+        str(root),
+        "plan",
+        "tree",
+        plan_id,
+        *projection,
+    ]
     outputs = []
     for encoding in ("utf-8:strict", "cp1252:strict"):
         result = subprocess.run(
@@ -470,7 +509,13 @@ def test_read_only_mcp_parity_has_no_paths_or_mutations(tmp_path: Path):
     digest = mcp_server.mimry_plan_digest(plan_id, str(root))
     inventory = mcp_server.mimry_plan_list(str(root))
 
-    assert tree["returncode"] == check["returncode"] == digest["returncode"] == inventory["returncode"] == 0
+    assert (
+        tree["returncode"]
+        == check["returncode"]
+        == digest["returncode"]
+        == inventory["returncode"]
+        == 0
+    )
     assert tree["terminal"] == run(root, "plan", "tree", plan_id)[1]
     assert digest["digest"] == run(root, "plan", "digest", plan_id)[1].strip()
     assert check == {"returncode": 0, "plan_id": plan_id, "valid": True, "errors": []}
@@ -481,12 +526,27 @@ def test_read_only_mcp_parity_has_no_paths_or_mutations(tmp_path: Path):
 
 def test_plan_help_exposes_only_the_narrow_command_surface():
     stdout, stderr = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr), pytest.raises(SystemExit) as raised:
+    with (
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+        pytest.raises(SystemExit) as raised,
+    ):
         main(["plan", "--help"])
     assert raised.value.code == 0
     out = stdout.getvalue()
     assert not stderr.getvalue()
     for command in ("new", "split", "tree", "check", "digest", "list"):
         assert command in out
-    for omitted in ("admit", "publish", "seal", "next", "complete", "stop", "goal", "board", "todo", "note"):
+    for omitted in (
+        "admit",
+        "publish",
+        "seal",
+        "next",
+        "complete",
+        "stop",
+        "goal",
+        "board",
+        "todo",
+        "note",
+    ):
         assert omitted not in out

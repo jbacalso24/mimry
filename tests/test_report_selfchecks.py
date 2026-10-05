@@ -1,10 +1,11 @@
-"""Self-checks for report.py functions: render_report and build_manifest.
+"""Self-checks for report.py functions: render_report and
+build_manifest.
 
-These tests ensure surprise-report ranking (cross-community edges, node degree,
-community structure) and manifest building work correctly.
+These tests ensure surprise-report ranking (cross-community edges, node
+degree, community structure) and manifest building work correctly.
 """
 
-from mimry.core.report import render_report, build_manifest
+from mimry.core.report import build_manifest, render_report
 
 
 class TestRenderReportBasic:
@@ -105,13 +106,48 @@ class TestRenderReportWithCrossLinks:
                 {"id": "node6", "label": "m/n.py", "source_file": "m/n.py", "community": 1},
             ],
             "edges": [
-                {"source": "node1", "target": "node2", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node1", "target": "node3", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node3", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node4", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node4", "target": "node5", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node4", "target": "node6", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node5", "target": "node1", "relation": "imports", "confidence": "EXTRACTED"},
+                {
+                    "source": "node1",
+                    "target": "node2",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node1",
+                    "target": "node3",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node3",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node4",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node4",
+                    "target": "node5",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node4",
+                    "target": "node6",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node5",
+                    "target": "node1",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
             ],
             "clusters": {},
         }
@@ -135,13 +171,48 @@ class TestRenderReportWithCrossLinks:
                 {"id": "node6", "label": "m/n.py", "source_file": "m/n.py", "community": 1},
             ],
             "edges": [
-                {"source": "node1", "target": "node2", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node1", "target": "node3", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node3", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node4", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node4", "target": "node5", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node4", "target": "node6", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node5", "target": "node1", "relation": "imports", "confidence": "EXTRACTED"},
+                {
+                    "source": "node1",
+                    "target": "node2",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node1",
+                    "target": "node3",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node3",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node4",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node4",
+                    "target": "node5",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node4",
+                    "target": "node6",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node5",
+                    "target": "node1",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
             ],
             "clusters": {},
         }
@@ -169,20 +240,57 @@ class TestRenderReportWithCrossLinks:
                 {"id": "node6", "label": "m/n.py", "source_file": "m/n.py", "community": 1},
             ],
             "edges": [
-                {"source": "node1", "target": "node2", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node1", "target": "node3", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node3", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node4", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node4", "target": "node5", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node4", "target": "node6", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node5", "target": "node1", "relation": "imports", "confidence": "EXTRACTED"},
+                {
+                    "source": "node1",
+                    "target": "node2",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node1",
+                    "target": "node3",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node3",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node4",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node4",
+                    "target": "node5",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node4",
+                    "target": "node6",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node5",
+                    "target": "node1",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
             ],
             "clusters": {},
         }
         report = render_report(synthetic_graph, commit="abc123", title="MIMRY graph report")
         lines = report.splitlines()
         god_index = lines.index("## God Nodes")
-        assert "degree 3" in lines[god_index + 1], f"god nodes must be degree-sorted: {lines[god_index + 1]}"
+        assert "degree 3" in lines[god_index + 1], (
+            f"god nodes must be degree-sorted: {lines[god_index + 1]}"
+        )
 
 
 class TestRenderReportDeterminism:
@@ -201,13 +309,48 @@ class TestRenderReportDeterminism:
                 {"id": "node6", "label": "m/n.py", "source_file": "m/n.py", "community": 1},
             ],
             "edges": [
-                {"source": "node1", "target": "node2", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node1", "target": "node3", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node3", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node4", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node4", "target": "node5", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node4", "target": "node6", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node5", "target": "node1", "relation": "imports", "confidence": "EXTRACTED"},
+                {
+                    "source": "node1",
+                    "target": "node2",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node1",
+                    "target": "node3",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node3",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node4",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node4",
+                    "target": "node5",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node4",
+                    "target": "node6",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node5",
+                    "target": "node1",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
             ],
             "clusters": {},
         }
@@ -226,9 +369,24 @@ class TestRenderReportDeterminism:
                 {"id": "node6", "label": "m/n.md", "source_file": "m/n.md", "community": 1},
             ],
             "edges": [
-                {"source": "node1", "target": "node2", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node4", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node3", "target": "node6", "relation": "references", "confidence": "INFERRED"},
+                {
+                    "source": "node1",
+                    "target": "node2",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node4",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node3",
+                    "target": "node6",
+                    "relation": "references",
+                    "confidence": "INFERRED",
+                },
             ],
             "clusters": {},
         }
@@ -249,9 +407,24 @@ class TestRenderReportDeterminism:
                 {"id": "node6", "label": "m/n.md", "source_file": "m/n.md", "community": 1},
             ],
             "edges": [
-                {"source": "node1", "target": "node2", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node4", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node3", "target": "node6", "relation": "references", "confidence": "INFERRED"},
+                {
+                    "source": "node1",
+                    "target": "node2",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node4",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node3",
+                    "target": "node6",
+                    "relation": "references",
+                    "confidence": "INFERRED",
+                },
             ],
             "clusters": {},
         }
@@ -275,9 +448,24 @@ class TestRenderReportDeterminism:
                 {"id": "node6", "label": "m/n.md", "source_file": "m/n.md", "community": 1},
             ],
             "edges": [
-                {"source": "node1", "target": "node2", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node2", "target": "node4", "relation": "imports", "confidence": "EXTRACTED"},
-                {"source": "node3", "target": "node6", "relation": "references", "confidence": "INFERRED"},
+                {
+                    "source": "node1",
+                    "target": "node2",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node2",
+                    "target": "node4",
+                    "relation": "imports",
+                    "confidence": "EXTRACTED",
+                },
+                {
+                    "source": "node3",
+                    "target": "node6",
+                    "relation": "references",
+                    "confidence": "INFERRED",
+                },
             ],
             "clusters": {},
         }
@@ -296,7 +484,9 @@ class TestRenderReportEmptyGraph:
         empty_report = render_report(empty_graph, commit="test")
         assert "## Community Hubs" in empty_report, "Empty report missing Community Hubs heading"
         assert "## God Nodes" in empty_report, "Empty report missing God Nodes heading"
-        assert "## Surprising Connections" in empty_report, "Empty report missing Surprising Connections heading"
+        assert "## Surprising Connections" in empty_report, (
+            "Empty report missing Surprising Connections heading"
+        )
         assert "- none" in empty_report, "Empty sections should have '- none'"
 
 
@@ -339,7 +529,9 @@ class TestBuildManifest:
         for rel_path, info in manifest.items():
             assert "mtime" in info, f"{rel_path} missing mtime"
             assert "mimry_sha256" in info, f"{rel_path} missing mimry_sha256"
-            assert len(info) == 2, f"{rel_path} has extra keys: {set(info.keys()) - {'mtime', 'mimry_sha256'}}"
+            assert len(info) == 2, (
+                f"{rel_path} has extra keys: {set(info.keys()) - {'mtime', 'mimry_sha256'}}"
+            )
 
     def test_build_manifest_values_correct(self):
         """Manifest values should match input."""

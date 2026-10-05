@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 from mimry.state import (
-    StateLockTimeoutError,
-    StateCorruptionError,
     IndexSchemaMigrationError,
+    StateCorruptionError,
+    StateLockTimeoutError,
 )
 
 

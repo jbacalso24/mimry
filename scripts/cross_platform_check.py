@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Prove the graph engine computes identically on every platform.
 
-graph.json is checksummed by the generation manifest, so a platform that produced a
-different byte sequence for identical input would break generation coherence and make
-cached indexes non-portable. This builds a graph from fixed in-memory input -- no
-filesystem, no parser, no clock -- and prints one hash. Every platform must print the
-same one.
+graph.json is checksummed by the generation manifest, so a platform that
+produced a different byte sequence for identical input would break
+generation coherence and make cached indexes non-portable. This builds a
+graph from fixed in-memory input -- no filesystem, no parser, no clock
+-- and prints one hash. Every platform must print the same one.
 
-Pure stdlib on purpose: it runs anywhere Python 3.11+ exists, with nothing installed.
+Pure stdlib on purpose: it runs anywhere Python 3.11+ exists, with
+nothing installed.
 
     python3 scripts/cross_platform_check.py
 """
@@ -33,7 +34,13 @@ from mimry.core.resolve import (  # noqa: E402
 )
 
 FILES = [
-    {"file_id": "f1", "rel_path": "backend/api/auth.py", "extension": ".py", "hash": "a1", "mtime": 1.5},
+    {
+        "file_id": "f1",
+        "rel_path": "backend/api/auth.py",
+        "extension": ".py",
+        "hash": "a1",
+        "mtime": 1.5,
+    },
     {
         "file_id": "f2",
         "rel_path": "backend/services/session_service.py",
@@ -41,16 +48,64 @@ FILES = [
         "hash": "a2",
         "mtime": 2.5,
     },
-    {"file_id": "f3", "rel_path": "web/src/app/checkout/page.tsx", "extension": ".tsx", "hash": "a3", "mtime": 3.5},
-    {"file_id": "f4", "rel_path": "web/src/lib/payments.ts", "extension": ".ts", "hash": "a4", "mtime": 4.5},
-    {"file_id": "f5", "rel_path": "db/schema.sql", "extension": ".sql", "hash": "a5", "mtime": 5.5},
-    {"file_id": "f6", "rel_path": "docs/auth-design.md", "extension": ".md", "hash": "a6", "mtime": 6.5},
+    {
+        "file_id": "f3",
+        "rel_path": "web/src/app/checkout/page.tsx",
+        "extension": ".tsx",
+        "hash": "a3",
+        "mtime": 3.5,
+    },
+    {
+        "file_id": "f4",
+        "rel_path": "web/src/lib/payments.ts",
+        "extension": ".ts",
+        "hash": "a4",
+        "mtime": 4.5,
+    },
+    {
+        "file_id": "f5",
+        "rel_path": "db/schema.sql",
+        "extension": ".sql",
+        "hash": "a5",
+        "mtime": 5.5,
+    },
+    {
+        "file_id": "f6",
+        "rel_path": "docs/auth-design.md",
+        "extension": ".md",
+        "hash": "a6",
+        "mtime": 6.5,
+    },
 ]
 SYMBOLS = [
-    {"symbol_id": "s1", "file_id": "f1", "name": "refresh_session", "kind": "function", "language": "python"},
-    {"symbol_id": "s2", "file_id": "f2", "name": "renew_login", "kind": "function", "language": "python"},
-    {"symbol_id": "s3", "file_id": "f4", "name": "redirectToPayment", "kind": "function", "language": "ts"},
-    {"symbol_id": "s4", "file_id": "f5", "name": "sessions", "kind": "sql_table", "language": "sql"},
+    {
+        "symbol_id": "s1",
+        "file_id": "f1",
+        "name": "refresh_session",
+        "kind": "function",
+        "language": "python",
+    },
+    {
+        "symbol_id": "s2",
+        "file_id": "f2",
+        "name": "renew_login",
+        "kind": "function",
+        "language": "python",
+    },
+    {
+        "symbol_id": "s3",
+        "file_id": "f4",
+        "name": "redirectToPayment",
+        "kind": "function",
+        "language": "ts",
+    },
+    {
+        "symbol_id": "s4",
+        "file_id": "f5",
+        "name": "sessions",
+        "kind": "sql_table",
+        "language": "sql",
+    },
 ]
 EDGES = [
     {
@@ -71,7 +126,9 @@ IMPORTS = {
 }
 CALLS = {"backend/api/auth.py": [{"name": "renew_login", "line": 5}]}
 SYMBOLS_BY_FILE = {
-    "backend/api/auth.py": [{"name": "refresh_session", "kind": "function", "line_start": 4, "line_end": 6}],
+    "backend/api/auth.py": [
+        {"name": "refresh_session", "kind": "function", "line_start": 4, "line_end": 6}
+    ],
     "backend/services/session_service.py": [
         {"name": "renew_login", "kind": "function", "line_start": 1, "line_end": 3}
     ],
@@ -137,27 +194,34 @@ def build() -> dict:
     graph["edges"] = canonicalize_edges(
         [e for e in graph["edges"] if e["source"] in node_ids and e["target"] in node_ids]
     )
-    graph["nodes"] = sorted(assign_communities(graph["nodes"], graph["edges"]), key=lambda n: n["id"])
+    graph["nodes"] = sorted(
+        assign_communities(graph["nodes"], graph["edges"]), key=lambda n: n["id"]
+    )
     return graph
 
 
 def real_pipeline_gate() -> int:
-    """Run the real end-to-end determinism matrix over the frozen fixture.
+    """Run the real end-to-end determinism matrix over the frozen
+    fixture.
 
-    The synthetic digest above proves the graph engine is portable, which is
-    necessary but nowhere near sufficient: it never touches the scanner, the
-    parsers, SQLite, or the context pack. Those layers are where filesystem
-    order, absolute paths, and hash seeds actually leak in, so the real gate
-    lives in scripts/determinism_matrix.py and runs here too.
+    The synthetic digest above proves the graph engine is portable,
+    which is necessary but nowhere near sufficient: it never touches the
+    scanner, the parsers, SQLite, or the context pack. Those layers are
+    where filesystem order, absolute paths, and hash seeds actually leak
+    in, so the real gate lives in scripts/determinism_matrix.py and runs
+    here too.
 
-    This file is deliberately importable with nothing installed. When the parser
-    dependencies are absent the real gate is skipped loudly rather than
-    silently, so a bare-Python run can never be mistaken for a full pass.
+    This file is deliberately importable with nothing installed. When
+    the parser dependencies are absent the real gate is skipped loudly
+    rather than silently, so a bare-Python run can never be mistaken for
+    a full pass.
     """
     try:
         import tree_sitter_language_pack  # noqa: F401
     except ImportError:
-        print("REAL GATE   SKIPPED (tree-sitter-language-pack not installed; run `uv sync --locked`)")
+        print(
+            "REAL GATE   SKIPPED (tree-sitter-language-pack not installed; run `uv sync --locked`)"
+        )
         return 0
     matrix = Path(__file__).resolve().parent / "determinism_matrix.py"
     print("REAL GATE   running scripts/determinism_matrix.py ...")

@@ -12,11 +12,12 @@ from types import SimpleNamespace
 
 from . import ui
 from .adapters import list_adapters
-from .cache_safety import UnsafeCachePathError, validated_cache_home, validated_current_root_cache_path
+from .cache_safety import (
+    UnsafeCachePathError,
+    validated_cache_home,
+    validated_current_root_cache_path,
+)
 from .constants import SCHEMA_VERSION
-from .digest import canonical_digest, canonical_state
-from .feedback import feedback_payload_from_args, feedback_stats, list_feedback, record_feedback, show_feedback
-from .freshness import index_freshness
 from .core.artifacts import (
     graph_health,
     relationship_edges,
@@ -25,9 +26,26 @@ from .core.artifacts import (
     shortest_path,
     surface_evidence,
 )
+from .digest import canonical_digest, canonical_state
+from .feedback import (
+    feedback_payload_from_args,
+    feedback_stats,
+    list_feedback,
+    record_feedback,
+    show_feedback,
+)
+from .freshness import index_freshness
 from .indexer import write_index
 from .intent import is_doc_or_plan, is_source_file, is_test_file
-from .paths import context_file, graph_output_dir, idx_path, legacy_context_file, mdir, now, output_dir
+from .paths import (
+    context_file,
+    graph_output_dir,
+    idx_path,
+    legacy_context_file,
+    mdir,
+    now,
+    output_dir,
+)
 from .plan import (
     PlanStore,
     canonical_plan,
@@ -39,7 +57,13 @@ from .plan import (
 )
 from .routing import route_payload, verification_commands, write_brief
 from .search import find_rows
-from .security import filter_index_records, markdown_inline, redact_sensitive_text, safe_root, sanitize_query
+from .security import (
+    filter_index_records,
+    markdown_inline,
+    redact_sensitive_text,
+    safe_root,
+    sanitize_query,
+)
 from .semantic import semantic_health, semantic_rows
 from .state import atomic_write_text
 from .storage import (
@@ -60,9 +84,10 @@ def _git_toplevel(root: Path) -> Path | None:
             text=True,
             capture_output=True,
             check=False,
-            # Never let a child inherit this process's stdin. Under the MCP stdio
-            # server that descriptor IS the JSON-RPC channel, so an inherited stdin
-            # lets a child consume protocol bytes and hang the server.
+            # Never let a child inherit this process's stdin. Under the
+            # MCP stdio server that descriptor IS the JSON-RPC channel,
+            # so an inherited stdin lets a child consume protocol bytes
+            # and hang the server.
             stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
@@ -89,7 +114,10 @@ def ensure_mimry_gitignore(root: Path) -> bool:
     else:
         prefix = rel.as_posix()
         patterns = [f"/{prefix}/.mimry/", f"/{prefix}/mimry-out/"]
-        check_paths = [rel / ".mimry" / "pointer.json", rel / "mimry-out" / "context" / "latest.md"]
+        check_paths = [
+            rel / ".mimry" / "pointer.json",
+            rel / "mimry-out" / "context" / "latest.md",
+        ]
 
     gitignore = git_root / ".gitignore"
     existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
@@ -130,8 +158,8 @@ def cmd_init(a):
                 "Delete the .mimry folder here, then run `mimry init` again.",
             )
             return 2
-        # Reconcile stale path/root-ID aliases in the global registry from the
-        # authoritative root-local pointer.
+        # Reconcile stale path/root-ID aliases in the global registry
+        # from the authoritative root-local pointer.
         register_root(existing)
         gitignore_updated = ensure_mimry_gitignore(root)
         ui.ok(f"MIMRY is already set up for {_root_name(root)}")
@@ -154,13 +182,16 @@ def cmd_init(a):
     output_dir(root).mkdir(parents=True, exist_ok=True)
     (output_dir(root) / "context").mkdir(parents=True, exist_ok=True)
     (graph_output_dir(root)).mkdir(parents=True, exist_ok=True)
-    atomic_write_text(mdir(root) / "config.toml", 'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n')
+    atomic_write_text(
+        mdir(root) / "config.toml",
+        'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n',
+    )
     atomic_write_text(
         mdir(root) / "AGENT_RULES.md",
-        "# MIMRY Agent Rules\n\n"
-        "Use MIMRY before repeated grep or blind file reading.\n"
-        "Tester-owned `acceptance_tests/` is excluded from ordinary MIMRY indexing by default. "
-        "This is cooperative workflow isolation, not secrecy: repository users can still open those files directly.\n",
+        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file"
+        " reading.\nTester-owned `acceptance_tests/` is excluded from ordinary MIMRY indexing by"
+        " default. This is cooperative workflow isolation, not secrecy: repository users can still"
+        " open those files directly.\n",
     )
     save_pointer(root, ptr)
     register_root(ptr)
@@ -170,13 +201,17 @@ def cmd_init(a):
     ui.detail("Created .mimry/ for settings and generated context")
     if gitignore_updated:
         ui.detail("Added .mimry/ to .gitignore")
-    ui.detail(f"The index itself is kept outside the repo, in {ui.display_path(idx_path(rid).parent)}")
+    ui.detail(
+        f"The index itself is kept outside the repo, in {ui.display_path(idx_path(rid).parent)}"
+    )
     ui.detail("Next: run `mimry index` to build the index.")
     return 0
 
 
 def _not_set_up(root) -> str:
-    return ui.error_text(f"MIMRY is not set up for {_root_name(Path(root))} yet", "Run `mimry init` to set it up.")
+    return ui.error_text(
+        f"MIMRY is not set up for {_root_name(Path(root))} yet", "Run `mimry init` to set it up."
+    )
 
 
 def require(root, *, validate: bool = True):
@@ -193,7 +228,8 @@ def cmd_plan_new(a):
         f"{ui.headline('ok', 'Created plan ' + ui.quote(a.root_plan))}\n"
         f"  Plan ID: {plan['planId']}\n"
         f"  Root node ID: {plan['root']}\n"
-        f'  Break it down with `mimry plan split {plan["planId"]} {plan["root"]} --child "<step>"`.\n'
+        f"  Break it down with `mimry plan split {plan['planId']} {plan['root']} --child"
+        ' "<step>"`.\n'
     )
     return 0
 
@@ -201,7 +237,9 @@ def cmd_plan_new(a):
 def cmd_plan_split(a):
     _, child_ids = PlanStore(Path(a.root)).split(a.plan_id, a.node_id, a.child)
     lines = [ui.headline("ok", f"Split {a.node_id} into {ui.count(len(child_ids), 'step')}")]
-    lines.extend(f"  Child {index}: {child_id}" for index, child_id in enumerate(child_ids, start=1))
+    lines.extend(
+        f"  Child {index}: {child_id}" for index, child_id in enumerate(child_ids, start=1)
+    )
     write_plan_output("\n".join(lines) + "\n")
     return 0
 
@@ -209,7 +247,9 @@ def cmd_plan_split(a):
 def cmd_plan_tree(a):
     plan = PlanStore(Path(a.root)).load(a.plan_id)
     if a.json:
-        output = json.dumps(canonical_plan(plan), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        output = (
+            json.dumps(canonical_plan(plan), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        )
     elif a.md:
         output = render_markdown(plan)
     else:
@@ -242,7 +282,9 @@ def cmd_plan_list(a):
         write_plan_output('No plans yet. Create one with `mimry plan new "<goal>"`.\n')
         return 0
     rows = [(item["planId"], item["name"], item["rootText"]) for item in inventory]
-    write_plan_output(f"Plans ({len(rows)})\n" + "".join(line + "\n" for line in ui.table_lines(rows)))
+    write_plan_output(
+        f"Plans ({len(rows)})\n" + "".join(line + "\n" for line in ui.table_lines(rows))
+    )
     return 0
 
 
@@ -280,7 +322,9 @@ def _totals(files: int, symbols: int, links: int) -> str:
     return ui.facts(ui.count(files, "file"), ui.count(symbols, "symbol"), ui.count(links, "link"))
 
 
-def _print_index_result(root: Path, stats: dict, seconds: float, *, full: bool, verbose: bool = False) -> None:
+def _print_index_result(
+    root: Path, stats: dict, seconds: float, *, full: bool, verbose: bool = False
+) -> None:
     name = _root_name(root)
     changes = stats.get("changes")
     elapsed = ui.took(seconds)
@@ -309,13 +353,22 @@ def _print_index_result(root: Path, stats: dict, seconds: float, *, full: bool, 
             ui.detail("No file contents changed since the last index")
     ui.detail(_totals(stats["files"], stats["symbols"], stats["edges"]))
     if stats.get("unindexable"):
-        ui.detail(f"{ui.count(stats['unindexable'], 'file')} skipped: may contain secrets or could not be read")
+        ui.detail(
+            f"{ui.count(stats['unindexable'], 'file')} skipped: may contain secrets or could not"
+            " be read"
+        )
     if verbose:
         ui.table(
             [
                 ("Index", stats["index"]),
                 ("Graph", f"{stats['graph_engine']} engine"),
-                ("Search", f"{ui.count(stats['semantic_chunks'], 'chunk')}, {stats['semantic_backend']} backend"),
+                (
+                    "Search",
+                    (
+                        f"{ui.count(stats['semantic_chunks'], 'chunk')},"
+                        f" {stats['semantic_backend']} backend"
+                    ),
+                ),
             ],
             indent=2,
         )
@@ -329,7 +382,9 @@ def _health(root: Path, ptr: dict, *, verify: bool = False) -> tuple[dict, dict,
         verified_hashes=fresh["verified_hashes"],
         native_paths=fresh.get("native_paths"),
     )
-    semantic = semantic_health(Path(fresh["index_path"]), ptr.get("rootId"), expected_files=len(fresh["files"]))
+    semantic = semantic_health(
+        Path(fresh["index_path"]), ptr.get("rootId"), expected_files=len(fresh["files"])
+    )
     return fresh, graph, semantic
 
 
@@ -342,7 +397,8 @@ def _counted(pairs) -> str:
         if parts:
             parts.append(f"{n:,} {label}")
         elif label == "new":
-            # An adjective goes before the noun: "1 new file", not "1 file new".
+            # An adjective goes before the noun: "1 new file", not "1
+            # file new".
             parts.append(ui.count(n, "new file"))
         else:
             parts.append(f"{ui.count(n, 'file')} {label}")
@@ -385,7 +441,9 @@ def _print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
     return fixes
 
 
-def _print_status(root: Path, ptr: dict, fresh: dict, graph: dict, semantic: dict, *, verbose: bool) -> None:
+def _print_status(
+    root: Path, ptr: dict, fresh: dict, graph: dict, semantic: dict, *, verbose: bool
+) -> None:
     name = _root_name(root)
     if fresh["state"] == "missing":
         ui.warn(f"{name} has not been indexed yet")
@@ -404,10 +462,20 @@ def _print_status(root: Path, ptr: dict, fresh: dict, graph: dict, semantic: dic
         ui.ok(f"{name} is up to date")
     commit = graph.get("built_from_commit")
     commit = None if commit == "unknown" else commit
-    ui.detail(ui.facts(f"Indexed {ui.ago(ptr.get('lastIndexedAt'))}", f"at commit {commit[:7]}" if commit else None))
-    ui.detail(_totals(len(fresh["files"]), len(fresh["symbols"]), len(fresh["graph"].get("edges", []))))
+    ui.detail(
+        ui.facts(
+            f"Indexed {ui.ago(ptr.get('lastIndexedAt'))}",
+            f"at commit {commit[:7]}" if commit else None,
+        )
+    )
+    ui.detail(
+        _totals(len(fresh["files"]), len(fresh["symbols"]), len(fresh["graph"].get("edges", [])))
+    )
     if fresh.get("unindexable_count"):
-        ui.detail(f"{ui.count(fresh['unindexable_count'], 'file')} skipped: may contain secrets or could not be read")
+        ui.detail(
+            f"{ui.count(fresh['unindexable_count'], 'file')} skipped: may contain secrets or could"
+            " not be read"
+        )
     fixes = _print_problems(fresh, graph, semantic)
     if verbose:
         ui.table(
@@ -415,8 +483,20 @@ def _print_status(root: Path, ptr: dict, fresh: dict, graph: dict, semantic: dic
                 ("Folder", str(root)),
                 ("Index", str(fresh["index_path"])),
                 ("Indexed at", ptr.get("lastIndexedAt") or "never"),
-                ("Graph", f"{graph['status']}, {ui.count(graph['graph_nodes'], 'node')}, {graph['output_dir']}"),
-                ("Search", f"{semantic['status']}, {ui.count(semantic['chunks'], 'chunk')}, {semantic['backend']}"),
+                (
+                    "Graph",
+                    (
+                        f"{graph['status']}, {ui.count(graph['graph_nodes'], 'node')},"
+                        f" {graph['output_dir']}"
+                    ),
+                ),
+                (
+                    "Search",
+                    (
+                        f"{semantic['status']}, {ui.count(semantic['chunks'], 'chunk')},"
+                        f" {semantic['backend']}"
+                    ),
+                ),
                 ("Commit", commit or "unknown"),
             ]
         )
@@ -429,7 +509,9 @@ def cmd_index(a):
     full = getattr(a, "full", False)
     started = time.perf_counter()
     stats = write_index(root, require(root, validate=False), full=full)
-    _print_index_result(root, stats, time.perf_counter() - started, full=full, verbose=getattr(a, "verbose", False))
+    _print_index_result(
+        root, stats, time.perf_counter() - started, full=full, verbose=getattr(a, "verbose", False)
+    )
     return 0
 
 
@@ -440,7 +522,9 @@ def cmd_refresh(a):
     full = getattr(a, "full", False)
     started = time.perf_counter()
     stats = write_index(root, ptr, full=full)
-    _print_index_result(root, stats, time.perf_counter() - started, full=full, verbose=getattr(a, "verbose", False))
+    _print_index_result(
+        root, stats, time.perf_counter() - started, full=full, verbose=getattr(a, "verbose", False)
+    )
     with active_index_pointer(root) as active:
         fresh, graph, semantic = _health(root, active)
     if fresh["state"] == "stale":
@@ -480,7 +564,9 @@ def _print_index_note(fresh: dict, graph: dict) -> None:
     if fresh["state"] == "missing":
         ui.warn("This folder has not been indexed yet. Run `mimry index` first.")
     elif fresh["state"] == "stale":
-        ui.warn(f"Results may be out of date - {_stale_summary(fresh)}. Run `mimry reindex` to update.")
+        ui.warn(
+            f"Results may be out of date - {_stale_summary(fresh)}. Run `mimry reindex` to update."
+        )
     elif graph["status"] != "current":
         ui.warn(f"Graph files are {graph['status']}. Run `mimry refresh` to rebuild them.")
 
@@ -513,7 +599,8 @@ def _selected_file_records(fresh: dict, rows: list[dict]) -> dict[str, dict]:
 
 def _symbol_lines(fresh: dict, rows: list[dict], limit: int = 12) -> list[str]:
     return [
-        f"- `{markdown_inline(name)}` ({markdown_inline(kind)}, {markdown_inline(language)}) - `{markdown_inline(location)}`"
+        f"- `{markdown_inline(name)}` ({markdown_inline(kind)}, {markdown_inline(language)}) -"
+        f" `{markdown_inline(location)}`"
         for name, kind, language, location in _symbol_rows(fresh, rows, limit)
     ]
 
@@ -542,16 +629,24 @@ def _file_role(path: str) -> str:
 
 def _reading_order_lines(rows: list[dict]) -> list[str]:
     if not rows:
-        return ["- No relevant files were selected; rerun with a narrower query or inspect repo entrypoints directly."]
+        return [
+            "- No relevant files were selected; rerun with a narrower query or inspect repo"
+            " entrypoints directly."
+        ]
     source_rows = [r for r in rows if _is_likely_edit_surface(r["path"])]
     support_rows = [r for r in rows if not _is_likely_edit_surface(r["path"])]
     ordered = source_rows + support_rows
     lines = []
     for i, row in enumerate(ordered, 1):
-        rationale = "primary code/edit path" if _is_likely_edit_surface(row["path"]) else _file_role(row["path"])
-        # Ordering plus rationale only. The evidence string is printed in full
-        # under Relevant Files; repeating it here cost 517 of 2969 tokens,
-        # three times what the two contract sections it displaced cost together.
+        rationale = (
+            "primary code/edit path"
+            if _is_likely_edit_surface(row["path"])
+            else _file_role(row["path"])
+        )
+        # Ordering plus rationale only. The evidence string is printed
+        # in full under Relevant Files; repeating it here cost 517 of
+        # 2969 tokens, three times what the two contract sections it
+        # displaced cost together.
         lines.append(f"{i}. `{markdown_inline(row['path'])}` - {rationale}")
     return lines
 
@@ -615,7 +710,8 @@ def _detected_supporting_file_lines(fresh: dict, rows: list[dict], limit: int = 
         role = _file_role(rel_path)
         if role in {"test/verification support", "docs/rules support", "config/manifest support"}:
             candidates.append(
-                f"- `{markdown_inline(rel_path)}` - detected {role}; read if it constrains the change or verification."
+                f"- `{markdown_inline(rel_path)}` - detected {role}; read if it constrains the"
+                " change or verification."
             )
         if len(candidates) >= limit:
             break
@@ -628,13 +724,27 @@ def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
     visible_changed = [path for path in fresh["changed"] if path not in excluded_paths]
     dirty = visible_changed or fresh["missing"]
     lines = [
-        "- Generated/cache paths (`.mimry/`, `.git/`, caches, build outputs) are support artifacts; do not edit them as source fixes.",
-        "- Secrets/privacy-sensitive files are skipped by scanner policy; do not paste secret values into context packs or final reports.",
-        "- Source files/tests/build output are the truth; MIMRY scores are navigation hints, not proof.",
-        "- Tests/docs/config files are supporting evidence unless the task explicitly requires changing them.",
+        (
+            "- Generated/cache paths (`.mimry/`, `.git/`, caches, build outputs) are support"
+            " artifacts; do not edit them as source fixes."
+        ),
+        (
+            "- Secrets/privacy-sensitive files are skipped by scanner policy; do not paste secret"
+            " values into context packs or final reports."
+        ),
+        (
+            "- Source files/tests/build output are the truth; MIMRY scores are navigation hints,"
+            " not proof."
+        ),
+        (
+            "- Tests/docs/config files are supporting evidence unless the task explicitly requires"
+            " changing them."
+        ),
     ]
     risky_selected = [
-        p for p in selected_paths if p.startswith(".mimry/") or "/cache" in p.lower() or p.lower().endswith(".lock")
+        p
+        for p in selected_paths
+        if p.startswith(".mimry/") or "/cache" in p.lower() or p.lower().endswith(".lock")
     ]
     if risky_selected:
         lines.append(
@@ -644,7 +754,9 @@ def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
     if dirty:
         details = [*(f"`{markdown_inline(path)}`" for path in visible_changed[:8])]
         if fresh["missing"]:
-            details.append(f"{len(fresh['missing'])} deleted indexed file(s) withheld from stale context")
+            details.append(
+                f"{len(fresh['missing'])} deleted indexed file(s) withheld from stale context"
+            )
         lines.append(
             "- Index detected changed/deleted files ("
             + ", ".join(details)
@@ -652,8 +764,8 @@ def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
         )
     if fresh.get("policy_excluded_count"):
         lines.append(
-            f"- Index contains {fresh['policy_excluded_count']} record(s) newly excluded by policy; "
-            "readers hide them, but refresh before relying on index completeness."
+            f"- Index contains {fresh['policy_excluded_count']} record(s) newly excluded by"
+            " policy; readers hide them, but refresh before relying on index completeness."
         )
     return lines
 
@@ -661,18 +773,31 @@ def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
 def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]:
     paths = [r["path"] for r in rows]
     # 8, not the default 12: the same files are already enumerated under
-    # Relevant Files and Reading Order, so the marginal path adds little.
+    # Relevant Files and Reading Order, so the marginal path adds
+    # little.
     rel_lines = relationship_lines(root, paths, max_lines=8)
     exc = report_excerpt(root)
     if graph["status"] != "current":
         status = graph["status"]
         return [
-            f"- MIMRY relationship data is missing or stale (`{status}`); run `mimry refresh` before relying on graph paths.",
-            "- No relationship path was invented. Use source imports/callers directly if this remains empty.",
+            (
+                f"- MIMRY relationship data is missing or stale (`{status}`); run `mimry refresh`"
+                " before relying on graph paths."
+            ),
+            (
+                "- No relationship path was invented. Use source imports/callers directly if this"
+                " remains empty."
+            ),
         ]
     lines = rel_lines or [
-        "- MIMRY relationship data is current, but no path connected the selected files for this query.",
-        "- No relationship path was invented; rerun with a narrower symbol/file query if graph navigation matters.",
+        (
+            "- MIMRY relationship data is current, but no path connected the selected files for"
+            " this query."
+        ),
+        (
+            "- No relationship path was invented; rerun with a narrower symbol/file query if graph"
+            " navigation matters."
+        ),
     ]
     if exc:
         lines += ["", "### Graph Report Signals", exc]
@@ -702,7 +827,9 @@ def _write_context_pack(
         semantic=semantic,
         excluded_paths=fresh["excluded_paths"],
     )
-    semantic_state = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"), expected_files=len(fresh["files"]))
+    semantic_state = semantic_health(
+        Path(ptr["indexPath"]), ptr.get("rootId"), expected_files=len(fresh["files"])
+    )
     file_records = _selected_file_records(fresh, rows)
     verification_commands = _verification_commands(fresh)
     lines = [
@@ -713,15 +840,31 @@ def _write_context_pack(
         "",
         "## Status Summary",
         f"- Root: `{root}`",
-        f"- Index: {fresh['state']} (last indexed: {ptr.get('lastIndexedAt') or 'never'}; files: {len(fresh['files'])}; symbols: {len(fresh['symbols'])})",
+        (
+            f"- Index: {fresh['state']} (last indexed: {ptr.get('lastIndexedAt') or 'never'};"
+            f" files: {len(fresh['files'])}; symbols: {len(fresh['symbols'])})"
+        ),
         f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
-        f"- MIMRY graph artifacts: {graph['status']} ({graph['graph_nodes']} nodes / {graph['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)",
-        f"- Semantic: {semantic_state['status']} ({semantic_state['chunks']} chunks, backend {semantic_state['backend']}; mode: {'on' if semantic else 'off'})",
-        f"- MIMRY graph files: graph.json {'present' if graph['graph_exists'] else 'missing'}, GRAPH_REPORT.md {'present' if graph['report_exists'] else 'missing'}, manifest.json {'present' if graph['manifest_exists'] else 'missing'}",
+        (
+            f"- MIMRY graph artifacts: {graph['status']} ({graph['graph_nodes']} nodes /"
+            f" {graph['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)"
+        ),
+        (
+            f"- Semantic: {semantic_state['status']} ({semantic_state['chunks']} chunks, backend"
+            f" {semantic_state['backend']}; mode: {'on' if semantic else 'off'})"
+        ),
+        (
+            f"- MIMRY graph files: graph.json {'present' if graph['graph_exists'] else 'missing'},"
+            f" GRAPH_REPORT.md {'present' if graph['report_exists'] else 'missing'}, manifest.json"
+            f" {'present' if graph['manifest_exists'] else 'missing'}"
+        ),
         f"- Refresh action: {_refresh_action(fresh, graph)}",
         "",
         "## Summary",
-        f"MIMRY found {len(rows)} relevant file(s). Use this as an agent handoff: read in order, verify source/tests, and avoid unsupported edits.",
+        (
+            f"MIMRY found {len(rows)} relevant file(s). Use this as an agent handoff: read in"
+            " order, verify source/tests, and avoid unsupported edits."
+        ),
         "",
         "## Relevant Files",
         "Paths are repository-relative. Open the source before editing any of them.",
@@ -750,7 +893,8 @@ def _write_context_pack(
         *(
             _symbol_lines(fresh, rows)
             or [
-                "- No indexed symbols/entities matched the selected files. Use `mimry symbol <name>` for a narrower lookup."
+                "- No indexed symbols/entities matched the selected files. Use `mimry symbol"
+                " <name>` for a narrower lookup."
             ]
         ),
         "",
@@ -773,18 +917,28 @@ def _write_context_pack(
         "## Suggested Verification Commands",
         *(
             [f"- `{cmd}`" for cmd in verification_commands]
-            or ["- No project-specific commands detected; run the nearest tests/typecheck/build for affected files."]
+            or [
+                "- No project-specific commands detected; run the nearest tests/typecheck/build"
+                " for affected files."
+            ]
         ),
         "",
         "## Source of Truth Reminder",
-        "MIMRY narrows context; semantic search is a local fuzzy-recall supplement only. Source files, tests, build output, and human/operator verification remain the source of truth.",
+        (
+            "MIMRY narrows context; semantic search is a local fuzzy-recall supplement only."
+            " Source files, tests, build output, and human/operator verification remain the source"
+            " of truth."
+        ),
         "",
         "## Final Report Checklist",
         "- Context query used and context path read.",
         "- Key source files inspected directly (with paths).",
         "- Files changed and why.",
         "- Verification commands run with exact results.",
-        "- After verification, run `mimry feedback ...` with suggested/opened/changed/missed/outcome so future agents get better rankings.",
+        (
+            "- After verification, run `mimry feedback ...` with"
+            " suggested/opened/changed/missed/outcome so future agents get better rankings."
+        ),
         "- MIMRY refreshed after meaningful changes, or reason not refreshed.",
         "- Yellow marks/blockers, especially stale MIMRY graph/index data or risky paths.",
         "",
@@ -798,10 +952,11 @@ def _write_context_pack(
 def _write_legacy_context_redirect(root: Path) -> None:
     """Prevent stale pre-migration context packs from misleading agents.
 
-    MIMRY now keeps generated output under `.mimry/mimry-out/` so ordinary
-    project roots do not accumulate visible generated folders. Older checkouts
-    may still have `mimry-out/context/latest.md`; overwrite that file with a
-    small redirect if it already exists instead of leaving stale task context.
+    MIMRY now keeps generated output under `.mimry/mimry-out/` so
+    ordinary project roots do not accumulate visible generated folders.
+    Older checkouts may still have `mimry-out/context/latest.md`;
+    overwrite that file with a small redirect if it already exists
+    instead of leaving stale task context.
     """
     legacy = legacy_context_file(root)
     current = context_file(root)
@@ -828,7 +983,9 @@ def cmd_preflight(a):
     ptr = load_pointer(root, validate_active_generation=False)
     if not ptr:
         init_ran = True
-        init_status = cmd_init(SimpleNamespace(root=str(root), root_type="repo", skip_graph=True, quiet=True))
+        init_status = cmd_init(
+            SimpleNamespace(root=str(root), root_type="repo", skip_graph=True, quiet=True)
+        )
         if init_status != 0:
             return init_status
 
@@ -838,8 +995,9 @@ def cmd_preflight(a):
         fresh, graph = _index_and_graph_health(root, ptr)
 
     stats = None
-    # Fast mode: index only when there is no index at all, or when asked to.
-    # A stale index still answers, with a warning, instead of costing a reindex.
+    # Fast mode: index only when there is no index at all, or when asked
+    # to. A stale index still answers, with a warning, instead of
+    # costing a reindex.
     if getattr(a, "force_refresh", False) or fresh["state"] == "missing":
         started = time.perf_counter()
         stats = write_index(root, ptr)
@@ -893,14 +1051,21 @@ def _cmd_feedback_active(a, root: Path, ptr: dict, action: str | None):
         stats = feedback_stats(idx, ptr["rootId"])
         if not stats["records"]:
             print("No feedback recorded yet.")
-            ui.detail('After a task, run `mimry feedback --query "<task>" --opened <files> --outcome passed`.')
+            ui.detail(
+                'After a task, run `mimry feedback --query "<task>" --opened <files> --outcome'
+                " passed`."
+            )
             return 0
         ui.title(ui.count(stats["records"], "feedback record"))
         outcomes = sorted(stats["outcomes"].items(), key=lambda item: (-item[1], item[0]))
         ui.table(
             [
                 ("Outcomes", ui.facts(*(f"{n:,} {outcome}" for outcome, n in outcomes)) or "none"),
-                ("Files", ui.facts(*(f"{n:,} {label}" for label, n in stats["path_counts"].items() if n)) or "none"),
+                (
+                    "Files",
+                    ui.facts(*(f"{n:,} {label}" for label, n in stats["path_counts"].items() if n))
+                    or "none",
+                ),
             ]
         )
         return 0
@@ -914,7 +1079,12 @@ def _cmd_feedback_active(a, root: Path, ptr: dict, action: str | None):
         print()
         ui.table(
             [
-                (ui.ago(row["created_at"]), row["outcome"], ui.shorten(row["query"], 60), ui.faint(row["feedback_id"]))
+                (
+                    ui.ago(row["created_at"]),
+                    row["outcome"],
+                    ui.shorten(row["query"], 60),
+                    ui.faint(row["feedback_id"]),
+                )
                 for row in rows
             ]
         )
@@ -925,14 +1095,20 @@ def _cmd_feedback_active(a, root: Path, ptr: dict, action: str | None):
     if action == "show":
         row = show_feedback(idx, ptr["rootId"], a.feedback_id)
         if not row:
-            ui.fail(f"No feedback record with ID {a.feedback_id}", "List them with `mimry feedback list`.")
+            ui.fail(
+                f"No feedback record with ID {a.feedback_id}",
+                "List them with `mimry feedback list`.",
+            )
             return 1
         print(json.dumps(row, indent=2, sort_keys=True))
         return 0
 
     payload = feedback_payload_from_args(root, a)
     if not payload["query"]:
-        ui.fail("Feedback needs the task it is about", 'Pass --query "<task>", or --json with a query field.')
+        ui.fail(
+            "Feedback needs the task it is about",
+            'Pass --query "<task>", or --json with a query field.',
+        )
         return 2
     redacted_fields = payload.get("redacted_fields") or []
     row = record_feedback(idx, ptr["rootId"], payload, lock=False)
@@ -982,7 +1158,9 @@ def _print_results(rows: list[dict], *, verbose: bool) -> None:
         if verbose:
             print(f"      {ui.faint('score ' + str(row['score']) + ': ' + row['reason'])}")
             if row.get("details"):
-                print(f"      {ui.faint(ui.shorten(' '.join(_excerpt_lines(row['details'])), 240))}")
+                print(
+                    f"      {ui.faint(ui.shorten(' '.join(_excerpt_lines(row['details'])), 240))}"
+                )
 
 
 def _print_results_section(heading: str, rows: list[dict], *, verbose: bool) -> None:
@@ -991,7 +1169,10 @@ def _print_results_section(heading: str, rows: list[dict], *, verbose: bool) -> 
     if rows:
         _print_results(rows, verbose=verbose)
     else:
-        ui.detail("No files matched. Try different words, or `mimry symbol <name>` for a function or class.")
+        ui.detail(
+            "No files matched. Try different words, or `mimry symbol <name>` for a function or"
+            " class."
+        )
 
 
 def _print_search(heading: str, query: str, rows: list[dict], *, verbose: bool) -> None:
@@ -1008,8 +1189,9 @@ def cmd_semantic(a):
     root = Path(a.root).resolve()
     query = sanitize_query(getattr(a, "query", None) or "")
     if query == "index":
-        # Semantic state is generation-bound; rebuild through normal atomic
-        # publication instead of mutating the active SQLite generation in place.
+        # Semantic state is generation-bound; rebuild through normal
+        # atomic publication instead of mutating the active SQLite
+        # generation in place.
         stats = write_index(root, require(root, validate=False))
         ui.ok(f"Semantic search is ready ({ui.count(stats['semantic_chunks'], 'chunk')})")
         return 0
@@ -1020,10 +1202,16 @@ def cmd_semantic(a):
         if query == "status":
             health = semantic_health(idx, ptr.get("rootId"))
             if _print_semantic_degrade(idx, ptr.get("rootId")):
-                ui.ok(f"Semantic search is ready ({ui.count(health['chunks'], 'chunk')}, {health['backend']})")
+                ui.ok(
+                    f"Semantic search is ready ({ui.count(health['chunks'], 'chunk')},"
+                    f" {health['backend']})"
+                )
             return 0
         if not query:
-            ui.fail("Semantic search needs a query", 'For example: mimry semantic "where do we retry payments"')
+            ui.fail(
+                "Semantic search needs a query",
+                'For example: mimry semantic "where do we retry payments"',
+            )
             return 2
         rows, health = semantic_rows(idx, ptr.get("rootId"), query, getattr(a, "limit", 10))
         if not _print_semantic_degrade(idx, ptr.get("rootId")):
@@ -1051,12 +1239,21 @@ def cmd_related(a):
     root = Path(a.root).resolve()
     ptr = require(root)
     query = sanitize_query(a.query)
-    rows = find_rows(Path(ptr["indexPath"]), query, a.limit, True, root=root, root_id=ptr.get("rootId"))
+    rows = find_rows(
+        Path(ptr["indexPath"]), query, a.limit, True, root=root, root_id=ptr.get("rootId")
+    )
     _print_search("Files related to", query, rows, verbose=getattr(a, "verbose", False))
     return 0
 
 
-_SETUP_COMMANDS = ("uv sync", "npm install", "npm ci", "pnpm install", "yarn install", "bun install")
+_SETUP_COMMANDS = (
+    "uv sync",
+    "npm install",
+    "npm ci",
+    "pnpm install",
+    "yarn install",
+    "bun install",
+)
 
 
 def _display_commands(commands: list[str]) -> list[str]:
@@ -1102,7 +1299,9 @@ def cmd_route(a):
             ("Risk", risk + (f" - needs approval: {'; '.join(gates)}" if gates else "")),
         ]
     )
-    _print_results_section("Start with", payload["likely_files"], verbose=getattr(a, "verbose", False))
+    _print_results_section(
+        "Start with", payload["likely_files"], verbose=getattr(a, "verbose", False)
+    )
     _print_verification(payload["suggested_verification"])
     print()
     print(f"Next: {payload['next']}")
@@ -1120,7 +1319,10 @@ def cmd_brief(a):
         return 2
     ui.ok(f"Wrote a {payload['agent']} brief for {ui.quote(sanitize_query(a.query))}")
     ui.detail(ui.display_path(path, root))
-    ui.detail(f"Suggested agent for this task: {payload['recommended_agent']} ({payload['confidence']} confidence)")
+    ui.detail(
+        f"Suggested agent for this task: {payload['recommended_agent']} ({payload['confidence']}"
+        " confidence)"
+    )
     return 0
 
 
@@ -1158,7 +1360,9 @@ def _node_text(node: dict) -> str:
     return label if not source or source == label else f"{label} ({source})"
 
 
-def _symbol_rows(fresh: dict, rows: list[dict], limit: int = 12) -> list[tuple[str, str, str, str]]:
+def _symbol_rows(
+    fresh: dict, rows: list[dict], limit: int = 12
+) -> list[tuple[str, str, str, str]]:
     """(name, kind, language, "path:line") for symbols in the selected files."""
     selected = {row["path"] for row in rows}
     files_by_id = {f["file_id"]: f for f in fresh["files"]}
@@ -1182,7 +1386,14 @@ def cmd_explain(a):
     fresh, graph = _index_and_graph_health(root, ptr)
     query = sanitize_query(a.query)
     verbose = getattr(a, "verbose", False)
-    rows = find_rows(Path(ptr["indexPath"]), query, getattr(a, "limit", 5), True, root=root, root_id=ptr.get("rootId"))
+    rows = find_rows(
+        Path(ptr["indexPath"]),
+        query,
+        getattr(a, "limit", 5),
+        True,
+        root=root,
+        root_id=ptr.get("rootId"),
+    )
     ui.title(f"How {ui.quote(query)} maps to {_root_name(root)}")
     _print_index_note(fresh, graph)
     _print_results_section("Most relevant files", rows, verbose=verbose)
@@ -1200,7 +1411,9 @@ def cmd_explain(a):
             ui.title("How they connect")
             ui.table([(e["source"], e["relation"], e["target"]) for e in edges])
 
-    source = next((r for r in rows if _is_likely_edit_surface(r["path"])), rows[0] if rows else None)
+    source = next(
+        (r for r in rows if _is_likely_edit_surface(r["path"])), rows[0] if rows else None
+    )
     if source:
         print()
         print(f"Start with {source['path']} - read it and its tests before editing.")
@@ -1223,13 +1436,23 @@ def cmd_path(a):
     steps = result["steps"]
     if result["found"]:
         start, end = steps[0]["from"], steps[-1]["to"]
-        found = f"{_node_name(start)} connects to {_node_name(end)} in {ui.count(len(steps), 'step')}"
-        guessed = [query for query, node in ((source, start), (target, end)) if not _names_node(query, node)]
+        found = (
+            f"{_node_name(start)} connects to {_node_name(end)} in {ui.count(len(steps), 'step')}"
+        )
+        guessed = [
+            query
+            for query, node in ((source, start), (target, end))
+            if not _names_node(query, node)
+        ]
         if guessed:
-            # A fuzzy stand-in is a guess, so it must not read like a confirmed answer.
+            # A fuzzy stand-in is a guess, so it must not read like a
+            # confirmed answer.
             ui.warn(f"Closest match: {found}")
             for query in guessed:
-                ui.detail(f"Nothing in the graph is named {ui.quote(query)}, so this uses the closest match.")
+                ui.detail(
+                    f"Nothing in the graph is named {ui.quote(query)}, so this uses the closest"
+                    " match."
+                )
         else:
             ui.ok(found)
         print()
@@ -1237,7 +1460,9 @@ def cmd_path(a):
         ui.table(
             [
                 (
-                    _relation_text(str(step["edge"].get("relation") or step["edge"].get("type") or "relates")),
+                    _relation_text(
+                        str(step["edge"].get("relation") or step["edge"].get("type") or "relates")
+                    ),
                     _node_text(step["to"]),
                 )
                 for step in steps
@@ -1247,7 +1472,11 @@ def cmd_path(a):
         return 0
     ui.warn(f"No connection found between {ui.quote(source)} and {ui.quote(target)}")
     for query, matches in ((source, result["source_matches"]), (target, result["target_matches"])):
-        found = ", ".join(_node_text(m["node"]) for m in matches[:3]) if matches else "nothing in the graph"
+        found = (
+            ", ".join(_node_text(m["node"]) for m in matches[:3])
+            if matches
+            else "nothing in the graph"
+        )
         ui.detail(f"{ui.quote(query)} matched {found}")
     ui.detail(f'Try `mimry related "{source}"` to see what it connects to.')
     return 0
@@ -1301,13 +1530,26 @@ def cmd_why(a):
             print()
             ui.title("In the graph")
             # Only name nodes the connections below do not already show.
-            shown = {surface, *(e["source"] for e in evidence["edges"]), *(e["target"] for e in evidence["edges"])}
+            shown = {
+                surface,
+                *(e["source"] for e in evidence["edges"]),
+                *(e["target"] for e in evidence["edges"]),
+            }
             others = [n["label"] for n in evidence["nodes"] if n["label"] not in shown]
             ui.table([(e["source"], e["relation"], e["target"]) for e in evidence["edges"]])
             if evidence["edge_count"] > len(evidence["edges"]):
-                ui.detail(ui.faint(f"+{evidence['edge_count'] - len(evidence['edges']):,} more connections"))
+                ui.detail(
+                    ui.faint(
+                        f"+{evidence['edge_count'] - len(evidence['edges']):,} more connections"
+                    )
+                )
             if others:
-                ui.detail("Also: " + _joined(others, evidence["node_count"] - len(evidence["nodes"]) + len(others)))
+                ui.detail(
+                    "Also: "
+                    + _joined(
+                        others, evidence["node_count"] - len(evidence["nodes"]) + len(others)
+                    )
+                )
     _print_verification(_verification_commands(fresh))
     return 0
 
@@ -1347,7 +1589,12 @@ def cmd_symbol(a):
         ]
     )
     if len(matches) > SYMBOL_DISPLAY_LIMIT:
-        ui.detail(ui.faint(f"+{len(matches) - SYMBOL_DISPLAY_LIMIT:,} more - use a longer name to narrow it down"))
+        ui.detail(
+            ui.faint(
+                f"+{len(matches) - SYMBOL_DISPLAY_LIMIT:,} more - use a longer name to narrow it"
+                " down"
+            )
+        )
     return 0
 
 
@@ -1359,12 +1606,16 @@ def cmd_context(a):
         _print_semantic_degrade(Path(ptr["indexPath"]), ptr.get("rootId"))
     rows = _write_context_pack(root, ptr, a.query, semantic=getattr(a, "semantic", False))
     ui.ok(f"Wrote a context pack for {ui.quote(sanitize_query(a.query))}")
-    ui.detail(ui.facts(ui.display_path(context_file(root), root), ui.count(len(rows), "relevant file")))
+    ui.detail(
+        ui.facts(ui.display_path(context_file(root), root), ui.count(len(rows), "relevant file"))
+    )
     return 0
 
 
 def _extensions(extensions: list[str], limit: int = 4) -> str:
-    return ", ".join(extensions[:limit]) + (f", +{len(extensions) - limit} more" if len(extensions) > limit else "")
+    return ", ".join(extensions[:limit]) + (
+        f", +{len(extensions) - limit} more" if len(extensions) > limit else ""
+    )
 
 
 def cmd_adapters(a):
@@ -1378,7 +1629,12 @@ def cmd_adapters(a):
             print()
         ui.title(f"{heading} ({len(group)})")
         if not verbose:
-            ui.table([(adapter["name"], adapter["kind"], _extensions(adapter["extensions"])) for adapter in group])
+            ui.table(
+                [
+                    (adapter["name"], adapter["kind"], _extensions(adapter["extensions"]))
+                    for adapter in group
+                ]
+            )
             continue
         for adapter in group:
             print()
@@ -1420,14 +1676,20 @@ def cmd_roots(a):
         rows = []
         for root in sorted(present, key=lambda r: str(r.get("lastIndexedAt") or ""), reverse=True):
             path = Path(root["rootPath"])
-            indexed = f"indexed {ui.ago(root['lastIndexedAt'])}" if root.get("lastIndexedAt") else "not indexed yet"
+            indexed = (
+                f"indexed {ui.ago(root['lastIndexedAt'])}"
+                if root.get("lastIndexedAt")
+                else "not indexed yet"
+            )
             if id_counts[str(root["rootId"])] > 1:
                 indexed += " (shares an index ID with another folder)"
             row = (path.name or str(path), ui.display_path(path), indexed)
             rows.append((*row, root["rootId"]) if verbose else row)
         ui.table(rows)
     if gone:
-        ui.warn(f"{ui.count(gone, 'registered folder')} no longer {'exists' if gone == 1 else 'exist'}")
+        ui.warn(
+            f"{ui.count(gone, 'registered folder')} no longer {'exists' if gone == 1 else 'exist'}"
+        )
         ui.detail("Run `mimry roots --prune` to forget them.")
     return 0
 
@@ -1448,7 +1710,8 @@ def cmd_cache_wipe(a):
             raise SystemExit(_not_set_up(root))
         if Path(initial["rootPath"]).expanduser().resolve(strict=False) != root:
             raise UnsafeCachePathError(
-                f"Refusing to wipe cache: pointer root {initial['rootPath']} does not match current root {root}"
+                f"Refusing to wipe cache: pointer root {initial['rootPath']} does not match"
+                f" current root {root}"
             )
         base = validated_current_root_cache_path(
             Path(initial["indexPath"]), initial["rootId"], initial.get("generationId"), root
@@ -1487,12 +1750,14 @@ def cmd_cache_wipe(a):
 
 
 def cmd_digest(a):
-    """Print the canonical semantic digest of the active index generation.
+    """Print the canonical semantic digest of the active index
+    generation.
 
     This hashes normalized semantic state, not raw SQLite bytes or the
-    generation manifest, so two identical repositories checked out at different
-    absolute paths -- or indexed on different platforms -- print the same value.
-    See `mimry.digest` for the canonical/operational split.
+    generation manifest, so two identical repositories checked out at
+    different absolute paths -- or indexed on different platforms --
+    print the same value. See `mimry.digest` for the
+    canonical/operational split.
     """
     root = Path(a.root).resolve()
     safe_root(root)

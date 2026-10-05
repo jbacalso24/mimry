@@ -4,9 +4,10 @@ import re
 
 SCHEMA_VERSION = "0.2.0"
 HEAVY_IGNORES = {
-    # Tester-owned acceptance suites are intentionally outside ordinary agent
-    # indexing. This is cooperative workflow isolation, not a secrecy boundary:
-    # a user with repository access can still open the source directly.
+    # Tester-owned acceptance suites are intentionally outside ordinary
+    # agent indexing. This is cooperative workflow isolation, not a
+    # secrecy boundary: a user with repository access can still open the
+    # source directly.
     "acceptance_tests",
     "node_modules",
     "dist",
@@ -73,10 +74,11 @@ TEXT_EXTS = {
     ".jsx",
     ".ts",
     ".tsx",
-    # Keep in step with core.languages.EXTENSION_LANGUAGE. A parsed language missing
-    # here is scanned for symbols but never for secrets (has_sensitive_content returns
-    # False outside this set) and yields no content hint, so it silently gets weaker
-    # search and no secret protection.
+    # Keep in step with core.languages.EXTENSION_LANGUAGE. A parsed
+    # language missing here is scanned for symbols but never for secrets
+    # (has_sensitive_content returns False outside this set) and yields
+    # no content hint, so it silently gets weaker search and no secret
+    # protection.
     ".cs",
     ".go",
     ".rs",
@@ -96,7 +98,9 @@ TEXT_EXTS = {
     ".sh",
 }
 IMPORT_RE = re.compile(r"(?:from|import)\s+['\"]([^'\"]+)['\"]|import\s+([\w./@-]+)")
-# CommonJS: const x = require("./mod"). Without this a require-based file has no
-# import edges, so its cross-file calls can never resolve.
+# CommonJS: const x = require("./mod"). Without this a require-based
+# file has no import edges, so its cross-file calls can never resolve.
 REQUIRE_RE = re.compile(r"require\(\s*['\"]([^'\"]+)['\"]\s*\)")
-EXPORT_RE = re.compile(r"export\s+(?:default\s+)?(?:function|class|const|let|var)?\s*([A-Za-z_$][\w$]*)?")
+EXPORT_RE = re.compile(
+    r"export\s+(?:default\s+)?(?:function|class|const|let|var)?\s*([A-Za-z_$][\w$]*)?"
+)

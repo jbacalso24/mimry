@@ -1,19 +1,20 @@
 """Terminal presentation shared by every human-facing command.
 
 One look everywhere: a marked headline that says what happened, indented
-detail lines, aligned tables, and a next step only when one is needed. Colour
-is used only on an interactive terminal and never when NO_COLOR is set, so
-piped and captured output stays plain text.
+detail lines, aligned tables, and a next step only when one is needed.
+Colour is used only on an interactive terminal and never when NO_COLOR
+is set, so piped and captured output stays plain text.
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-# Escaped so the source stays ASCII: check mark, exclamation, ballot x, middle dot, arrow.
+# Escaped so the source stays ASCII: check mark, exclamation, ballot x,
+# middle dot, arrow.
 _SYMBOLS = {
     "ok": (chr(0x2713), "OK"),
     "warn": ("!", "!"),
@@ -54,10 +55,10 @@ def _color(stream) -> bool:
 def symbol(name: str, stream=None) -> str:
     """The Unicode mark on a UTF-8 terminal, else its ASCII stand-in.
 
-    Piped and captured output always gets ASCII, so scripts and agents that
-    read it see the same text on every platform and locale. Only UTF-8
-    qualifies: a legacy code page such as cp1252 can encode some marks, but
-    not all of them.
+    Piped and captured output always gets ASCII, so scripts and agents
+    that read it see the same text on every platform and locale. Only
+    UTF-8 qualifies: a legacy code page such as cp1252 can encode some
+    marks, but not all of them.
     """
     fancy, plain = _SYMBOLS[name]
     stream = stream or sys.stdout
@@ -142,8 +143,8 @@ def ago(timestamp: str | None, now: datetime | None = None) -> str:
     except ValueError:
         return timestamp
     if then.tzinfo is None:
-        then = then.replace(tzinfo=timezone.utc)
-    seconds = ((now or datetime.now(timezone.utc)) - then).total_seconds()
+        then = then.replace(tzinfo=UTC)
+    seconds = ((now or datetime.now(UTC)) - then).total_seconds()
     if seconds < 45:
         return "just now"
     for size, unit in ((86400 * 30, "month"), (86400, "day"), (3600, "hour"), (60, "minute")):
@@ -201,7 +202,8 @@ def shorten(text: str, width: int) -> str:
     return text if len(text) <= width else text[: max(1, width - 3)].rstrip() + "..."
 
 
-# Ranking reasons are internal vocabulary; say what each means for the reader.
+# Ranking reasons are internal vocabulary; say what each means for the
+# reader.
 _REASON_PHRASES = (
     ("graph node label match", "name matches"),
     ("filename match", "name matches"),

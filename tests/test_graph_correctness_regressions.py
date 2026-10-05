@@ -11,11 +11,13 @@ from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.mcp_server import mimry_reindex
 from mimry.scanner import adapt
-from mimry.state import StateCorruptionError, UNINDEXABLE_FILE
+from mimry.state import UNINDEXABLE_FILE, StateCorruptionError
 from mimry.storage import load_pointer
 
 
-def _init_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]) -> tuple[Path, dict]:
+def _init_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]
+) -> tuple[Path, dict]:
     root = tmp_path / "repo"
     for rel_path, source in files.items():
         path = root / rel_path
@@ -28,7 +30,9 @@ def _init_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str,
     return root, pointer
 
 
-def test_duplicate_method_names_keep_each_call_edge_on_its_real_caller(tmp_path: Path, monkeypatch) -> None:
+def test_duplicate_method_names_keep_each_call_edge_on_its_real_caller(
+    tmp_path: Path, monkeypatch
+) -> None:
     root, pointer = _init_repo(
         tmp_path,
         monkeypatch,
@@ -52,7 +56,9 @@ class Second:
     published = load_pointer(root)
     assert published is not None
     index = Path(published["indexPath"])
-    symbols = [json.loads(line) for line in (index / "symbols.jsonl").read_text().splitlines() if line]
+    symbols = [
+        json.loads(line) for line in (index / "symbols.jsonl").read_text().splitlines() if line
+    ]
     graph = json.loads((index / "graph.json").read_text(encoding="utf-8"))
     helper_id = next(symbol["symbol_id"] for symbol in symbols if symbol["name"] == "helper")
     run_ids = {symbol["symbol_id"] for symbol in symbols if symbol["name"] == "run"}
@@ -67,7 +73,9 @@ class Second:
     assert len(callers) == 2
 
 
-def test_python_parent_relative_import_resolves_from_declared_level(tmp_path: Path, monkeypatch) -> None:
+def test_python_parent_relative_import_resolves_from_declared_level(
+    tmp_path: Path, monkeypatch
+) -> None:
     root, pointer = _init_repo(
         tmp_path,
         monkeypatch,
@@ -107,7 +115,9 @@ def test_unindexable_sidecar_is_generation_integrity_checked(tmp_path: Path, mon
         index_freshness(root, published)
 
 
-def test_write_index_and_reindex_report_enriched_graph_edge_count(tmp_path: Path, monkeypatch) -> None:
+def test_write_index_and_reindex_report_enriched_graph_edge_count(
+    tmp_path: Path, monkeypatch
+) -> None:
     root, pointer = _init_repo(
         tmp_path,
         monkeypatch,
@@ -123,5 +133,7 @@ def test_write_index_and_reindex_report_enriched_graph_edge_count(tmp_path: Path
     assert stats["edges"] > 2  # two definition edges plus resolved import/call edges
 
     reindex_stats = mimry_reindex(str(root))
-    reindexed_graph = json.loads((Path(reindex_stats["index"]) / "graph.json").read_text(encoding="utf-8"))
+    reindexed_graph = json.loads(
+        (Path(reindex_stats["index"]) / "graph.json").read_text(encoding="utf-8")
+    )
     assert reindex_stats["edges"] == len(reindexed_graph["edges"])

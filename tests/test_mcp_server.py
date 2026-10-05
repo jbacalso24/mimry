@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -15,16 +15,16 @@ import pytest
 from mimry import mcp_server
 from mimry.indexer import write_index
 from mimry.mcp_server import (
-    mimry_context,
     mimry_brief,
+    mimry_context,
     mimry_explain,
     mimry_feedback,
     mimry_find,
     mimry_init,
     mimry_path,
     mimry_preflight,
-    mimry_route,
     mimry_refresh,
+    mimry_route,
     mimry_status,
     mimry_why,
 )
@@ -37,8 +37,9 @@ FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
 
 def test_mcp_server_imports_and_registers_tools():
     assert mcp_server.mcp.name == "MIMRY"
-    # FastMCP stores tools internally, but import success and callable decorated
-    # functions are the minimum guard for packaging/console-script regressions.
+    # FastMCP stores tools internally, but import success and callable
+    # decorated functions are the minimum guard for
+    # packaging/console-script regressions.
     assert callable(mimry_status)
     assert callable(mimry_find)
     assert callable(mimry_init)
@@ -61,10 +62,11 @@ def test_mimry_mcp_help_does_not_start_server():
         env=env,
         text=True,
         capture_output=True,
-        # A safety net so a regression that starts the server hangs the suite
-        # instead of the machine -- not a performance assertion. Importing
-        # fastmcp and tree-sitter-language-pack already costs ~9s on a cold
-        # Windows runner, so 10s flaked under parallel load.
+        # A safety net so a regression that starts the server hangs the
+        # suite instead of the machine -- not a performance assertion.
+        # Importing fastmcp and tree-sitter-language-pack already costs
+        # ~9s on a cold Windows runner, so 10s flaked under parallel
+        # load.
         timeout=60,
         check=False,
     )
@@ -228,7 +230,9 @@ def test_mcp_preflight_initializes_and_writes_context(tmp_path: Path, monkeypatc
     assert payload["returncode"] == 0
     assert payload["initialized"] is True
     assert payload["index_state"] == "current"
-    assert payload["context_path"].replace("\\", "/").endswith(".mimry/mimry-out/context/latest.md")
+    assert (
+        payload["context_path"].replace("\\", "/").endswith(".mimry/mimry-out/context/latest.md")
+    )
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
     assert "OK Context ready for" in payload["stdout"]
 
@@ -247,7 +251,9 @@ def test_mcp_refresh_rebuilds_index_and_reports_status(tmp_path: Path, monkeypat
     assert "OK Indexed repo for the first time" in payload["stdout"]
 
 
-def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path: Path, monkeypatch):
+def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(
+    tmp_path: Path, monkeypatch
+):
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
@@ -266,7 +272,10 @@ def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(tmp_path:
     )
 
     assert explain["returncode"] == 0 and '"fix auth session" maps to repo' in explain["stdout"]
-    assert why["returncode"] == 0 and 'Why src/auth/session.py ranks for "fix auth session"' in why["stdout"]
+    assert (
+        why["returncode"] == 0
+        and 'Why src/auth/session.py ranks for "fix auth session"' in why["stdout"]
+    )
     assert path["returncode"] == 0
     assert "connects to" in path["stdout"] or "No connection found" in path["stdout"]
     assert feedback["returncode"] == 0
@@ -313,7 +322,10 @@ def test_mcp_reports_outdated_schema_as_upgrade_not_corruption(tmp_path: Path, m
     assert payload["returncode"] == 2
     assert payload["initialized"] is True
     assert payload["error"]["code"] == "index_schema_outdated"
-    assert "outdated" in payload["error"]["message"].lower() or "rebuild" in payload["error"]["message"].lower()
+    assert (
+        "outdated" in payload["error"]["message"].lower()
+        or "rebuild" in payload["error"]["message"].lower()
+    )
     assert "corrupt" not in payload["error"]["message"].lower()
     assert "mimry index" in payload["error"]["message"].lower()
 
@@ -336,7 +348,8 @@ def test_mcp_still_reports_real_corruption_as_corruption(tmp_path: Path, monkeyp
     save_pointer(repo, ptr)
     write_index(repo, ptr)
 
-    # Corrupt a file to simulate real corruption (must corrupt a file that will be checksum-validated)
+    # Corrupt a file to simulate real corruption (must corrupt a file
+    # that will be checksum-validated)
     actual_ptr = load_pointer(repo)
     files_path = Path(actual_ptr["indexPath"]) / "files.jsonl"
     files_path.write_bytes(b"corrupted bytes that are not JSON")
@@ -350,7 +363,7 @@ def test_mcp_still_reports_real_corruption_as_corruption(tmp_path: Path, monkeyp
 
 def test_mcp_tool_list_is_backward_compatible(tmp_path: Path):
     """Every existing tool must still be registered, plus new digest tool."""
-    from mimry.mcp_server import mimry_symbol, mimry_semantic, mimry_digest
+    from mimry.mcp_server import mimry_digest, mimry_semantic, mimry_symbol
 
     assert callable(mimry_status)
     assert callable(mimry_find)
@@ -371,8 +384,8 @@ def test_mcp_tool_list_is_backward_compatible(tmp_path: Path):
 
 def test_mcp_digest_tool_matches_cli_digest(tmp_path: Path, monkeypatch):
     """MCP digest tool must return same digest as CLI 'mimry digest'."""
-    from mimry.mcp_server import mimry_digest
     from mimry.digest import canonical_digest
+    from mimry.mcp_server import mimry_digest
 
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
@@ -561,10 +574,12 @@ def _cli_status(repo: Path) -> tuple[int, str]:
 def test_cli_and_mcp_agree_on_index_state(
     tmp_path: Path, monkeypatch, state, expect_mcp_code, cli_must_mention, cli_must_not_mention
 ):
-    """CLI and MCP must classify the same four index states the same way.
+    """CLI and MCP must classify the same four index states the same
+    way.
 
-    A schema upgrade is not corruption. Telling an agent its state is corrupt
-    invites it to preserve and diagnose an index that only needs rebuilding.
+    A schema upgrade is not corruption. Telling an agent its state is
+    corrupt invites it to preserve and diagnose an index that only needs
+    rebuilding.
     """
     if state == "missing":
         repo = tmp_path / "repo"
@@ -585,17 +600,27 @@ def test_cli_and_mcp_agree_on_index_state(
     cli_lower = cli_text.lower()
 
     if expect_mcp_code is None:
-        assert "error" not in mcp_payload or mcp_payload.get("error", {}).get("code") != "index_schema_outdated"
+        assert (
+            "error" not in mcp_payload
+            or mcp_payload.get("error", {}).get("code") != "index_schema_outdated"
+        )
     else:
-        assert mcp_payload["error"]["code"] == expect_mcp_code, f"{state}: MCP returned {mcp_payload.get('error')}"
+        assert mcp_payload["error"]["code"] == expect_mcp_code, (
+            f"{state}: MCP returned {mcp_payload.get('error')}"
+        )
 
     if cli_must_mention:
-        assert cli_must_mention in cli_lower, f"{state}: CLI output missing {cli_must_mention!r}: {cli_text}"
+        assert cli_must_mention in cli_lower, (
+            f"{state}: CLI output missing {cli_must_mention!r}: {cli_text}"
+        )
     if cli_must_not_mention:
-        assert cli_must_not_mention not in cli_lower, f"{state}: CLI wrongly said {cli_must_not_mention!r}: {cli_text}"
+        assert cli_must_not_mention not in cli_lower, (
+            f"{state}: CLI wrongly said {cli_must_not_mention!r}: {cli_text}"
+        )
 
     if state == "old_schema":
-        # Both surfaces must point at the same remedy and neither may call it corruption.
+        # Both surfaces must point at the same remedy and neither may
+        # call it corruption.
         assert "corrupt" not in mcp_payload["error"]["message"].lower()
         assert "mimry index" in mcp_payload["recommended"].lower()
         assert cli_code != 0
