@@ -3,8 +3,15 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..security import markdown_inline
+from . import languages
 
-_CODE_EXTENSIONS = frozenset(["py", "js", "jsx", "ts", "tsx", "go", "rs", "cs", "java", "php"])
+_CODE_EXTENSIONS = frozenset(ext.lstrip(".") for ext in languages.EXTENSION_LANGUAGE) | {
+    "py",
+    "js",
+    "jsx",
+    "ts",
+    "tsx",
+}
 _DOC_EXTENSIONS = frozenset(["md", "mdx", "txt", "rst"])
 _DATA_EXTENSIONS = frozenset(["sql", "json", "yaml", "yml", "toml", "ini", "cfg"])
 

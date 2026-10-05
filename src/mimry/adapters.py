@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
+from .core.languages import EXTENSION_LANGUAGE
+
 AdapterStatus = Literal["active", "planned"]
 AdapterKind = Literal["code", "document", "data", "media", "project"]
 
@@ -69,6 +71,35 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
             " references, import/export hints (ES and CommonJS require), and line ranges. Call"
             " sites resolve to symbol-to-symbol call edges. Module-scope caller attribution is"
             " exact; a call on a `const x = f()` line is still attributed to the local binding."
+        ),
+    ),
+    AdapterInfo(
+        name="tree-sitter",
+        status="active",
+        kind="code",
+        extensions=tuple(sorted(EXTENSION_LANGUAGE)),
+        parser="tree-sitter-language-pack",
+        emits=(
+            "files",
+            "symbols",
+            "imports",
+            "defines_edges",
+            "call_edges",
+            "inheritance_edges",
+            "line_ranges",
+        ),
+        agent_use=(
+            "Backend and systems agents find Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin,"
+            " Scala, and Swift functions, classes, methods, interfaces, modules, imports, calls,"
+            " and inheritance relationships without reading every file."
+        ),
+        notes=(
+            "Extracts definitions (functions, classes, structs, interfaces, traits, enums),"
+            " imports with their source paths, inter-symbol call edges, and inheritance"
+            " (extends/implements/with relationships). Line ranges and call locations enable"
+            " precise edit targeting. Import resolution uses relative path suffix matching for"
+            " C/C++ headers, relative and `require` matches for Ruby, and language-specific"
+            " resolution rules."
         ),
     ),
     AdapterInfo(

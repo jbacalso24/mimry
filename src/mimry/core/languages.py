@@ -15,6 +15,20 @@ EXTENSION_LANGUAGE = {
     ".cs": "csharp",
     ".java": "java",
     ".php": "php",
+    ".c": "c",
+    ".h": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".cxx": "cpp",
+    ".hh": "cpp",
+    ".hpp": "cpp",
+    ".hxx": "cpp",
+    ".rb": "ruby",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".scala": "scala",
+    ".sc": "scala",
+    ".swift": "swift",
 }
 
 NODE_TYPES = {
@@ -133,6 +147,86 @@ NODE_TYPES = {
         ),
         "bases": frozenset(["base_clause", "class_interface_clause"]),
     },
+    "c": {
+        # C functions hide the name inside the declarator chain.
+        "definitions": frozenset(
+            [
+                "function_definition",
+                "struct_specifier",
+                "enum_specifier",
+                "union_specifier",
+                "typedef_declaration",
+            ]
+        ),
+        "imports": frozenset(["preproc_include"]),
+        "calls": frozenset(["call_expression"]),
+    },
+    "cpp": {
+        # C++ adds classes and namespaces; still uses declarators
+        # for function names.
+        "definitions": frozenset(
+            [
+                "function_definition",
+                "class_specifier",
+                "struct_specifier",
+                "enum_specifier",
+                "union_specifier",
+                "namespace_definition",
+                "typedef_declaration",
+            ]
+        ),
+        "imports": frozenset(["preproc_include"]),
+        "calls": frozenset(["call_expression"]),
+        "bases": frozenset(["base_class_clause"]),
+    },
+    "ruby": {
+        # Ruby has classes, methods, singleton methods and modules.
+        "definitions": frozenset(["class", "method", "singleton_method", "module"]),
+        "imports": frozenset(["call"]),  # require/require_relative are calls
+        "calls": frozenset(["call"]),
+        "bases": frozenset(["superclass"]),
+    },
+    "kotlin": {
+        "definitions": frozenset(
+            [
+                "class_declaration",
+                "interface_declaration",
+                "object_declaration",
+                "function_declaration",
+            ]
+        ),
+        "imports": frozenset(["import_header"]),
+        "calls": frozenset(["call_expression"]),
+        "bases": frozenset(["delegation_specifier"]),
+    },
+    "scala": {
+        "definitions": frozenset(
+            [
+                "class_definition",
+                "object_definition",
+                "trait_definition",
+                "function_definition",
+            ]
+        ),
+        "imports": frozenset(["import_declaration"]),
+        "calls": frozenset(["call_expression"]),
+        "bases": frozenset(["extends_clause", "with"]),
+    },
+    "swift": {
+        "definitions": frozenset(
+            [
+                "class_declaration",
+                "struct_declaration",
+                "enum_declaration",
+                "protocol_declaration",
+                "function_declaration",
+                "extension_declaration",
+            ]
+        ),
+        "imports": frozenset(["import_declaration"]),
+        "calls": frozenset(["call_expression"]),
+        "bases": frozenset(["inheritance_specifier"]),
+    },
 }
 
 
@@ -148,20 +242,34 @@ def symbol_kind(language: str, node_kind: str) -> str:
     """Map a tree-sitter node kind to MIMRY's symbol kind vocabulary."""
     if node_kind == "interface_declaration":
         return "interface"
-    if node_kind == "enum_declaration":
+    if node_kind == "protocol_declaration":
+        return "interface"
+    if node_kind in ("enum_declaration", "enum_specifier"):
         return "enum"
-    if node_kind in ("record_declaration", "trait_declaration"):
+    if node_kind in (
+        "record_declaration",
+        "trait_declaration",
+        "trait_definition",
+        "object_definition",
+    ):
         return "class"
     if "class" in node_kind or "struct" in node_kind:
         return "class"
     if node_kind == "impl_item":
         return "class"
-    if node_kind in ("namespace_declaration", "mod_item"):
+    if node_kind in (
+        "namespace_declaration",
+        "namespace_definition",
+        "module",
+        "mod_item",
+    ):
         return "module"
-    if node_kind == "type_declaration":
+    if node_kind in ("type_declaration", "typedef_declaration"):
         return "type"
     if node_kind == "variable_declarator":
         return "variable"
+    if node_kind == "union_specifier":
+        return "class"
     return "function"
 
 
@@ -243,6 +351,10 @@ def _definition_name(node: Any, source: bytes) -> str | None:
     took its place. Grammars label the declared name with a `name`
     field, so ask for it and keep the positional scan only for the nodes
     that have none (Rust `impl_item` names its subject `type`).
+
+    C/C++ functions hide names in declarator chains: reach through
+    function_declarator to find it, then check for qualified_identifier
+    (e.g. Widget::draw) and take only the final part.
     """
     try:
         named = node.child_by_field_name("name")
@@ -252,7 +364,36 @@ def _definition_name(node: Any, source: bytes) -> str | None:
         text = _text(source, named).strip()
         if text:
             return text
+
+    # C/C++ function_definition: unwrap through declarator chain
+    if node.type == "function_definition":
+        c_name = _c_declarator_name(node, source)
+        if c_name is not None:
+            return c_name
+
     return _first_identifier(node, source)
+
+
+_C_NAME_KINDS = frozenset(
+    ["identifier", "field_identifier", "qualified_identifier", "destructor_name", "operator_name"]
+)
+
+
+def _c_declarator_name(node: Any, source: bytes) -> str | None:
+    """A C/C++ function's name: innermost declarator, unqualified."""
+    declarator = node
+    while True:
+        inner = declarator.child_by_field_name("declarator")
+        if inner is None and declarator.type == "reference_declarator":
+            # `int& get()` gives its declarator no field name.
+            named = declarator.named_children
+            inner = named[-1] if named else None
+        if inner is None:
+            break
+        declarator = inner
+    if declarator.type not in _C_NAME_KINDS:
+        return None
+    return _text(source, declarator).rsplit("::", 1)[-1].strip() or None
 
 
 def _parent_kinds(node: Any, limit: int = 3) -> set[str]:
@@ -316,11 +457,167 @@ _IDENTIFIER_KINDS = (
     "field_identifier",
     "property_identifier",
     "name",
+    "constant",
+    "simple_identifier",
 )
 
 
 def _is_identifier_kind(kind: str) -> bool:
     return kind in _IDENTIFIER_KINDS or kind.endswith("identifier")
+
+
+def _ruby_require(node: Any, source: bytes) -> str | None:
+    """Module string from Ruby require/require_relative, or None."""
+    callee = _callee_name(node, source)
+    if callee not in ("require", "require_relative"):
+        return None
+    # Extract string argument
+    for child in _walk(node):
+        if "string" in child.type:
+            module = _text(source, child)
+            module = module.strip().strip('"').strip("'")
+            # Normalize require_relative to ./path
+            if callee == "require_relative" and module and not module.startswith("."):
+                module = "./" + module
+            return module
+    return None
+
+
+def _c_include(node: Any, source: bytes) -> str | None:
+    """Module string from C/C++ #include, or None."""
+    for child in _children(node):
+        if child.type == "system_lib_string":
+            # <stdio.h> -> keep brackets for system includes
+            text = _text(source, child)
+            return text  # Keep <path>
+        elif child.type == "string_literal":
+            # "utils.h" -> ./utils.h unless starts with .
+            for subchild in _children(child):
+                if subchild.type == "string_content":
+                    module = _text(source, subchild)
+                    if module:
+                        # Prepend "./" unless already starts with .
+                        if not module.startswith("."):
+                            module = "./" + module
+                        return module
+            text = _text(source, child)
+            module = text.strip('"').strip("'")
+            if module and not module.startswith("."):
+                module = "./" + module
+            return module
+    return None
+
+
+def _kotlin_import(node: Any, source: bytes) -> str | None:
+    """Module string from Kotlin import_header, or None."""
+    # Build the dotted identifier from the identifier node
+    module = None
+    for child in _children(node):
+        if child.type == "identifier":
+            module = _text(source, child)
+            break
+    # Check for wildcard
+    for child in _children(node):
+        if child.type == "wildcard_import":
+            if module:
+                module += ".*"
+    return module
+
+
+def _scala_import(node: Any, source: bytes) -> str | None:
+    """Module string from Scala import_declaration, or None."""
+    parts = []
+    has_wildcard = False
+    for child in _children(node):
+        if child.type == "identifier":
+            parts.append(_text(source, child))
+        elif child.type == "namespace_selectors":
+            # Braced selectors: import a.b.{C, D}
+            for subchild in _children(child):
+                if subchild.type == "identifier":
+                    parts.append(_text(source, subchild))
+        elif child.type == "namespace_wildcard":
+            has_wildcard = True
+    module = None
+    if parts:
+        module = ".".join(parts)
+    if has_wildcard:
+        module = (module or "") + "._"
+    return module
+
+
+def _swift_import(node: Any, source: bytes) -> str | None:
+    """Module string from Swift import_declaration, or None."""
+    for child in _children(node):
+        if child.type == "identifier":
+            return _text(source, child)
+    return None
+
+
+def _generic_import_module(lang: str, node: Any, source: bytes) -> str | None:
+    """Generic extraction: strings, identifiers, or regex parsing."""
+    import_text = _text(source, node)
+    module = None
+
+    # Try to find string literals first (JS/TS/Go)
+    for child in _walk(node):
+        child_kind = child.type
+        if "string" in child_kind or "literal" in child_kind:
+            module_text = _text(source, child)
+            # Strip quotes from both ends
+            module = module_text.strip().strip('"').strip("'").strip("`")
+            if module and module not in ('"', "'", "`"):
+                break
+
+    # Fallback: try to extract from identifier/scoped_identifier
+    # nodes (Python/Rust/C#/Java, and PHP's namespace_use_clause
+    # wrapper)
+    if not module:
+        for child in _children(node):
+            child_kind = child.type
+            if child_kind in (
+                "identifier",
+                "dotted_name",
+                "scoped_identifier",
+                "qualified_name",
+                "namespace_use_clause",
+            ):
+                module = _text(source, child)
+                break
+
+    # Last resort: regex parsing for specific languages
+    if not module:
+        if lang == "python":
+            if "from" in import_text:
+                # from X import Y - module is X
+                parts = import_text.split("from", 1)[1].split("import", 1)
+                if len(parts) > 0:
+                    module = parts[0].strip()
+            elif "import" in import_text:
+                # import X - module is X
+                parts = import_text.split("import", 1)
+                if len(parts) > 1:
+                    module = parts[1].strip()
+
+    return module
+
+
+_IMPORT_READERS = {
+    "ruby": _ruby_require,
+    "c": _c_include,
+    "cpp": _c_include,
+    "kotlin": _kotlin_import,
+    "scala": _scala_import,
+    "swift": _swift_import,
+}
+
+
+def _import_module(lang: str, node: Any, source: bytes) -> str | None:
+    """The module an import node names, or None when it names none."""
+    reader = _IMPORT_READERS.get(lang)
+    if reader is not None:
+        return reader(node, source)
+    return _generic_import_module(lang, node, source)
 
 
 def _expression_name(node: Any, source: bytes) -> str | None:
@@ -368,8 +665,18 @@ def _base_type_names(container: Any, source: bytes) -> list[str]:
             # TS splits extends/implements into two clauses; Java wraps
             # its interface list in a type_list, so `implements G, R`
             # would otherwise collapse to whichever name the reversed
-            # scan reached first.
-            if kind in ("extends_clause", "implements_clause", "extends_type_clause", "type_list"):
+            # scan reached first. Scala uses extends_clause and with.
+            # Swift/Kotlin use delegation/inheritance_specifier.
+            if kind in (
+                "extends_clause",
+                "implements_clause",
+                "extends_type_clause",
+                "type_list",
+                "with",
+                "delegation_specifier",
+                "inheritance_specifier",
+                "superclass",
+            ):
                 visit(child)
                 continue
             name = _expression_name(child, source)
@@ -561,49 +868,7 @@ def extract(path: str | Path, source: str) -> dict:
 
         # Imports
         if category in (None, "imports") and kind in node_types["imports"]:
-            import_text = _text(source, node)
-            module = None
-
-            # Try to find string literals first (JS/TS/Go)
-            for child in _walk(node):
-                child_kind = child.type
-                if "string" in child_kind or "literal" in child_kind:
-                    module_text = _text(source, child)
-                    # Strip quotes from both ends
-                    module = module_text.strip().strip('"').strip("'").strip("`")
-                    if module and module not in ('"', "'", "`"):
-                        break
-
-            # Fallback: try to extract from identifier/scoped_identifier
-            # nodes (Python/Rust/C#/Java, and PHP's namespace_use_clause
-            # wrapper)
-            if not module:
-                for child in _children(node):
-                    child_kind = child.type
-                    if child_kind in (
-                        "identifier",
-                        "dotted_name",
-                        "scoped_identifier",
-                        "qualified_name",
-                        "namespace_use_clause",
-                    ):
-                        module = _text(source, child)
-                        break
-
-            # Last resort: regex parsing for specific languages
-            if not module:
-                if lang == "python":
-                    if "from" in import_text:
-                        # from X import Y - module is X
-                        parts = import_text.split("from", 1)[1].split("import", 1)
-                        if len(parts) > 0:
-                            module = parts[0].strip()
-                    elif "import" in import_text:
-                        # import X - module is X
-                        parts = import_text.split("import", 1)
-                        if len(parts) > 1:
-                            module = parts[1].strip()
-
+            module = _import_module(lang, node, source)
             if module:
                 imports.append(
                     {

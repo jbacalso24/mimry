@@ -11,11 +11,14 @@ import json
 import sys
 from pathlib import Path
 
+from .core.languages import EXTENSION_LANGUAGE
+
 SEARCH_TOOLS = {"grep", "glob"}
 NUDGE = (
     'MIMRY is available for this project. Run `mimry preflight "<task>"` or use '
     "MIMRY MCP/context/find/related before broad search or repeated file reads."
 )
+_CODE_EXTENSIONS = tuple(EXTENSION_LANGUAGE.keys()) + (".md",)
 
 
 def cmd_hook_check(a) -> int:
@@ -54,10 +57,7 @@ def _hook_check(root: Path) -> None:
     search_hit = tool_name in SEARCH_TOOLS or any(
         tok in low for tok in ("grep", "rg ", "ripgrep", "find ", "fd ", "ack ", "ag ")
     )
-    read_hit = any(
-        low.endswith(ext) or f"{ext} " in low
-        for ext in (".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".md")
-    )
+    read_hit = any(low.endswith(ext) or f"{ext} " in low for ext in _CODE_EXTENSIONS)
     if not (search_hit or read_hit):
         return
     mimry_dir = root / ".mimry"

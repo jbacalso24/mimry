@@ -2,7 +2,25 @@ from __future__ import annotations
 
 import posixpath
 
+from .languages import language_for
+
 SYMBOL_KIND_PRIORITY = {"class": 0, "interface": 1, "function": 2, "method": 3, "sql_table": 4}
+
+_JS_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+
+
+def _is_c_family(path: str) -> bool:
+    return language_for(path) in ("c", "cpp")
+
+
+def _relative_suffixes(importer: str) -> tuple[str, ...]:
+    """Extensions a relative import may omit, by importer language."""
+    language = language_for(importer)
+    if language == "ruby":
+        return ("", ".rb")
+    if language in ("c", "cpp"):
+        return ("",)  # an include names its header's extension
+    return ("", *_JS_EXTENSIONS)
 
 
 def symbol_selection_key(symbol, rel_path=""):
@@ -42,9 +60,16 @@ def resolve_imports(imports: dict[str, list[str]], rel_paths: set[str]) -> list[
     # Precompute suffix lookup for rule 4 efficiency
     suffix_lookup = _build_suffix_lookup(rel_paths)
 
+    # Check if any importer is C-family; if so, build exact lookup
+    exact_lookup = {}
+    for importer in imports.keys():
+        if _is_c_family(importer):
+            exact_lookup = _build_suffix_lookup(rel_paths, keep_extension=True)
+            break
+
     for importer, module_list in imports.items():
         for module in module_list:
-            target = _resolve_import(importer, module, rel_paths, suffix_lookup)
+            target = _resolve_import(importer, module, rel_paths, suffix_lookup, exact_lookup)
             if target:
                 results.append(
                     {
@@ -60,22 +85,38 @@ def resolve_imports(imports: dict[str, list[str]], rel_paths: set[str]) -> list[
 
 
 def _resolve_import(
-    importer: str, module: str, rel_paths: set[str], suffix_lookup: dict
+    importer: str,
+    module: str,
+    rel_paths: set[str],
+    suffix_lookup: dict,
+    exact_lookup: dict | None = None,
 ) -> dict | None:
     """Try to resolve a single import against available paths.
 
     Returns {"path": str, "confidence": str} or None if unresolvable.
     Apply rules in order; first unambiguous match wins.
     """
+    if exact_lookup is None:
+        exact_lookup = {}
 
     # Sanitize module string
     module = module.strip() if module else ""
     if not module or module in (".", ".."):
         return None
 
-    # Rule 1: Relative specifier (JS/TS) - starts with ./ or ../
+    # System include (C/C++): <path/to/file.h>
+    if module.startswith("<") and module.endswith(">"):
+        return _exact_suffix_match(module[1:-1], exact_lookup)
+
+    # Rule 1: Relative specifier (JS/TS/C/C++) - starts with ./ or ../
     if module.startswith("./") or module.startswith("../"):
-        return _rule1_relative(importer, module, rel_paths)
+        result = _rule1_relative(importer, module, rel_paths)
+        if result:
+            return result
+        # For C-family, also try exact match after rule 1 fails
+        if _is_c_family(importer):
+            return _exact_suffix_match(module, exact_lookup)
+        return None
 
     # Python relative import. The leading-dot count is ImportFrom.level,
     # so one dot stays in the current package and each additional dot
@@ -99,15 +140,32 @@ def _resolve_import(
         return result
 
     # Rule 4: Suffix match
-    return _rule4_suffix_match(module, rel_paths, suffix_lookup)
+    return _rule4_suffix_match(module, rel_paths, suffix_lookup, importer)
+
+
+def _exact_suffix_match(path: str, exact_lookup: dict) -> dict | None:
+    """Match path in exact_lookup, dropping . and .. segments."""
+    # Normalize the path by dropping . and .. segments
+    parts = path.split("/")
+    normalized_parts = []
+    for part in parts:
+        if part == ".." or part == ".":
+            continue
+        normalized_parts.append(part)
+    normalized = "/".join(normalized_parts)
+
+    match = exact_lookup.get(normalized)
+    if match and len(match) == 1:
+        return {"path": match[0], "confidence": "INFERRED"}
+    return None
 
 
 def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> dict | None:
-    """Rule 1: Relative specifier (JS/TS).
+    """Rule 1: Relative specifier (JS/TS/C/C++/Ruby).
 
     Base = importer's directory
     Join base + module, normalize away ./ and ../
-    Probe: exact path, then +extensions, then +/index+extensions
+    Probe: exact path, then +suffixes, then +/index+suffixes
     Confidence: EXTRACTED
     """
     importer_dir = posixpath.dirname(importer)
@@ -115,22 +173,22 @@ def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> dict | N
     # Join and normalize
     candidate = posixpath.normpath(posixpath.join(importer_dir, module))
 
-    # Probe: exact path
-    if candidate in rel_paths:
-        return {"path": candidate, "confidence": "EXTRACTED"}
+    suffixes = _relative_suffixes(importer)
 
-    # Probe: with extensions
-    for ext in [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]:
-        with_ext = candidate + ext
-        if with_ext in rel_paths:
-            return {"path": with_ext, "confidence": "EXTRACTED"}
+    # Probe: exact path and with suffixes
+    for suffix in suffixes:
+        with_suffix = candidate + suffix
+        if with_suffix in rel_paths:
+            return {"path": with_suffix, "confidence": "EXTRACTED"}
 
-    # Probe: /index with extensions
-    index_base = posixpath.join(candidate, "index")
-    for ext in [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]:
-        with_index = index_base + ext
-        if with_index in rel_paths:
-            return {"path": with_index, "confidence": "EXTRACTED"}
+    # Probe: /index with JS extensions only when not Ruby/C-family
+    language = language_for(importer)
+    if language not in ("ruby", "c", "cpp"):
+        index_base = posixpath.join(candidate, "index")
+        for ext in _JS_EXTENSIONS:
+            with_index = index_base + ext
+            if with_index in rel_paths:
+                return {"path": with_index, "confidence": "EXTRACTED"}
 
     return None
 
@@ -204,8 +262,10 @@ def _rule3_relative_to_package(importer: str, module: str, rel_paths: set[str]) 
     return None
 
 
-def _rule4_suffix_match(module: str, rel_paths: set[str], suffix_lookup: dict) -> dict | None:
-    r"""Rule 4: Suffix match (Go, Rust, C#, bare JS specifiers).
+def _rule4_suffix_match(
+    module: str, rel_paths: set[str], suffix_lookup: dict, importer: str = ""
+) -> dict | None:
+    r"""Rule 4: Suffix match (Go, Rust, C#, bare JS specifiers, Ruby).
 
     Normalize module by replacing :: and . and \ with / Find paths whose
     extension-stripped value ends with normalized suffix on path-segment
@@ -222,24 +282,31 @@ def _rule4_suffix_match(module: str, rel_paths: set[str], suffix_lookup: dict) -
     # Look up in suffix_lookup
     matches = suffix_lookup.get(normalized, [])
 
+    # For Ruby importers, keep only matches ending in .rb
+    if importer and language_for(importer) == "ruby":
+        matches = [m for m in matches if m.endswith(".rb")]
+
     if len(matches) == 1:
         return {"path": matches[0], "confidence": "INFERRED"}
 
     return None  # Zero or multiple matches -> don't guess
 
 
-def _build_suffix_lookup(rel_paths: set[str]) -> dict:
+def _build_suffix_lookup(rel_paths: set[str], *, keep_extension: bool = False) -> dict:
     """Precompute suffix lookup for rule 4 efficiency.
 
     Map from normalized suffix to list of matching paths. A path matches
-    if, when its extension is removed, the result ends with the suffix
-    on a path-segment boundary.
+    if, when its extension is removed (unless keep_extension=True), the
+    result ends with the suffix on a path-segment boundary.
     """
     suffix_lookup = {}
 
     for path in rel_paths:
-        # Remove extension
-        without_ext = _strip_extension(path)
+        # Remove extension unless keep_extension is True
+        if keep_extension:
+            without_ext = path
+        else:
+            without_ext = _strip_extension(path)
 
         # Generate all path-segment suffixes
         parts = without_ext.split("/")

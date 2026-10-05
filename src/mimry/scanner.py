@@ -364,6 +364,21 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
                 references["table_refs"] = table_refs
         except (OSError, UnicodeError):
             pass
+def _python_imports(node: ast.AST) -> list[str]:
+    """Modules one statement names, as the resolver expects them."""
+    if isinstance(node, ast.Import):
+        return [a.name for a in node.names]
+    elif isinstance(node, ast.ImportFrom):
+        if node.module:
+            return ["." * node.level + node.module]
+        elif node.level > 0:
+            # from . import name or from .. import name
+            result = []
+            for alias in node.names:
+                if alias.name != "*":
+                    result.append("." * node.level + alias.name)
+            return result
+    return []
 
 
 def file_record(path, root, adapter, status, hint, snapshot=None):
@@ -478,10 +493,8 @@ def adapt(path, root, snapshot=None):
                         callee_name = node.func.attr
                     if callee_name:
                         calls.append({"name": callee_name, "line": getattr(node, "lineno", None)})
-                elif isinstance(node, ast.Import):
-                    imports += [a.name for a in node.names]
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    imports.append("." * node.level + node.module)
+                elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                    imports += _python_imports(node)
         except SyntaxError as e:
             f = file_record(
                 path, root, "python-ast", f"parse_error:{e.__class__.__name__}", hint, snapshot
