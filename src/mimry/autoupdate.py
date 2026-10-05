@@ -85,7 +85,7 @@ def watch(
                 sleep(interval)
                 continue
             elapsed = time.perf_counter() - started
-            ui.ok(f"Refreshed {len(pending)} file(s) in {elapsed:.1f}s")
+            ui.ok(f"Refreshed {ui.count(len(pending), 'file')} in {ui.took(elapsed)}")
             previous_pending = None
             sleep(interval)
 

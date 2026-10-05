@@ -245,7 +245,8 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry adapters` | List the file-type adapters |
 | `mimry install` / `mimry uninstall` | Manage agent skills |
 | `mimry digest` | Print a canonical digest of the index |
-| `mimry export --format {html,graphml,cypher,obsidian}` | Export graph in multiple formats for visualization and import |
+| `mimry report` | Print the graph report, with its Suggested Questions |
+| `mimry export --format {html,graphml,cypher,obsidian}` | Write the graph as an HTML viewer, GraphML, Cypher, or an Obsidian vault |
 | `mimry cache wipe --current` | Delete this repo's cached index |
 
 Use `mimry --root /path/to/repo <command>` to target another repo.
@@ -268,22 +269,6 @@ $ mimry reindex
     added    src/auth/magic_link.py
   3,106 files · 6,871 symbols · 10,762 links
 ```
-
-Keep the index fresh automatically:
-
-You can opt in to automatic refreshes with two commands:
-
-- `mimry watch [--interval SECONDS]`: A foreground polling loop that refreshes when the index detects changes (default interval 2s).
-  Debounces rapid edits and stays silent while nothing changes.
-  Useful for development sessions where you run `mimry preflight` frequently.
-
-- `mimry git-hooks install|uninstall|status`: Install background git hooks that refresh after commits, merges, checkouts, and rewrites.
-  Hooks run asynchronously, so `git commit` returns immediately.
-  Re-running install is safe and idempotent.
-  To remove hooks, run `mimry git-hooks uninstall`.
-
-Both are opt-in; neither runs by default.
-If your repo uses a hook manager like husky, you can add the hooks manually instead: `mimry refresh` in your existing post-commit hook.
 
 Colour is used only on an interactive terminal, and `NO_COLOR=1` turns it off.
 Piped and captured output always uses plain ASCII marks, so scripts and agents see the same text on every platform.
@@ -344,7 +329,7 @@ Resolution never guesses.
 A target that is ambiguous, or defined outside the repo, produces no edge rather than a plausible one.
 `inherits` additionally resolves a base type by name across the repo when exactly one file defines that name, because C# reaches base types through `using <namespace>` rather than a path import.
 Nodes are grouped into communities by deterministic label propagation, and `graph.json` is byte-identical across rebuilds of unchanged sources.
-Adding a language is a table entry in `core/languages.py`, since every grammar ships in the pinned `tree-sitter-language-pack`.
+Adding a language is a table entry in `core/languages.py`; the pinned `tree-sitter-language-pack` fetches each grammar the first time it is needed and caches it.
 
 Artifacts land in `.mimry/mimry-out/graph/` (`graph.json`, `GRAPH_REPORT.md`, `manifest.json`) during `mimry index`; there is no separate build step.
 `GRAPH_REPORT.md` ranks the most important nodes and edges and includes a "Suggested Questions" section with prompts paired to `mimry` commands.
@@ -357,6 +342,16 @@ A reindex re-parses only new and changed files, and its output is identical to a
 Files modified within two seconds of the previous index scan are always re-read, which covers edits that land inside one timestamp tick.
 The one edit this cannot see is a rewrite that deliberately keeps size, inode, and mtime.
 Run `mimry status --verify` to re-hash every file, and `mimry index --full` to re-parse every file.
+
+### Keep the index fresh automatically
+
+Two opt-in commands refresh the index for you; neither runs by default.
+
+- `mimry watch [--interval SECONDS]` polls in the foreground (every 2 seconds by default) and refreshes once a burst of edits settles.
+- `mimry git-hooks install` adds post-commit, post-merge, post-checkout, and post-rewrite hooks that refresh in the background, so `git commit` returns immediately.
+  Running it again is safe, `mimry git-hooks status` shows what is installed, and `mimry git-hooks uninstall` removes only MIMRY's lines.
+
+If a hook manager such as husky owns your hooks, add `mimry refresh` to its post-commit hook instead.
 
 ## Feedback learning
 

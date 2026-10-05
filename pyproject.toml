@@ -25,6 +25,7 @@ classifiers = [
 authors = [{ name = "Judison Bacalso", email = "judisonbacalso24@gmail.com" }]
 dependencies = [
     "fastmcp>=3.4.2",
+    "pypdf>=6.19,<7",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
     # compiled against a specific core ABI; a 0.26 core can import cleanly and
     # still return a different parse tree, which would move symbol identities,
@@ -32,7 +33,6 @@ dependencies = [
     # success is not proof of parser compatibility, so the unlocked-artifact CI
     # lane runs the full parser and determinism suite rather than one import.
     # Widen this only together with a re-run of that lane.
-    "pypdf>=6.19,<7",
     "tree-sitter>=0.25.2,<0.26",
     # 1.13.x changes the TSX grammar shape and breaks exported function/component
     # extraction. Keep the version proved by the locked and unlocked artifact tests.
