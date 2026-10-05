@@ -19,6 +19,7 @@ from .security import (
     _has_heavy_ignore,
     contains_sensitive_data,
     has_sensitive_content,
+    is_code_path,
     is_sensitive,
     is_text,
     redact_sensitive_text,
@@ -169,8 +170,12 @@ def text_hint(path, limit=12000, data=None):
         raw = path.read_bytes() if data is None else data
     except OSError:
         return ""
-    text = raw[:limit].decode("utf-8", errors="ignore")
-    return " ".join([line.strip() for line in text.splitlines() if line.strip()][:40])[:2000]
+    # Redaction finds assignments by their line boundaries, so redact before
+    # the hint is cut, and keep its lines: every output boundary redacts it
+    # again. Source files pass the file gate in code mode, so this is what keeps
+    # an unquoted example in a comment or docstring out of the index.
+    text = redact_sensitive_text(raw[:limit].decode("utf-8", errors="ignore"))
+    return "\n".join([line.strip() for line in text.splitlines() if line.strip()][:40])[:2000]
 
 
 def scan(root):
@@ -436,6 +441,6 @@ def adapt(path, root, snapshot=None):
 
     f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
     verify_unchanged(path, _st, root=root)
-    if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references)):
+    if contains_sensitive_data((f, symbols, edges, imports, exports, calls, references), code=is_code_path(path)):
         raise ValueError("adapter output contained sensitive data")
     return f, symbols, edges, sorted(set(imports)), sorted(set(exports)), calls, references

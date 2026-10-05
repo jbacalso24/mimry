@@ -32,6 +32,7 @@ from .reuse import (
     STAT_CACHE,
     adapt_cache_header,
     cache_checksums,
+    code_fingerprint,
     identity,
     load_adapt_cache,
     load_stat_cache,
@@ -626,9 +627,11 @@ def write_index(root, ptr, *, full: bool = False):
                 root, previous=previous, record=record, progress=progress
             )
             changes = _changes(ptr, files)
+            # Unrecorded as well as unindexable: report every file kept out.
+            skipped = len(unindexable) + sum(entry[4] == SENSITIVE for entry in record["stat_entries"].values())
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
-                return {**kept, "changes": changes, "unindexable": len(unindexable)}
+                return {**kept, "changes": changes, "unindexable": skipped}
             progress("MIMRY: building graph", force=True)
             graph = _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references)
         finally:
@@ -712,7 +715,11 @@ def write_index(root, ptr, *, full: bool = False):
                     for file_rec in files
                 },
             )
-            stat_cache = {"scanStartedNs": scan_started_ns, "entries": record["stat_entries"]}
+            stat_cache = {
+                "scanStartedNs": scan_started_ns,
+                "entries": record["stat_entries"],
+                "fingerprint": code_fingerprint(),
+            }
             atomic_write_text(staging / STAT_CACHE, json.dumps(stat_cache, separators=(",", ":"), sort_keys=True))
             header = json.dumps(adapt_cache_header(root), sort_keys=True)
             atomic_write_text(staging / ADAPT_CACHE, "".join(f"{line}\n" for line in [header, *record["adapt_lines"]]))
@@ -769,5 +776,5 @@ def write_index(root, ptr, *, full: bool = False):
         "semantic_chunks": semantic["chunks"],
         "semantic_backend": semantic["backend"],
         "changes": changes,
-        "unindexable": len(unindexable),
+        "unindexable": skipped,
     }

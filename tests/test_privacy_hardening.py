@@ -28,6 +28,7 @@ from mimry.scanner import scan
 from mimry.security import (
     STREAM_CHUNK_BYTES,
     contains_sensitive_text,
+    has_sensitive_content,
     path_has_ignored_part,
     redact_sensitive_text,
     root_contains_sensitive_content,
@@ -44,6 +45,13 @@ VALUE_CANARY = "privacy-canary-value-123456789"
 QUERY_CANARY = f"TOKEN={VALUE_CANARY}"
 DEFENSIVE_MARKER = "MIMRY_TEST_" + "VALUE_123"
 OFFICE_CANARY = "OFFICE-CANARY-" + ("7" * 24)
+# Literal configuration values, built at run time like the canaries above so that
+# secret scanners reading this file see no hardcoded password. CONFIG_VALUE starts
+# lower case: ``$CONFIG_VALUE`` must read as a literal, not an environment reference.
+CONFIG_VALUE = "mimry" + "-config-value-42"
+BASE64_VALUE = "cGFzc3dv" + "cmQ"  # base64 without its ``=`` padding
+HASH_GLUED_VALUE = "$PG#" + CONFIG_VALUE
+COMMA_GLUED_VALUE = "$X," + CONFIG_VALUE
 
 
 def run_cli(repo: Path, cache: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -269,6 +277,260 @@ def test_inline_and_multiline_assignments_are_fully_redacted_without_matching_pr
     assert redact_sensitive_text(unclosed) == 'auth = """[REDACTED]'
 
 
+# Each line once dropped a real source file from the index: flask's app.py,
+# httpx's _client.py and _config.py, zod's schemas.ts, ripgrep's glob.rs.
+NAMED_OR_COMPUTED_CREDENTIALS_IN_CODE = (
+    '"SECRET_KEY": None,\n',
+    'self._authentication = kwargs.pop("authentication")\n',
+    'secret_key = ConfigAttribute[str | bytes | None]("SECRET_KEY")\n',
+    "auth=auth,\n",
+    "self._auth = self._build_auth(auth)\n",
+    "proxy_auth=proxy.raw_auth,\n",
+    "username, password = request.url.username, request.url.password\n",
+    "token = await getToken()\n",
+    "def isValidJWT(token: string, algorithm: util.JWTAlgorithm | null = null): boolean {\n",
+    "def auth(self, auth: AuthTypes | None) -> None:\n",
+    "auth: tuple[str, str] | None = None,\n",
+    'auth = (self.auth[0], "********") if self.auth else None\n',
+    'auth_str = f", auth={auth!r}" if auth else ""\n',
+    "const header = { Authorization: `Bearer ${token}` };\n",
+    "Token::Literal(c) => lit.push(c),\n",
+    'TOKEN_RE = re.compile(r"[A-Za-z0-9]+")\n',
+    'PROXY_AUTHENTICATION_REQUIRED = 407, "Proxy Authentication Required"\n',
+    "check(token == None)\n",
+    'app.secret_key = "secret_key"\n',
+    '"auth": ("auth", "oauth", "login", "session"),\n',
+    # Docstring prose after a colon, and type annotations across languages.
+    '    auth: (optional) An auth tuple, e.g. ("user", "pass").\n',
+    "    token: the user's token, e.g. 'abc'.\n",
+    "pub fn new(token: &'a str, auth: Option<Auth<'a>>) -> Self {\n",
+    'auth: "basic" | "bearer",\n',
+    'headers = {"Authorization": "Bearer " + token}\n',
+    "self.auth = auth or {}\n",
+    "pub token: Arc<str>,\n",
+    # A line that does not go on ends the value.
+    'const token = process.env.TOKEN!\nconst name = "app-name"\n',
+    'const token = getToken()\n  .trim()\nconst name = "app-name"\n',
+    '    :param private_key: a private key\n    :param name: the "display" name\n',  # not a ternary's else
+    'items.filter(token => token.value === "async")\n',  # an arrow function's parameter
+    '    Authorization: OAuth realm="Photos",\n',  # prose, not a ``name: type = value`` annotation
+    # Docstring sentences do not go on to the docstring's close.
+    '    """Args:\n        auth: Optional authentication handler.\n        name: A name.\n    """\n',
+    '    """Args:\n        token: which token?\n    """\n',
+)
+LITERAL_CREDENTIALS_IN_CODE = (
+    f'password = "{DEFENSIVE_MARKER}"\n',
+    f'SECRET_KEY = b"{DEFENSIVE_MARKER}"\n',
+    f'token: str = "{DEFENSIVE_MARKER}"\n',
+    f'token := "{DEFENSIVE_MARKER}"\n',
+    f'check(password == "{DEFENSIVE_MARKER}")\n',
+    f'client = Client(auth=None, password="{DEFENSIVE_MARKER}")\n',
+    f'headers = {{"Authorization": "Bearer {DEFENSIVE_MARKER}"}}\n',
+    f"const cfg = {{ apiKey: `{DEFENSIVE_MARKER}` }};\n",
+    f'auth = """first line\n{DEFENSIVE_MARKER}\nlast line"""\n',
+    f'password = f"{DEFENSIVE_MARKER}"\n',
+    # Labels with a space in them only occur in comments and prose.
+    f"# api key: {DEFENSIVE_MARKER}\n",
+    f"// access token: {DEFENSIVE_MARKER}\n",
+    # Unquoted, but not readable as code: hyphenated words, or base64 padding.
+    f"TOKEN={VALUE_CANARY}\n",
+    f"api_key: {BASE64_VALUE}=\n",
+    # A literal fallback is the value: the call only looks the key up.
+    f'SECRET_KEY = os.environ.get("SECRET_KEY") or "{DEFENSIVE_MARKER}"\n',
+    f'api_key = cfg["k"] || "{DEFENSIVE_MARKER}"\n',
+    # Tuples and lists, including ones that span lines.
+    f'API_KEY = (\n    "{DEFENSIVE_MARKER}"\n)\n',
+    f'PRIVATE_TOKEN = (\n    "glpat-abc"  # first half\n    "{DEFENSIVE_MARKER}"\n)\n',
+    f"const token = [\n  '{DEFENSIVE_MARKER}',\n];\n",
+    f'auth = ("user", "{DEFENSIVE_MARKER}")\n',
+    # Assignments nested in the value do not end it.
+    f'DB_PASSWORD = config("DB_PASSWORD", default=None) or "{DEFENSIVE_MARKER}"\n',
+    f'AUTH = ({{"user": "admin"}}, "{DEFENSIVE_MARKER}")\n',
+    # However long the value runs.
+    "AUTH_TOKEN_FALLBACKS = (\n"
+    + "".join(f'    os.environ.get("DEPLOY_TOKEN_{n}"),\n' for n in range(130))
+    + f'    "{DEFENSIVE_MARKER}",\n)\n',
+    "SECRET_KEYS = (\n" + "    # rotated quarterly by the platform team\n" * 120 + f'    "{DEFENSIVE_MARKER}",\n)\n',
+    # An expression that goes on to the next line.
+    f'const authHeader = "Bearer " +\n  "{DEFENSIVE_MARKER}";\n',
+    f'auth = "Basic " + \\\n    "{DEFENSIVE_MARKER}"\n',
+    f'const token = isProd\n  ? "{DEFENSIVE_MARKER}"\n  : process.env.TOKEN;\n',
+    f'const authToken = isProd ?\n  "{DEFENSIVE_MARKER}" :\n  "";\n',
+    f'const authToken = isProd ? "" :\n  "{DEFENSIVE_MARKER}";\n',
+    f"'token' => 'Bearer ' .\n    '{DEFENSIVE_MARKER}',\n",
+)
+# Literals the detector once let through outside parsed source, with the secret in each.
+LITERAL_CREDENTIALS_IN_CONFIGURATION = (
+    (f"password: {BASE64_VALUE}=\n", BASE64_VALUE),  # base64 padding, not a ``name: type = value`` annotation
+    (f"spring.datasource.password: {BASE64_VALUE}=\n", BASE64_VALUE),
+    ("token: abc=123\n", "abc=123"),
+    (f'{{"password": "${CONFIG_VALUE}"}}\n', CONFIG_VALUE),  # a leading ``$``, but not a whole reference
+    (f"password: ${CONFIG_VALUE}\n", CONFIG_VALUE),
+    (f'{{"api_key": "${{PREFIX}}{CONFIG_VALUE}"}}\n', CONFIG_VALUE),
+    (f"PASSWORD=${CONFIG_VALUE}\n", CONFIG_VALUE),
+    (f"DB_PASSWORD=:{CONFIG_VALUE}\n", CONFIG_VALUE),
+    ("API_TOKEN=123e4567\n", "123e4567"),
+    (f'password = f"{CONFIG_VALUE}"\n', CONFIG_VALUE),
+    (f"db:\n  password: {CONFIG_VALUE}\n", CONFIG_VALUE),  # nested YAML
+    (f"password:\n  {CONFIG_VALUE}\n", CONFIG_VALUE),  # a YAML scalar on the next line
+    (f"'password' => '{CONFIG_VALUE}',\n", CONFIG_VALUE),  # PHP and Ruby maps
+    # An exempt value is exempt only as the whole value.
+    (f'headers: {{ Authorization: "Bearer " + "{CONFIG_VALUE}" }}\n', CONFIG_VALUE),
+    (f'token: "none" || "{CONFIG_VALUE}"\n', CONFIG_VALUE),
+    (f"password: {HASH_GLUED_VALUE}\n", CONFIG_VALUE),  # a comment starts after whitespace
+    (f"DB_PASSWORD={COMMA_GLUED_VALUE}\n", CONFIG_VALUE),
+    (f'const credentials =\n  "deploy-bot:{CONFIG_VALUE}";\n', CONFIG_VALUE),  # a quoted scalar on the next line
+    (f'const authHeader = "Bearer " +\n  "{CONFIG_VALUE}";\n', CONFIG_VALUE),  # in a <script>
+    (f'TOKEN="Bearer "{CONFIG_VALUE}\n', CONFIG_VALUE),  # shell joins adjacent words
+    (f"password = '''''' {CONFIG_VALUE}\n", CONFIG_VALUE),
+)
+
+
+def test_source_code_that_names_or_computes_a_credential_is_not_a_secret():
+    for line in NAMED_OR_COMPUTED_CREDENTIALS_IN_CODE:
+        assert not contains_sensitive_text(line, code=True), line
+
+
+def test_literal_credentials_in_source_code_stay_sensitive_and_redacted():
+    for line in LITERAL_CREDENTIALS_IN_CODE:
+        assert contains_sensitive_text(line, code=True), line
+        # Redaction stays conservative at every output boundary.
+        redacted = redact_sensitive_text(line)
+        assert DEFENSIVE_MARKER not in redacted and VALUE_CANARY not in redacted, redacted
+    # As in detect-secrets, a call's arguments are not its value, so these files
+    # are indexed; text taken from them is still redacted through the whole call.
+    for line in (
+        f'SECRET_KEY = os.environ.get("SECRET_KEY", "{DEFENSIVE_MARKER}")\n',
+        f'token = jwt.encode(payload, "{DEFENSIVE_MARKER}", algorithm="HS256")\n',
+        f'auth = "Basic " + base64.b64encode(b"admin:{DEFENSIVE_MARKER}").decode()\n',
+        # A value naming its own label marks a keyword table (see NAMED_OR_COMPUTED).
+        f'password = "password" or "{DEFENSIVE_MARKER}"\n',
+        f'API_TOKEN = os.environ.get(\n    "API_TOKEN", "{DEFENSIVE_MARKER}"\n)\n',  # as Black wraps it
+    ):
+        assert not contains_sensitive_text(line, code=True), line
+        assert DEFENSIVE_MARKER not in redact_sensitive_text(line), line
+
+
+def test_configuration_literals_are_sensitive_and_redacted():
+    for line, secret in LITERAL_CREDENTIALS_IN_CONFIGURATION:
+        assert contains_sensitive_text(line), line
+        assert secret not in redact_sensitive_text(line), line
+    assert redact_sensitive_text(f"'password' => '{CONFIG_VALUE}',\n") == "'password' => '[REDACTED]',\n"
+
+
+def test_file_hints_are_redacted_line_by_line(tmp_path: Path):
+    # Hints join lines with spaces, which hid every line-anchored assignment
+    # from redaction. A docstring example is not code, so the file is indexed.
+    from mimry.scanner import text_hint
+
+    source = tmp_path / "config.py"
+    source.write_text(f'"""Example .env:\n\nDATABASE_PASSWORD={DEFENSIVE_MARKER}\n"""\n', encoding="utf-8")
+
+    assert not has_sensitive_content(source)
+    assert DEFENSIVE_MARKER not in text_hint(source)
+
+
+def test_redacting_a_hint_again_keeps_it(tmp_path: Path):
+    # Every output boundary redacts again. Over lines joined into one, an exempt
+    # value (``4096``) ran on into the next line and took the hint with it.
+    from mimry.scanner import text_hint
+
+    source = tmp_path / "limits.py"
+    source.write_text("TOKEN_LIMIT = 4096\n\n\ndef count_tokens(text):\n    return len(text)\n", encoding="utf-8")
+
+    hint = text_hint(source)
+    assert "def count_tokens(text):" in hint
+    assert redact_sensitive_text(hint) == hint
+
+
+def test_a_long_chain_of_operators_is_judged_without_recursion():
+    chain = "token" + " =" * 1500 + "\n"
+    for code in (False, True):
+        assert not contains_sensitive_text(chain, code=code)
+    assert redact_sensitive_text(chain) == chain
+
+
+def test_value_scan_stays_linear_on_pathological_input():
+    import time
+
+    for chunk in ("{token:(a}," * 6000, "token=(" * 9000, "token=f(x," * 6000):
+        started = time.perf_counter()
+        contains_sensitive_text(chunk, code=True)
+        assert time.perf_counter() - started < 0.5, chunk[:20]
+    # Minified JSON is one long line of values.
+    minified = '{"user":"svc1","password":"","role":"reader"},' * 4000
+    for judge in (contains_sensitive_text, redact_sensitive_text):
+        started = time.perf_counter()
+        judge(minified)
+        assert time.perf_counter() - started < 0.5, judge.__name__
+
+
+def test_configuration_values_are_literals_unless_null_numeric_or_a_reference():
+    # Outside parsed source an unquoted value is the literal itself.
+    for line in (f"auth={DEFENSIVE_MARKER}\n", "auth=auth\n", f"password: {DEFENSIVE_MARKER}\n"):
+        assert contains_sensitive_text(line), line
+    for line in (
+        "TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}\n",
+        "  id-token: write\n",
+        '"context_token_proxy": 2081,\n',
+        "max_tokens: 4096\n",
+        '"SECRET_KEY": null\n',
+        'password: "********"\n',
+        'api_key: "<your-api-key>"\n',
+        "DB_PASSWORD=${DB_PASSWORD}\n",
+        "password: $DB_PASSWORD  # from the environment\n",
+        "  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\r\n",  # Windows line endings
+        # Snippets in docs and scripts: an expression whose literals are not credentials.
+        'token = os.getenv("GITHUB_TOKEN") or ""\n',
+        'api_key = os.getenv("OPENAI_API_KEY", None)\n',
+        "apiKey: process.env.OPENAI_API_KEY!,\n",
+        "const token = process.env.GITHUB_TOKEN as string;\n",
+        'GITHUB_TOKEN="" gh api /rate_limit\n',
+        'api_key: "" (required)\n',
+        'GITHUB_TOKEN="" \\\nLOG_LEVEL="debug" \\\n./scripts/smoke.sh\n',
+        'Authorization: OAuth realm="Photos",\n',
+    ):
+        assert not contains_sensitive_text(line), line
+    # Text is read line by line, so these files are indexed; what leaves MIMRY
+    # is redacted as source is read, across lines.
+    for line in (
+        f'const authHeader = "Bearer "\n  + "{CONFIG_VALUE}";\n',
+        f'API_TOKEN = os.environ.get(\n    "API_TOKEN", "{CONFIG_VALUE}"\n)\n',
+    ):
+        assert not contains_sensitive_text(line), line
+        assert CONFIG_VALUE not in redact_sensitive_text(line), line
+    for line in (
+        f'token = process.env.TOKEN || "{CONFIG_VALUE}"\n',
+        f'api_key = os.getenv("API_KEY", "{CONFIG_VALUE}")\n',
+    ):
+        assert contains_sensitive_text(line), line
+        assert CONFIG_VALUE not in redact_sensitive_text(line), line
+
+
+def test_index_keeps_source_that_only_names_credentials_and_drops_literal_secrets(tmp_path: Path):
+    from mimry.indexer import _collect
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_text(
+        "class App:\n"
+        "    default_config = {\n"
+        '        "SECRET_KEY": None,\n'
+        "    }\n"
+        "    def __init__(self, **kwargs):\n"
+        '        self._authentication = kwargs.pop("authentication")\n'
+        "        self.auth = auth\n",
+        encoding="utf-8",
+    )
+    (repo / "settings.py").write_text(f'SECRET_KEY = "{DEFENSIVE_MARKER}"\n', encoding="utf-8")
+    # The same unquoted shape is a literal in an env file.
+    (repo / "deploy.yaml").write_text(f"auth: {DEFENSIVE_MARKER}\n", encoding="utf-8")
+
+    files, *_ = _collect(repo)
+
+    assert [record["rel_path"] for record in files] == ["app.py"]
+
+
 def test_line_leading_javascript_declarations_and_yaml_quoted_multiline_scalars_are_redacted():
     samples = (
         f'const auth = "{DEFENSIVE_MARKER}";\n',
@@ -409,7 +671,8 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
     (repo / ".env").unlink()
     labeled_files = {
         "confidential.txt": f"CONFIDENTIAL={DEFENSIVE_MARKER}\n",
-        "call.py": f"call(auth={DEFENSIVE_MARKER})\n",
+        # Quoted: unquoted, this is a variable name in source code.
+        "call.py": f'call(auth="{DEFENSIVE_MARKER}")\n',
         "credentials.yaml": f"service_credentials: {DEFENSIVE_MARKER}\n",
         "auth.toml": f'authToken = "{DEFENSIVE_MARKER}"\n',
         "multiline.yaml": f"confidential: |\n  line one\n  {DEFENSIVE_MARKER}\n",

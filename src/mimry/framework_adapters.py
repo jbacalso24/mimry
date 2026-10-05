@@ -470,5 +470,7 @@ def _read_text(path: Path) -> str:
 
 
 def _join_text(existing: str, addition: str, *, limit: int | None = None) -> str:
-    text = " | ".join(part for part in (existing, addition) if part)
+    # Readers split facts on " | ". The line break keeps output redaction from
+    # reading the addition as the value of an assignment on the hint's last line.
+    text = "\n | ".join(part for part in (existing, addition) if part)
     return text[:limit] if limit else text

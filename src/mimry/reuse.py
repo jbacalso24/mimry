@@ -36,13 +36,18 @@ def identity(st) -> list[int]:
 
 
 class StatCache:
-    def __init__(self, scan_started_ns: int, entries: dict[str, list]):
+    def __init__(self, scan_started_ns: int, entries: dict[str, list], fingerprint: str | None = None):
         self.racy_after_ns = scan_started_ns - RACY_WINDOW_NS
         self.entries = entries
+        self.fingerprint = fingerprint
 
     def trusts(self, rel_path: str, st, kind: str) -> bool:
         """Whether ``st`` is the recorded, non-racy identity of ``rel_path``."""
         entry = self.entries.get(rel_path)
+        if kind == SENSITIVE and self.fingerprint != code_fingerprint():
+            # Unchanged bytes prove an unchanged file, not an unchanged verdict:
+            # the secret detector that made it may since have been fixed.
+            return False
         return (
             entry is not None and entry[4] == kind and entry[:4] == identity(st) and st.st_mtime_ns < self.racy_after_ns
         )
@@ -78,7 +83,7 @@ def load_stat_cache(idx: Path) -> StatCache | None:
         return None
     try:
         payload = json.loads(data)
-        return StatCache(int(payload["scanStartedNs"]), dict(payload["entries"]))
+        return StatCache(int(payload["scanStartedNs"]), dict(payload["entries"]), payload.get("fingerprint"))
     except (ValueError, KeyError, TypeError):
         return None
 
