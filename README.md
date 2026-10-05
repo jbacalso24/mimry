@@ -245,6 +245,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry adapters` | List the file-type adapters |
 | `mimry install` / `mimry uninstall` | Manage agent skills |
 | `mimry digest` | Print a canonical digest of the index |
+| `mimry export --format {html,graphml,cypher,obsidian}` | Export graph in multiple formats for visualization and import |
 | `mimry cache wipe --current` | Delete this repo's cached index |
 
 Use `mimry --root /path/to/repo <command>` to target another repo.
@@ -294,7 +295,12 @@ project-root/
 ├─ .mimry/                  # local settings, gitignored
 │  └─ mimry-out/            # generated output for agents and humans
 │     ├─ context/latest.md  # latest context pack
-│     └─ graph/             # relationship graph artifacts
+│     ├─ graph/             # relationship graph artifacts
+│     └─ export/            # graph exports (optional)
+│        ├─ graph.html      # interactive viewer
+│        ├─ graph.graphml   # Gephi/yEd format
+│        ├─ graph.cypher    # Neo4j import script
+│        └─ obsidian/       # linked notes vault
 └─ source files...
 ```
 
@@ -304,6 +310,17 @@ It is a generated artifact, not a source of truth.
 A context pack contains the query and index freshness, ranked files with reasons, symbol hints, relationships, a suggested reading order, likely edit surfaces versus support files, risk notes for generated or sensitive paths, verification commands from the project's manifests and docs, and a final-report checklist.
 It uses relative paths and never includes full source or secret values.
 See [`docs/context-packs.md`](docs/context-packs.md) for the contract.
+
+### Graph exports
+
+Export the graph with `mimry export --format {html,graphml,cypher,obsidian}` to use it in external tools or view it interactively.
+
+- **html**: self-contained interactive viewer with canvas-based force-directed layout, search, and node inspection.
+- **graphml**: import into Gephi, yEd, or networkx for further analysis.
+- **cypher**: Neo4j import script for `cypher-shell -f`, with batched UNWIND and MERGE statements and no plugins required.
+- **obsidian**: vault of markdown notes mirroring the repo structure, with wikilinks for dependencies. Re-exporting replaces a vault MIMRY created; `--force` writes into another non-empty directory without deleting anything.
+
+All formats are deterministic and stay inside the chosen output directory.
 
 ## Graph engine
 

@@ -48,6 +48,18 @@ def test_wheel_metadata_carries_release_dependency_pins(tmp_path: Path):
     assert "mimry-integration-smoke = mimry.agent_integration:main" in entry_points
 
 
+def test_wheel_contains_viewer_template(tmp_path: Path):
+    """Viewer HTML template is included in the wheel."""
+    wheel, _ = _build(tmp_path)
+
+    with ZipFile(wheel) as archive:
+        names = archive.namelist()
+
+    assert any(name.endswith("mimry/core/viewer.html") for name in names), (
+        "mimry/core/viewer.html not found in wheel"
+    )
+
+
 def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
     _, sdist = _build(tmp_path)
     allowed_roots = {

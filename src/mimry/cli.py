@@ -18,6 +18,7 @@ def build_parser():
         cmd_context,
         cmd_digest,
         cmd_explain,
+        cmd_export,
         cmd_feedback,
         cmd_find,
         cmd_git_hooks,
@@ -105,6 +106,28 @@ def build_parser():
     s = sub.add_parser("git-hooks", help="Manage git hooks for auto-refresh")
     s.add_argument("action", choices=("install", "uninstall", "status"))
     s.set_defaults(func=cmd_git_hooks)
+    s = sub.add_parser("export", help="Export graph in multiple formats")
+    s.add_argument(
+        "--format",
+        required=True,
+        choices=["html", "graphml", "cypher", "obsidian"],
+        help="Export format",
+    )
+    s.add_argument(
+        "--out",
+        help="Output path (default: .mimry/mimry-out/export/<format>)",
+    )
+    s.add_argument(
+        "--force",
+        action="store_true",
+        help="Write into a non-empty --out directory MIMRY did not create; nothing is deleted",
+    )
+    s.add_argument(
+        "--open",
+        action="store_true",
+        help="Open HTML file in browser (HTML format only)",
+    )
+    s.set_defaults(func=cmd_export)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
     s.add_argument("--active-only", action="store_true")
     s.set_defaults(func=cmd_adapters)
