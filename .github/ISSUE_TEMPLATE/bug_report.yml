@@ -12,7 +12,7 @@ body:
     attributes:
       label: MIMRY version
       description: From `mimry --version` (0.2.2 and later), `uv tool list` or `pip show mimry`.
-      placeholder: "0.2.1"
+      placeholder: "0.2.2"
     validations:
       required: true
   - type: dropdown
