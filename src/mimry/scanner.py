@@ -10,7 +10,13 @@ from pathlib import Path
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
 from .constants import SCHEMA_VERSION
-from .core.documents import DOCUMENT_ADAPTERS, extract_document_text, is_document
+from .core.documents import (
+    DOCUMENT_ADAPTERS,
+    DOCUMENT_EXTENSIONS,
+    MAX_DOCUMENT_FILE_BYTES,
+    extract_document_text,
+    is_document,
+)
 from .core.languages import extract as extract_language
 from .core.languages import language_for
 from .framework_adapters import (
@@ -35,6 +41,13 @@ from .ts_ast_adapter import parse_ts_like
 from .xcode import extract_xcode_targets, parse_pbxproj
 
 SCANNER_FILE_SIZE_LIMIT = 1_000_000
+
+
+def size_limit(path) -> int:
+    """Largest file size, in bytes, the scanner reads for this path."""
+    if Path(path).suffix.lower() in DOCUMENT_EXTENSIONS:
+        return MAX_DOCUMENT_FILE_BYTES
+    return SCANNER_FILE_SIZE_LIMIT
 
 
 class FileChangedError(OSError):
@@ -88,7 +101,7 @@ def _real_root(root) -> str:
     )
 
 
-def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
+def read_snapshot(path, limit=None, *, root=None):
     """Read a file once and prove it did not change underneath us.
 
     Returns ``(data, stat_result)``. A file can change between stat,
@@ -106,6 +119,8 @@ def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
     the file unindexable rather than recording a mixed-version record.
     """
     path = Path(path)
+    if limit is None:
+        limit = size_limit(path)
     approved_root = None
     if root is not None:
         # Resolved once per read scope (freshness reads every indexed
@@ -265,7 +280,7 @@ def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.sta
                 # One lstat answers regular-file, not-a-symlink, and
                 # size.
                 info = os.lstat(path)
-                if not stat.S_ISREG(info.st_mode) or info.st_size > SCANNER_FILE_SIZE_LIMIT:
+                if not stat.S_ISREG(info.st_mode) or info.st_size > size_limit(path):
                     continue
                 if probe_open:
                     # Windows/macOS can expose locked or ACL-protected
@@ -364,6 +379,8 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
                 references["table_refs"] = table_refs
         except (OSError, UnicodeError):
             pass
+
+
 def _python_imports(node: ast.AST) -> list[str]:
     """Modules one statement names, as the resolver expects them."""
     if isinstance(node, ast.Import):

@@ -57,6 +57,9 @@ def watch(
         while max_cycles is None or cycle < max_cycles:
             cycle += 1
             ptr = load_pointer(root)
+            if not ptr:
+                ui.fail(f"The MIMRY index for {root} is gone; stopped watching.")
+                return 2
             fresh = index_freshness(root, ptr)
             pending = tuple(fresh["changed"]) + tuple(fresh["missing"])
 
@@ -132,11 +135,7 @@ def git_hooks_install(root: Path) -> int:
     hooks_dir = (root / hooks_dir_path).resolve()
     common_dir = (root / common_dir_path).resolve()
 
-    is_under_common = (
-        hooks_dir.is_relative_to(common_dir)
-        if hasattr(hooks_dir, "is_relative_to")
-        else str(hooks_dir).startswith(str(common_dir))
-    )
+    is_under_common = hooks_dir.is_relative_to(common_dir)
     if not is_under_common:
         ui.fail(f"core.hooksPath points at {hooks_dir}, which another tool manages.")
         ui.detail(
@@ -159,11 +158,7 @@ def git_hooks_install(root: Path) -> int:
     installed_count = 0
     for hook_name in _HOOKS:
         hook_path = hooks_dir / hook_name
-        try:
-            existing_bytes = hook_path.read_bytes() if hook_path.exists() else b""
-        except UnicodeDecodeError:
-            ui.warn(f"Skipping {hook_name}: not valid UTF-8")
-            continue
+        existing_bytes = hook_path.read_bytes() if hook_path.exists() else b""
 
         try:
             existing = existing_bytes.decode("utf-8")
@@ -185,6 +180,7 @@ def git_hooks_install(root: Path) -> int:
                 ui.warn(f"Skipping {hook_name}: not a shell script")
                 continue
 
+        new_block = block_post_checkout if hook_name == "post-checkout" else block
         begin_idx = existing.find(_BEGIN)
         if begin_idx != -1:
             end_idx = existing.find(_END, begin_idx)
@@ -192,18 +188,16 @@ def git_hooks_install(root: Path) -> int:
                 end_idx += len(_END)
                 before = existing[:begin_idx].rstrip()
                 after = existing[end_idx:].lstrip("\n")
-                new_block = hook_name == "post-checkout" and block_post_checkout or block
                 content = before + new_block + after
             else:
-                content = existing
+                ui.warn(f"Skipping {hook_name}: mimry block has no end marker")
+                continue
         else:
             if existing:
                 if not existing.endswith("\n"):
                     existing += "\n"
-                new_block = hook_name == "post-checkout" and block_post_checkout or block
                 content = existing + new_block
             else:
-                new_block = hook_name == "post-checkout" and block_post_checkout or block
                 content = "#!/bin/sh" + new_block
 
         hook_path.parent.mkdir(parents=True, exist_ok=True)

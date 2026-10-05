@@ -18,6 +18,31 @@ from mimry.autoupdate import (
 from mimry.storage import load_pointer
 
 
+def test_watch_stops_when_pointer_becomes_none(tmp_path, monkeypatch):
+    """Test that watch stops early when load_pointer returns None."""
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    repo = copy_fixture(tmp_path / "repo")
+    assert run_cli(repo, tmp_path / "cache", "init", "--skip-graph").returncode == 0
+
+    call_count = [0]
+    original_load_pointer = load_pointer
+
+    def mock_load_pointer(root):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return original_load_pointer(root)
+        return None
+
+    with patch("mimry.autoupdate.load_pointer", side_effect=mock_load_pointer):
+        with patch(
+            "mimry.autoupdate.index_freshness",
+            side_effect=AssertionError("Should not call with None"),
+        ):
+            result = watch(repo, max_cycles=3, sleep=lambda _: None)
+
+    assert result == 2
+
+
 def test_watch_rejects_interval_below_minimum(tmp_path, monkeypatch):
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
     repo = copy_fixture(tmp_path / "repo")
@@ -336,3 +361,35 @@ def test_git_hooks_e2e_commit_triggers_refresh(tmp_path, monkeypatch):
             if fresh["state"] == "current":
                 break
         time.sleep(0.5)
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+def test_git_hooks_preserves_partial_hook(tmp_path, monkeypatch):
+    """Test partial hooks without end marker are preserved."""
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+
+    hook_file = hooks_dir / "post-commit"
+    original = b"#!/bin/sh\n# >>> mimry auto-update >>>\necho half\n"
+    hook_file.write_bytes(original)
+    hook_file.chmod(0o755)
+
+    result = git_hooks_install(repo)
+    assert result == 0
+
+    # Verify post-commit is unchanged
+    content = hook_file.read_bytes()
+    assert content == original, "post-commit hook should be unchanged"
+
+    # Verify other three hooks were installed
+    for hook_name in ("post-merge", "post-rewrite", "post-checkout"):
+        hook_path = hooks_dir / hook_name
+        assert hook_path.exists(), f"{hook_name} should exist"
+        hook_content = hook_path.read_text()
+        assert "# >>> mimry auto-update >>>" in hook_content
+        assert "# <<< mimry auto-update <<<" in hook_content

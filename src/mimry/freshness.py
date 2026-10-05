@@ -6,7 +6,7 @@ from typing import Any
 
 from . import security
 from .reuse import INDEXED, SENSITIVE, load_stat_cache
-from .scanner import SCANNER_FILE_SIZE_LIMIT, read_snapshot, scan_stats
+from .scanner import read_snapshot, scan_stats, size_limit
 from .security import filter_index_records, path_has_ignored_part
 from .state import (
     UNINDEXABLE_FILE,
@@ -148,7 +148,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
             live_excluded.append(rel_path)
             continue
         expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
-        is_oversized = st.st_size > SCANNER_FILE_SIZE_LIMIT
+        is_oversized = st.st_size > size_limit(p)
         size_changed = st.st_size != f.get("size")
         digest = None if is_oversized else hashlib.sha256(data).hexdigest()
         if digest is not None and p == root / rel_path:

@@ -10,14 +10,18 @@ from xml.etree import ElementTree
 
 from pypdf import PdfReader
 
+# pypdf logs recoverable damage in a file at WARNING and ERROR; the
+# extraction status already reports what failed.
+logging.getLogger("pypdf").setLevel(logging.CRITICAL)
+
 # Extensions for office document files that MIMRY can extract text from.
 MAX_MEMBER_BYTES = 5 * 1024 * 1024
 MAX_XLSX_WORKSHEETS = 64
 MAX_XLSX_TOTAL_BYTES = 20 * 1024 * 1024
 MAX_XLSX_COMPRESSION_RATIO = 100
-# Scanner applies SCANNER_FILE_SIZE_LIMIT (1 MB) before files reach
-# extract_document_text. This cap applies to direct API calls only.
-MAX_PDF_FILE_BYTES = 20 * 1024 * 1024
+# Largest .docx, .xlsx, .pdf or .svg file the scanner reads; other files
+# stop at SCANNER_FILE_SIZE_LIMIT.
+MAX_DOCUMENT_FILE_BYTES = 20 * 1024 * 1024
 MAX_PDF_PAGES = 200
 
 DOCUMENT_ADAPTERS = {
@@ -157,50 +161,44 @@ def _extract_pdf_text(data: bytes, *, limit: int) -> str:
     encrypted and decrypt("") fails. Raises DocumentParseError for
     malformed PDFs.
     """
-    if len(data) > MAX_PDF_FILE_BYTES:
+    if len(data) > MAX_DOCUMENT_FILE_BYTES:
         raise DocumentResourceLimitError("PDF exceeds 20 MB")
 
     try:
-        # Suppress pypdf logging during extraction
-        pypdf_logger = logging.getLogger("pypdf")
-        old_level = pypdf_logger.level
-        pypdf_logger.setLevel(logging.CRITICAL)
+        # pypdf caps decompressed streams (zlib_maximum_output_length,
+        # default 75000000).
+        pdf = PdfReader(io.BytesIO(data))
 
-        try:
-            pdf = PdfReader(io.BytesIO(data))
+        # Try to decrypt with empty password if encrypted
+        if pdf.is_encrypted:
+            try:
+                if not pdf.decrypt(""):
+                    raise DocumentEncryptedError("PDF encrypted, decrypt failed")
+            except DocumentEncryptedError:
+                raise
+            except Exception as e:
+                raise DocumentEncryptedError(
+                    f"PDF encrypted, decrypt raised {e.__class__.__name__}"
+                ) from e
 
-            # Try to decrypt with empty password if encrypted
-            if pdf.is_encrypted:
-                try:
-                    if not pdf.decrypt(""):
-                        raise DocumentEncryptedError("PDF encrypted, decrypt failed")
-                except DocumentEncryptedError:
-                    raise
-                except Exception as e:
-                    raise DocumentEncryptedError(
-                        f"PDF encrypted, decrypt raised {e.__class__.__name__}"
-                    ) from e
+        texts: list[str] = []
+        extracted_chars = 0
 
-            texts: list[str] = []
-            extracted_chars = 0
+        # ponytail: page iteration, no per-page timeout for bombs
+        for page_idx, page in enumerate(pdf.pages):
+            if page_idx >= MAX_PDF_PAGES:
+                break
 
-            # ponytail: page iteration, no per-page timeout for bombs
-            for page_idx, page in enumerate(pdf.pages):
-                if page_idx >= MAX_PDF_PAGES:
-                    break
+            page_text = page.extract_text() or ""
+            value = page_text[: limit - extracted_chars] if extracted_chars < limit else ""
+            if value:
+                texts.append(value)
+                extracted_chars += len(value)
+            if extracted_chars >= limit:
+                break
 
-                page_text = page.extract_text() or ""
-                value = page_text[: limit - extracted_chars] if extracted_chars < limit else ""
-                if value:
-                    texts.append(value)
-                    extracted_chars += len(value)
-                if extracted_chars >= limit:
-                    break
-
-            text = " ".join(texts)
-            return text
-        finally:
-            pypdf_logger.setLevel(old_level)
+        text = " ".join(texts)
+        return text
     except DocumentEncryptedError:
         raise
     except Exception as e:

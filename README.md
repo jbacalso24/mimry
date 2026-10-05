@@ -320,6 +320,7 @@ Indexing parses each file once and derives these edges from what it read:
 
 Languages parsed: Python, JavaScript, JSX, TypeScript, TSX, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, and Swift.
 Markdown, text, `.docx`, `.xlsx`, `.pdf`, and `.svg` are indexed for content and can carry `references` edges.
+Documents up to 20 MB are read (PDFs up to 200 pages); other files stop at 1 MB.
 Raster images (PNG, JPG) require OCR or vision models and are out of scope.
 
 Resolution never guesses.

@@ -240,11 +240,11 @@ def test_pdf_multipage_respects_page_limit(tmp_path):
 
 def test_pdf_respects_file_size_limit(tmp_path):
     """Test that PDF files exceeding size limit are rejected."""
-    from mimry.core.documents import MAX_PDF_FILE_BYTES
+    from mimry.core.documents import MAX_DOCUMENT_FILE_BYTES
 
     path = tmp_path / "huge.pdf"
     # Write more bytes than the limit
-    path.write_bytes(b"%PDF-1.4\n" + b"x" * (MAX_PDF_FILE_BYTES + 1))
+    path.write_bytes(b"%PDF-1.4\n" + b"x" * (MAX_DOCUMENT_FILE_BYTES + 1))
 
     text, status = extract_document_text(path)
     assert status == "parse_error:ResourceLimit"
@@ -351,3 +351,86 @@ def test_malformed_svg_returns_parse_error(tmp_path):
     # Malformed XML returns a parse error status
     assert status.startswith("parse_error:")
     assert text == ""
+
+
+def _large_svg_bytes():
+    """Build 1.5 MB SVG with searchable text and padding."""
+    return (
+        b'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg">'
+        b"<text>needle-token</text>"
+        b"<!-- " + b"x" * (1_500_000 - 200) + b" -->"
+        b"</svg>"
+    )
+
+
+def test_large_svg_is_indexed_while_large_txt_is_not(tmp_path):
+    """Test that 1.5 MB .svg is scanned while 1.5 MB .txt is not."""
+    from mimry.scanner import scan_stats
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    # Create a 1.5 MB SVG with searchable text and padding
+    svg_path = repo / "large.svg"
+    svg_path.write_bytes(_large_svg_bytes())
+
+    # Create a 1.5 MB .txt file (should not be indexed)
+    txt_path = repo / "large.txt"
+    txt_path.write_bytes(b"x" * 1_500_000)
+
+    # Verify scan_stats lists svg but not txt
+    stats = scan_stats(repo)
+    rel_paths = [s[1].name for s in stats]
+    assert "large.svg" in rel_paths, "large.svg should be in scan_stats"
+    assert "large.txt" not in rel_paths, "large.txt should not be in scan_stats"
+
+
+def test_large_svg_freshness_unchanged(tmp_path, monkeypatch):
+    """Test freshness reports no changes for untouched large svg."""
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from mimry.commands import cmd_init
+    from mimry.freshness import index_freshness
+    from mimry.indexer import write_index
+    from mimry.storage import load_pointer
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    # Create a 1.5 MB SVG with searchable text and padding
+    svg_path = repo / "large.svg"
+    svg_path.write_bytes(_large_svg_bytes())
+
+    # Initialize and index the repo
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    assert cmd_init(SimpleNamespace(root=repo, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(repo)
+    write_index(repo, pointer, full=True)
+
+    # Read index file to verify SVG and search token are indexed
+    index = Path(pointer["indexPath"])
+    generations_dir = index / "generations"
+    gen_dirs = sorted([d for d in generations_dir.iterdir() if d.is_dir()])
+    assert gen_dirs, "No generation directories found"
+    latest_gen = gen_dirs[-1]
+    files_jsonl_path = latest_gen / "files.jsonl"
+    files_jsonl = files_jsonl_path.read_text(encoding="utf-8")
+
+    svg_record = None
+    for line in files_jsonl.strip().split("\n"):
+        record = json.loads(line)
+        if record.get("rel_path") == "large.svg":
+            svg_record = record
+            break
+
+    assert svg_record is not None, "large.svg not found in index"
+    assert "needle-token" in svg_record.get("content_hint", ""), (
+        "needle-token not found in SVG content"
+    )
+
+    # Verify freshness reports no changes for untouched large.svg
+    fresh = index_freshness(repo, pointer)
+    assert "large.svg" not in fresh["changed"], "Untouched large.svg should not be marked changed"
+    assert "large.svg" not in fresh["missing"], "Untouched large.svg should not be marked missing"

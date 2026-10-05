@@ -23,6 +23,7 @@ MIMRY should understand a repo through small, inspectable adapter plugins before
 | `swift-ios` | Xcode project, entitlements and plist parsers | `.pbxproj`, `.entitlements`, `.plist` | xcode targets, entitlements, app groups, bundle IDs, reference edges | Maps iOS targets, entitlements, app extensions and App Groups for native mobile work |
 | `generic-text` | Safe text hints | fallback | files, metadata, content hints | Docs/config fallback while keeping sensitive files skipped |
 
+Documents up to 20 MB are read (PDFs up to 200 pages); other files stop at 1 MB.
 Note: Raster images (PNG, JPG) require OCR or vision models and are not supported.
 
 ## Adapter status
