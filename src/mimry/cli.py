@@ -32,6 +32,7 @@ def build_parser():
         cmd_preflight,
         cmd_refresh,
         cmd_related,
+        cmd_report,
         cmd_roots,
         cmd_route,
         cmd_semantic,
@@ -192,6 +193,8 @@ def build_parser():
     s.add_argument("--query", required=True)
     s.add_argument("--limit", type=int, default=25)
     s.set_defaults(func=cmd_why)
+    s = sub.add_parser("report", help="Print the current MIMRY graph report")
+    s.set_defaults(func=cmd_report)
     s = sub.add_parser(
         "digest",
         help=(

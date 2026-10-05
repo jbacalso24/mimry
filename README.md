@@ -311,6 +311,8 @@ Nodes are grouped into communities by deterministic label propagation, and `grap
 Adding a language is a table entry in `core/languages.py`, since every grammar ships in the pinned `tree-sitter-language-pack`.
 
 Artifacts land in `.mimry/mimry-out/graph/` (`graph.json`, `GRAPH_REPORT.md`, `manifest.json`) during `mimry index`; there is no separate build step.
+`GRAPH_REPORT.md` ranks the most important nodes and edges and includes a "Suggested Questions" section with prompts paired to `mimry` commands.
+Use `mimry report` to print the current graph report.
 
 ## Freshness and incremental indexing
 

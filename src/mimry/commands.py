@@ -23,6 +23,7 @@ from .core.artifacts import (
     relationship_edges,
     relationship_lines,
     report_excerpt,
+    report_path,
     shortest_path,
     surface_evidence,
 )
@@ -1762,6 +1763,30 @@ def cmd_cache_wipe(a):
     except OSError as e:
         ui.fail("The cache was only partly cleared", str(e))
         return 2
+
+
+def cmd_report(a):
+    """Print the current MIMRY graph report.
+
+    The report is read-only. If the graph is not current, warn the user
+    but still print the report.
+    """
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    _, graph = _index_and_graph_health(root, ptr)
+
+    if graph["status"] != "current":
+        ui.warn(f"The graph files are {graph['status']}, so the report may be out of date")
+        ui.detail("Run `mimry refresh` to rebuild the graph.")
+
+    report_file = report_path(root)
+    if report_file.exists():
+        print(report_file.read_text(encoding="utf-8"), end="")
+        return 0
+
+    ui.warn("GRAPH_REPORT.md not found")
+    ui.detail("Run `mimry refresh` to build the graph and report.")
+    return 2
 
 
 def cmd_digest(a):
