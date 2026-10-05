@@ -60,7 +60,10 @@ _OPERATIONAL_CHUNK_FIELDS = frozenset({"created_at", "generation_id"})
 
 
 def _canonical(value: Any) -> Any:
-    """Recursively sort mappings so key insertion order cannot reach the hash."""
+    """Recursively sort mappings for hashing.
+
+    Key insertion order then cannot reach the hash.
+    """
     if isinstance(value, dict):
         return {key: _canonical(value[key]) for key in sorted(value)}
     if isinstance(value, list):
@@ -161,7 +164,7 @@ def canonical_state(idx: Path, root_id: str | None = None) -> dict[str, Any]:
 
 
 def canonical_digest(idx: Path, root_id: str | None = None) -> str:
-    """SHA-256 over the canonical semantic state of one index generation."""
+    """SHA-256 over one index generation's canonical semantic state."""
     blob = json.dumps(
         canonical_state(idx, root_id), sort_keys=True, ensure_ascii=True, separators=(",", ":")
     )

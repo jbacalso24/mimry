@@ -27,13 +27,15 @@ def resolve_imports(imports: dict[str, list[str]], rel_paths: set[str]) -> list[
     """Resolve import strings to repo-relative target files.
 
     Args:
-        imports: Dict mapping importer rel_path to list of module strings
+        imports: Dict mapping importer rel_path to list of module
+            strings
         rel_paths: Set of all repo-relative file paths that exist
 
     Returns:
-        Sorted list of {"importer": str, "target": str, "confidence": str}.
-        Confidence is "EXTRACTED" (rule 1/2) or "INFERRED" (rule 3/4).
-        Unresolvable imports are dropped; no result for ambiguous rule-4 matches.
+        Sorted list of {"importer": str, "target": str,
+        "confidence": str}. Confidence is "EXTRACTED" (rule 1/2) or
+        "INFERRED" (rule 3/4). Unresolvable imports are dropped; no
+        result for ambiguous rule-4 matches.
     """
     results = []
 
@@ -134,7 +136,7 @@ def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> dict | N
 
 
 def _rule1_python_relative(importer: str, module: str, rel_paths: set[str]) -> dict | None:
-    """Resolve a leading-dot Python import using its declared relative level."""
+    """Resolve a Python leading-dot import by its declared level."""
     level = len(module) - len(module.lstrip("."))
     module_name = module[level:]
     if not module_name:

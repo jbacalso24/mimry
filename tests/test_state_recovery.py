@@ -909,7 +909,7 @@ def test_generation_publication_retries_transient_windows_permission_error(
 
 
 def test_generation_publication_fails_closed_after_bounded_retries(tmp_path: Path, monkeypatch):
-    """Retrying is bounded; a genuinely stuck handle must surface, not hang."""
+    """Retrying is bounded; a truly stuck handle surfaces, not hangs."""
     from mimry import indexer, state
 
     calls = {"n": 0}

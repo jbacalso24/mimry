@@ -56,7 +56,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
 
 
 def _row(output: str, label: str) -> str:
-    """The value of the first ``label  value`` table row in command output."""
+    """Value of the first ``label  value`` row in command output."""
     for line in output.splitlines():
         stripped = line.strip()
         if stripped.startswith(label + " "):

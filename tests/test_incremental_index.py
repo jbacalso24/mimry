@@ -1,4 +1,7 @@
-"""Git-style reuse: stat-unchanged files skip re-reading, and the output never differs."""
+"""Git-style reuse: stat-unchanged files skip re-reading.
+
+The output never differs.
+"""
 
 from __future__ import annotations
 

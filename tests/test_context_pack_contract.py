@@ -100,7 +100,7 @@ def test_final_report_checklist_keeps_its_obligations(indexed_fixture):
 
 
 def test_untrusted_excerpt_label_survives_token_reduction(indexed_fixture):
-    """The label is a prompt-injection guard, not prose to compress away."""
+    """The label is a prompt-injection guard, not prose to compress."""
     packs = [_pack(indexed_fixture, query) for query in _queries()]
     with_excerpt = [p for p in packs if "excerpt" in p.lower()]
     assert with_excerpt, "no pack contained an excerpt; fixture no longer exercises this path"
@@ -120,7 +120,7 @@ def test_risk_notes_keep_the_privacy_and_truth_guidance(indexed_fixture):
 
 
 def test_context_token_proxy_stays_within_the_floor(indexed_fixture):
-    """Both halves at once: under the ceiling WITH every section present."""
+    """Both halves at once: under the ceiling WITH every section."""
     ceiling = DEFAULT_THRESHOLDS["context_token_proxy_max"]
     worst = max(
         ((token_proxy(_pack(indexed_fixture, q)), q) for q in _queries()), key=lambda pair: pair[0]

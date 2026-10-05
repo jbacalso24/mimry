@@ -22,7 +22,7 @@ from mimry.benchmark import (
 
 
 def test_benchmark_result_is_passing_and_stable():
-    """Committed benchmark result must be PASS with matching thresholds."""
+    """Committed benchmark result is PASS with matching thresholds."""
     project = Path(__file__).resolve().parents[1]
     result_path = project / "benchmarks" / "result.core.json"
     fixture_path = project / "benchmarks" / "fixtures" / "agent_repo"

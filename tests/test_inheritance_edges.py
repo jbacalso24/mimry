@@ -64,7 +64,7 @@ def test_interfaces_are_indexed_as_symbols(tmp_path: Path) -> None:
 
 
 def test_resolution_declines_when_the_base_is_unknown() -> None:
-    """Same refusal to guess as calls: an unresolvable base emits nothing."""
+    """Like calls, an unresolvable base emits nothing; no guessing."""
     inherits = {"a.cs": [{"type": "Bar", "base": "SomethingExternal", "line": 1}]}
     symbols = {"a.cs": [{"name": "Bar", "kind": "class", "line_start": 1, "line_end": 2}]}
 
@@ -121,7 +121,7 @@ def test_base_type_resolves_repo_wide_when_unique() -> None:
 
 
 def test_ambiguous_base_name_still_declines() -> None:
-    """Two files own the name -> emit nothing, same contract as calls."""
+    """Two files own the name -> emit nothing, as calls do."""
     inherits = {"app/handler.cs": [{"type": "Handler", "base": "IHandler", "line": 1}]}
     symbols = {
         "app/handler.cs": [{"name": "Handler", "kind": "class", "line_start": 1, "line_end": 2}],

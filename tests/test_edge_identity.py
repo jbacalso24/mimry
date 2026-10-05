@@ -81,7 +81,10 @@ class TestEdgeIdentityPolicy:
         ],
     )
     def test_conflicting_edge_ids_rejected_for_each_differing_field(self, field, value):
-        """Any canonical field differing under one ID is ambiguous, not just endpoints."""
+        """Any canonical field differing under one ID is ambiguous.
+
+        Not just endpoints.
+        """
         edges = [_edge(), _edge(**{field: value})]
         with pytest.raises(DuplicateIdentityError):
             validate_edge_identity(edges)
@@ -102,7 +105,7 @@ class TestEdgeIdentityPolicy:
             assert json.dumps(validate_edge_identity(shuffled), sort_keys=True) == forward
 
     def test_conflict_error_text_is_stable_under_reversal(self):
-        """A conflict must report the same message whichever order it arrived in."""
+        """A conflict reports one message in any arrival order."""
         pair = [_edge(target_id="s1"), _edge(target_id="s2")]
         with pytest.raises(DuplicateIdentityError) as forward:
             validate_edge_identity(list(pair))
@@ -127,7 +130,7 @@ class TestEdgeIdentityPolicy:
             )
 
     def test_file_and_symbol_duplicate_policies_unchanged(self):
-        """Regression guard: the pre-existing node policies still fail closed."""
+        """Regression guard: old node policies still fail closed."""
         engine = GraphEngine()
         with pytest.raises(DuplicateIdentityError):
             engine.build_graph(
@@ -263,7 +266,7 @@ class TestEdgeIdentityThroughRealPipeline:
         )
 
     def test_exact_duplicate_edges_survive_the_real_pipeline(self, tmp_path, monkeypatch):
-        """Harmless duplicates must not break indexing -- only conflicts fail."""
+        """Harmless duplicates index fine; only conflicts fail."""
         repo = self._repo(tmp_path)
         ptr = _setup_pointer(repo, tmp_path / "cache", "root-dupe-ok")
 

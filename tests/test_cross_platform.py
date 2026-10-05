@@ -35,7 +35,10 @@ def test_graph_engine_computes_identically_on_every_platform():
 
 
 def test_source_is_ascii_so_no_console_encoding_can_fail():
-    """A cp1252 Windows console raises on non-ASCII output rather than degrading."""
+    """A cp1252 Windows console raises on non-ASCII output.
+
+    It does not degrade the text.
+    """
     offenders = [
         path.relative_to(ROOT).as_posix()
         for path in sorted((ROOT / "src" / "mimry").rglob("*.py"))

@@ -129,7 +129,7 @@ class TestBuildGraphSelfChecks:
             assert node["line"] is None or isinstance(node["line"], int)
 
     def test_build_graph_symbol_lines(self, test_data):
-        """1b. Symbol lines survive; missing line_start degrades to None."""
+        """1b. Symbol lines survive; no line_start degrades to None."""
         engine = GraphEngine()
         test_files, test_symbols, test_edges = test_data
         result = engine.build_graph(test_files, test_symbols, test_edges)
@@ -220,7 +220,7 @@ class TestBuildGraphSelfChecks:
         assert output1 == output2
 
     def test_build_graph_clusters(self, test_data):
-        """10. Clusters maps folder to list of rel_paths and includes '.'."""
+        """10. Clusters maps each folder to rel_paths, including '.'."""
         engine = GraphEngine()
         test_files, test_symbols, test_edges = test_data
         result = engine.build_graph(test_files, test_symbols, test_edges)

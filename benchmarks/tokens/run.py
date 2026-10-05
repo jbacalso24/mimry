@@ -20,7 +20,8 @@ one-time, and uses no model tokens.
 Tokens are counted with tiktoken's o200k_base encoding. Run from the
 repo root:
 
-    uv run --with tiktoken python benchmarks/tokens/run.py --work C:/tmp/mimry-tokens [--set dev|holdout]
+    uv run --with tiktoken python benchmarks/tokens/run.py \\
+        --work C:/tmp/mimry-tokens [--set dev|holdout]
 """
 
 from __future__ import annotations
@@ -41,9 +42,11 @@ READ_BUDGET = 10
 READ_LINES = 2000
 GREP_OUTPUT_LINES = 250
 STOPWORDS = set(
-    """a an and are as at be by can case cases change changes despite directly do does feat fix fixes for from
-    has have in instead into is it its make more not of off on or perf potential refactor several some that the
-    their this to update updating use uses using via when with without add adds allow support handle remove
+    """a an and are as at be by can case cases change changes despite directly do
+    does feat fix fixes for from has have in instead into is it its make more not
+    of off on or perf potential refactor several some that the their this to
+    update updating use uses using via when with without add adds allow support
+    handle remove
     """.split()
 )
 ENC = tiktoken.get_encoding("o200k_base")

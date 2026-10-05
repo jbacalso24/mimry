@@ -398,7 +398,7 @@ def render_markdown(plan: dict[str, Any]) -> str:
 
 
 def write_plan_output(text: str) -> None:
-    """Write canonical UTF-8 to redirected stdout, safe text to an interactive TTY."""
+    """Write canonical UTF-8 when redirected, safe text to a TTY."""
     stream = sys.stdout
     isatty = getattr(stream, "isatty", None)
     buffer = getattr(stream, "buffer", None)

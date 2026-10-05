@@ -37,25 +37,28 @@ class FileChangedError(OSError):
 
 
 class UnopenableFileError(FileChangedError):
-    """Raised when a regular file cannot be opened (locked or ACL-protected)."""
+    """A regular file cannot be opened (locked or ACL-protected)."""
 
     pass
 
 
 class SensitiveContentError(ValueError):
-    """Raised when a file's own bytes carry a secret; the file is skipped, not recorded."""
+    """Raised when a file's own bytes carry a secret.
+
+    The file is skipped, not recorded.
+    """
 
     pass
 
 
 class CanonicalPathCollisionError(ValueError):
-    """Raised when distinct native paths collapse to one canonical identity."""
+    """Distinct native paths collapse to one canonical identity."""
 
     pass
 
 
 def _identity(st) -> tuple:
-    """The parts of a stat result that change when a file's content changes."""
+    """The stat fields that change when a file's content changes."""
     return (st.st_size, st.st_mtime_ns, st.st_ino, st.st_dev)
 
 
@@ -217,7 +220,7 @@ def scan(root):
 
 
 def scan_entries(root, *, probe_open: bool = True) -> list[tuple[str, Path]]:
-    """Return ``(canonical_rel_path, native_path)`` for every indexable candidate."""
+    """``(canonical_rel_path, native_path)`` per indexable candidate."""
     return [(canonical, path) for canonical, path, _st in scan_stats(root, probe_open=probe_open)]
 
 

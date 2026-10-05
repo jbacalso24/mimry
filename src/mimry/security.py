@@ -272,7 +272,10 @@ def is_sensitive(path):
 
 
 def contains_sensitive_text(text: str, *, code: bool = False) -> bool:
-    """Whether text holds a credential. ``code`` marks parsed source (see is_code_path)."""
+    """Whether text holds a credential.
+
+    ``code`` marks parsed source (see is_code_path).
+    """
     if not text:
         return False
     if (
@@ -317,7 +320,7 @@ def contains_sensitive_text(text: str, *, code: bool = False) -> bool:
 
 
 def redact_sensitive_text(text: str) -> str:
-    """Remove high-confidence credential values from user and adapter text."""
+    """Remove high-confidence credentials from user and adapter text."""
 
     redacted = PRIVATE_KEY_BLOCK_RE.sub(REDACTED, text)
     redacted = STANDALONE_SECRET_RE.sub(REDACTED, redacted)
@@ -347,7 +350,10 @@ def _is_sensitive_label(label: str) -> bool:
 
 
 def is_code_path(path: str | Path) -> bool:
-    """Whether a file is parsed source, where an unquoted value is an expression."""
+    """Whether a file is parsed source.
+
+    In parsed source, an unquoted value is an expression.
+    """
     return Path(path).suffix.lower() in EXTENSION_LANGUAGE
 
 
@@ -427,7 +433,11 @@ def _value_is_credential(
 
 
 def _prose_is_credential(value: str) -> bool:
-    """Words after a colon are prose: only an authorization scheme or a recognisable token format is a credential."""
+    """Words after a colon are prose.
+
+    Only an authorization scheme or a recognisable token format is a
+    credential.
+    """
     return value.lower().startswith(("bearer ", "basic ")) or bool(
         STANDALONE_SECRET_RE.search(value)
     )
@@ -688,7 +698,10 @@ _HYPHENATED_WORD_RE = re.compile(r"[A-Za-z_]-[A-Za-z]")
 
 
 def _reads_as_code(shape: str) -> bool:
-    """Whether a collapsed unquoted value (see _scan_value) can be a source expression."""
+    """Whether a collapsed unquoted value can be a source expression.
+
+    See _scan_value.
+    """
     return (
         bool(_CODE_SHAPE_RE.fullmatch(shape))
         and not _HYPHENATED_WORD_RE.search(shape)
@@ -699,7 +712,10 @@ def _reads_as_code(shape: str) -> bool:
 
 
 def _opens_group(text: str, start: int, at: int) -> bool:
-    """Whether the bracket at ``text[at]`` opens a tuple or list, not a call or subscript."""
+    """Whether the bracket at ``text[at]`` opens a tuple or list.
+
+    Not a call or subscript.
+    """
     end = at
     while end > start and text[end - 1] in " \t\r\n":
         end -= 1
@@ -888,7 +904,10 @@ def _split_line_ending(line: str) -> tuple[str, str]:
 def _yaml_quote_on_line(
     content: str, start: int, quote: str, *, require_trailer: bool
 ) -> tuple[int | None, bool]:
-    """Scan one physical line once for an unescaped quote and YAML trailer."""
+    """Scan one physical line once.
+
+    Looks for an unescaped quote and a YAML trailer.
+    """
 
     index = start
     saw_unescaped_quote = False
@@ -997,7 +1016,7 @@ def _redact_unclosed_multiline_assignment(match: re.Match[str]) -> str:
 
 
 def sanitize_query(value: str) -> str:
-    """Sanitize a user-controlled lookup surface before it enters MIMRY internals."""
+    """Sanitize a user-controlled lookup surface before internal use."""
 
     return redact_sensitive_text(value)
 
@@ -1113,7 +1132,7 @@ def stream_contains_sensitive_content(
 
 
 def _stream_contains_sensitive_content(path: Path) -> bool:
-    """Scan an entire file with bounded memory, preserving cross-chunk matches."""
+    """Scan a whole file in bounded memory; keep cross-chunk matches."""
 
     try:
         with path.open("rb") as handle:
@@ -1123,7 +1142,7 @@ def _stream_contains_sensitive_content(path: Path) -> bool:
 
 
 def opened_file_has_sensitive_content(path: Path, handle: BinaryIO) -> bool:
-    """Classify the exact already-opened file used by a no-follow handoff copy."""
+    """Classify the exact open file behind a no-follow handoff copy."""
 
     # Extension is not a security boundary: an unlisted text format such
     # as ``.properties`` must receive the same byte-level classification
@@ -1155,13 +1174,16 @@ def has_sensitive_content(path: Path, data: bytes | None = None) -> bool:
 
 
 def _raw_file_has_sensitive_content(path: Path) -> bool:
-    """Inspect generated/specially named text without env-example exemptions."""
+    """Inspect generated/specially named text.
+
+    Env-example exemptions do not apply.
+    """
 
     return _stream_contains_sensitive_content(path)
 
 
 def _has_heavy_ignore(parts) -> bool:
-    """Match policy directory names independent of filesystem case rules."""
+    """Match policy directory names regardless of filesystem case."""
 
     global HEAVY_IGNORES_CASEFOLD, _HEAVY_IGNORES_SOURCE
     if HEAVY_IGNORES is not _HEAVY_IGNORES_SOURCE:
@@ -1171,7 +1193,7 @@ def _has_heavy_ignore(parts) -> bool:
 
 
 def should_ignore_path(path, root):
-    """Apply filename/directory policy without reopening file content."""
+    """Apply filename/directory policy without reopening the file."""
     try:
         parts = path.relative_to(root).parts
     except ValueError:
@@ -1184,14 +1206,14 @@ def should_ignore(path, root):
 
 
 def path_has_ignored_part(path: str | Path) -> bool:
-    """Classify artifact/index paths without opening the referenced source."""
+    """Classify artifact/index paths without opening their source."""
 
     normalized = str(path).replace("\\", "/")
     return _has_heavy_ignore(part for part in normalized.split("/") if part not in {"", "."})
 
 
 def text_mentions_ignored_path(text: str) -> bool:
-    """Detect ignored path components in prose without matching ordinary words."""
+    """Detect ignored path components in prose, not ordinary words."""
 
     normalized = text.replace("\\", "/")
     return any(
@@ -1203,7 +1225,7 @@ def text_mentions_ignored_path(text: str) -> bool:
 def filter_index_records(
     files: list[dict], symbols: list[dict] | None = None
 ) -> tuple[list[dict], list[dict]]:
-    """Hide records newly excluded by policy even before a stale index is rebuilt."""
+    """Hide records newly excluded by policy, even before a rebuild."""
 
     visible_files = [
         record for record in files if not path_has_ignored_part(record.get("rel_path", ""))
@@ -1246,7 +1268,7 @@ def root_contains_sensitive_content(root: Path) -> bool:
 
 
 def tree_contains_sensitive_content(root: Path) -> bool:
-    """Validate MIMRY-owned generated artifacts before they are exposed."""
+    """Validate MIMRY-owned artifacts before they are exposed."""
 
     if not root.exists():
         return False

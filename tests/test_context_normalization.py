@@ -46,7 +46,7 @@ def test_generation_id_and_timestamp_are_replaced_in_place():
 
 
 def test_semantic_guidance_containing_generated_is_preserved():
-    """MIMRY's own risk note is canonical guidance, not an operational field."""
+    """MIMRY's risk note is canonical guidance, not operational."""
     line = (
         "- Generated/cache paths (`.mimry/`, `.git/`, caches, build outputs) are support"
         " artifacts; do not edit them as source fixes."
@@ -55,7 +55,7 @@ def test_semantic_guidance_containing_generated_is_preserved():
 
 
 def test_unrelated_32_char_hex_token_is_preserved():
-    """A content hash is canonical state; only the known generation id is masked."""
+    """A content hash is canonical; only the generation id is masked."""
     other = "d41d8cd98f00b204e9800998ecf8427e"
     line = f"- Content hash: {other}"
     assert normalize_context(line, **ENVELOPE) == line
@@ -80,7 +80,7 @@ def test_blank_lines_are_dropped_but_content_lines_are_not():
 
 
 def test_index_path_is_replaced_before_generation_id():
-    """The index path contains the generation id; masking must not leave a stub."""
+    """Index path holds the generation id; masking leaves no stub."""
     line = f"- Index path: {ENVELOPE['index_path']}"
     out = normalize_context(line, **ENVELOPE)
     assert out == "- Index path: <indexpath>"

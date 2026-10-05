@@ -28,7 +28,10 @@ def tmp_idx(tmp_path):
 
 
 def test_fts_cutoff_survivors_independent_of_insertion_order(tmp_idx):
-    """Insert MORE tied rows than the cutoff; assert _fts_scores returns same set regardless of insertion order."""
+    """Insert more tied rows than the cutoff.
+
+    _fts_scores must return the same set regardless of insertion order.
+    """
 
     # Create two identical databases but with reversed insertion order
     idx_forward = tmp_idx / "forward"
@@ -199,7 +202,10 @@ def test_fts_result_ordering_stable_across_repeat_builds(tmp_idx):
 
 
 def test_feedback_list_cutoff_deterministic_for_tied_timestamps(tmp_idx):
-    """Insert N+ feedback rows all sharing one created_at; assert list_feedback returns identical list."""
+    """Insert N+ feedback rows sharing one created_at.
+
+    list_feedback must return an identical list.
+    """
 
     root_id = "test-root"
 
@@ -322,7 +328,10 @@ def test_feedback_list_cutoff_deterministic_for_tied_timestamps(tmp_idx):
 
 
 def test_semantic_chunk_read_order_is_canonical(tmp_idx):
-    """Insert semantic chunks in reverse rel_path order; assert semantic_rows returns canonical order and details."""
+    """Insert semantic chunks in reverse rel_path order.
+
+    semantic_rows must return canonical order and details.
+    """
 
     root_id = "test-root"
 
@@ -502,7 +511,10 @@ def test_semantic_chunk_read_order_is_canonical(tmp_idx):
 
 
 def test_semantic_equal_scores_tie_break_on_rel_path(tmp_idx):
-    """Two chunks scoring identically; assert lower rel_path sorts first, both directions."""
+    """Two chunks scoring identically: lower rel_path sorts first.
+
+    Holds in both directions.
+    """
 
     root_id = "test-root"
 

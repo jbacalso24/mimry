@@ -19,7 +19,10 @@ from .storage import load_jsonl
 
 
 def file_sha256(path: Path, *, root: Path | None = None) -> str | None:
-    """Hash one proven regular, non-symlink snapshot without following races."""
+    """Hash one proven regular, non-symlink snapshot.
+
+    Races are detected, never followed.
+    """
     try:
         data, _ = read_snapshot(path, root=root)
     except OSError:
@@ -38,7 +41,10 @@ def _stored_hashes(idx: Path) -> dict[str, dict[str, Any]]:
 
 
 def _unindexable_paths(idx: Path) -> set[str]:
-    """Paths the indexer deliberately refused. Absent on generations written before this."""
+    """Paths the indexer deliberately refused.
+
+    Absent on generations written before this.
+    """
     path = idx / UNINDEXABLE_FILE
     if not path.exists():
         return set()

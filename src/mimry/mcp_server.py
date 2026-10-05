@@ -63,7 +63,7 @@ mcp = FastMCP("MIMRY")
 def _schema_upgrade_error_payload(
     exc: IndexSchemaMigrationError, *, root: Path | None = None
 ) -> dict[str, Any]:
-    """Handle IndexSchemaMigrationError: schema upgrade needed, not corruption."""
+    """Handle IndexSchemaMigrationError: an upgrade, not corruption."""
     message = str(exc)
     return {
         "returncode": 2,
@@ -124,7 +124,7 @@ def _state_error_payload(exc: StateCorruptionError, *, root: Path | None = None)
 
 
 def _state_guard(func):
-    """Give direct and protocol MCP calls one structured corruption envelope."""
+    """One structured corruption envelope for direct/protocol calls."""
 
     @wraps(func)
     def guarded(*args, **kwargs):
@@ -304,7 +304,10 @@ def _status_payload(root_path: Path, verify: bool = False) -> dict[str, Any]:
 @mcp.tool
 @_state_guard
 def mimry_list_adapters(active_only: bool = False) -> dict[str, Any]:
-    """List active and planned MIMRY adapter plugins for coding-agent routing."""
+    """List active and planned MIMRY adapter plugins.
+
+    Used for coding-agent routing.
+    """
     return {"adapters": list_adapters(include_planned=not active_only)}
 
 
@@ -322,7 +325,10 @@ def mimry_status(root: str | None = None, verify: bool = False) -> dict[str, Any
 @mcp.tool
 @_state_guard
 def mimry_reindex(root: str | None = None, full: bool = False) -> dict[str, Any]:
-    """Rebuild the local MIMRY index for a root; ``full`` re-parses unchanged files too."""
+    """Rebuild the local MIMRY index for a root.
+
+    ``full`` re-parses unchanged files too.
+    """
     root_path = _root(root)
     stats = write_index(root_path, require(root_path, validate=False), full=full)
     # Counts, not path lists: a branch switch can change thousands of
@@ -365,7 +371,7 @@ def mimry_refresh(root: str | None = None) -> dict[str, Any]:
 def mimry_preflight(
     query: str, root: str | None = None, force_refresh: bool = False
 ) -> dict[str, Any]:
-    """Fast readiness check and task context generation, matching CLI preflight."""
+    """Fast readiness check and task context, matching CLI preflight."""
     root_path = _root(root)
     query = sanitize_query(query)
     payload = _capture_command(
@@ -436,7 +442,7 @@ def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict
 @_state_guard
 @_index_operation()
 def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
-    """Return files related to a query using graph-aware ranking signals."""
+    """Return files related to a query by graph-aware ranking."""
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
@@ -454,7 +460,10 @@ def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[
 @_state_guard
 @_index_operation()
 def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
-    """Recommend an agent/role, context packs, files, risk gates, and verification for a task."""
+    """Recommend an agent/role and supporting context for a task.
+
+    Covers context packs, files, risk gates, and verification.
+    """
     root_path = _root(root)
     ptr = require(root_path)
     return sanitize_data(route_payload(root_path, ptr, sanitize_query(query), limit=limit))
@@ -464,7 +473,10 @@ def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str
 @_state_guard
 @_index_operation()
 def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
-    """Write a role-aware MIMRY agent brief and return its path plus route payload."""
+    """Write a role-aware MIMRY agent brief.
+
+    Returns its path plus the route payload.
+    """
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
@@ -513,7 +525,10 @@ def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
 @_state_guard
 @_index_operation()
 def mimry_context(query: str, root: str | None = None, semantic: bool = False) -> dict[str, Any]:
-    """Generate a MIMRY context pack and return its path plus selected files."""
+    """Generate a MIMRY context pack.
+
+    Returns its path plus the selected files.
+    """
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
@@ -531,7 +546,10 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
 @mcp.tool
 @_state_guard
 def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[str, Any]:
-    """Explain top files, symbols, graph evidence, and verification hints for a task."""
+    """Explain the top files and symbols for a task.
+
+    Includes graph evidence and verification hints.
+    """
     root_path = _root(root)
     return _capture_command(
         cmd_explain, SimpleNamespace(root=str(root_path), query=sanitize_query(query), limit=limit)
@@ -541,7 +559,7 @@ def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[s
 @mcp.tool
 @_state_guard
 def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, Any]:
-    """Find a graph relationship path between two files/symbols/queries."""
+    """Find a relationship path between two files/symbols/queries."""
     root_path = _root(root)
     return _capture_command(
         cmd_path,
@@ -647,7 +665,7 @@ def _digest_payload_unchecked(root_path: Path) -> dict[str, Any]:
 
 
 def _digest_payload(root_path: Path) -> dict[str, Any]:
-    """Compute digest with error handling for missing, outdated, or corrupt indexes."""
+    """Digest, with errors for missing, outdated, or corrupt indexes."""
     try:
         with active_index_pointer(root_path):
             return _digest_payload_unchecked(root_path)
@@ -662,12 +680,15 @@ def _digest_payload(root_path: Path) -> dict[str, Any]:
 @mcp.tool
 @_state_guard
 def mimry_digest(root: str | None = None) -> dict[str, Any]:
-    """Return the canonical semantic digest and state metadata for an index generation."""
+    """Return an index generation's canonical semantic digest.
+
+    Includes its state metadata.
+    """
     return _digest_payload(_root(root))
 
 
 def _plan_read(operation) -> dict[str, Any]:
-    """Return one stable read-only MCP envelope without exposing local paths."""
+    """Return one stable read-only MCP envelope, hiding local paths."""
     try:
         return {"returncode": 0, **operation()}
     except InvalidPlanError as exc:
@@ -683,7 +704,10 @@ def _plan_read(operation) -> dict[str, Any]:
 @mcp.tool
 @_state_guard
 def mimry_plan_tree(plan_id: str, root: str | None = None) -> dict[str, Any]:
-    """Return canonical JSON plus deterministic terminal and Markdown projections for a plan tree."""
+    """Return a plan tree as canonical JSON plus projections.
+
+    The terminal and Markdown projections are deterministic.
+    """
     return _plan_read(
         lambda: {
             "plan": canonical_plan(plan := PlanStore(_root(root)).load(plan_id)),

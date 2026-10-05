@@ -340,7 +340,7 @@ def _configure_console() -> None:
 
 
 def _hook_check_root(args) -> str | None:
-    """Return the root when argv is exactly ``[--root R] hook-check``, else None."""
+    """Root if argv is exactly ``[--root R] hook-check``, else None."""
     rest = list(args)
     root = "."
     if len(rest) >= 2 and rest[0] == "--root":

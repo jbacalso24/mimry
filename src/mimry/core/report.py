@@ -10,7 +10,7 @@ _DATA_EXTENSIONS = frozenset(["sql", "json", "yaml", "yml", "toml", "ini", "cfg"
 
 
 def _file_category(path: str) -> str:
-    """Bucket a path so a code->doc edge can outrank a code->code one."""
+    """Bucket a path so code->doc edges can outrank code->code ones."""
     ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
     if ext in _CODE_EXTENSIONS:
         return "code"

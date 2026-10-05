@@ -193,7 +193,10 @@ def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_po
 def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(
     tmp_path: Path, monkeypatch
 ):
-    """scan() must not walk inside ignored trees; the content guard lives in adapt() alone."""
+    """scan() must not walk inside ignored trees.
+
+    The content guard lives in adapt() alone.
+    """
     from mimry.indexer import _collect
     from mimry.paths import canonical_rel_path
     from mimry.scanner import scan_entries
@@ -238,7 +241,7 @@ def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(
     assert unindexable == []
 
 
-def test_sensitive_label_policy_covers_exact_variants_and_yaml_blocks_without_prose_false_positives():
+def test_sensitive_label_policy_covers_variants_and_yaml_without_prose_false_positives():
     sensitive_samples = (
         f"CONFIDENTIAL={DEFENSIVE_MARKER}\n",
         f"credentials: {DEFENSIVE_MARKER}\n",
@@ -333,7 +336,8 @@ NAMED_OR_COMPUTED_CREDENTIALS_IN_CODE = (
     # A line that does not go on ends the value.
     'const token = process.env.TOKEN!\nconst name = "app-name"\n',
     'const token = getToken()\n  .trim()\nconst name = "app-name"\n',
-    '    :param private_key: a private key\n    :param name: the "display" name\n',  # not a ternary's else
+    "    :param private_key: a private key\n"
+    '    :param name: the "display" name\n',  # not a ternary's else
     'items.filter(token => token.value === "async")\n',  # an arrow function's parameter
     '    Authorization: OAuth realm="Photos",\n',  # prose, not a ``name: type = value`` annotation
     # Docstring sentences do not go on to the docstring's close.
@@ -445,7 +449,8 @@ def test_literal_credentials_in_source_code_stay_sensitive_and_redacted():
         # A value naming its own label marks a keyword table (see
         # NAMED_OR_COMPUTED).
         f'password = "password" or "{DEFENSIVE_MARKER}"\n',
-        f'API_TOKEN = os.environ.get(\n    "API_TOKEN", "{DEFENSIVE_MARKER}"\n)\n',  # as Black wraps it
+        # As Black wraps it.
+        f'API_TOKEN = os.environ.get(\n    "API_TOKEN", "{DEFENSIVE_MARKER}"\n)\n',
     ):
         assert not contains_sensitive_text(line, code=True), line
         assert DEFENSIVE_MARKER not in redact_sensitive_text(line), line
@@ -702,7 +707,9 @@ def test_nested_typescript_object_secret_scan_is_bounded():
 from mimry.security import contains_sensitive_text, redact_sensitive_text
 
 text = "const fixture = {\\n  label: 'ordinary',\\n" + "".join(
-    "    item: 'ordinary',\\n      nested: 'ordinary',\\n        value: 'ordinary',\\n" for _ in range(12)
+    "    item: 'ordinary',\\n      nested: 'ordinary',\\n"
+    "        value: 'ordinary',\\n"
+    for _ in range(12)
 ) + "};\\n"
 assert not contains_sensitive_text(text)
 assert redact_sensitive_text(text) == text

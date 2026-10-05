@@ -32,7 +32,7 @@ from mimry.storage import load_pointer
 
 
 def test_same_size_rewrite_during_snapshot_acquisition_is_rejected():
-    """A real rewrite between the two acquisition reads must fail closed."""
+    """A real rewrite between the two acquisition reads fails closed."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         test_file = root / "test.py"
@@ -197,7 +197,7 @@ def test_adapter_never_reopens_live_path():
 
 
 def test_hash_and_symbols_derive_from_same_bytes():
-    """Verify that file_record hash and parsed symbols come from same snapshot."""
+    """file_record hash and parsed symbols come from one snapshot."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         test_file = root / "test.py"

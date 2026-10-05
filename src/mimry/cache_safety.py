@@ -74,7 +74,10 @@ def validated_current_root_cache_path(
     generation_id: str | None,
     current_root: Path | None = None,
 ) -> Path:
-    """Validate the pointer's exact root/generation scope, then return its root cache."""
+    """Validate the pointer's exact root/generation scope.
+
+    Then return its root cache.
+    """
     base = validated_current_index_path(cache_home() / "indexes" / root_id, current_root)
     pointed = validated_current_index_path(index_path, current_root)
     expected = base if generation_id is None else base / "generations" / generation_id

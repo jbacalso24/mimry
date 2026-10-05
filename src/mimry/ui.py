@@ -156,7 +156,10 @@ def ago(timestamp: str | None, now: datetime | None = None) -> str:
 
 
 def display_path(path: str | Path, root: Path | None = None) -> str:
-    """A path relative to ``root`` when inside it, else with the home folder as ``~``."""
+    """A path relative to ``root`` when inside it.
+
+    Otherwise the home folder is shown as ``~``.
+    """
     path = Path(path)
     if root is not None:
         try:

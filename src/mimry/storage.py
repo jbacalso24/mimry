@@ -27,7 +27,7 @@ from .state import (
 
 
 class RootIdentityError(RuntimeError):
-    """A root-local pointer was opened from a different filesystem root."""
+    """A root-local pointer opened from a different filesystem root."""
 
     def __init__(self, recorded_root: Path, current_root: Path):
         self.recorded_root = recorded_root
@@ -261,7 +261,7 @@ def register_root(ptr):
 
 
 def prune_root_registry() -> list[dict[str, Any]]:
-    """Forget registered roots whose folder no longer exists; return what was removed."""
+    """Forget registered roots whose folder is gone; return them."""
     p = roots_file()
     with exclusive_file_lock(p.with_name(f"{p.name}.lock")):
         registry, _ = _load_root_registry_unlocked()
@@ -277,7 +277,15 @@ def connect(idx):
     idx.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(idx / "mimry.sqlite")
     con.executescript(
-        """create table if not exists files(file_id text primary key, rel_path text, filename text, extension text, adapter text, parse_status text, content_hint text, metadata_text text); create table if not exists symbols(symbol_id text primary key, file_id text, name text, kind text, language text, line_start integer); create virtual table if not exists files_fts using fts5(file_id unindexed, rel_path, filename, extension, content_hint, metadata_text); create table if not exists index_generation(generation_id text primary key, created_at text not null, semantic_checksum text);"""
+        """create table if not exists files(file_id text primary key, rel_path text, filename """
+        """text, extension text, adapter text, parse_status text, content_hint text, """
+        """metadata_text text); """
+        """create table if not exists symbols(symbol_id text primary key, file_id text, name """
+        """text, kind text, language text, line_start integer); """
+        """create virtual table if not exists files_fts using fts5(file_id unindexed, """
+        """rel_path, filename, extension, content_hint, metadata_text); """
+        """create table if not exists index_generation(generation_id text primary key, """
+        """created_at text not null, semantic_checksum text);"""
     )
     generation_columns = {row[1] for row in con.execute("pragma table_info(index_generation)")}
     if "semantic_checksum" not in generation_columns:

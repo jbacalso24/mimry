@@ -14,7 +14,7 @@ from mimry.storage import register_root, save_pointer
 
 
 def _small_repo(root: Path) -> None:
-    """Build a small test repo with 6 files across 3 dirs for determinism testing."""
+    """Build a small repo, 6 files in 3 dirs, for determinism tests."""
     (root / "src").mkdir(parents=True, exist_ok=True)
     (root / "src" / "app.py").write_text("def main(): pass\n")
     (root / "src" / "config.py").write_text("DEBUG = True\n")
@@ -97,7 +97,7 @@ def test_scan_returns_canonical_order_directly(tmp_path: Path):
 
 
 def test_scan_order_independent_of_creation_order(tmp_path: Path):
-    """Two repos with identical content but opposite creation order scan alike."""
+    """Same content created in opposite order scans identically."""
     repo_a = tmp_path / "repo_a"
     repo_a.mkdir()
     _write_in_order(repo_a, _CREATION_ORDER)
@@ -134,7 +134,7 @@ def test_nfc_nfd_collision_fails_before_publication_and_names_both_paths(tmp_pat
 
 
 def test_full_index_identical_across_creation_order(tmp_path: Path):
-    """Complete index must be byte-for-byte identical regardless of file creation order."""
+    """The full index is byte-identical whatever the creation order."""
     cache = tmp_path / "cache"
     cache.mkdir()
 
@@ -197,7 +197,7 @@ def test_full_index_identical_across_creation_order(tmp_path: Path):
 
 
 def test_canonical_ids_identical_across_absolute_roots(tmp_path: Path):
-    """File and symbol IDs must be identical across different absolute checkout paths."""
+    """File and symbol IDs match across absolute checkout paths."""
     cache = tmp_path / "cache"
     cache.mkdir()
 
@@ -255,7 +255,7 @@ def test_canonical_ids_identical_across_absolute_roots(tmp_path: Path):
 
 
 def test_file_record_hash_matches_snapshot_bytes(tmp_path: Path):
-    """Recorded file hash must exactly match the bytes that were actually read."""
+    """The recorded file hash matches exactly the bytes read."""
     repo = tmp_path / "repo"
     repo.mkdir()
     test_file = repo / "test.py"
@@ -318,7 +318,7 @@ def test_file_changed_during_read_is_not_indexed(tmp_path: Path):
 
 
 def test_adapt_hash_and_parser_input_come_from_the_same_bytes(tmp_path: Path):
-    """The recorded hash must describe exactly the source the symbols came from."""
+    """The recorded hash describes exactly the symbols' source."""
     from mimry import scanner
 
     repo = tmp_path / "repo"
@@ -335,7 +335,7 @@ def test_adapt_hash_and_parser_input_come_from_the_same_bytes(tmp_path: Path):
 
 
 def test_oversized_and_unreadable_files_still_skipped_gracefully(tmp_path: Path):
-    """Regression: oversized and unreadable files must still be skipped without crashing."""
+    """Regression: oversized/unreadable files are skipped, no crash."""
     repo = tmp_path / "repo"
     repo.mkdir()
 

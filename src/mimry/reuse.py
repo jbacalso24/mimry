@@ -45,7 +45,10 @@ class StatCache:
         self.fingerprint = fingerprint
 
     def trusts(self, rel_path: str, st, kind: str) -> bool:
-        """Whether ``st`` is the recorded, non-racy identity of ``rel_path``."""
+        """Whether ``st`` is the recorded identity of ``rel_path``.
+
+        The recorded identity must also be non-racy.
+        """
         entry = self.entries.get(rel_path)
         if kind == SENSITIVE and self.fingerprint != code_fingerprint():
             # Unchanged bytes prove an unchanged file, not an unchanged
@@ -100,7 +103,10 @@ def load_stat_cache(idx: Path) -> StatCache | None:
 
 
 def load_adapt_cache(idx: Path, root: Path) -> dict[str, tuple[str, dict]] | None:
-    """Per-file ``(cache line, parsed row)`` by rel path, if built by this code for this root."""
+    """Per-file ``(cache line, parsed row)`` by rel path.
+
+    Only if built by this code for this root.
+    """
     data = _verified_bytes(idx, ADAPT_CACHE)
     if data is None:
         return None
@@ -124,7 +130,7 @@ _FINGERPRINT: str | None = None
 
 
 def code_fingerprint() -> str:
-    """Identify everything adapter output depends on besides the file's bytes."""
+    """Everything adapter output depends on besides the file's bytes."""
     global _FINGERPRINT
     if _FINGERPRINT is None:
         digest = hashlib.sha256(f"{SCHEMA_VERSION}|{sys.version_info[:2]}".encode())

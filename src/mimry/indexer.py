@@ -65,7 +65,7 @@ from .storage import active_index_pointer, connect, register_root, save_pointer,
 
 
 def _fault(point: str) -> None:
-    """Deterministic subprocess-only crash hook used by recovery tests."""
+    """Deterministic subprocess-only crash hook for recovery tests."""
     if os.environ.get("MIMRY_FAULT_POINT") == point:
         os._exit(91)
 
@@ -109,7 +109,10 @@ def _seed_database(previous: Path, staging: Path) -> None:
 
 
 class _Progress:
-    """One self-overwriting status line on stderr, only for an interactive terminal."""
+    """One self-overwriting status line on stderr.
+
+    Only for an interactive terminal.
+    """
 
     def __init__(self, enabled: bool):
         self.enabled = enabled
@@ -200,7 +203,7 @@ def _index_workers(file_count: int) -> int:
 
 
 def _adapt_all(root: Path, todo: list[tuple[str, Path]], progress, total: int) -> list:
-    """Adapt ``todo`` in order, across worker processes when it is large."""
+    """Adapt ``todo`` in order, across worker processes when large."""
     done_offset = total - len(todo)
     workers = _index_workers(len(todo))
     if workers > 1:
@@ -440,7 +443,7 @@ def _table_symbols(files, symbols) -> dict:
 
 
 def _split_references(references) -> tuple[dict, dict, dict]:
-    """Fan the per-file references bag out into one dict per relationship kind."""
+    """Split the per-file references bag into one dict per relation."""
     doc_links, table_refs, inherits = {}, {}, {}
     for rel_path, data in (references or {}).items():
         for key, sink in (
@@ -536,7 +539,10 @@ def _finalize_graph(graph) -> dict:
 
 
 def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references):
-    """Assemble the relationship graph: defines + imports + calls + inherits + references."""
+    """Assemble the relationship graph.
+
+    defines + imports + calls + inherits + references.
+    """
     graph = GraphEngine().build_graph(files, symbols, edges, imports=imports, exports=exports)
 
     rel_paths = {f["rel_path"] for f in files}
@@ -557,7 +563,10 @@ def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by
 
 
 def _remove_tree(path: Path) -> None:
-    """Remove a cache tree completely or fail instead of reporting false success."""
+    """Remove a cache tree completely or fail.
+
+    Never reports a false success.
+    """
     if path.is_symlink():
         path.unlink()
     else:
@@ -656,7 +665,10 @@ def _unchanged_generation(root, ptr, previous, record, files, symbols, unindexab
 
 
 def _changes(ptr: dict, files: list[dict]) -> dict | None:
-    """Paths added, changed and removed since the active generation; None on a first index."""
+    """Paths added, changed and removed since the active generation.
+
+    None on a first index.
+    """
     if not ptr.get("generationId"):
         return None
     try:

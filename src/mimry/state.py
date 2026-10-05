@@ -50,7 +50,7 @@ GENERATION_ARTIFACTS = (
 def _restore_state_corruption_error(
     path: Path, detail: str, backup: Path | None
 ) -> StateCorruptionError:
-    """Pickle helper to reconstruct StateCorruptionError with keyword argument."""
+    """Pickle helper to rebuild StateCorruptionError with keywords."""
     return StateCorruptionError(path, detail, backup=backup)
 
 
@@ -152,7 +152,7 @@ class UnsupportedIndexSchemaError(RuntimeError):
 
 
 class StateLockTimeoutError(RuntimeError):
-    """Raised when a MIMRY state lock cannot be acquired in bounded time."""
+    """Raised when a state lock cannot be acquired in bounded time."""
 
     def __init__(self, path: Path, timeout: float, holder: str = ""):
         self.path = Path(path)
@@ -177,7 +177,7 @@ def _directory_fsync_unsupported(exc: OSError) -> bool:
 
 
 def _fsync_directory(path: Path) -> None:
-    """Durably persist directory entries; propagate real I/O/storage failures."""
+    """Durably persist directory entries; raise real I/O failures."""
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
         fd = os.open(path, flags)
@@ -195,7 +195,7 @@ def _fsync_directory(path: Path) -> None:
 
 
 def fsync_tree(path: Path) -> None:
-    """Flush every regular file and directory in a completed staging tree."""
+    """Flush every regular file and dir in a completed staging tree."""
     path = Path(path)
     directories = [path]
     for entry in path.rglob("*"):
@@ -240,7 +240,7 @@ def replace_path(source: Path, target: Path, *, attempts: int = 12, delay: float
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Replace *path* atomically without exposing a partial destination file."""
+    """Replace *path* atomically, never exposing a partial file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -269,7 +269,7 @@ def backup_path(path: Path) -> Path:
 
 
 def atomic_write_json(path: Path, payload: Any, *, keep_backup: bool = False) -> None:
-    """Atomically write JSON, retaining the previous committed value as LKG."""
+    """Atomically write JSON, keeping the last committed one as LKG."""
     text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     path = Path(path)
     previous: bytes | None = None
@@ -303,7 +303,10 @@ def load_json_state(
     validator: Callable[[Any], bool] | None = None,
     expected: str = "valid JSON",
 ) -> tuple[Any, bool]:
-    """Load JSON state and optionally repair a corrupt target from its backup."""
+    """Load JSON state; optionally repair a corrupt target.
+
+    The repair restores the target from its backup.
+    """
     path = Path(path)
     if not path.exists():
         return default, False
@@ -344,7 +347,7 @@ def sha256_file(path: Path) -> str:
 
 
 def semantic_rows_checksum(rows: list[tuple[Any, ...]]) -> str:
-    """Hash semantic rows in a stable order for generation-coherence checks."""
+    """Hash semantic rows, stably ordered, for generation coherence."""
     encoded = json.dumps(sorted(rows), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -396,7 +399,10 @@ def read_scope() -> Iterator[None]:
 
 
 def scoped(key: tuple, compute: Callable[[], Any]) -> Any:
-    """Return ``compute()`` once per active read scope; outside a scope, always compute."""
+    """Return ``compute()`` once per active read scope.
+
+    Outside a scope, always compute.
+    """
     cache = _READ_SCOPE.get()
     if cache is None:
         return compute()
@@ -406,7 +412,10 @@ def scoped(key: tuple, compute: Callable[[], Any]) -> Any:
 
 
 def validate_generation(pointer: dict[str, Any]) -> None:
-    """Validate that pointer, immutable sidecars, and SQLite expose one generation."""
+    """Validate that all state exposes one generation.
+
+    Checks the pointer, the immutable sidecars, and SQLite.
+    """
     generation_id = pointer.get("generationId")
     if not generation_id:
         return  # legacy layout; migrated on the next successful index
@@ -528,7 +537,7 @@ def _lock_timeout(timeout: float | None) -> float:
 
 
 def _effective_shared_lock(shared: bool, *, platform: str | None = None) -> bool:
-    """Return whether this platform can honor a requested shared lock."""
+    """Whether this platform can honor a requested shared lock."""
     return shared and (os.name if platform is None else platform) != "nt"
 
 

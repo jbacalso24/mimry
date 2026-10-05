@@ -137,7 +137,7 @@ NODE_TYPES = {
 
 
 def language_for(path: str | Path) -> str | None:
-    """Return the grammar name for a path's extension, or None if unsupported."""
+    """Grammar name for a path's extension, or None if unsupported."""
     if isinstance(path, str):
         path = Path(path)
     ext = path.suffix.lower()
@@ -418,7 +418,7 @@ def _callee_name(node: Any, source: bytes) -> str | None:
 
 @functools.cache
 def _grammar(lang: str):
-    """The parser and fact query for ``lang``, built once per process."""
+    """Parser and fact query for ``lang``, built once per process."""
     from tree_sitter import Parser, Query, QueryError
     from tree_sitter_language_pack import get_language
 

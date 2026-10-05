@@ -54,7 +54,10 @@ def new_plan(
 
 
 def deep_chain(depth: int) -> dict:
-    """Build through the mutation contract, then clone each valid leaf into a chain."""
+    """Build through the mutation contract.
+
+    Then clone each valid leaf into a chain.
+    """
     plan = create_plan("node 0", "deep")
     parent_id = plan["root"]
     for index in range(1, depth):
@@ -161,7 +164,12 @@ def test_same_commands_are_identical_across_roots_unicode_eol_and_hash_seed(tmp_
         )
     assert trees[0] == trees[1]
 
-    script = """from mimry.plan import create_plan, split_leaf, render_terminal, plan_digest\np=create_plan('Cafe\\u0301\\r\\nlaunch','Launch Plan')\nsplit_leaf(p,p['root'],['A','B'])\nprint(render_terminal(p), plan_digest(p), sep='')\n"""
+    script = (
+        """from mimry.plan import create_plan, split_leaf, render_terminal, plan_digest\n"""
+        """p=create_plan('Cafe\\u0301\\r\\nlaunch','Launch Plan')\n"""
+        """split_leaf(p,p['root'],['A','B'])\n"""
+        """print(render_terminal(p), plan_digest(p), sep='')\n"""
+    )
     env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
     outputs = []
     for seed in ("1", "random", "987654"):

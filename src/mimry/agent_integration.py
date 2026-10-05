@@ -57,7 +57,7 @@ def _require_ok(result: subprocess.CompletedProcess[str], label: str) -> str:
 
 
 def _client_env(sandbox: Path, *, client: str) -> dict[str, str]:
-    """Build a fail-closed client environment without operator credentials."""
+    """Build a fail-closed client env without operator credentials."""
     env = {name: os.environ[name] for name in _ENV_ALLOWLIST if os.environ.get(name)}
     home = sandbox / f"{client}-home"
     config = sandbox / f"{client}-config"

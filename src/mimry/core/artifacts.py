@@ -47,7 +47,7 @@ def _load_json(path: Path) -> Any:
 
 
 def _safe_regular_sha256(path: Path) -> str | None:
-    """Hash a stable regular-file descriptor and reject pathname races."""
+    """Hash a stable regular-file descriptor; reject pathname races."""
 
     try:
         before = path.lstat()
@@ -276,7 +276,10 @@ def _node_text(node: dict) -> str:
 
 
 def surface_matches(root: Path, query: str, limit: int = 5) -> list[dict]:
-    """Resolve a file/symbol/query to graph nodes, using artifact text only."""
+    """Resolve a file/symbol/query to graph nodes.
+
+    Uses artifact text only.
+    """
     g = load_graph(root)
     terms = query_terms(query)
     if not terms:
@@ -354,7 +357,10 @@ def surface_evidence(root: Path, surface: str, max_items: int = 6) -> dict[str, 
 
 
 def shortest_path(root: Path, source_query: str, target_query: str, max_hops: int = 6) -> dict:
-    """Find a shortest relationship path in graph artifacts; do not infer missing edges."""
+    """Find a shortest relationship path in graph artifacts.
+
+    Missing edges are never inferred.
+    """
     g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
@@ -437,7 +443,10 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
 
 
 def _exact_surface_matches(nodes: list[dict], query: str) -> list[dict]:
-    """Nodes whose id or label is ``query``, else the nodes defined in that file."""
+    """Nodes whose id or label is ``query``.
+
+    Otherwise, the nodes defined in that file.
+    """
     wanted = query.strip().replace("\\", "/").lower()
     ranked = []
     for node in nodes:
@@ -676,7 +685,7 @@ def graph_rows(root: Path, query: str, limit: int = 10) -> list[dict]:
 
 
 def relationship_edges(root: Path, selected_paths: list[str], max_edges: int = 12) -> list[dict]:
-    """Graph edges with an endpoint in one of ``selected_paths``, in graph order."""
+    """Graph edges touching ``selected_paths``, in graph order."""
     g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []

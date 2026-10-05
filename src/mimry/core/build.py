@@ -167,8 +167,10 @@ class GraphEngine:
 
         Args:
             files: List of file dicts with file_id, rel_path, extension
-            symbols: List of symbol dicts with symbol_id, file_id, name, kind, language
-            edges: List of edge dicts with source_type, source_id, target_type, target_id, edge_type, confidence
+            symbols: List of symbol dicts with symbol_id, file_id, name,
+                kind, language
+            edges: List of edge dicts with source_type, source_id,
+                target_type, target_id, edge_type, confidence
             imports: Optional, unused for now
             exports: Optional, unused for now
 

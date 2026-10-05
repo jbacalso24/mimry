@@ -13,7 +13,7 @@ class TestDuplicateNodeIdentity:
     """FINDING 3: Duplicate node/symbol/edge IDs."""
 
     def test_duplicate_node_id_with_conflicting_fields_raises(self):
-        """Two files with the same file_id but different rel_path should raise."""
+        """Same file_id with different rel_paths raises."""
         engine = GraphEngine()
         files = [
             {"file_id": "f1", "rel_path": "a.py", "extension": ".py"},
@@ -29,7 +29,7 @@ class TestDuplicateNodeIdentity:
             assert "f1" in str(e)
 
     def test_exact_duplicate_node_is_deduplicated(self):
-        """Identical file record twice should be silently deduplicated."""
+        """An identical file record twice is silently deduplicated."""
         engine = GraphEngine()
         files = [
             {"file_id": "f1", "rel_path": "a.py", "extension": ".py"},
@@ -102,7 +102,7 @@ class TestEdgeDeterminism:
     """FINDING 4: Edge ordering and canonicalization."""
 
     def test_edges_with_equal_endpoints_and_differing_confidence_are_total_ordered(self):
-        """Edges same source/target/relation, different confidence should have stable total order."""
+        """Confidence-only differences keep a stable total order."""
         engine = GraphEngine()
         files = [
             {"file_id": "f1", "rel_path": "a.py", "extension": ".py"},
@@ -138,7 +138,7 @@ class TestEdgeDeterminism:
         assert result_json == result2_json, "Edge output differs when input is reversed"
 
     def test_edge_metadata_participates_in_sort_key(self):
-        """Edges differing only in an extra metadata field sort stably."""
+        """Edges differing only in extra metadata sort stably."""
         edges = [
             {
                 "source": "f1",
@@ -162,7 +162,7 @@ class TestEdgeDeterminism:
         assert sorted_edges[1]["extra"] == "b"
 
     def test_graph_build_byte_stable_under_shuffle(self):
-        """Full build_graph output is byte-identical across multiple shuffle seeds."""
+        """build_graph output is byte-identical across shuffle seeds."""
         engine = GraphEngine()
         files = [
             {"file_id": "f1", "rel_path": "a.py", "extension": ".py"},
@@ -304,7 +304,10 @@ class TestSymbolResolutionTies:
         )
 
     def test_same_file_symbol_tie_follows_the_documented_total_key(self):
-        """Kind priority decides when line_start ties: class beats interface beats function."""
+        """Kind priority breaks line_start ties.
+
+        class beats interface beats function.
+        """
         from mimry.core.resolve import symbol_selection_key
 
         expected = min(self._TIED_CALLERS, key=symbol_selection_key)
@@ -350,7 +353,7 @@ class TestSymbolResolutionTies:
         assert self._resolve_with(list(reversed(callers))) == result
 
     def test_ambiguous_cross_file_target_is_declined(self):
-        """Declining a genuinely ambiguous target stays separate from tie-breaking."""
+        """Declining a truly ambiguous target is not tie-breaking."""
         from mimry.core.resolve import resolve_calls
 
         result = resolve_calls(

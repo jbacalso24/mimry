@@ -98,7 +98,10 @@ def _git_toplevel(root: Path) -> Path | None:
 
 
 def ensure_mimry_gitignore(root: Path) -> bool:
-    """Ensure repo-local MIMRY metadata/output is ignored in initialized Git worktrees."""
+    """Ensure Git ignores repo-local MIMRY metadata and output.
+
+    Only in initialized Git worktrees.
+    """
     git_root = _git_toplevel(root)
     if git_root is None:
         return False
@@ -289,7 +292,7 @@ def cmd_plan_list(a):
 
 
 def _index_reader(command):
-    """Keep the resolved generation alive for the full command invocation."""
+    """Keep the resolved generation alive for the whole command."""
 
     @wraps(command)
     def guarded(a):
@@ -389,7 +392,10 @@ def _health(root: Path, ptr: dict, *, verify: bool = False) -> tuple[dict, dict,
 
 
 def _counted(pairs) -> str:
-    """ "3 files changed, 1 added": the noun goes on the first non-zero count only."""
+    """Put the noun on the first non-zero count only.
+
+    As in "3 files changed, 1 added".
+    """
     parts = []
     for n, label in pairs:
         if not n:
@@ -406,7 +412,10 @@ def _counted(pairs) -> str:
 
 
 def _stale_changes(fresh: dict) -> tuple[list[str], list[str]]:
-    """(edited, new): freshness reports files not in the index as changed too."""
+    """Split stale paths into (edited, new).
+
+    Freshness reports files not in the index as changed too.
+    """
     indexed = {f.get("rel_path") for f in fresh["files"]}
     return (
         [path for path in fresh["changed"] if path in indexed],
@@ -427,7 +436,7 @@ def _stale_summary(fresh: dict) -> str:
 
 
 def _print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
-    """Warn about anything that is not current; return the commands that fix it."""
+    """Warn on anything not current; return the commands that fix it."""
     fixes = []
     if fresh["state"] == "stale":
         fixes.append("mimry reindex")
@@ -560,7 +569,7 @@ def _index_and_graph_health(root: Path, ptr: dict):
 
 
 def _print_index_note(fresh: dict, graph: dict) -> None:
-    """One warning line when results come from an index that is not current."""
+    """One warning line when results come from a non-current index."""
     if fresh["state"] == "missing":
         ui.warn("This folder has not been indexed yet. Run `mimry index` first.")
     elif fresh["state"] == "stale":
@@ -677,7 +686,10 @@ FRAMEWORK_FACT_MARKERS = (
 
 
 def _excerpt_lines(text: str) -> list[str]:
-    """An indexed excerpt's lines, redacted. Redaction needs the lines, so join them only to show them."""
+    """An indexed excerpt's lines, redacted.
+
+    Redaction needs the lines, so join them only to show them.
+    """
     return [line.strip() for line in redact_sensitive_text(text).splitlines() if line.strip()]
 
 
@@ -1142,7 +1154,7 @@ def _format_paths(paths: list[str], limit: int = 6) -> str:
 
 
 def _print_semantic_degrade(idx: Path, root_id: str | None) -> bool:
-    """Warn when semantic search cannot answer; return whether it can."""
+    """Warn if semantic search cannot answer; return whether it can."""
     health = semantic_health(idx, root_id)
     if health["status"] == "current":
         return True
@@ -1257,7 +1269,10 @@ _SETUP_COMMANDS = (
 
 
 def _display_commands(commands: list[str]) -> list[str]:
-    """Setup first, and one entry per command: `uv run pytest -q` repeats `uv run pytest`."""
+    """Setup first, then one entry per command.
+
+    `uv run pytest -q` repeats `uv run pytest`.
+    """
     ordered = [c for c in commands if c.startswith(_SETUP_COMMANDS)] + [
         c for c in commands if not c.startswith(_SETUP_COMMANDS)
     ]
@@ -1363,7 +1378,7 @@ def _node_text(node: dict) -> str:
 def _symbol_rows(
     fresh: dict, rows: list[dict], limit: int = 12
 ) -> list[tuple[str, str, str, str]]:
-    """(name, kind, language, "path:line") for symbols in the selected files."""
+    """(name, kind, language, "path:line") per selected-file symbol."""
     selected = {row["path"] for row in rows}
     files_by_id = {f["file_id"]: f for f in fresh["files"]}
     found = []

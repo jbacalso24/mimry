@@ -284,7 +284,7 @@ def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(
 
 
 def test_mcp_reports_outdated_schema_as_upgrade_not_corruption(tmp_path: Path, monkeypatch):
-    """Outdated schema should report index_schema_outdated, not state_corruption."""
+    """Old schema: index_schema_outdated, not state_corruption."""
     from mimry.state import GENERATION_MANIFEST
 
     repo = tmp_path / "repo"
@@ -362,7 +362,7 @@ def test_mcp_still_reports_real_corruption_as_corruption(tmp_path: Path, monkeyp
 
 
 def test_mcp_tool_list_is_backward_compatible(tmp_path: Path):
-    """Every existing tool must still be registered, plus new digest tool."""
+    """Every existing tool is still registered, plus the digest tool."""
     from mimry.mcp_server import mimry_digest, mimry_semantic, mimry_symbol
 
     assert callable(mimry_status)
@@ -414,7 +414,7 @@ def test_mcp_digest_tool_matches_cli_digest(tmp_path: Path, monkeypatch):
 
 
 def test_mcp_digest_tool_declares_canonical_and_operational_fields(tmp_path: Path, monkeypatch):
-    """Digest tool must clearly label canonical vs operational fields."""
+    """Digest tool clearly labels canonical vs operational fields."""
     from mimry.mcp_server import mimry_digest
 
     repo = tmp_path / "repo"
@@ -445,7 +445,10 @@ def test_mcp_digest_tool_declares_canonical_and_operational_fields(tmp_path: Pat
 
 
 def test_mcp_digest_tool_structured_errors(tmp_path: Path, monkeypatch):
-    """Digest tool must return structured errors for missing, outdated, and corrupt indexes."""
+    """Digest tool errors are structured for every bad index.
+
+    Covers missing, outdated, and corrupt indexes.
+    """
     from mimry.mcp_server import mimry_digest
 
     repo = tmp_path / "repo"
@@ -522,7 +525,7 @@ def test_mcp_digest_tool_structured_errors(tmp_path: Path, monkeypatch):
 
 
 def _degrade_schema(repo: Path, version: str) -> None:
-    """Rewrite the active generation manifest to an older schema version."""
+    """Rewrite the active manifest to an older schema version."""
     from mimry.state import GENERATION_MANIFEST
 
     ptr = load_pointer(repo)
@@ -552,7 +555,7 @@ def _indexed_repo(tmp_path: Path, monkeypatch) -> Path:
 
 
 def _cli_status(repo: Path) -> tuple[int, str]:
-    """Run the CLI status path and return (exit code, combined output)."""
+    """Run CLI status; return (exit code, combined output)."""
     from mimry.cli import main as cli_main
 
     buf_out, buf_err = io.StringIO(), io.StringIO()
@@ -644,7 +647,10 @@ def test_successful_rebuild_clears_the_outdated_schema_state(tmp_path: Path, mon
 
 
 def test_mimry_mcp_subcommand_runs_the_stdio_server_in_the_root(tmp_path: Path, monkeypatch):
-    """`uvx mimry mcp` must start the same server as `mimry-mcp`, rooted at --root."""
+    """`uvx mimry mcp` starts the same server as `mimry-mcp`.
+
+    Rooted at --root.
+    """
     import os
 
     from mimry import cli, mcp_server

@@ -58,7 +58,10 @@ def _index(root: Path) -> dict:
 
 @pytest.fixture
 def refuse_one_file(monkeypatch: pytest.MonkeyPatch):
-    """Make the adapter refuse exactly one file, the way the secret guard does."""
+    """Make the adapter refuse exactly one file.
+
+    The same way the secret guard does.
+    """
     import mimry.indexer as indexer
 
     real_adapt = indexer.adapt
@@ -86,7 +89,7 @@ def test_refused_file_does_not_keep_the_index_stale(tmp_path: Path, refuse_one_f
 
 
 def test_refused_file_is_still_kept_out_of_the_index(tmp_path: Path, refuse_one_file) -> None:
-    """Recording the path must not smuggle the file's content back in."""
+    """Recording the path must not smuggle the content back in."""
     root = _repo(tmp_path)
     idx = Path(_index(root)["indexPath"])
 
@@ -104,7 +107,10 @@ def test_refused_file_is_still_kept_out_of_the_index(tmp_path: Path, refuse_one_
 
 
 def test_a_genuinely_edited_file_is_still_detected(tmp_path: Path) -> None:
-    """Guard the obvious over-correction: real changes must still mark the index stale."""
+    """Real changes must still mark the index stale.
+
+    Guards the obvious over-correction.
+    """
     root = _repo(tmp_path)
     ptr = _index(root)
 
@@ -118,7 +124,10 @@ def test_a_genuinely_edited_file_is_still_detected(tmp_path: Path) -> None:
 def test_current_freshness_does_not_repeat_secret_scans_for_indexed_bytes(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """Cached freshness hashes indexed bytes; it must not parse every file for secrets again."""
+    """Cached freshness hashes the indexed bytes.
+
+    It must not parse every file for secrets again.
+    """
     root = _repo(tmp_path)
     ptr = _index(root)
 
@@ -142,7 +151,10 @@ def test_current_freshness_does_not_repeat_secret_scans_for_indexed_bytes(
 def test_freshness_runs_once_per_read_scope_and_every_time_outside_one(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """brief/explain/route consult freshness repeatedly; one shared-lock scope pays for one pass."""
+    """brief/explain/route consult freshness repeatedly.
+
+    One shared-lock scope pays for one pass.
+    """
     import mimry.freshness as freshness
     from mimry.state import read_scope
     from mimry.storage import active_index_pointer
@@ -384,7 +396,7 @@ def test_indexed_file_that_becomes_unreadable_is_stale_and_hidden(tmp_path: Path
 
 
 def test_native_nfd_file_keeps_graph_current_in_status(tmp_path: Path, capsys) -> None:
-    """Graph health must open the NFD file on disk, not its NFC identity."""
+    """Graph health opens the NFD file on disk, not its NFC identity."""
     root = tmp_path / "repo"
     root.mkdir()
     native_name = unicodedata.normalize("NFD", "caf\u00e9.py")

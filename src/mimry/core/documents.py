@@ -24,7 +24,7 @@ class UnsafeDocumentXMLError(ValueError):
 
 
 def is_document(path: str | Path) -> bool:
-    """True when the path is an Office container MIMRY can read text from."""
+    """True for an Office container MIMRY can read text from."""
     if isinstance(path, str):
         path = Path(path)
     return path.suffix.lower() in DOCUMENT_EXTENSIONS
@@ -113,7 +113,10 @@ def extract_document_text(
 
 
 def _read_member(zf: zipfile.ZipFile, member_name: str) -> bytes | None:
-    """Read one expected Office member with a hard cap and no password guess."""
+    """Read one expected Office member under a hard cap.
+
+    Never guesses a password.
+    """
 
     try:
         info = zf.getinfo(member_name)
@@ -162,7 +165,7 @@ def _safe_xml(data: bytes) -> bytes:
 
 
 def _extract_xlsx_text(zf: zipfile.ZipFile, *, limit: int) -> str:
-    """Extract shared and inline strings with aggregate archive/XML bounds."""
+    """Shared and inline strings, with aggregate archive/XML bounds."""
 
     def local_name(tag: str) -> str:
         return tag.rsplit("}", 1)[-1]

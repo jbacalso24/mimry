@@ -1,4 +1,4 @@
-"""Deterministic retrieval-usefulness benchmark for MIMRY agent workflows."""
+"""Deterministic retrieval-usefulness benchmark for agent workflows."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ _RESULT_RE = re.compile(r"^ +\d+  (\S.*)$")
 
 
 def token_proxy(text: str) -> int:
-    """Return an explicitly approximate token count: ceil(UTF-8 bytes / 4)."""
+    """Explicitly approximate token count: ceil(UTF-8 bytes / 4)."""
     return math.ceil(len(text.encode("utf-8")) / 4)
 
 
@@ -227,7 +227,7 @@ def _digest(root: Path) -> str:
 def benchmark_input_digests(
     cases_path: Path, fixture: Path, *, source_root: Path | None = None
 ) -> dict[str, str]:
-    """Bind benchmark evidence to fixture, cases, and retrieval source bytes."""
+    """Bind evidence to fixture, cases and retrieval source bytes."""
     source_root = Path(__file__).resolve().parent if source_root is None else source_root
     source = hashlib.sha256()
     for path in sorted(source_root.rglob("*.py")):
@@ -407,7 +407,10 @@ def _equal_metric(actual: Any, expected: Any) -> bool:
 
 
 def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> None:
-    """Recompute report evidence from frozen cases and reject inconsistent state."""
+    """Recompute report evidence from frozen cases.
+
+    Reject any state that does not match it.
+    """
     if report.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("report schema_version is unsupported")
     if report.get("thresholds") != DEFAULT_THRESHOLDS:
@@ -491,7 +494,7 @@ def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> 
 
 
 def deterministic_projection(report: dict[str, Any]) -> dict[str, Any]:
-    """Return only quality evidence expected to match across platforms/runs."""
+    """Only quality evidence expected to match across platforms/runs."""
     top_fields = (
         "schema_version",
         "profile",

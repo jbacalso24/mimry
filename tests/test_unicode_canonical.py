@@ -117,7 +117,7 @@ def test_nfd_root_produces_same_canonical_rel_path():
 
 
 def test_canonical_path_used_in_metadata():
-    """The canonical (NFC) path is used in all metadata identity fields."""
+    """Every metadata identity field uses the canonical (NFC) path."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
 

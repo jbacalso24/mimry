@@ -246,7 +246,7 @@ def location_terms(terms: list[str]) -> list[str]:
 
 
 def excluded_query_terms(q: str) -> list[str]:
-    """Extract ordinary explicit negative scopes without attempting general NLP."""
+    """Extract ordinary explicit negative scopes, no general NLP."""
     excluded: list[str] = []
     seen: set[str] = set()
     for match in EXCLUSION_RE.finditer(q):
@@ -271,7 +271,10 @@ def excluded_query_terms(q: str) -> list[str]:
 
 
 def query_terms(q: str) -> list[str]:
-    """Return positive normalized query tokens for lexical, graph, and intent ranking."""
+    """Return positive normalized query tokens.
+
+    Used for lexical, graph, and intent ranking.
+    """
     excluded = set(excluded_query_terms(q))
     return [
         term
@@ -283,7 +286,7 @@ def query_terms(q: str) -> list[str]:
 def apply_exclusion_adjustment(
     score: int, rel_path: str, excluded_terms: list[str]
 ) -> tuple[int, list[str]]:
-    """Strongly downrank paths explicitly placed outside the requested scope."""
+    """Strongly downrank paths the task explicitly excludes."""
     if score <= 0 or not excluded_terms:
         return score, []
     path_terms = set(_normalized_terms(rel_path))
@@ -324,17 +327,20 @@ def is_migration(rel_path: str) -> bool:
 
 
 def is_retired(rel_path: str) -> bool:
-    """True when a path lives under an archive/legacy/deprecated directory."""
+    """True when a path is under an archive/legacy/deprecated dir."""
     return bool({part.lower() for part in path_parts(rel_path)} & RETIRED_SEGMENTS)
 
 
 def is_supporting_code(rel_path: str) -> bool:
-    """Examples, benchmarks and vendored code: shipped alongside the product, not part of it."""
+    """Examples, benchmarks and vendored code.
+
+    Shipped alongside the product, not part of it.
+    """
     return bool({part.lower() for part in path_parts(rel_path)[:-1]} & NON_PRIMARY_SEGMENTS)
 
 
 def is_source_file(rel_path: str) -> bool:
-    """Product code in any parsed language, wherever the project keeps it."""
+    """Product code in any parsed language, wherever it lives."""
     if (
         is_doc_or_plan(rel_path)
         or is_migration(rel_path)
@@ -361,7 +367,10 @@ def is_concept_intent(terms: list[str]) -> bool:
 def apply_intent_adjustment(
     score: int, rel_path: str, terms: list[str], *, graph: bool = False
 ) -> tuple[int, list[str]]:
-    """Apply transparent intent-aware ranking without replacing graph/content signals."""
+    """Apply transparent intent-aware ranking.
+
+    Graph and content signals are kept, not replaced.
+    """
     reasons: list[str] = []
     if score <= 0:
         return score, reasons

@@ -16,7 +16,7 @@ class TestLanguageFor:
         assert language_for("test.py") == "python"
 
     def test_language_for_javascript(self):
-        """language_for should return 'javascript' for .js and .jsx files."""
+        """language_for returns 'javascript' for .js and .jsx files."""
         assert language_for("test.js") == "javascript"
         assert language_for("test.jsx") == "javascript"
 
@@ -41,7 +41,7 @@ class TestLanguageFor:
         assert language_for("test.cs") == "csharp"
 
     def test_language_for_unsupported(self):
-        """language_for should return None for unsupported extensions."""
+        """language_for returns None for unsupported extensions."""
         assert language_for("test.txt") is None
 
 
@@ -49,7 +49,7 @@ class TestPythonExtraction:
     """Test Python code extraction."""
 
     def test_python_extracts_definitions_imports_calls(self, tmp_path):
-        """Python extraction should find definitions, imports, and calls."""
+        """Python extraction: definitions, imports, and calls."""
         py_file = tmp_path / "test.py"
         py_file.write_text(
             """
@@ -77,7 +77,7 @@ class TestJavaScriptExtraction:
     """Test JavaScript code extraction."""
 
     def test_javascript_extracts_definitions_imports_calls(self, tmp_path):
-        """JavaScript extraction should find definitions, imports, and calls."""
+        """JavaScript extraction: definitions, imports, and calls."""
         js_file = tmp_path / "test.js"
         js_file.write_text(
             """
@@ -109,7 +109,7 @@ class TestTypeScriptExtraction:
     """Test TypeScript code extraction."""
 
     def test_typescript_extracts_definitions_imports_calls(self, tmp_path):
-        """TypeScript extraction should find definitions, imports, and calls."""
+        """TypeScript extraction: definitions, imports, and calls."""
         ts_file = tmp_path / "test.ts"
         ts_file.write_text(
             """
@@ -139,7 +139,7 @@ class TestTSXExtraction:
     """Test TSX code extraction."""
 
     def test_tsx_extracts_definitions_imports_calls(self, tmp_path):
-        """TSX extraction should find definitions, imports, and calls."""
+        """TSX extraction: definitions, imports, and calls."""
         tsx_file = tmp_path / "test.tsx"
         tsx_file.write_text(
             """
@@ -203,7 +203,7 @@ class TestRustExtraction:
     """Test Rust code extraction."""
 
     def test_rust_extracts_definitions_imports_calls(self, tmp_path):
-        """Rust extraction should find definitions, imports, and calls."""
+        """Rust extraction: definitions, imports, and calls."""
         rs_file = tmp_path / "test.rs"
         rs_file.write_text(
             """use std::fmt;
@@ -356,7 +356,7 @@ def test_php_extends_and_implements_both_produce_edges(tmp_path):
 
 
 def test_extracted_symbols_carry_line_pointers(tmp_path):
-    """Without line_start every graph answer points at a file, not a location."""
+    """Without line_start, answers point at a file, not a location."""
     for name, source in (("UserService.java", JAVA_SOURCE), ("UserService.php", PHP_SOURCE)):
         result = _extract(tmp_path, name, source)
         for definition in result["definitions"]:

@@ -8,12 +8,16 @@ where filesystem order, absolute paths, and hash seeds leak in.
 
 This drives the whole pipeline over a frozen fixture repository:
 
-    filesystem scan -> Python/TS/Java/PHP/Go/SQL/Markdown parsing -> symbols and
-    line pointers -> imports/exports/calls/references -> graph and communities
+    filesystem scan
+    -> Python/TS/Java/PHP/Go/SQL/Markdown parsing
+    -> symbols and line pointers
+    -> imports/exports/calls/references
+    -> graph and communities
     -> SQLite/FTS -> local semantic index -> context pack
 
-...once per permutation, each in its own clean process with its own cache, and
-compares the canonical semantic digest plus a few ordered outputs.
+...once per permutation, each in its own clean process with its own
+cache, and compares the canonical semantic digest plus a few ordered
+outputs.
 
 Permutations cover file-creation order, absolute checkout root,
 PYTHONHASHSEED, repeated clean-cache runs, and locale/timezone.
@@ -55,7 +59,10 @@ def _digest_of(value: object) -> str:
 
 
 def fixture_files() -> list[str]:
-    """Canonical relative paths of the frozen fixture, in canonical order."""
+    """Canonical relative paths of the frozen fixture.
+
+    Returned in canonical order.
+    """
     return sorted(
         p.relative_to(FIXTURE).as_posix()
         for p in FIXTURE.rglob("*")
@@ -86,7 +93,7 @@ def materialize(target: Path, *, reverse: bool) -> None:
 
 
 def run_worker(root: str, out: str) -> int:
-    """Index ``root`` from scratch and write its canonical outputs to ``out``."""
+    """Index ``root`` afresh; write its canonical outputs to ``out``."""
     from mimry.commands import cmd_context, cmd_index, cmd_init
     from mimry.search import find_rows
     from mimry.storage import load_pointer
@@ -163,7 +170,10 @@ PERMUTATIONS = [
 def run_permutation(
     workspace: Path, label: str, index: int, reverse: bool, env_overrides: dict
 ) -> dict:
-    """One clean process, one clean cache, one fresh absolute checkout root."""
+    """One clean process, one clean cache, one fresh checkout root.
+
+    The checkout root is an absolute path.
+    """
     # A distinct, differently-shaped absolute root per permutation is
     # what catches identities derived from the checkout path.
     root = workspace / f"root-{index:02d}-{label}" / "nested" / "checkout"
@@ -188,7 +198,7 @@ def run_permutation(
 
 
 def _first_difference(expected: object, actual: object, path: str = "") -> str | None:
-    """Locate the first differing leaf so a failure names a field, not a hash."""
+    """First differing leaf, so a failure names a field, not a hash."""
     if isinstance(expected, dict) and isinstance(actual, dict):
         for key in sorted(set(expected) | set(actual)):
             if key not in expected:

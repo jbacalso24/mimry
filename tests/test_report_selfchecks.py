@@ -38,7 +38,10 @@ class TestRenderReportBasic:
         assert "abc123" in commit_line[0], f"Commit not found in line: {commit_line[0]}"
 
     def test_render_report_has_required_headings(self):
-        """Report should have Community Hubs, God Nodes, and Surprising Connections headings."""
+        """The report has its three section headings.
+
+        Community Hubs, God Nodes, and Surprising Connections.
+        """
         synthetic_graph = {
             "engine": "mimry-core",
             "nodes": [],
@@ -91,7 +94,7 @@ class TestRenderReportBasic:
 
 
 class TestRenderReportWithCrossLinks:
-    """Test report generation with cross-community edges and rankings."""
+    """Report generation with cross-community edges and rankings."""
 
     def test_cross_community_edge_appears_in_report(self):
         """Cross-community edges should appear in the report."""
@@ -159,7 +162,7 @@ class TestRenderReportWithCrossLinks:
         ), "Cross-community edge should appear in report"
 
     def test_community_hubs_are_highest_degree_nodes(self):
-        """Community hubs must be the highest-degree nodes in each community."""
+        """Community hubs are each community's highest-degree nodes."""
         synthetic_graph = {
             "engine": "mimry-core",
             "nodes": [
@@ -506,7 +509,7 @@ class TestBuildManifest:
         assert "x/y.py" in manifest, "x/y.py should be in manifest"
 
     def test_build_manifest_skips_invalid_records(self):
-        """Manifest should skip records with missing hash or rel_path."""
+        """Manifest skips records missing a hash or rel_path."""
         test_files = [
             {"rel_path": "a/b.py", "hash": "abc123", "mtime": 1234.5},
             {"rel_path": "x/y.py", "hash": "def456", "mtime": 1234.6},

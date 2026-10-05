@@ -58,7 +58,10 @@ def test_extract_keeps_names_intact(
 
 
 def test_ts_adapter_keeps_names_intact(tmp_path: Path) -> None:
-    """scanner.py routes .ts/.tsx through this adapter, which had the same defect."""
+    """scanner.py routes .ts/.tsx through this adapter.
+
+    It had the same defect.
+    """
     path = tmp_path / "reducer.ts"
     path.write_text(BOM + "export const sidebarToggledHandler = () => {};\n", encoding="utf-8")
 

@@ -140,7 +140,7 @@ def _verification(value: Any) -> list[dict[str, str]]:
 
 
 def _redact_feedback_string(value: str) -> tuple[str, bool]:
-    """Redact likely secret values in user-supplied feedback text without erasing useful labels."""
+    """Redact likely secrets in user feedback, keeping useful labels."""
 
     redacted = BEARER_RE.sub(r"\1[REDACTED]", value)
     redacted = SECRET_ASSIGNMENT_RE.sub(

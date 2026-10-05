@@ -54,19 +54,127 @@ _PLATFORM_ALIASES = {
 }
 _REFERENCES: dict[str, str] = {
     "workflow.md": (
-        """# MIMRY workflow\n\nUse this when starting repo work, debugging, reviewing, or planning.\n\n## Fast path\n\n1. Run `mimry status`.\n2. Route the task with `mimry route \"<task>\"` to pick the likely agent lane, risk level, and next command.\n3. If current, ask a focused question with `mimry context \"<task>\"` or write a role brief with `mimry brief \"<task>\" --agent <role>`.\n4. If stale/missing, run `mimry preflight \"<task>\"`.\n5. Read `.mimry/mimry-out/context/latest.md` or `.mimry/mimry-out/context/brief-<agent>.md`.\n6. Inspect source files directly before editing.\n\n## Source of truth\n\nMIMRY narrows the search space. Source files, tests, build output, and user verification remain final truth.\n"""
+        """# MIMRY workflow\n"""
+        """\n"""
+        """Use this when starting repo work, debugging, reviewing, or planning.\n"""
+        """\n"""
+        """## Fast path\n"""
+        """\n"""
+        """1. Run `mimry status`.\n"""
+        """2. Route the task with `mimry route \"<task>\"` to pick the likely agent lane, risk """
+        """level, and next command.\n"""
+        """3. If current, ask a focused question with `mimry context \"<task>\"` or write a """
+        """role brief with `mimry brief \"<task>\" --agent <role>`.\n"""
+        """4. If stale/missing, run `mimry preflight \"<task>\"`.\n"""
+        """5. Read `.mimry/mimry-out/context/latest.md` or """
+        """`.mimry/mimry-out/context/brief-<agent>.md`.\n"""
+        """6. Inspect source files directly before editing.\n"""
+        """\n"""
+        """## Source of truth\n"""
+        """\n"""
+        """MIMRY narrows the search space. Source files, tests, build output, and user """
+        """verification remain final truth.\n"""
     ),
     "commands.md": (
-        """# MIMRY commands\n\nCommon commands:\n\n```bash\nmimry preflight \"<task>\"\nmimry route \"<task>\"\nmimry route \"<task>\" --json\nmimry brief \"<task>\" --agent <role>\nmimry status\nmimry refresh\nmimry context \"<task>\"\nmimry find \"<query>\"\nmimry related \"<query>\"\nmimry symbol \"<name>\"\nmimry why <file-or-symbol> --query \"<task>\"\nmimry path \"<source>\" \"<target>\"\nmimry semantic \"<query>\"\n```\n\nPrefer precise task queries over generic ones like `frontend` or `fix bug`.\n"""
+        """# MIMRY commands\n"""
+        """\n"""
+        """Common commands:\n"""
+        """\n"""
+        """```bash\n"""
+        """mimry preflight \"<task>\"\n"""
+        """mimry route \"<task>\"\n"""
+        """mimry route \"<task>\" --json\n"""
+        """mimry brief \"<task>\" --agent <role>\n"""
+        """mimry status\n"""
+        """mimry refresh\n"""
+        """mimry context \"<task>\"\n"""
+        """mimry find \"<query>\"\n"""
+        """mimry related \"<query>\"\n"""
+        """mimry symbol \"<name>\"\n"""
+        """mimry why <file-or-symbol> --query \"<task>\"\n"""
+        """mimry path \"<source>\" \"<target>\"\n"""
+        """mimry semantic \"<query>\"\n"""
+        """```\n"""
+        """\n"""
+        """Prefer precise task queries over generic ones like `frontend` or `fix bug`.\n"""
     ),
     "mcp.md": (
-        """# MIMRY MCP\n\nWhen MCP tools are available, prefer them over shell commands for lookup, preflight, context generation, and feedback.\n\nPrimary workflow tools:\n\n- `mimry_status(root?)`\n- `mimry_init(root?, root_type?, skip_graph?)`\n- `mimry_refresh(root?)`\n- `mimry_preflight(query, root?, force_refresh?)`\n- `mimry_route(query, root?, limit?)`\n- `mimry_brief(query, agent, root?, limit?)`\n- `mimry_context(query, root?, semantic?)`\n\nNavigation and explanation tools:\n\n- `mimry_find(query, root?, limit?, semantic?)`\n- `mimry_related(query, root?, limit?)`\n- `mimry_symbol(name, root?)`\n- `mimry_semantic(query, root?, limit?)`\n- `mimry_explain(query, root?, limit?)`\n- `mimry_path(source, target, root?)`\n- `mimry_why(surface, query, root?, limit?)`\n\nFeedback/tooling tools:\n\n- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, ignored?, verification?, outcome?, notes?)`\n- `mimry_list_adapters(active_only?)`\n\nRules:\n\n- Prefer `mimry_preflight` before broad search or repeated file reads.\n- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n- Use CLI fallback when MCP is unavailable or the agent host has not loaded the server.\n"""
+        """# MIMRY MCP\n"""
+        """\n"""
+        """When MCP tools are available, prefer them over shell commands for lookup, """
+        """preflight, context generation, and feedback.\n"""
+        """\n"""
+        """Primary workflow tools:\n"""
+        """\n"""
+        """- `mimry_status(root?)`\n"""
+        """- `mimry_init(root?, root_type?, skip_graph?)`\n"""
+        """- `mimry_refresh(root?)`\n"""
+        """- `mimry_preflight(query, root?, force_refresh?)`\n"""
+        """- `mimry_route(query, root?, limit?)`\n"""
+        """- `mimry_brief(query, agent, root?, limit?)`\n"""
+        """- `mimry_context(query, root?, semantic?)`\n"""
+        """\n"""
+        """Navigation and explanation tools:\n"""
+        """\n"""
+        """- `mimry_find(query, root?, limit?, semantic?)`\n"""
+        """- `mimry_related(query, root?, limit?)`\n"""
+        """- `mimry_symbol(name, root?)`\n"""
+        """- `mimry_semantic(query, root?, limit?)`\n"""
+        """- `mimry_explain(query, root?, limit?)`\n"""
+        """- `mimry_path(source, target, root?)`\n"""
+        """- `mimry_why(surface, query, root?, limit?)`\n"""
+        """\n"""
+        """Feedback/tooling tools:\n"""
+        """\n"""
+        """- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, """
+        """ignored?, verification?, outcome?, notes?)`\n"""
+        """- `mimry_list_adapters(active_only?)`\n"""
+        """\n"""
+        """Rules:\n"""
+        """\n"""
+        """- Prefer `mimry_preflight` before broad search or repeated file reads.\n"""
+        """- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n"""
+        """- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n"""
+        """- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n"""
+        """- Use CLI fallback when MCP is unavailable or the agent host has not loaded the """
+        """server.\n"""
     ),
     "feedback.md": (
-        """# MIMRY feedback\n\nAfter meaningful verified work, record what mattered so future rankings improve.\n\n```bash\nmimry feedback --query \"<task>\" \\\n  --context .mimry/mimry-out/context/latest.md \\\n  --opened \"<files opened>\" \\\n  --changed \"<files changed>\" \\\n  --missed \"<important missed files>\" \\\n  --ignored \"<unhelpful suggestions>\" \\\n  --verification \"<command/result>\" \\\n  --outcome passed\n```\n\nDo not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.\n"""
+        """# MIMRY feedback\n"""
+        """\n"""
+        """After meaningful verified work, record what mattered so future rankings improve.\n"""
+        """\n"""
+        """```bash\n"""
+        """mimry feedback --query \"<task>\" \\\n"""
+        """  --context .mimry/mimry-out/context/latest.md \\\n"""
+        """  --opened \"<files opened>\" \\\n"""
+        """  --changed \"<files changed>\" \\\n"""
+        """  --missed \"<important missed files>\" \\\n"""
+        """  --ignored \"<unhelpful suggestions>\" \\\n"""
+        """  --verification \"<command/result>\" \\\n"""
+        """  --outcome passed\n"""
+        """```\n"""
+        """\n"""
+        """Do not paste raw secrets into feedback. MIMRY redacts likely secret values, but """
+        """prevention is better.\n"""
     ),
     "safety.md": (
-        """# MIMRY safety\n\nGood roots are focused repos, product folders, docs vaults, or curated active-work folders.\n\nBad roots:\n\n- `/`\n- a whole home directory\n- `C:\\`\n- `C:\\Users\\you`\n- system/config/cache folders\n- dependency directories such as `node_modules`\n\nGenerated paths such as `.mimry/`, `.mimry/mimry-out/`, `.git/`, and dependency caches are support artifacts, not source fixes.\n"""
+        """# MIMRY safety\n"""
+        """\n"""
+        """Good roots are focused repos, product folders, docs vaults, or curated active-work """
+        """folders.\n"""
+        """\n"""
+        """Bad roots:\n"""
+        """\n"""
+        """- `/`\n"""
+        """- a whole home directory\n"""
+        """- `C:\\`\n"""
+        """- `C:\\Users\\you`\n"""
+        """- system/config/cache folders\n"""
+        """- dependency directories such as `node_modules`\n"""
+        """\n"""
+        """Generated paths such as `.mimry/`, `.mimry/mimry-out/`, `.git/`, and dependency """
+        """caches are support artifacts, not source fixes.\n"""
     ),
 }
 _ALWAYS_ON_MARKER = "## MIMRY"
@@ -269,7 +377,9 @@ def platform_table(*, verbose: bool = False) -> str:
     for cfg in configs:
         aliases = f"also: {', '.join(cfg.aliases)}" if cfg.aliases else ""
         lines.append(
-            f"  {cfg.key.ljust(width)}  {cfg.label.ljust(label_width)}  {ui.faint(aliases)}".rstrip()
+            (
+                f"  {cfg.key.ljust(width)}  {cfg.label.ljust(label_width)}  {ui.faint(aliases)}"
+            ).rstrip()
         )
         if verbose:
             lines.append(f"    {'this project'.ljust(12)}  {cfg.project_path.as_posix()}")
@@ -450,7 +560,7 @@ Load references when the task involves MCP, feedback, safety/root choice, stale 
 - Do not paste raw secrets into feedback. MIMRY redacts likely secret values, but prevention is better.
 - Generated paths such as `.mimry/`, `.mimry/mimry-out/`, and `.git/` are support artifacts, not source fixes.
 - Never report success from MIMRY output alone. Verify with real source reads and the nearest tests/build/user-visible checks.
-"""
+"""  # noqa: E501 - Markdown written verbatim; its line breaks are content
 
 
 def always_on_body() -> str:
@@ -465,7 +575,7 @@ Rules:
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
-"""
+"""  # noqa: E501 - Markdown written verbatim; its line breaks are content
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -555,7 +665,7 @@ def _resolve_mimry_exe() -> str:
 
 
 def _hook_command() -> str:
-    """Build a command for hook hosts that execute command strings with POSIX Bash."""
+    """Build a command for hook hosts that run it with POSIX Bash."""
     executable = _resolve_mimry_exe()
     windows_absolute = PureWindowsPath(executable).is_absolute()
     if windows_absolute:
