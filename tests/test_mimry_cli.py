@@ -24,10 +24,23 @@ def _posix(text: str) -> str:
     return text.replace("\\", "/")
 
 
-# subprocess.run(["bash", ...]) with a bare name lets Windows CreateProcess prefer
-# System32\bash.exe (WSL), which mangles the C:/... paths under test. Resolve the
-# POSIX bash on PATH (Git Bash) explicitly so the hook command is exercised, not WSL.
-_BASH = shutil.which("bash") or "bash"
+def _posix_bash() -> str:
+    """Return the bash hook hosts run: Git Bash on Windows, not WSL."""
+    if sys.platform != "win32":
+        return shutil.which("bash") or "bash"
+    # Git for Windows keeps git.exe in <Git>/cmd, <Git>/bin or
+    # <Git>/mingw64/bin, and bash.exe in <Git>/bin. PATH often holds
+    # only <Git>/cmd, so a bare lookup finds System32\bash.exe (WSL),
+    # which cannot run the C:/... paths under test.
+    git = shutil.which("git")
+    for parent in list(Path(git).resolve().parents)[:3] if git else []:
+        candidate = parent / "bin" / "bash.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return shutil.which("bash") or "bash"
+
+
+_BASH = _posix_bash()
 
 
 def _norm_hook(text: str) -> str:
@@ -168,6 +181,19 @@ def test_init_defaults_to_current_working_directory(tmp_path):
     assert str(ROOT.resolve()) not in res.stdout
 
 
+def test_platform_paths_never_query_wmi(monkeypatch):
+    # On Windows, Python 3.12's platform.system() asks WMI, which can
+    # block indefinitely; `mimry install` hung in the suite this way.
+    import platform
+
+    def stuck(*_args, **_kwargs):
+        raise AssertionError("platform module queried")
+
+    monkeypatch.setattr(platform, "uname", stuck)
+    monkeypatch.setattr(platform, "system", stuck)
+    assert "hermes" in installer.platforms()
+
+
 def test_install_lists_supported_agent_platforms(tmp_path):
     repo = copy_fixture(tmp_path)
     res = run_cli(repo, tmp_path / "cache", "install", "--list-platforms")
@@ -285,8 +311,10 @@ def test_expanded_project_platform_paths(tmp_path):
         "codebuddy": ".codebuddy/skills/mimry/SKILL.md",
     }
     for platform, rel in cases.items():
-        platform_repo = repo / platform
-        shutil.copytree(repo, platform_repo, dirs_exist_ok=True)
+        # A sibling, not a child: copying repo into itself made each
+        # copy include every earlier one, doubling the tree each time.
+        platform_repo = tmp_path / "platforms" / platform
+        shutil.copytree(repo, platform_repo)
         res = run_cli(platform_repo, tmp_path / f"cache-{platform}", "install", "--project", "--platform", platform)
         assert res.returncode == 0, res.stderr
         skill = platform_repo / rel

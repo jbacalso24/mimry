@@ -453,16 +453,17 @@ def test_a_long_chain_of_operators_is_judged_without_recursion():
 def test_value_scan_stays_linear_on_pathological_input():
     import time
 
+    # CPU time, not wall time: a busy machine is not a complexity bug.
     for chunk in ("{token:(a}," * 6000, "token=(" * 9000, "token=f(x," * 6000):
-        started = time.perf_counter()
+        started = time.process_time()
         contains_sensitive_text(chunk, code=True)
-        assert time.perf_counter() - started < 0.5, chunk[:20]
+        assert time.process_time() - started < 0.5, chunk[:20]
     # Minified JSON is one long line of values.
     minified = '{"user":"svc1","password":"","role":"reader"},' * 4000
     for judge in (contains_sensitive_text, redact_sensitive_text):
-        started = time.perf_counter()
+        started = time.process_time()
         judge(minified)
-        assert time.perf_counter() - started < 0.5, judge.__name__
+        assert time.process_time() - started < 0.5, judge.__name__
 
 
 def test_configuration_values_are_literals_unless_null_numeric_or_a_reference():
