@@ -168,6 +168,19 @@ def test_init_defaults_to_current_working_directory(tmp_path):
     assert str(ROOT.resolve()) not in res.stdout
 
 
+def test_platform_paths_never_query_wmi(monkeypatch):
+    # On Windows, Python 3.12's platform.system() asks WMI, which can
+    # block indefinitely; `mimry install` hung in the suite this way.
+    import platform
+
+    def stuck(*_args, **_kwargs):
+        raise AssertionError("platform module queried")
+
+    monkeypatch.setattr(platform, "uname", stuck)
+    monkeypatch.setattr(platform, "system", stuck)
+    assert "hermes" in installer.platforms()
+
+
 def test_install_lists_supported_agent_platforms(tmp_path):
     repo = copy_fixture(tmp_path)
     res = run_cli(repo, tmp_path / "cache", "install", "--list-platforms")
@@ -285,8 +298,10 @@ def test_expanded_project_platform_paths(tmp_path):
         "codebuddy": ".codebuddy/skills/mimry/SKILL.md",
     }
     for platform, rel in cases.items():
-        platform_repo = repo / platform
-        shutil.copytree(repo, platform_repo, dirs_exist_ok=True)
+        # A sibling, not a child: copying repo into itself made each
+        # copy include every earlier one, doubling the tree each time.
+        platform_repo = tmp_path / "platforms" / platform
+        shutil.copytree(repo, platform_repo)
         res = run_cli(platform_repo, tmp_path / f"cache-{platform}", "install", "--project", "--platform", platform)
         assert res.returncode == 0, res.stderr
         skill = platform_repo / rel

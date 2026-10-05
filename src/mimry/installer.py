@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import platform as platform_module
 import shlex
 import shutil
 import sys
@@ -68,7 +67,7 @@ def _home() -> Path:
 
 
 def _hermes_global_path() -> Path:
-    if platform_module.system() == "Windows":
+    if sys.platform == "win32":
         local_appdata = Path(os.environ.get("LOCALAPPDATA") or (_home() / "AppData" / "Local"))
         return local_appdata / "hermes" / "skills" / "mimry" / "SKILL.md"
     return _home() / ".hermes" / "skills" / "mimry" / "SKILL.md"
@@ -186,7 +185,7 @@ def platforms() -> dict[str, MimryPlatform]:
             label="Gemini CLI",
             project_path=skill(".gemini"),
             global_path=(home / ".agents" / "skills" / "mimry" / "SKILL.md")
-            if platform_module.system() == "Windows"
+            if sys.platform == "win32"
             else home / ".gemini" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("GEMINI.md"),
         ),
