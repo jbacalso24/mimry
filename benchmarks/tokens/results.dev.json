@@ -1,0 +1,1008 @@
+{
+  "summary": {
+    "tasks": 40,
+    "read_budget": 10,
+    "success": {
+      "grep": 30,
+      "mimry": 23
+    },
+    "tokens_total": {
+      "grep": 1894477,
+      "mimry": 2433178
+    },
+    "savings_vs_grep_pct": -28.4,
+    "both_succeeded": 22,
+    "savings_vs_grep_pct_both_succeeded": -52.9,
+    "median_task_savings_vs_grep_pct": -17.6,
+    "median_x_fewer_than_reading_whole_repo": 8.5
+  },
+  "tasks": [
+    {
+      "id": "pallets/flask#6133",
+      "task": "add `app.query` route decorator",
+      "gold": [
+        "src/flask/sansio/scaffold.py"
+      ],
+      "repo_tokens": 443754,
+      "grep": {
+        "tokens": 57082,
+        "search_tokens": 2679,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 66278,
+        "search_tokens": 2792,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "pallets/flask#6096",
+      "task": "Fix `.partition(\":\")` usage on potential IPv6 addresses",
+      "gold": [
+        "src/flask/app.py",
+        "src/flask/testing.py"
+      ],
+      "repo_tokens": 443600,
+      "grep": {
+        "tokens": 48052,
+        "search_tokens": 240,
+        "reads": 5,
+        "first_gold_read": 3,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 52787,
+        "search_tokens": 2702,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "pallets/flask#6013",
+      "task": "autoescape selection uses case-insensitive comparison",
+      "gold": [
+        "src/flask/sansio/app.py"
+      ],
+      "repo_tokens": 409969,
+      "grep": {
+        "tokens": 53811,
+        "search_tokens": 79,
+        "reads": 9,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 28848,
+        "search_tokens": 2389,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "pallets/flask#5928",
+      "task": "all teardown callbacks are called despite errors",
+      "gold": [
+        "src/flask/app.py",
+        "src/flask/ctx.py",
+        "src/flask/helpers.py"
+      ],
+      "repo_tokens": 410533,
+      "grep": {
+        "tokens": 87900,
+        "search_tokens": 2241,
+        "reads": 10,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 65002,
+        "search_tokens": 2615,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "pallets/flask#5917",
+      "task": "fix provide_automatic_options override",
+      "gold": [
+        "src/flask/sansio/app.py"
+      ],
+      "repo_tokens": 410341,
+      "grep": {
+        "tokens": 9072,
+        "search_tokens": 328,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 30662,
+        "search_tokens": 2609,
+        "reads": 9,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "pallets/flask#5899",
+      "task": "deprecate `should_ignore_error`",
+      "gold": [
+        "src/flask/app.py",
+        "src/flask/sansio/app.py"
+      ],
+      "repo_tokens": 410929,
+      "grep": {
+        "tokens": 47568,
+        "search_tokens": 46,
+        "reads": 5,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 60402,
+        "search_tokens": 2595,
+        "reads": 10,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": false
+      }
+    },
+    {
+      "id": "pallets/flask#5898",
+      "task": "redirect defaults to 303",
+      "gold": [
+        "src/flask/helpers.py",
+        "src/flask/sansio/app.py"
+      ],
+      "repo_tokens": 410734,
+      "grep": {
+        "tokens": 32870,
+        "search_tokens": 559,
+        "reads": 4,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 47476,
+        "search_tokens": 2620,
+        "reads": 9,
+        "first_gold_read": 6,
+        "gold_found": 2,
+        "success": true
+      }
+    },
+    {
+      "id": "pallets/flask#5818",
+      "task": "pass context through dispatch methods",
+      "gold": [
+        "src/flask/app.py",
+        "src/flask/ctx.py",
+        "src/flask/templating.py"
+      ],
+      "repo_tokens": 375836,
+      "grep": {
+        "tokens": 75493,
+        "search_tokens": 2186,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 68385,
+        "search_tokens": 2668,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": false
+      }
+    },
+    {
+      "id": "encode/httpx#3699",
+      "task": "Expose `FunctionAuth` in `__all__`",
+      "gold": [
+        "httpx/__init__.py",
+        "httpx/_auth.py"
+      ],
+      "repo_tokens": 254009,
+      "grep": {
+        "tokens": 39129,
+        "search_tokens": 214,
+        "reads": 7,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 38948,
+        "search_tokens": 2887,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": false
+      }
+    },
+    {
+      "id": "encode/httpx#3690",
+      "task": "Add `.wait_ready` to parser for clean server disconnects",
+      "gold": [
+        "src/ahttpx/_parsers.py",
+        "src/ahttpx/_server.py",
+        "src/httpx/_parsers.py",
+        "src/httpx/_server.py"
+      ],
+      "repo_tokens": 97311,
+      "grep": {
+        "tokens": 19217,
+        "search_tokens": 408,
+        "reads": 6,
+        "first_gold_read": 3,
+        "gold_found": 4,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 18498,
+        "search_tokens": 2689,
+        "reads": 5,
+        "first_gold_read": 2,
+        "gold_found": 4,
+        "success": true
+      }
+    },
+    {
+      "id": "encode/httpx#3670",
+      "task": "Update FileStream API",
+      "gold": [
+        "src/ahttpx/_content.py",
+        "src/ahttpx/_streams.py",
+        "src/httpx/_content.py",
+        "src/httpx/_streams.py"
+      ],
+      "repo_tokens": 97261,
+      "grep": {
+        "tokens": 10266,
+        "search_tokens": 256,
+        "reads": 5,
+        "first_gold_read": 2,
+        "gold_found": 4,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 11246,
+        "search_tokens": 2717,
+        "reads": 4,
+        "first_gold_read": 1,
+        "gold_found": 4,
+        "success": true
+      }
+    },
+    {
+      "id": "encode/httpx#3571",
+      "task": "Display proxy protocol scheme on error",
+      "gold": [
+        "httpx/_transports/default.py"
+      ],
+      "repo_tokens": 253911,
+      "grep": {
+        "tokens": 18053,
+        "search_tokens": 1181,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 49066,
+        "search_tokens": 2799,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "encode/httpx#3442",
+      "task": "Fix `verify=False`, `cert=...` case.",
+      "gold": [
+        "httpx/_config.py"
+      ],
+      "repo_tokens": 253614,
+      "grep": {
+        "tokens": 18270,
+        "search_tokens": 541,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 32123,
+        "search_tokens": 2882,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "encode/httpx#3426",
+      "task": "Updating deprecated docstring Client() class",
+      "gold": [
+        "httpx/_client.py"
+      ],
+      "repo_tokens": 253456,
+      "grep": {
+        "tokens": 28369,
+        "search_tokens": 968,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 51928,
+        "search_tokens": 2723,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "encode/httpx#3418",
+      "task": "Error on verify as str.",
+      "gold": [
+        "httpx/_config.py"
+      ],
+      "repo_tokens": 252847,
+      "grep": {
+        "tokens": 40236,
+        "search_tokens": 1136,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 61887,
+        "search_tokens": 2632,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "encode/httpx#3412",
+      "task": "Handle empty zstd responses",
+      "gold": [
+        "httpx/__version__.py",
+        "httpx/_decoders.py"
+      ],
+      "repo_tokens": 252699,
+      "grep": {
+        "tokens": 49401,
+        "search_tokens": 386,
+        "reads": 10,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 38907,
+        "search_tokens": 2711,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "spf13/cobra#2397",
+      "task": "#2396: Add cobra unique args validator",
+      "gold": [
+        "args.go"
+      ],
+      "repo_tokens": 166255,
+      "grep": {
+        "tokens": 77686,
+        "search_tokens": 682,
+        "reads": 9,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 38465,
+        "search_tokens": 2462,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/cobra#2356",
+      "task": "fix: prevent completions from mutating os.Args via append side effect",
+      "gold": [
+        "completions.go"
+      ],
+      "repo_tokens": 165646,
+      "grep": {
+        "tokens": 10238,
+        "search_tokens": 612,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 32036,
+        "search_tokens": 2590,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/cobra#2333",
+      "task": "perf: Loop over the bash variable directly instead of starting subprocesses.",
+      "gold": [
+        "bash_completionsV2.go"
+      ],
+      "repo_tokens": 165607,
+      "grep": {
+        "tokens": 5322,
+        "search_tokens": 664,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 16465,
+        "search_tokens": 2673,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/cobra#2328",
+      "task": "refactor: replace several vars with consts",
+      "gold": [
+        "command.go"
+      ],
+      "repo_tokens": 165613,
+      "grep": {
+        "tokens": 25486,
+        "search_tokens": 172,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 51662,
+        "search_tokens": 2128,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/cobra#2325",
+      "task": "refactor: change minUsagePadding from var to const",
+      "gold": [
+        "command.go"
+      ],
+      "repo_tokens": 165613,
+      "grep": {
+        "tokens": 15534,
+        "search_tokens": 399,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 17995,
+        "search_tokens": 2860,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/cobra#2285",
+      "task": "fix: quote args in fish shell completion",
+      "gold": [
+        "fish_completions.go"
+      ],
+      "repo_tokens": 165593,
+      "grep": {
+        "tokens": 3920,
+        "search_tokens": 746,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 62627,
+        "search_tokens": 2597,
+        "reads": 9,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/cobra#2248",
+      "task": "Update command.go",
+      "gold": [
+        "command.go"
+      ],
+      "repo_tokens": 163116,
+      "grep": {
+        "tokens": 31426,
+        "search_tokens": 404,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 33435,
+        "search_tokens": 2413,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/cobra#2241",
+      "task": "Flow context to command in SetHelpFunc",
+      "gold": [
+        "command.go"
+      ],
+      "repo_tokens": 162832,
+      "grep": {
+        "tokens": 15663,
+        "search_tokens": 475,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 33614,
+        "search_tokens": 2536,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "colinhacks/zod#6600",
+      "task": "feat(instanceof): key the .properties() shape off the instance type",
+      "gold": [
+        "packages/zod/src/v4/classic/schemas.ts"
+      ],
+      "repo_tokens": 1939862,
+      "grep": {
+        "tokens": 156574,
+        "search_tokens": 13105,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 87503,
+        "search_tokens": 3104,
+        "reads": 8,
+        "first_gold_read": 8,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "colinhacks/zod#6587",
+      "task": "Fix undefined prefault outputs and object keys",
+      "gold": [
+        "packages/zod/src/v4/core/compile.ts",
+        "packages/zod/src/v4/core/schemas.ts",
+        "packages/zod/src/v4/mini/schemas.ts"
+      ],
+      "repo_tokens": 1932355,
+      "grep": {
+        "tokens": 131896,
+        "search_tokens": 9424,
+        "reads": 10,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 145097,
+        "search_tokens": 3033,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": false
+      }
+    },
+    {
+      "id": "colinhacks/zod#6582",
+      "task": "fix: preserve unique tags with defaulted discriminators",
+      "gold": [
+        "packages/zod/src/v4/core/compile.ts",
+        "packages/zod/src/v4/core/schemas.ts"
+      ],
+      "repo_tokens": 1906305,
+      "grep": {
+        "tokens": 129046,
+        "search_tokens": 1351,
+        "reads": 9,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 99747,
+        "search_tokens": 2993,
+        "reads": 9,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true
+      }
+    },
+    {
+      "id": "colinhacks/zod#6581",
+      "task": "feat(locales): add Tajik",
+      "gold": [
+        "packages/zod/src/v4/locales/index.ts"
+      ],
+      "repo_tokens": 1905368,
+      "grep": {
+        "tokens": 38747,
+        "search_tokens": 584,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 61816,
+        "search_tokens": 2978,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "colinhacks/zod#6580",
+      "task": "fix(v4): defer recursive object index inference",
+      "gold": [
+        "packages/zod/src/v4/core/schemas.ts"
+      ],
+      "repo_tokens": 1905368,
+      "grep": {
+        "tokens": 60150,
+        "search_tokens": 6516,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 161113,
+        "search_tokens": 3158,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "colinhacks/zod#6575",
+      "task": "feat(compile): add z.withParser for externally generated parsers",
+      "gold": [
+        "packages/zod/src/v4/classic/external.ts",
+        "packages/zod/src/v4/core/compile.ts",
+        "packages/zod/src/v4/mini/external.ts"
+      ],
+      "repo_tokens": 1901275,
+      "grep": {
+        "tokens": 105630,
+        "search_tokens": 1825,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 108105,
+        "search_tokens": 2969,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": false
+      }
+    },
+    {
+      "id": "colinhacks/zod#6573",
+      "task": "perf(v4): drop the lookaheads from the email regex",
+      "gold": [
+        "packages/zod/src/v4/core/regexes.ts"
+      ],
+      "repo_tokens": 1901864,
+      "grep": {
+        "tokens": 9087,
+        "search_tokens": 4528,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 133712,
+        "search_tokens": 3128,
+        "reads": 9,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "colinhacks/zod#6572",
+      "task": "fix(v4): stop the memoizer from pinning a finished parse",
+      "gold": [
+        "packages/zod/src/v4/core/memoizer.ts"
+      ],
+      "repo_tokens": 1901540,
+      "grep": {
+        "tokens": 61585,
+        "search_tokens": 3895,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 154274,
+        "search_tokens": 3152,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "BurntSushi/ripgrep#3502",
+      "task": "ignore,globset: increase pool capacity",
+      "gold": [
+        "crates/ignore/src/gitignore.rs",
+        "crates/ignore/src/types.rs"
+      ],
+      "repo_tokens": 911422,
+      "grep": {
+        "tokens": 50185,
+        "search_tokens": 1573,
+        "reads": 4,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 86294,
+        "search_tokens": 2753,
+        "reads": 8,
+        "first_gold_read": 6,
+        "gold_found": 2,
+        "success": true
+      }
+    },
+    {
+      "id": "BurntSushi/ripgrep#3496",
+      "task": "ignore: skip loading unreachable ignore files",
+      "gold": [
+        "crates/ignore/src/walk.rs"
+      ],
+      "repo_tokens": 911195,
+      "grep": {
+        "tokens": 34032,
+        "search_tokens": 2295,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 18464,
+        "search_tokens": 2779,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "BurntSushi/ripgrep#3487",
+      "task": "Add initial scaffolding for ripgrep indexing",
+      "gold": [
+        "crates/core/flags/defs.rs",
+        "crates/core/flags/hiargs.rs",
+        "crates/core/main.rs",
+        "crates/index/src/lib.rs"
+      ],
+      "repo_tokens": 909881,
+      "grep": {
+        "tokens": 89407,
+        "search_tokens": 1318,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 3,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 112788,
+        "search_tokens": 2699,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 3,
+        "success": false
+      }
+    },
+    {
+      "id": "BurntSushi/ripgrep#3475",
+      "task": "ignore: fix deadlock when visitor panics",
+      "gold": [
+        "crates/ignore/src/walk.rs"
+      ],
+      "repo_tokens": 883303,
+      "grep": {
+        "tokens": 16786,
+        "search_tokens": 1237,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 18352,
+        "search_tokens": 2803,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "BurntSushi/ripgrep#3472",
+      "task": "ignore: add incremental checking",
+      "gold": [
+        "crates/ignore/src/dir.rs",
+        "crates/ignore/src/lib.rs",
+        "crates/ignore/src/pathutil.rs",
+        "crates/ignore/src/walk.rs"
+      ],
+      "repo_tokens": 883725,
+      "grep": {
+        "tokens": 96944,
+        "search_tokens": 1185,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 115419,
+        "search_tokens": 2781,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 3,
+        "success": false
+      }
+    },
+    {
+      "id": "BurntSushi/ripgrep#3464",
+      "task": "feat[ignore]: Add depth to more errors",
+      "gold": [
+        "crates/ignore/src/walk.rs"
+      ],
+      "repo_tokens": 878051,
+      "grep": {
+        "tokens": 16952,
+        "search_tokens": 1368,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 18375,
+        "search_tokens": 2791,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "BurntSushi/ripgrep#3458",
+      "task": "feat[ignore]: Always include depth in errors from WalkDir",
+      "gold": [
+        "crates/ignore/src/lib.rs"
+      ],
+      "repo_tokens": 878035,
+      "grep": {
+        "tokens": 64511,
+        "search_tokens": 2719,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 57917,
+        "search_tokens": 2780,
+        "reads": 5,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "BurntSushi/ripgrep#3420",
+      "task": "ignore: scope compiled parent matchers by root",
+      "gold": [
+        "crates/ignore/src/dir.rs"
+      ],
+      "repo_tokens": 877609,
+      "grep": {
+        "tokens": 12881,
+        "search_tokens": 2060,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 45460,
+        "search_tokens": 2833,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true
+      }
+    }
+  ]
+}

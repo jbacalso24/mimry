@@ -1,0 +1,11 @@
+{
+  "tasks_per_repo": 8,
+  "repos": [
+    "pallets/click",
+    "Kludex/starlette",
+    "gin-gonic/gin",
+    "sindresorhus/got",
+    "tokio-rs/axum",
+    "google/gson"
+  ]
+}

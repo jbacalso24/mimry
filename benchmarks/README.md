@@ -1,6 +1,7 @@
 # MIMRY agent retrieval benchmark
 
 This frozen synthetic corpus measures a **retrieval-usefulness proxy**: ranked-file relevance, agent-facing output size, and public CLI latency. It is not proof of agent task completion, developer-time savings, or exact model-token savings.
+For measured token use on real pull requests, see the [token benchmark](tokens/README.md).
 
 Run from a source checkout or extracted sdist: `uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph`. The native engine builds graph artifacts during indexing, so reports truthfully set `graph_enabled` and include graph node/edge counts even if an older caller omits `--graph`; the flag remains in the documented command to make the measured mode explicit. The runner uses a fresh temporary HOME/cache, adds a fake-secret canary, indexes only the fixture (never the gold labels), scans command streams plus generated repo/cache files for leakage, and emits a schema-versioned case-level JSON report. The benchmark is intentionally not an installed wheel entry point because its frozen corpus is source-distribution test data.
 

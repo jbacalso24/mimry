@@ -1,0 +1,497 @@
+[
+  {
+    "id": "pallets/click#3866",
+    "repo": "pallets/click",
+    "pr": 3866,
+    "task": "Deprecate parameter names that are: not a Python identifier, or a Python Keyword, or not lower-cased",
+    "base": "3cbaa76b6014be7427d1ab06b4af40f01e7c278e",
+    "gold": [
+      "src/click/core.py"
+    ]
+  },
+  {
+    "id": "pallets/click#3865",
+    "repo": "pallets/click",
+    "pr": 3865,
+    "task": "Fix short help abbreviation",
+    "base": "d036881798e34289a49b18a5c550c7cf687e5a7a",
+    "gold": [
+      "src/click/utils.py"
+    ]
+  },
+  {
+    "id": "pallets/click#3861",
+    "repo": "pallets/click",
+    "pr": 3861,
+    "task": "Move common `help` argument from `Option` and `Argument` to `Parameter`",
+    "base": "86949d19b930ef68a45566544cb4b9508d895d0d",
+    "gold": [
+      "src/click/core.py"
+    ]
+  },
+  {
+    "id": "pallets/click#3860",
+    "repo": "pallets/click",
+    "pr": 3860,
+    "task": "Always list all positional arguments",
+    "base": "70689853e39c30e36eb0d83d586cc914a74db9d3",
+    "gold": [
+      "src/click/core.py"
+    ]
+  },
+  {
+    "id": "pallets/click#3858",
+    "repo": "pallets/click",
+    "pr": 3858,
+    "task": "Make `click.Path` generic on `path_type`",
+    "base": "7944461a80b780d060899c8835acab3c273a04a6",
+    "gold": [
+      "src/click/types.py"
+    ]
+  },
+  {
+    "id": "pallets/click#3821",
+    "repo": "pallets/click",
+    "pr": 3821,
+    "task": "Add `Option.get_help_spec` to extract the help's left part of an hidden option",
+    "base": "be13b152cf5949a362926322c835fa76019cc6fe",
+    "gold": [
+      "src/click/core.py"
+    ]
+  },
+  {
+    "id": "pallets/click#3818",
+    "repo": "pallets/click",
+    "pr": 3818,
+    "task": "Fix race condition on `KeyboardInterrupt` in `Command.main()`",
+    "base": "b47c0529e99129d4785fecc2cb39a8ec8b4aa5f8",
+    "gold": [
+      "src/click/core.py"
+    ]
+  },
+  {
+    "id": "pallets/click#3817",
+    "repo": "pallets/click",
+    "pr": 3817,
+    "task": "Remove unused bindings and constants from `_winconsole`",
+    "base": "08a7bc6d2a2af02268b09b3b5fd8079546c81c03",
+    "gold": [
+      "src/click/_winconsole.py"
+    ]
+  },
+  {
+    "id": "Kludex/starlette#3592",
+    "repo": "Kludex/starlette",
+    "pr": 3592,
+    "task": "Drop Python 3.10 support",
+    "base": "9774b08ef457e91e37e38c8a1abbfa3510427f21",
+    "gold": [
+      "starlette/_utils.py",
+      "starlette/testclient.py"
+    ]
+  },
+  {
+    "id": "Kludex/starlette#3583",
+    "repo": "Kludex/starlette",
+    "pr": 3583,
+    "task": "Stop multipart range responses on unexpected EOF",
+    "base": "ba504c555fbd6d02ea584c295667185a10453700",
+    "gold": [
+      "starlette/responses.py"
+    ]
+  },
+  {
+    "id": "Kludex/starlette#3574",
+    "repo": "Kludex/starlette",
+    "pr": 3574,
+    "task": "Mark OpenTelemetryMiddleware as experimental",
+    "base": "57de5fa9c2a98089a78d32d560e9b23e62560d5f",
+    "gold": [
+      "starlette/middleware/opentelemetry.py"
+    ]
+  },
+  {
+    "id": "Kludex/starlette#3568",
+    "repo": "Kludex/starlette",
+    "pr": 3568,
+    "task": "Preserve `FileResponse` status for range requests",
+    "base": "1f08daf1627c866a4244418ea6da673d272fc8bb",
+    "gold": [
+      "starlette/responses.py"
+    ]
+  },
+  {
+    "id": "Kludex/starlette#3567",
+    "repo": "Kludex/starlette",
+    "pr": 3567,
+    "task": "Ignore Range when If-Range contains a weak ETag",
+    "base": "56d8858633c8e04113a231ddaf3e47acf1e3516d",
+    "gold": [
+      "starlette/responses.py"
+    ]
+  },
+  {
+    "id": "Kludex/starlette#3563",
+    "repo": "Kludex/starlette",
+    "pr": 3563,
+    "task": "Support HTTP response trailers in TestClient",
+    "base": "03f12b7fcf0a3e21a8da648ca0900c79472e9efe",
+    "gold": [
+      "starlette/testclient.py"
+    ]
+  },
+  {
+    "id": "Kludex/starlette#3545",
+    "repo": "Kludex/starlette",
+    "pr": 3545,
+    "task": "Allow HTTPException to use non-standard status codes",
+    "base": "76fd00f1e293990ea41555946a6b0f58901eaca1",
+    "gold": [
+      "starlette/exceptions.py"
+    ]
+  },
+  {
+    "id": "Kludex/starlette#3532",
+    "repo": "Kludex/starlette",
+    "pr": 3532,
+    "task": "Reject `WebSocket` requests to `StaticFiles`",
+    "base": "f03f65c2f98c592773d691b4d309c68b83e568ef",
+    "gold": [
+      "starlette/staticfiles.py"
+    ]
+  },
+  {
+    "id": "gin-gonic/gin#4854",
+    "repo": "gin-gonic/gin",
+    "pr": 4854,
+    "task": "fix(context): load Keys under the mutex in Copy",
+    "base": "3b08cd7235bd5ad2f055aa9e38135f111f6c5926",
+    "gold": [
+      "context.go"
+    ]
+  },
+  {
+    "id": "gin-gonic/gin#4830",
+    "repo": "gin-gonic/gin",
+    "pr": 4830,
+    "task": "feat(router): add QUERY method shortcut for RFC 10008",
+    "base": "dcaa4296d111981ffb31ac3eba90bb63e1eb5ab9",
+    "gold": [
+      "routergroup.go"
+    ]
+  },
+  {
+    "id": "gin-gonic/gin#4819",
+    "repo": "gin-gonic/gin",
+    "pr": 4819,
+    "task": "fix: reset skipped-nodes stack on getValue entry to prevent slice overflow panic [#4818]",
+    "base": "d8f2d588d7573b3438cfc95b7a47f9ec8966273c",
+    "gold": [
+      "tree.go"
+    ]
+  },
+  {
+    "id": "gin-gonic/gin#4806",
+    "repo": "gin-gonic/gin",
+    "pr": 4806,
+    "task": "feat: add support for the HTTP QUERY method (RFC 10008)",
+    "base": "05b14df992a31fe8ff567338bb6c934f1aa3872f",
+    "gold": [
+      "ginS/gins.go",
+      "routergroup.go"
+    ]
+  },
+  {
+    "id": "gin-gonic/gin#4805",
+    "repo": "gin-gonic/gin",
+    "pr": 4805,
+    "task": "fix(context): handle missing HTML renderer",
+    "base": "bc141b4dbf90d5bb5028fc68afe48782402bb2d4",
+    "gold": [
+      "context.go",
+      "render/html.go"
+    ]
+  },
+  {
+    "id": "gin-gonic/gin#4800",
+    "repo": "gin-gonic/gin",
+    "pr": 4800,
+    "task": "fix(engine): add default ReadHeaderTimeout to http.Server in Run methods",
+    "base": "8ad9f9cbeab45887327608f393bb614187e06099",
+    "gold": [
+      "gin.go"
+    ]
+  },
+  {
+    "id": "gin-gonic/gin#4702",
+    "repo": "gin-gonic/gin",
+    "pr": 4702,
+    "task": "fix(context): skip chmod on pre-existing dirs in SaveUploadedFile",
+    "base": "da1e108614ecbbadfa5736b1b297b16121d23b9b",
+    "gold": [
+      "context.go"
+    ]
+  },
+  {
+    "id": "gin-gonic/gin#4698",
+    "repo": "gin-gonic/gin",
+    "pr": 4698,
+    "task": "fix(recovery): record recovered panics in c.Errors",
+    "base": "293ad7edebb3ae30369288bd6416ca0d78474727",
+    "gold": [
+      "recovery.go"
+    ]
+  },
+  {
+    "id": "sindresorhus/got#2471",
+    "repo": "sindresorhus/got",
+    "pr": 2471,
+    "task": "Fix HTTP/2 socket timeout handling",
+    "base": "c6bbb8ada1eeb82dc612ba4a0a9a0851f78b880c",
+    "gold": [
+      "source/core/index.ts"
+    ]
+  },
+  {
+    "id": "sindresorhus/got#2470",
+    "repo": "sindresorhus/got",
+    "pr": 2470,
+    "task": "Fix retries on connection errors",
+    "base": "1d233ba093a588b90acd647384bd709a278aecae",
+    "gold": [
+      "source/core/index.ts"
+    ]
+  },
+  {
+    "id": "sindresorhus/got#2466",
+    "repo": "sindresorhus/got",
+    "pr": 2466,
+    "task": "Add support for `QUERY` HTTP method",
+    "base": "dd3b295fdc7c921d21fa046003c63cf1f6d14332",
+    "gold": [
+      "source/core/index.ts",
+      "source/core/options.ts",
+      "source/create.ts",
+      "source/types.ts"
+    ]
+  },
+  {
+    "id": "sindresorhus/got#2464",
+    "repo": "sindresorhus/got",
+    "pr": 2464,
+    "task": "Remove HTTP/2 wrapper",
+    "base": "bfc400b2a12a0bbb4d0ed896d61d834cd5f2ebcb",
+    "gold": [
+      "source/core/index.ts",
+      "source/core/options.ts"
+    ]
+  },
+  {
+    "id": "sindresorhus/got#2463",
+    "repo": "sindresorhus/got",
+    "pr": 2463,
+    "task": "Replace `cacheable-lookup` dependency with internal DNS cache",
+    "base": "b855688f0e520c82aff7a1dd913f9f95a4a05337",
+    "gold": [
+      "source/core/options.ts"
+    ]
+  },
+  {
+    "id": "sindresorhus/got#2462",
+    "repo": "sindresorhus/got",
+    "pr": 2462,
+    "task": "Add `allowAbsoluteUrls` option",
+    "base": "66ca4e025622e1dd71f4e4f13aa6e1b79d61b069",
+    "gold": [
+      "source/as-promise/index.ts",
+      "source/core/index.ts",
+      "source/core/options.ts",
+      "source/create.ts"
+    ]
+  },
+  {
+    "id": "sindresorhus/got#2460",
+    "repo": "sindresorhus/got",
+    "pr": 2460,
+    "task": "Preserve request body on cross-origin 307 and 308 redirects",
+    "base": "28c0ca3c65716cc62c0d609a7c7043df9cf01b39",
+    "gold": [
+      "source/core/index.ts"
+    ]
+  },
+  {
+    "id": "sindresorhus/got#2454",
+    "repo": "sindresorhus/got",
+    "pr": 2454,
+    "task": "Fix `searchParams` setter dropping the value when a URL is set",
+    "base": "a5b76bffb33d5fa8b0d1393cce410b88e7c2b848",
+    "gold": [
+      "source/core/options.ts"
+    ]
+  },
+  {
+    "id": "tokio-rs/axum#3909",
+    "repo": "tokio-rs/axum",
+    "pr": 3909,
+    "task": "axum: Don't wrap merged service routes in another Route",
+    "base": "83366c2b275599366d0b914b27128141cf4ca936",
+    "gold": [
+      "axum/src/routing/path_router.rs"
+    ]
+  },
+  {
+    "id": "tokio-rs/axum#3903",
+    "repo": "tokio-rs/axum",
+    "pr": 3903,
+    "task": "axum-extra: Avoid duplicate typed header error output",
+    "base": "bc8d4912435204a4a073cea70355ae0328d263fe",
+    "gold": [
+      "axum-extra/src/typed_header.rs"
+    ]
+  },
+  {
+    "id": "tokio-rs/axum#3889",
+    "repo": "tokio-rs/axum",
+    "pr": 3889,
+    "task": "axum: remove v07 path checks",
+    "base": "c44f6650aa38d4c154e3cdb7347205e03813f4d5",
+    "gold": [
+      "axum/src/extract/matched_path.rs",
+      "axum/src/routing/mod.rs",
+      "axum/src/routing/path_router.rs"
+    ]
+  },
+  {
+    "id": "tokio-rs/axum#3886",
+    "repo": "tokio-rs/axum",
+    "pr": 3886,
+    "task": "fix(axum-extra): handle missing optional typed headers",
+    "base": "8aae5935791472be6e8aada157d3e7a49a610c23",
+    "gold": [
+      "axum-extra/src/typed_header.rs"
+    ]
+  },
+  {
+    "id": "tokio-rs/axum#3881",
+    "repo": "tokio-rs/axum",
+    "pr": 3881,
+    "task": "fix(axum-extra): preserve protobuf body buffering rejections",
+    "base": "8b30afbfeee457146d29c9c9db47f0ae621a22a8",
+    "gold": [
+      "axum-extra/src/protobuf.rs"
+    ]
+  },
+  {
+    "id": "tokio-rs/axum#3872",
+    "repo": "tokio-rs/axum",
+    "pr": 3872,
+    "task": "Adding way to SSE Event (and Buffer) test for equality",
+    "base": "576f291bad34dda8528b750d82000b197adaffc5",
+    "gold": [
+      "axum/src/response/sse.rs"
+    ]
+  },
+  {
+    "id": "tokio-rs/axum#3870",
+    "repo": "tokio-rs/axum",
+    "pr": 3870,
+    "task": "Treat CRLF as a single SSE line ending",
+    "base": "3d78036dcac289d6c1d54934708acb6a5bd73686",
+    "gold": [
+      "axum/src/response/sse.rs"
+    ]
+  },
+  {
+    "id": "tokio-rs/axum#3867",
+    "repo": "tokio-rs/axum",
+    "pr": 3867,
+    "task": "Avoid shared shutdown waiter contention",
+    "base": "fe403025ae6443f54a7ae66c500b92af653376f9",
+    "gold": [
+      "axum/src/serve/mod.rs"
+    ]
+  },
+  {
+    "id": "google/gson#3117",
+    "repo": "google/gson",
+    "pr": 3117,
+    "task": "Remove redundant `recordPromotedName` calls",
+    "base": "8b4b55051489132190cb8d1c61eb9dc7f5381295",
+    "gold": [
+      "gson/src/main/java/com/google/gson/stream/JsonReader.java"
+    ]
+  },
+  {
+    "id": "google/gson#3116",
+    "repo": "google/gson",
+    "pr": 3116,
+    "task": "fix: reject unpaired surrogates in strict JSON",
+    "base": "b3f4ca20087f9066de4c340522ff84e0558e1ad1",
+    "gold": [
+      "gson/src/main/java/com/google/gson/stream/JsonReader.java"
+    ]
+  },
+  {
+    "id": "google/gson#3115",
+    "repo": "google/gson",
+    "pr": 3115,
+    "task": "Avoid quadratic removeIf in JsonArray list views",
+    "base": "8fe077819b2c92a1cbe17557c4655e2c33967711",
+    "gold": [
+      "gson/src/main/java/com/google/gson/internal/NonNullElementWrapperList.java"
+    ]
+  },
+  {
+    "id": "google/gson#3112",
+    "repo": "google/gson",
+    "pr": 3112,
+    "task": "Use the runtime type for a wildcard element type",
+    "base": "115bcc7e1136f50eb89c9f7ae579e340fd27d117",
+    "gold": [
+      "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java"
+    ]
+  },
+  {
+    "id": "google/gson#3102",
+    "repo": "google/gson",
+    "pr": 3102,
+    "task": "Add JsonReader.getCharacterOffset to track stream position",
+    "base": "a3b9f1f7377d7ce308221b44eacd5571701174fb",
+    "gold": [
+      "gson/src/main/java/com/google/gson/internal/bind/JsonTreeReader.java",
+      "gson/src/main/java/com/google/gson/stream/JsonReader.java"
+    ]
+  },
+  {
+    "id": "google/gson#3101",
+    "repo": "google/gson",
+    "pr": 3101,
+    "task": "Use `switch` statements instead of if-chains.",
+    "base": "dae37cf0fe12235b76fb09f01118a0a8c8823f42",
+    "gold": [
+      "gson/src/main/java/com/google/gson/stream/JsonReader.java"
+    ]
+  },
+  {
+    "id": "google/gson#3098",
+    "repo": "google/gson",
+    "pr": 3098,
+    "task": "Update JSON path after promoteNameToValue",
+    "base": "61f2c646066e959f65cb99a826a2a759be42dbdd",
+    "gold": [
+      "gson/src/main/java/com/google/gson/internal/bind/JsonTreeReader.java",
+      "gson/src/main/java/com/google/gson/stream/JsonReader.java"
+    ]
+  },
+  {
+    "id": "google/gson#3096",
+    "repo": "google/gson",
+    "pr": 3096,
+    "task": "Fix some adapter exceptions not including JSON document location",
+    "base": "119818bc666d3b9f897d6c0ca7546ce28e9bbcac",
+    "gold": [
+      "gson/src/main/java/com/google/gson/internal/bind/MapTypeAdapterFactory.java",
+      "gson/src/main/java/com/google/gson/internal/bind/TypeAdapters.java"
+    ]
+  }
+]
