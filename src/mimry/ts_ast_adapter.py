@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -89,18 +90,81 @@ def _fallback_imports_exports(source: str) -> tuple[list[str], list[str]]:
     return sorted(set(imports)), sorted(set(exports))
 
 
+def _fallback_symbols_regex(
+    source: str, file_record: dict[str, Any], path: Path
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Extract symbols using regex when tree-sitter fails.
+
+    Recovers top-level function, class, async function, export default
+    function, and arrow function declarations. Uses tree-sitter kinds to
+    match the parsed path.
+    """
+    symbols: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int]] = set()
+    # Match tree-sitter path which stores the raw suffix lowercased
+    lang = path.suffix.lower().lstrip(".")
+
+    patterns = [
+        (r"^export\s+default\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", "function"),
+        (r"^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", "function"),
+        (r"^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)", "class"),
+        (
+            r"^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>",
+            "variable",
+        ),
+    ]
+
+    for line_num, line in enumerate(source.splitlines(), 1):
+        for pattern, kind in patterns:
+            match = re.match(pattern, line)
+            if match:
+                name = match.group(1)
+                exported = line.startswith("export")
+                key = (name, kind, line_num)
+                if key not in seen:
+                    seen.add(key)
+                    sid = stable_id(file_record["file_id"], name, kind, line_num)
+                    symbols.append(
+                        {
+                            "symbol_id": sid,
+                            "file_id": file_record["file_id"],
+                            "name": name,
+                            "kind": kind,
+                            "language": lang,
+                            "exported": exported,
+                            "line_start": line_num,
+                            "line_end": line_num,
+                        }
+                    )
+                    edges.append(
+                        {
+                            "edge_id": stable_id(file_record["file_id"], sid, "defines"),
+                            "source_type": "file",
+                            "source_id": file_record["file_id"],
+                            "target_type": "symbol",
+                            "target_id": sid,
+                            "edge_type": "defines",
+                            "confidence": 0.75,
+                        }
+                    )
+                break
+
+    return symbols, edges
+
+
 def parse_ts_like(
     path: Path, root: Path, file_record: dict[str, Any], source: str | None = None
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str], str]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str], str, str]:
     """Parse JS/TS/JSX/TSX with tree-sitter and return
-    symbols/edges/imports/exports/status.
+    symbols/edges/imports/exports/status/adapter_name.
 
     Pass `source` (decoded text) to avoid reopening the file during
     indexing. If source is None, will read from path (for non-indexing
     use).
     """
     if not is_text(path):
-        return [], [], [], [], "parse_error:non_text"
+        return [], [], [], [], "parse_error:non_text", "typescript-ast"
     if source is None:
         source = path.read_text(encoding="utf-8", errors="ignore")
     imports, exports = _fallback_imports_exports(source)
@@ -114,8 +178,9 @@ def parse_ts_like(
         parser = get_parser(_language_for(path))
         tree = parser.parse(source)
         root_node = tree.root_node()
-    except Exception as exc:
-        return symbols, edges, imports, exports, f"parse_error:{exc.__class__.__name__}"
+    except Exception:
+        fallback_symbols, fallback_edges = _fallback_symbols_regex(source, file_record, path)
+        return fallback_symbols, fallback_edges, imports, exports, "ok", "js-ts-regex"
 
     # The regex fallback above needed str; everything below indexes by
     # byte offset.
@@ -178,5 +243,12 @@ def parse_ts_like(
             add_symbol(name, "jsx_element", node, False, 0.75)
 
     if root_node.has_error():
-        return symbols, edges, imports, exports, "parse_error:tree_sitter_has_error"
-    return symbols, edges, imports, exports, "ok"
+        return (
+            symbols,
+            edges,
+            imports,
+            exports,
+            "parse_error:tree_sitter_has_error",
+            "typescript-ast",
+        )
+    return symbols, edges, imports, exports, "ok", "typescript-ast"

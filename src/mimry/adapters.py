@@ -248,6 +248,53 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         ),
     ),
     AdapterInfo(
+        name="js-ts-regex",
+        status="active",
+        kind="code",
+        extensions=(".ts", ".tsx", ".js", ".jsx"),
+        parser="regex import/export scanner fallback",
+        emits=("files", "imports", "exports", "symbols", "defines_edges", "line_ranges"),
+        agent_use=(
+            "Fallback path when tree-sitter is unavailable; recovers symbols,"
+            " imports and exports via regex."
+        ),
+        notes=(
+            "Recovers top-level functions, classes, and arrow function"
+            " declarations when tree-sitter fails."
+        ),
+    ),
+    AdapterInfo(
+        name="sql-alembic",
+        status="active",
+        kind="data",
+        extensions=(".py",),
+        parser="Python AST Alembic migration detector",
+        emits=("migration_facts", "revises_edges", "table_operations"),
+        agent_use=(
+            "Detects Alembic migrations and their lineage; adds revision"
+            " facts and edges to parent migrations."
+        ),
+        notes=(
+            "Detects migrations by revision/down_revision assignments;"
+            " resolves revisions to files by id across repo."
+        ),
+    ),
+    AdapterInfo(
+        name="swift-ios",
+        status="active",
+        kind="project",
+        extensions=(".pbxproj", ".entitlements", ".plist"),
+        parser="Xcode project, entitlements and plist parsers",
+        emits=("xcode_targets", "entitlements", "app_groups", "bundle_ids", "reference_edges"),
+        agent_use=(
+            "Maps iOS targets, entitlements, app extensions and App Groups for native mobile work."
+        ),
+        notes=(
+            "Parses project.pbxproj (ASCII), .entitlements and Info.plist"
+            " with plistlib; resolves references to config files."
+        ),
+    ),
+    AdapterInfo(
         name="generic-text",
         status="active",
         kind="document",
@@ -261,46 +308,7 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
     ),
 )
 
-PLANNED_ADAPTERS: tuple[AdapterInfo, ...] = (
-    AdapterInfo(
-        name="js-ts-regex",
-        status="planned",
-        kind="code",
-        extensions=(".ts", ".tsx", ".js", ".jsx"),
-        parser="regex import/export scanner",
-        emits=("files", "imports", "exports", "defines_edges"),
-        agent_use="Fallback path if tree-sitter is unavailable in a constrained environment.",
-        notes="Kept as fallback; active adapter is now typescript-ast.",
-    ),
-    AdapterInfo(
-        name="sql-alembic",
-        status="planned",
-        kind="data",
-        extensions=(".sql", ".py"),
-        parser="Alembic migration lineage detector layered on sql-schema",
-        emits=("migration_edges", "schema_versions", "upgrade_downgrade_symbols"),
-        agent_use=(
-            "Adds richer migration lineage and DB edit gates after the active read-only schema"
-            " facts are enough."
-        ),
-        notes=(
-            "Planned follow-up; active sql-schema already detects straightforward tables and"
-            " columns safely."
-        ),
-    ),
-    AdapterInfo(
-        name="swift-ios",
-        status="planned",
-        kind="code",
-        extensions=(".swift", ".xcodeproj", ".pbxproj"),
-        parser="SwiftSyntax or pragmatic Swift/Xcode parser",
-        emits=("targets", "entitlements", "app_groups", "native_symbols", "extension_edges"),
-        agent_use=(
-            "Maps iOS targets, entitlements, app extensions and App Groups for native mobile work."
-        ),
-        notes="Later, but important for mobile native boundaries.",
-    ),
-)
+PLANNED_ADAPTERS: tuple[AdapterInfo, ...] = ()
 
 
 def list_adapters(include_planned: bool = True) -> list[dict[str, object]]:

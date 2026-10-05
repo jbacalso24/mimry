@@ -96,6 +96,9 @@ TEXT_EXTS = {
     ".html",
     ".sql",
     ".sh",
+    ".pbxproj",
+    ".entitlements",
+    ".plist",
 }
 IMPORT_RE = re.compile(r"(?:from|import)\s+['\"]([^'\"]+)['\"]|import\s+([\w./@-]+)")
 # CommonJS: const x = require("./mod"). Without this a require-based

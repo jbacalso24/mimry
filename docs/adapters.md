@@ -17,19 +17,16 @@ MIMRY should understand a repo through small, inspectable adapter plugins before
 | `office-document` | ZIP container parser over Office XML | `.docx`, `.xlsx` | files, content, table references | Extracts text from Word and Excel documents for indexing and secret scanning without external services |
 | `pdf-document` | pypdf text stream extractor | `.pdf` | files, content, table references | Extracts text from PDF files for indexing and secret scanning without OCR or vision models |
 | `svg-document` | XML parser over title, desc, text, tspan | `.svg` | files, content | Extracts human-readable text from SVG diagrams for indexing and searching without rendering or rasterizing |
+| `js-ts-regex` | Regex-based declaration scanner | `.js`, `.jsx`, `.ts`, `.tsx` | files, symbols, imports, exports, defines edges, line ranges | Fallback when tree-sitter is unavailable; recovers top-level declarations |
+| `sql-alembic` | Python AST Alembic migration detector | `.py` | migration facts, revises edges, table operations | Detects Alembic migrations and their lineage; creates edges from migrations to parent migrations |
+| `swift-ios` | Xcode project, entitlements and plist parsers | `.pbxproj`, `.entitlements`, `.plist` | xcode targets, entitlements, app groups, bundle IDs, reference edges | Maps iOS targets, entitlements, app extensions and App Groups for native mobile work |
 | `generic-text` | Safe text hints | fallback | files, metadata, content hints | Docs/config fallback while keeping sensitive files skipped |
 
 Note: Raster images (PNG, JPG) require OCR or vision models and are not supported.
 
-## Planned adapters before/alongside embeddings
+## Adapter status
 
-Priority order:
-
-1. `swift-ios` — native iOS targets, entitlements, share extensions, App Groups.
-2. `sql-alembic` — richer migration lineage and schema-version facts on top of active `sql-schema`.
-3. `js-ts-regex` — fallback path if tree-sitter is unavailable in a constrained environment.
-
-Run:
+All major adapters are now active. Run:
 
 ```bash
 uv run mimry adapters
