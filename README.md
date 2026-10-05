@@ -236,6 +236,8 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry init` / `mimry index` | Set up a repo and build the index |
 | `mimry reindex` / `mimry refresh` | Update the index (`--full` re-parses everything) |
 | `mimry status` | Is the index current? (`--verify` re-hashes every file) |
+| `mimry watch` | Poll for changes and refresh when they settle |
+| `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`) |
 | `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back |
 | `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
 | `mimry plan ...` | Store and render explicit plan trees |
@@ -265,6 +267,22 @@ $ mimry reindex
     added    src/auth/magic_link.py
   3,106 files · 6,871 symbols · 10,762 links
 ```
+
+Keep the index fresh automatically:
+
+You can opt in to automatic refreshes with two commands:
+
+- `mimry watch [--interval SECONDS]`: A foreground polling loop that refreshes when the index detects changes (default interval 2s).
+  Debounces rapid edits and stays silent while nothing changes.
+  Useful for development sessions where you run `mimry preflight` frequently.
+
+- `mimry git-hooks install|uninstall|status`: Install background git hooks that refresh after commits, merges, checkouts, and rewrites.
+  Hooks run asynchronously, so `git commit` returns immediately.
+  Re-running install is safe and idempotent.
+  To remove hooks, run `mimry git-hooks uninstall`.
+
+Both are opt-in; neither runs by default.
+If your repo uses a hook manager like husky, you can add the hooks manually instead: `mimry refresh` in your existing post-commit hook.
 
 Colour is used only on an interactive terminal, and `NO_COLOR=1` turns it off.
 Piped and captured output always uses plain ASCII marks, so scripts and agents see the same text on every platform.

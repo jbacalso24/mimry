@@ -664,8 +664,9 @@ def _resolve_mimry_exe() -> str:
     return "mimry"
 
 
-def _hook_command() -> str:
-    """Build a command for hook hosts that run it with POSIX Bash."""
+def _posix_executable() -> str:
+    """The mimry executable, quoted for hosts that run POSIX sh or
+    Bash."""
     executable = _resolve_mimry_exe()
     windows_absolute = PureWindowsPath(executable).is_absolute()
     if windows_absolute:
@@ -673,7 +674,12 @@ def _hook_command() -> str:
     quoted = shlex.quote(executable)
     if windows_absolute and quoted == executable:
         quoted = f"'{executable}'"
-    return f"{quoted} hook-check"
+    return quoted
+
+
+def _hook_command() -> str:
+    """Build a command for hook hosts that run it with POSIX Bash."""
+    return f"{_posix_executable()} hook-check"
 
 
 def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Path | None:

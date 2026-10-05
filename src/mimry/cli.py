@@ -20,6 +20,7 @@ def build_parser():
         cmd_explain,
         cmd_feedback,
         cmd_find,
+        cmd_git_hooks,
         cmd_index,
         cmd_init,
         cmd_path,
@@ -38,6 +39,7 @@ def build_parser():
         cmd_semantic,
         cmd_status,
         cmd_symbol,
+        cmd_watch,
         cmd_why,
     )
     from .hook import cmd_hook_check
@@ -92,6 +94,17 @@ def build_parser():
         help="Re-hash every file instead of trusting unchanged metadata, like git",
     )
     s.set_defaults(func=cmd_status)
+    s = sub.add_parser("watch", help="Poll for changes and refresh when they settle")
+    s.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Polling interval in seconds (default 2s, minimum 0.5s)",
+    )
+    s.set_defaults(func=cmd_watch)
+    s = sub.add_parser("git-hooks", help="Manage git hooks for auto-refresh")
+    s.add_argument("action", choices=("install", "uninstall", "status"))
+    s.set_defaults(func=cmd_git_hooks)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
     s.add_argument("--active-only", action="store_true")
     s.set_defaults(func=cmd_adapters)

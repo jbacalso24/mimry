@@ -1811,3 +1811,34 @@ def cmd_digest(a):
         return 0
     print(canonical_digest(idx, ptr.get("rootId")))
     return 0
+
+
+def cmd_watch(a):
+    """Poll for changes and refresh when they settle."""
+    from .autoupdate import watch
+
+    root = Path(a.root).resolve()
+    interval = getattr(a, "interval", 2.0)
+    return watch(root, interval=interval)
+
+
+def cmd_git_hooks(a):
+    """Manage git hooks for auto-refresh."""
+    from .autoupdate import (
+        git_hooks_install,
+        git_hooks_status,
+        git_hooks_uninstall,
+    )
+
+    root = Path(a.root).resolve()
+    action = getattr(a, "action", None)
+
+    if action == "install":
+        return git_hooks_install(root)
+    elif action == "uninstall":
+        return git_hooks_uninstall(root)
+    elif action == "status":
+        return git_hooks_status(root)
+    else:
+        ui.error(f"Unknown action: {action}")
+        return 2
