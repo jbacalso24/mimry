@@ -43,17 +43,32 @@ There are two task sets, from different repositories:
 
 ## Results
 
-Baseline: MIMRY 0.2.1 (commit 9b053e0), before any change made with this benchmark.
+The baseline is MIMRY 0.2.1 (commit 9b053e0), before any change made with this benchmark.
+The fixed version adds two changes, both developed against the dev set only:
 
-| Set | Tokens vs grep | Located: grep / MIMRY | Median task, tokens vs grep | Tasks both located, tokens vs grep |
-|---|---|---|---|---|
-| dev, 40 tasks | -28.4% | 30 / 23 | -17.6% | -52.9% (22 tasks) |
-| holdout, 48 tasks | -4.2% | 33 / 30 | -10.0% | -28.2% (27 tasks) |
+- Ranking: task words match whole words and their inflections instead of any substring, so `art` no longer matches `start` while `token` still matches `tokens`.
+  Common English words in task titles are ignored.
+  For a task that changes code, tests (recognised by each language's naming conventions), examples and vendored code rank below the source.
+- Indexing: source files that only name a credential, such as `token = get_token()`, were dropped as secrets, so MIMRY could never return them.
+  They are now indexed; files with a literal secret still are not.
 
-At this baseline MIMRY reads more tokens than grep and fully locates fewer tasks.
-Per-task numbers are in [results.dev.json](results.dev.json) and [results.holdout.json](results.holdout.json).
+| Set | Version | Tokens saved vs grep | Located: grep / MIMRY | Median task, tokens saved | Tasks both located, tokens saved |
+|---|---|---|---|---|---|
+| dev, 40 tasks | baseline | -28.4% | 30 / 23 | -17.6% | -52.9% (22 tasks) |
+| dev, 40 tasks | fixed | 28.3% | 30 / 32 | 21.6% | 35.8% (26 tasks) |
+| holdout, 48 tasks | baseline | -4.2% | 33 / 30 | -10.0% | -28.2% (27 tasks) |
+| holdout, 48 tasks | fixed | 62.2% | 33 / 42 | 67.4% | 47.1% (31 tasks) |
 
-"Tokens vs grep" is MIMRY's total token use relative to the grep agent's, over all tasks in the set; negative means MIMRY read more.
+At the baseline MIMRY read more tokens than grep and fully located fewer tasks.
+The fixed version reads fewer tokens than grep on both sets and locates more tasks.
+The holdout was run once on the fixed version, after all work on the dev set was done, and those are the numbers to quote.
+On it, MIMRY uses fewer tokens than grep in all six repositories, from 12% fewer (got) to 87% fewer (starlette).
+It locates 12 tasks it missed at the baseline, and loses none it located before.
+The grep agent's results are identical in every run.
+
+Per-task numbers for the fixed version are in [results.dev.json](results.dev.json) and [results.holdout.json](results.holdout.json), and for the baseline in [results.dev.baseline.json](results.dev.baseline.json) and [results.holdout.baseline.json](results.holdout.baseline.json).
+
+"Tokens saved vs grep" is the share of the grep agent's total tokens that MIMRY did not need, over all tasks in the set; negative means MIMRY read more.
 "Located" counts tasks where the agent read every gold file within the budget.
 A task that is not located costs everything spent until the budget runs out, for either agent.
 
@@ -61,7 +76,7 @@ A task that is not located costs everything spent until the budget runs out, for
 
 Some tools report savings against reading every file in the repository.
 No agent works that way, so it is not the headline number here.
-For comparison with such claims only, the baseline MIMRY agent read a median of 8.5 times (dev) and 6.6 times (holdout) fewer tokens than the whole repository holds.
+For comparison with such claims only, the fixed MIMRY agent read a median of 15.5 times (dev) and 23.3 times (holdout) fewer tokens than the whole repository holds, against 8.5 and 6.6 times at the baseline.
 
 ## Running it
 
