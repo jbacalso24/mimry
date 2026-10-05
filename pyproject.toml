@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mimry"
-version = "0.2.1"
+version = "0.2.2"
 description = "Modular Intelligence Memory for Repos"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,6 +25,7 @@ classifiers = [
 authors = [{ name = "Judison Bacalso", email = "judisonbacalso24@gmail.com" }]
 dependencies = [
     "fastmcp>=3.4.2",
+    "pypdf>=6.19,<7",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
     # compiled against a specific core ABI; a 0.26 core can import cleanly and
     # still return a different parse tree, which would move symbol identities,

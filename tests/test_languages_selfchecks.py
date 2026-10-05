@@ -5,7 +5,8 @@ language_for, definitions, imports, calls, inheritance edges, and line
 pointers work correctly.
 """
 
-from mimry.core.languages import extract, language_for
+from mimry.constants import TEXT_EXTS
+from mimry.core.languages import EXTENSION_LANGUAGE, extract, language_for
 
 
 class TestLanguageFor:
@@ -43,6 +44,11 @@ class TestLanguageFor:
     def test_language_for_unsupported(self):
         """language_for returns None for unsupported extensions."""
         assert language_for("test.txt") is None
+
+    def test_extension_language_in_text_exts(self):
+        """Every EXTENSION_LANGUAGE key must be in TEXT_EXTS."""
+        for ext in EXTENSION_LANGUAGE:
+            assert ext in TEXT_EXTS, f"{ext} from EXTENSION_LANGUAGE not in TEXT_EXTS"
 
 
 class TestPythonExtraction:
@@ -368,3 +374,303 @@ def test_extracted_symbols_carry_line_pointers(tmp_path):
                 definition["line_end"] is None
                 or definition["line_end"] >= definition["line_start"]
             )
+
+
+# New languages: C, C++, Ruby, Kotlin, Scala, Swift
+
+C_SOURCE = """
+#include <stdio.h>
+#include "utils.h"
+
+struct Point { int x; int y; };
+int add(int a, int b) { return a + b; }
+"""
+
+CPP_SOURCE = """
+#include <iostream>
+#include "widget.h"
+
+class Widget {
+public:
+    void draw() { }
+};
+
+namespace UI {
+    class Button { };
+}
+
+void Widget::display() { }
+"""
+
+RUBY_SOURCE = """
+require "utils"
+require_relative "helper"
+
+class Animal
+  def speak; end
+end
+
+module Friendly
+  def greet; end
+end
+"""
+
+KOTLIN_SOURCE = """
+import java.util.ArrayList
+import kotlin.math.PI
+
+class Car {
+    fun drive() { }
+}
+
+interface Vehicle {
+    fun start()
+}
+"""
+
+SCALA_SOURCE = """
+import scala.collection.mutable
+
+class Animal {
+    def speak { }
+}
+
+object Companion {
+    def create { }
+}
+
+trait Friendly {
+    def greet { }
+}
+"""
+
+SWIFT_SOURCE = """
+import Foundation
+
+class View {
+    func draw() { }
+}
+
+struct Point {
+    var x: Int
+}
+
+protocol Drawable {
+    func draw()
+}
+"""
+
+
+def test_language_for_new_languages():
+    """language_for should recognize new languages."""
+    assert language_for("test.c") == "c"
+    assert language_for("test.h") == "c"
+    assert language_for("test.cpp") == "cpp"
+    assert language_for("test.hpp") == "cpp"
+    assert language_for("test.rb") == "ruby"
+    assert language_for("test.kt") == "kotlin"
+    assert language_for("test.scala") == "scala"
+    assert language_for("test.swift") == "swift"
+
+
+def test_c_extracts_definitions_imports_and_calls(tmp_path):
+    """C extraction should find definitions, imports, and calls."""
+    result = _extract(tmp_path, "utils.c", C_SOURCE)
+    assert result["status"] == "ok", f"C parse failed: {result['status']}"
+    assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in C"
+    assert len(result["imports"]) > 0, "No imports in C"
+    assert all(d["name"] for d in result["definitions"]), "Empty names in C definitions"
+    c_names = {d["name"] for d in result["definitions"]}
+    assert {"Point", "add"} <= c_names, f"missing C definitions: {c_names}"
+    imports = {i["module"] for i in result["imports"]}
+    assert "<stdio.h>" in imports, f"C system include not captured: {imports}"
+    assert "./utils.h" in imports, f"C quoted include not normalized: {imports}"
+
+
+def test_cpp_extracts_definitions_imports_and_calls(tmp_path):
+    """C++ extraction should find definitions, imports, and calls."""
+    result = _extract(tmp_path, "widget.cpp", CPP_SOURCE)
+    assert result["status"] == "ok", f"C++ parse failed: {result['status']}"
+    assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in C++"
+    assert len(result["imports"]) > 0, "No imports in C++"
+    cpp_names = {d["name"] for d in result["definitions"]}
+    assert {"Widget", "Button", "UI", "display"} <= cpp_names, (
+        f"missing C++ definitions: {cpp_names}"
+    )
+
+
+def test_cpp_function_names(tmp_path):
+    """C/C++ declarator unwrapping for function names."""
+    cpp_source = """
+void plain_func() { }
+char *dup(const char *s) { return nullptr; }
+void Widget::draw() { }
+Widget::~Widget() { }
+"""
+    result = _extract(tmp_path, "functions.cpp", cpp_source)
+    assert result["status"] == "ok", f"C++ parse failed: {result['status']}"
+    names = {d["name"] for d in result["definitions"]}
+    assert "plain_func" in names, f"plain function missing: {names}"
+    assert "dup" in names, f"pointer-returning function missing: {names}"
+    assert "draw" in names, f"qualified method missing: {names}"
+    assert "~Widget" in names, f"destructor missing: {names}"
+
+
+def test_cpp_include_normalization(tmp_path):
+    """C/C++ quoted includes should be normalized to ./path."""
+    cpp_source = """
+#include <stdio.h>
+#include "utils.h"
+#include "../lib/helper.h"
+"""
+    result = _extract(tmp_path, "main.cpp", cpp_source)
+    assert result["status"] == "ok", f"C++ parse failed: {result['status']}"
+    modules = {i["module"] for i in result["imports"]}
+    assert "<stdio.h>" in modules, f"system include not found: {modules}"
+    assert "./utils.h" in modules, f"quoted include not normalized: {modules}"
+    assert "../lib/helper.h" in modules, f"relative include not found: {modules}"
+
+
+def test_ruby_require_normalization(tmp_path):
+    """Ruby require_relative should be normalized to ./path."""
+    ruby_source = """
+require "utils"
+require_relative "helper"
+require_relative "../lib/foo"
+"""
+    result = _extract(tmp_path, "main.rb", ruby_source)
+    assert result["status"] == "ok", f"Ruby parse failed: {result['status']}"
+    modules = {i["module"] for i in result["imports"]}
+    assert "utils" in modules, f"plain require not found: {modules}"
+    assert "./helper" in modules, f"require_relative not normalized: {modules}"
+    assert "../lib/foo" in modules, f"relative require_relative not found: {modules}"
+
+
+def test_ruby_extracts_definitions_imports_and_calls(tmp_path):
+    """Ruby extraction should find definitions and requires."""
+    result = _extract(tmp_path, "animal.rb", RUBY_SOURCE)
+    assert result["status"] == "ok", f"Ruby parse failed: {result['status']}"
+    assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in Ruby"
+    assert len(result["imports"]) > 0, "No imports in Ruby"
+    ruby_names = {d["name"] for d in result["definitions"]}
+    assert {"Animal", "Friendly", "speak", "greet"} <= ruby_names, (
+        f"missing Ruby definitions: {ruby_names}"
+    )
+    assert "utils" in {i["module"] for i in result["imports"]}, (
+        f"Ruby require not captured: {result['imports']}"
+    )
+
+
+def test_ruby_inheritance(tmp_path):
+    """Ruby extraction should find superclass relationships."""
+    ruby_inherit = """
+class Living; end
+class Animal < Living
+  def speak; end
+end
+"""
+    result = _extract(tmp_path, "animal.rb", ruby_inherit)
+    ruby_bases = {(i["type"], i["base"]) for i in result["inherits"]}
+    assert ("Animal", "Living") in ruby_bases, f"missing Ruby inheritance: {ruby_bases}"
+
+
+def test_kotlin_extracts_definitions_imports_and_calls(tmp_path):
+    """Kotlin extraction should find definitions and imports."""
+    result = _extract(tmp_path, "Car.kt", KOTLIN_SOURCE)
+    assert result["status"] == "ok", f"Kotlin parse failed: {result['status']}"
+    assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in Kotlin"
+    assert len(result["imports"]) > 0, "No imports in Kotlin"
+    kotlin_names = {d["name"] for d in result["definitions"]}
+    assert {"Car", "Vehicle", "drive", "start"} <= kotlin_names, (
+        f"missing Kotlin definitions: {kotlin_names}"
+    )
+
+
+def test_kotlin_inheritance(tmp_path):
+    """Kotlin extraction should find inheritance relationships."""
+    kotlin_inherit = """
+interface Vehicle {}
+class Car : Vehicle {}
+"""
+    result = _extract(tmp_path, "Car.kt", kotlin_inherit)
+    kotlin_bases = {(i["type"], i["base"]) for i in result["inherits"]}
+    assert ("Car", "Vehicle") in kotlin_bases, f"missing Kotlin inheritance: {kotlin_bases}"
+
+
+def test_scala_extracts_definitions_imports_and_calls(tmp_path):
+    """Scala extraction should find definitions and imports."""
+    result = _extract(tmp_path, "Animal.scala", SCALA_SOURCE)
+    assert result["status"] == "ok", f"Scala parse failed: {result['status']}"
+    assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in Scala"
+    assert len(result["imports"]) > 0, "No imports in Scala"
+    scala_names = {d["name"] for d in result["definitions"]}
+    assert {"Animal", "Companion", "Friendly", "speak", "greet"} <= scala_names, (
+        f"missing Scala definitions: {scala_names}"
+    )
+
+
+def test_scala_inheritance(tmp_path):
+    """Scala extraction should find extends and with relationships."""
+    scala_inherit = """
+trait Friendly {}
+class Dog extends Animal with Friendly {}
+"""
+    result = _extract(tmp_path, "Dog.scala", scala_inherit)
+    scala_bases = {(i["type"], i["base"]) for i in result["inherits"]}
+    assert ("Dog", "Animal") in scala_bases, f"missing Scala extends: {scala_bases}"
+    assert ("Dog", "Friendly") in scala_bases, f"missing Scala with: {scala_bases}"
+
+
+def test_swift_extracts_definitions_imports_and_calls(tmp_path):
+    """Swift extraction should find definitions and imports."""
+    result = _extract(tmp_path, "View.swift", SWIFT_SOURCE)
+    assert result["status"] == "ok", f"Swift parse failed: {result['status']}"
+    assert len([d for d in result["definitions"] if d["name"]]) > 0, "No definitions in Swift"
+    assert len(result["imports"]) > 0, "No imports in Swift"
+    swift_names = {d["name"] for d in result["definitions"]}
+    assert {"View", "Point", "Drawable", "draw"} <= swift_names, (
+        f"missing Swift definitions: {swift_names}"
+    )
+
+
+def test_swift_inheritance(tmp_path):
+    """Swift extraction should find protocol conformance."""
+    swift_inherit = """
+protocol Drawable {}
+class View : Drawable {}
+"""
+    result = _extract(tmp_path, "View.swift", swift_inherit)
+    swift_bases = {(i["type"], i["base"]) for i in result["inherits"]}
+    assert ("View", "Drawable") in swift_bases, f"missing Swift conformance: {swift_bases}"
+
+
+def test_ruby_require_only_records_requires(tmp_path):
+    """Ruby records only require/require_relative, not other calls."""
+    ruby_source = """
+require "json"
+require_relative "helper"
+puts "hello"
+"""
+    result = _extract(tmp_path, "test.rb", ruby_source)
+    modules = {i["module"] for i in result["imports"]}
+    # Should have json and ./helper
+    assert "json" in modules, f"require missing: {modules}"
+    assert "./helper" in modules, f"require_relative missing: {modules}"
+    # puts "hello" should NOT be recorded as an import
+    assert "hello" not in modules, f"puts call wrongly recorded as import: {modules}"
+
+
+def test_c_include_only_records_includes(tmp_path):
+    """C should record only #include statements, not other strings."""
+    c_source = """
+#include "utils.h"
+#include <stdio.h>
+printf("hello");
+"""
+    result = _extract(tmp_path, "test.c", c_source)
+    modules = {i["module"] for i in result["imports"]}
+    # Should have utils.h and stdio.h
+    assert "./utils.h" in modules, f"quoted include missing: {modules}"
+    assert "<stdio.h>" in modules, f"system include missing: {modules}"
+    # printf("hello") should NOT be recorded as an import
+    assert "hello" not in modules, f"printf call wrongly recorded as import: {modules}"

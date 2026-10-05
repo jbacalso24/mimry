@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
+from .core.languages import EXTENSION_LANGUAGE
+
 AdapterStatus = Literal["active", "planned"]
 AdapterKind = Literal["code", "document", "data", "media", "project"]
 
@@ -69,6 +71,35 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
             " references, import/export hints (ES and CommonJS require), and line ranges. Call"
             " sites resolve to symbol-to-symbol call edges. Module-scope caller attribution is"
             " exact; a call on a `const x = f()` line is still attributed to the local binding."
+        ),
+    ),
+    AdapterInfo(
+        name="tree-sitter",
+        status="active",
+        kind="code",
+        extensions=tuple(sorted(EXTENSION_LANGUAGE)),
+        parser="tree-sitter-language-pack",
+        emits=(
+            "files",
+            "symbols",
+            "imports",
+            "defines_edges",
+            "call_edges",
+            "inheritance_edges",
+            "line_ranges",
+        ),
+        agent_use=(
+            "Backend and systems agents find Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin,"
+            " Scala, and Swift functions, classes, methods, interfaces, modules, imports, calls,"
+            " and inheritance relationships without reading every file."
+        ),
+        notes=(
+            "Extracts definitions (functions, classes, structs, interfaces, traits, enums),"
+            " imports with their source paths, inter-symbol call edges, and inheritance"
+            " (extends/implements/with relationships). Line ranges and call locations enable"
+            " precise edit targeting. Import resolution uses relative path suffix matching for"
+            " C/C++ headers, relative and `require` matches for Ruby, and language-specific"
+            " resolution rules."
         ),
     ),
     AdapterInfo(
@@ -200,6 +231,101 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         ),
     ),
     AdapterInfo(
+        name="office-document",
+        status="active",
+        kind="document",
+        extensions=(".docx", ".xlsx"),
+        parser="ZIP container parser over word/document.xml and xl/sharedStrings.xml",
+        emits=("files", "content", "table_references"),
+        agent_use=(
+            "Extracts text from Word and Excel documents for indexing and secret scanning without"
+            " external services."
+        ),
+        notes=(
+            "Guards against zip bombs, DTD/entity attacks, and compression bombs; collapses text"
+            " to searchable form."
+        ),
+    ),
+    AdapterInfo(
+        name="pdf-document",
+        status="active",
+        kind="document",
+        extensions=(".pdf",),
+        parser="pypdf text stream extractor",
+        emits=("files", "content", "table_references"),
+        agent_use=(
+            "Extracts text from PDF files for indexing and secret scanning without OCR or vision"
+            " models."
+        ),
+        notes=(
+            "Handles empty user passwords on encrypted PDFs; limits to 200 pages and 20 MB file"
+            " size."
+        ),
+    ),
+    AdapterInfo(
+        name="svg-document",
+        status="active",
+        kind="document",
+        extensions=(".svg",),
+        parser="XML parser over title, desc, text, and tspan elements",
+        emits=("files", "content"),
+        agent_use=(
+            "Extracts human-readable text from SVG diagrams for indexing and searching without"
+            " rendering or rasterizing."
+        ),
+        notes=(
+            "Extracts title, descriptions, and text elements only; guards against DTD/entity"
+            " attacks."
+        ),
+    ),
+    AdapterInfo(
+        name="js-ts-regex",
+        status="active",
+        kind="code",
+        extensions=(".ts", ".tsx", ".js", ".jsx"),
+        parser="regex import/export scanner fallback",
+        emits=("files", "imports", "exports", "symbols", "defines_edges", "line_ranges"),
+        agent_use=(
+            "Fallback path when tree-sitter is unavailable; recovers symbols,"
+            " imports and exports via regex."
+        ),
+        notes=(
+            "Recovers top-level functions, classes, and arrow function"
+            " declarations when tree-sitter fails."
+        ),
+    ),
+    AdapterInfo(
+        name="sql-alembic",
+        status="active",
+        kind="data",
+        extensions=(".py",),
+        parser="Python AST Alembic migration detector",
+        emits=("migration_facts", "revises_edges", "table_operations"),
+        agent_use=(
+            "Detects Alembic migrations and their lineage; adds revision"
+            " facts and edges to parent migrations."
+        ),
+        notes=(
+            "Detects migrations by revision/down_revision assignments;"
+            " resolves revisions to files by id across repo."
+        ),
+    ),
+    AdapterInfo(
+        name="swift-ios",
+        status="active",
+        kind="project",
+        extensions=(".pbxproj", ".entitlements", ".plist"),
+        parser="Xcode project, entitlements and plist parsers",
+        emits=("xcode_targets", "entitlements", "app_groups", "bundle_ids", "reference_edges"),
+        agent_use=(
+            "Maps iOS targets, entitlements, app extensions and App Groups for native mobile work."
+        ),
+        notes=(
+            "Parses project.pbxproj (ASCII), .entitlements and Info.plist"
+            " with plistlib; resolves references to config files."
+        ),
+    ),
+    AdapterInfo(
         name="generic-text",
         status="active",
         kind="document",
@@ -213,46 +339,7 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
     ),
 )
 
-PLANNED_ADAPTERS: tuple[AdapterInfo, ...] = (
-    AdapterInfo(
-        name="js-ts-regex",
-        status="planned",
-        kind="code",
-        extensions=(".ts", ".tsx", ".js", ".jsx"),
-        parser="regex import/export scanner",
-        emits=("files", "imports", "exports", "defines_edges"),
-        agent_use="Fallback path if tree-sitter is unavailable in a constrained environment.",
-        notes="Kept as fallback; active adapter is now typescript-ast.",
-    ),
-    AdapterInfo(
-        name="sql-alembic",
-        status="planned",
-        kind="data",
-        extensions=(".sql", ".py"),
-        parser="Alembic migration lineage detector layered on sql-schema",
-        emits=("migration_edges", "schema_versions", "upgrade_downgrade_symbols"),
-        agent_use=(
-            "Adds richer migration lineage and DB edit gates after the active read-only schema"
-            " facts are enough."
-        ),
-        notes=(
-            "Planned follow-up; active sql-schema already detects straightforward tables and"
-            " columns safely."
-        ),
-    ),
-    AdapterInfo(
-        name="swift-ios",
-        status="planned",
-        kind="code",
-        extensions=(".swift", ".xcodeproj", ".pbxproj"),
-        parser="SwiftSyntax or pragmatic Swift/Xcode parser",
-        emits=("targets", "entitlements", "app_groups", "native_symbols", "extension_edges"),
-        agent_use=(
-            "Maps iOS targets, entitlements, app extensions and App Groups for native mobile work."
-        ),
-        notes="Later, but important for mobile native boundaries.",
-    ),
-)
+PLANNED_ADAPTERS: tuple[AdapterInfo, ...] = ()
 
 
 def list_adapters(include_planned: bool = True) -> list[dict[str, object]]:

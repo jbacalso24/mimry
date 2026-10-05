@@ -159,6 +159,7 @@ UNINDEXABLE = "unindexable"
 # Below this many files, worker start-up (a fresh interpreter importing
 # the parsers) costs more than it saves.
 PARALLEL_MIN_FILES = 64
+_REFERENCE_KEYS = ("doc_links", "table_refs", "inherits", "alembic", "xcode")
 
 
 def _adapt_file(path: Path, root: Path, rel_path: str) -> tuple[str, list | None, str | None]:
@@ -349,11 +350,7 @@ def _collect(
             symbols_by_file[file_rec["rel_path"]] = file_symbols
         # Accumulate references only if there's at least one non-empty
         # list
-        if (
-            file_references.get("doc_links")
-            or file_references.get("table_refs")
-            or file_references.get("inherits")
-        ):
+        if any(file_references.get(key) for key in _REFERENCE_KEYS):
             references[file_rec["rel_path"]] = file_references
 
     # Sort all collections for determinism
@@ -442,18 +439,14 @@ def _table_symbols(files, symbols) -> dict:
     return tables
 
 
-def _split_references(references) -> tuple[dict, dict, dict]:
+def _split_references(references) -> dict[str, dict]:
     """Split the per-file references bag into one dict per relation."""
-    doc_links, table_refs, inherits = {}, {}, {}
+    result = {key: {} for key in _REFERENCE_KEYS}
     for rel_path, data in (references or {}).items():
-        for key, sink in (
-            ("doc_links", doc_links),
-            ("table_refs", table_refs),
-            ("inherits", inherits),
-        ):
+        for key in _REFERENCE_KEYS:
             if data.get(key):
-                sink[rel_path] = data[key]
-    return doc_links, table_refs, inherits
+                result[key][rel_path] = data[key]
+    return result
 
 
 def _import_graph_edges(import_edges, file_id_of) -> list[dict]:
@@ -494,6 +487,39 @@ def _inheritance_graph_edges(inherits, symbols_by_file, import_edges, symbol_ids
     return edges
 
 
+def _revises_graph_edges(alembic_data, file_id_of) -> list[dict]:
+    """file -> file, from Alembic migration lineage."""
+    edges = []
+
+    rev_to_files: dict[str, list[str]] = {}
+
+    for rel_path, mig_info in alembic_data.items():
+        source_id = file_id_of.get(rel_path)
+        if not source_id or not mig_info:
+            continue
+        rev = mig_info.get("revision")
+        if rev:
+            if rev not in rev_to_files:
+                rev_to_files[rev] = []
+            rev_to_files[rev].append(source_id)
+
+    for rel_path, mig_info in alembic_data.items():
+        source_id = file_id_of.get(rel_path)
+        if not source_id or not mig_info:
+            continue
+        down_revs = mig_info.get("down_revisions", [])
+        for down_rev in down_revs:
+            targets = rev_to_files.get(down_rev, [])
+            if len(targets) != 1:
+                continue
+            target_id = targets[0]
+            if target_id != source_id:
+                edges.append(
+                    _edge(f"file:{source_id}", f"file:{target_id}", "revises", "EXTRACTED")
+                )
+    return edges
+
+
 def _doc_link_graph_edges(doc_links, rel_paths, file_id_of) -> list[dict]:
     """file -> file, from markdown links."""
     edges = []
@@ -501,6 +527,23 @@ def _doc_link_graph_edges(doc_links, rel_paths, file_id_of) -> list[dict]:
         source, target = file_id_of.get(e["source"]), file_id_of.get(e["target"])
         if source and target:
             edges.append(_edge(f"file:{source}", f"file:{target}", "references", e["confidence"]))
+    return edges
+
+
+def _xcode_reference_edges(xcode_refs, rel_paths, file_id_of) -> list[dict]:
+    """file -> file, from Xcode project references."""
+    edges = []
+    for source_rel, target_rels in xcode_refs.items():
+        source_id = file_id_of.get(source_rel)
+        if not source_id:
+            continue
+        for target_rel in target_rels:
+            if target_rel in rel_paths:
+                target_id = file_id_of.get(target_rel)
+                if target_id:
+                    edges.append(
+                        _edge(f"file:{source_id}", f"file:{target_id}", "references", "EXTRACTED")
+                    )
     return edges
 
 
@@ -549,15 +592,19 @@ def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by
     file_id_of = {f["rel_path"]: f["file_id"] for f in files}
     symbol_ids = _symbol_ids_by_path_name(files, symbols)
     import_edges = resolve_imports(imports, rel_paths)
-    doc_links, table_refs, inherits = _split_references(references)
+    split_refs = _split_references(references)
 
     graph["edges"] += _import_graph_edges(import_edges, file_id_of)
     graph["edges"] += _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids)
-    graph["edges"] += _inheritance_graph_edges(inherits, symbols_by_file, import_edges, symbol_ids)
-    graph["edges"] += _doc_link_graph_edges(doc_links, rel_paths, file_id_of)
-    graph["edges"] += _table_ref_graph_edges(
-        table_refs, _table_symbols(files, symbols), file_id_of
+    graph["edges"] += _inheritance_graph_edges(
+        split_refs["inherits"], symbols_by_file, import_edges, symbol_ids
     )
+    graph["edges"] += _doc_link_graph_edges(split_refs["doc_links"], rel_paths, file_id_of)
+    graph["edges"] += _table_ref_graph_edges(
+        split_refs["table_refs"], _table_symbols(files, symbols), file_id_of
+    )
+    graph["edges"] += _revises_graph_edges(split_refs["alembic"], file_id_of)
+    graph["edges"] += _xcode_reference_edges(split_refs["xcode"], rel_paths, file_id_of)
 
     return _finalize_graph(graph)
 

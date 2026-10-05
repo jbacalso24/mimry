@@ -18,8 +18,10 @@ def build_parser():
         cmd_context,
         cmd_digest,
         cmd_explain,
+        cmd_export,
         cmd_feedback,
         cmd_find,
+        cmd_git_hooks,
         cmd_index,
         cmd_init,
         cmd_path,
@@ -32,11 +34,13 @@ def build_parser():
         cmd_preflight,
         cmd_refresh,
         cmd_related,
+        cmd_report,
         cmd_roots,
         cmd_route,
         cmd_semantic,
         cmd_status,
         cmd_symbol,
+        cmd_watch,
         cmd_why,
     )
     from .hook import cmd_hook_check
@@ -91,6 +95,39 @@ def build_parser():
         help="Re-hash every file instead of trusting unchanged metadata, like git",
     )
     s.set_defaults(func=cmd_status)
+    s = sub.add_parser("watch", help="Poll for changes and refresh when they settle")
+    s.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Polling interval in seconds (default 2s, minimum 0.5s)",
+    )
+    s.set_defaults(func=cmd_watch)
+    s = sub.add_parser("git-hooks", help="Manage git hooks for auto-refresh")
+    s.add_argument("action", choices=("install", "uninstall", "status"))
+    s.set_defaults(func=cmd_git_hooks)
+    s = sub.add_parser("export", help="Export graph in multiple formats")
+    s.add_argument(
+        "--format",
+        required=True,
+        choices=["html", "graphml", "cypher", "obsidian"],
+        help="Export format",
+    )
+    s.add_argument(
+        "--out",
+        help="Output path (default: .mimry/mimry-out/export/<format>)",
+    )
+    s.add_argument(
+        "--force",
+        action="store_true",
+        help="Write into a non-empty --out directory MIMRY did not create; nothing is deleted",
+    )
+    s.add_argument(
+        "--open",
+        action="store_true",
+        help="Open HTML file in browser (HTML format only)",
+    )
+    s.set_defaults(func=cmd_export)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
     s.add_argument("--active-only", action="store_true")
     s.set_defaults(func=cmd_adapters)
@@ -192,6 +229,8 @@ def build_parser():
     s.add_argument("--query", required=True)
     s.add_argument("--limit", type=int, default=25)
     s.set_defaults(func=cmd_why)
+    s = sub.add_parser("report", help="Print the current MIMRY graph report")
+    s.set_defaults(func=cmd_report)
     s = sub.add_parser(
         "digest",
         help=(

@@ -555,3 +555,280 @@ class TestBuildManifest:
         manifest = build_manifest(test_files)
         manifest_keys = list(manifest.keys())
         assert manifest_keys == sorted(manifest_keys), "Manifest keys should be sorted"
+
+
+class TestSuggestedQuestions:
+    """Test suggested questions section generation."""
+
+    def test_report_has_suggested_questions_section(self):
+        """Report should have ## Suggested Questions heading."""
+        graph = {
+            "nodes": [
+                {
+                    "id": "node1",
+                    "label": "src/main.py",
+                    "source_file": "src/main.py",
+                    "community": 0,
+                },
+            ],
+            "edges": [],
+        }
+        report = render_report(graph, commit="test")
+        assert "## Suggested Questions" in report
+
+    def test_inferred_edges_line_present(self):
+        """Inferred edges line should be in header."""
+        graph = {
+            "nodes": [],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "calls", "confidence": "INFERRED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        assert "- Inferred edges:" in report
+        assert "1 of 1" in report
+
+    def test_inferred_edges_counted_correctly(self):
+        """Inferred edges should be counted correctly."""
+        graph = {
+            "nodes": [],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "calls", "confidence": "INFERRED"},
+                {"source": "n2", "target": "n3", "relation": "imports", "confidence": "EXTRACTED"},
+                {
+                    "source": "n3",
+                    "target": "n4",
+                    "relation": "references",
+                    "confidence": "INFERRED",
+                },
+            ],
+        }
+        report = render_report(graph, commit="test")
+        assert "2 of 3" in report
+
+    def test_suggested_questions_template_1_fires(self):
+        """Template 1: top god node (non-test) fires."""
+        graph = {
+            "nodes": [
+                {"id": "n1", "label": "src/main.py", "source_file": "src/main.py", "community": 0},
+                {
+                    "id": "n2",
+                    "label": "tests/test.py",
+                    "source_file": "tests/test.py",
+                    "community": 0,
+                },
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "calls", "confidence": "EXTRACTED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        assert "What depends on `src/main.py`" in report
+        assert "mimry related" in report
+
+    def test_suggested_questions_shell_safe_command(self):
+        """Shell-safe labels should include the command."""
+        graph = {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "label": "src/main.py",
+                    "source_file": "src/main.py",
+                    "type": "file",
+                    "community": 0,
+                },
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "defines", "confidence": "EXTRACTED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        assert '`mimry related "src/main.py"`' in report
+
+    def test_suggested_questions_unsafe_label_no_command(self):
+        """Unsafe labels should not include the command."""
+        graph = {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "label": "src/bad name$.py",
+                    "source_file": "src/bad name$.py",
+                    "type": "file",
+                    "community": 0,
+                },
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "defines", "confidence": "EXTRACTED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        # Node can match template 1 or 5; unsafe labels no commands
+        # Either way, unsafe labels should not have shell commands
+        has_god_question = "What depends on `src/bad name$.py`" in report
+        has_unreferenced_question = "Is `src/bad name$.py` still used?" in report
+        assert has_god_question or has_unreferenced_question
+        # Unsafe labels should not have mimry commands with direct
+        # substitution
+        for line in report.splitlines():
+            if "src/bad name$.py" in line and "mimry" in line:
+                assert "mimry related" not in line or "\\" in line
+
+    def test_suggested_questions_template_2_fires(self):
+        """Template 2: top surprising connection fires."""
+        graph = {
+            "nodes": [
+                {"id": "n1", "label": "a/b.py", "source_file": "a/b.py", "community": 0},
+                {"id": "n2", "label": "x/y.py", "source_file": "x/y.py", "community": 1},
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "imports", "confidence": "INFERRED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        assert "Why does `a/b.py` reach `x/y.py`" in report
+        assert "mimry path" in report
+
+    def test_suggested_questions_deterministic(self):
+        """Suggested questions are deterministic."""
+        graph = {
+            "nodes": [
+                {"id": "n1", "label": "a/b.py", "source_file": "a/b.py", "community": 0},
+                {"id": "n2", "label": "x/y.py", "source_file": "x/y.py", "community": 1},
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "imports", "confidence": "EXTRACTED"},
+            ],
+        }
+        report1 = render_report(graph, commit="test")
+        report2 = render_report(graph, commit="test")
+        assert report1 == report2
+
+    def test_suggested_questions_empty_graph(self):
+        """Empty graph should show 'none' for suggested questions."""
+        graph = {"nodes": [], "edges": []}
+        report = render_report(graph, commit="test")
+        lines = report.splitlines()
+        idx = lines.index("## Suggested Questions")
+        assert "- none" in lines[idx : idx + 3]
+
+    def test_suggested_questions_no_test_files_as_god_nodes(self):
+        """Test files should not be selected as top god node."""
+        graph = {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "label": "tests/test_all.py",
+                    "source_file": "tests/test_all.py",
+                    "community": 0,
+                },
+                {
+                    "id": "n2",
+                    "label": "src/main.py",
+                    "source_file": "src/main.py",
+                    "community": 0,
+                },
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "calls", "confidence": "EXTRACTED"},
+                {"source": "n1", "target": "n2", "relation": "calls", "confidence": "EXTRACTED"},
+                {"source": "n1", "target": "n2", "relation": "calls", "confidence": "EXTRACTED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        # n1 has degree 3, but it's a test file, so n2 should be
+        # selected
+        assert "What depends on `src/main.py`" in report
+
+    def test_suggested_questions_shuffled_input_order(self):
+        """Suggested questions are deterministic."""
+        graph_original = {
+            "nodes": [
+                {"id": "n1", "label": "a/b.py", "source_file": "a/b.py", "community": 0},
+                {"id": "n2", "label": "x/y.py", "source_file": "x/y.py", "community": 1},
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "imports", "confidence": "EXTRACTED"},
+            ],
+        }
+        graph_shuffled = {
+            "nodes": list(reversed(graph_original["nodes"])),
+            "edges": list(reversed(graph_original["edges"])),
+        }
+        report1 = render_report(graph_original, commit="test")
+        report2 = render_report(graph_shuffled, commit="test")
+        assert report1 == report2
+
+    def test_template_5_symbol_node_not_suggested(self):
+        """Symbol nodes are never suggested by template 5."""
+        graph = {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "label": "MyClass.method",
+                    "source_file": "src/main.py",
+                    "type": "symbol",
+                    "community": 0,
+                },
+            ],
+            "edges": [
+                {"source": "n1", "target": "n1", "relation": "defines", "confidence": "EXTRACTED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        assert "Is `MyClass.method` still used?" not in report
+
+    def test_template_5_code_file_zero_defines_not_suggested(self):
+        """Code file nodes with zero defines are never suggested."""
+        graph = {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "label": "src/empty.py",
+                    "source_file": "src/empty.py",
+                    "type": "file",
+                    "community": 0,
+                },
+            ],
+            "edges": [],
+        }
+        report = render_report(graph, commit="test")
+        assert "Is `src/empty.py` still used?" not in report
+
+    def test_template_5_markdown_file_not_suggested(self):
+        """Markdown files are never suggested by template 5."""
+        graph = {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "label": "README.md",
+                    "source_file": "README.md",
+                    "type": "file",
+                    "community": 0,
+                },
+            ],
+            "edges": [
+                {"source": "n1", "target": "n1", "relation": "defines", "confidence": "EXTRACTED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        assert "Is `README.md` still used?" not in report
+
+    def test_template_5_code_file_with_defines_suggested(self):
+        """Code file nodes with defines and no incoming edges are
+        suggested."""
+        graph = {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "label": "src/unused.py",
+                    "source_file": "src/unused.py",
+                    "type": "file",
+                    "community": 0,
+                },
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "relation": "defines", "confidence": "EXTRACTED"},
+            ],
+        }
+        report = render_report(graph, commit="test")
+        assert "Is `src/unused.py` still used?" in report

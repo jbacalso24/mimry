@@ -236,6 +236,8 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry init` / `mimry index` | Set up a repo and build the index |
 | `mimry reindex` / `mimry refresh` | Update the index (`--full` re-parses everything) |
 | `mimry status` | Is the index current? (`--verify` re-hashes every file) |
+| `mimry watch` | Poll for changes and refresh when they settle |
+| `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`) |
 | `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back |
 | `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
 | `mimry plan ...` | Store and render explicit plan trees |
@@ -243,6 +245,8 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry adapters` | List the file-type adapters |
 | `mimry install` / `mimry uninstall` | Manage agent skills |
 | `mimry digest` | Print a canonical digest of the index |
+| `mimry report` | Print the graph report, with its Suggested Questions |
+| `mimry export --format {html,graphml,cypher,obsidian}` | Write the graph as an HTML viewer, GraphML, Cypher, or an Obsidian vault |
 | `mimry cache wipe --current` | Delete this repo's cached index |
 
 Use `mimry --root /path/to/repo <command>` to target another repo.
@@ -276,7 +280,12 @@ project-root/
 ├─ .mimry/                  # local settings, gitignored
 │  └─ mimry-out/            # generated output for agents and humans
 │     ├─ context/latest.md  # latest context pack
-│     └─ graph/             # relationship graph artifacts
+│     ├─ graph/             # relationship graph artifacts
+│     └─ export/            # graph exports (optional)
+│        ├─ graph.html      # interactive viewer
+│        ├─ graph.graphml   # Gephi/yEd format
+│        ├─ graph.cypher    # Neo4j import script
+│        └─ obsidian/       # linked notes vault
 └─ source files...
 ```
 
@@ -286,6 +295,17 @@ It is a generated artifact, not a source of truth.
 A context pack contains the query and index freshness, ranked files with reasons, symbol hints, relationships, a suggested reading order, likely edit surfaces versus support files, risk notes for generated or sensitive paths, verification commands from the project's manifests and docs, and a final-report checklist.
 It uses relative paths and never includes full source or secret values.
 See [`docs/context-packs.md`](docs/context-packs.md) for the contract.
+
+### Graph exports
+
+Export the graph with `mimry export --format {html,graphml,cypher,obsidian}` to use it in external tools or view it interactively.
+
+- **html**: self-contained interactive viewer with canvas-based force-directed layout, search, and node inspection.
+- **graphml**: import into Gephi, yEd, or networkx for further analysis.
+- **cypher**: Neo4j import script for `cypher-shell -f`, with batched UNWIND and MERGE statements and no plugins required.
+- **obsidian**: vault of markdown notes mirroring the repo structure, with wikilinks for dependencies. Re-exporting replaces a vault MIMRY created; `--force` writes into another non-empty directory without deleting anything.
+
+All formats are deterministic and stay inside the chosen output directory.
 
 ## Graph engine
 
@@ -300,16 +320,20 @@ Indexing parses each file once and derives these edges from what it read:
 | `inherits` | symbol to symbol | base classes and implemented interfaces |
 | `references` | file to file, file to symbol | markdown links and SQL table mentions |
 
-Languages parsed: Python, JavaScript, JSX, TypeScript, TSX, Go, Rust, and C#.
-Markdown, text, `.docx`, and `.xlsx` are indexed for content and can carry `references` edges.
+Languages parsed: Python, JavaScript, JSX, TypeScript, TSX, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, and Swift.
+Markdown, text, `.docx`, `.xlsx`, `.pdf`, and `.svg` are indexed for content and can carry `references` edges.
+Documents up to 20 MB are read (PDFs up to 200 pages); other files stop at 1 MB.
+Raster images (PNG, JPG) require OCR or vision models and are out of scope.
 
 Resolution never guesses.
 A target that is ambiguous, or defined outside the repo, produces no edge rather than a plausible one.
 `inherits` additionally resolves a base type by name across the repo when exactly one file defines that name, because C# reaches base types through `using <namespace>` rather than a path import.
 Nodes are grouped into communities by deterministic label propagation, and `graph.json` is byte-identical across rebuilds of unchanged sources.
-Adding a language is a table entry in `core/languages.py`, since every grammar ships in the pinned `tree-sitter-language-pack`.
+Adding a language is a table entry in `core/languages.py`; the pinned `tree-sitter-language-pack` fetches each grammar the first time it is needed and caches it.
 
 Artifacts land in `.mimry/mimry-out/graph/` (`graph.json`, `GRAPH_REPORT.md`, `manifest.json`) during `mimry index`; there is no separate build step.
+`GRAPH_REPORT.md` ranks the most important nodes and edges and includes a "Suggested Questions" section with prompts paired to `mimry` commands.
+Use `mimry report` to print the current graph report.
 
 ## Freshness and incremental indexing
 
@@ -318,6 +342,16 @@ A reindex re-parses only new and changed files, and its output is identical to a
 Files modified within two seconds of the previous index scan are always re-read, which covers edits that land inside one timestamp tick.
 The one edit this cannot see is a rewrite that deliberately keeps size, inode, and mtime.
 Run `mimry status --verify` to re-hash every file, and `mimry index --full` to re-parse every file.
+
+### Keep the index fresh automatically
+
+Two opt-in commands refresh the index for you; neither runs by default.
+
+- `mimry watch [--interval SECONDS]` polls in the foreground (every 2 seconds by default) and refreshes once a burst of edits settles.
+- `mimry git-hooks install` adds post-commit, post-merge, post-checkout, and post-rewrite hooks that refresh in the background, so `git commit` returns immediately.
+  Running it again is safe, `mimry git-hooks status` shows what is installed, and `mimry git-hooks uninstall` removes only MIMRY's lines.
+
+If a hook manager such as husky owns your hooks, add `mimry refresh` to its post-commit hook instead.
 
 ## Feedback learning
 

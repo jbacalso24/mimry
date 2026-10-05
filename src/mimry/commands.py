@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import uuid
+import webbrowser
 from functools import wraps
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,12 +21,15 @@ from .cache_safety import (
 from .constants import SCHEMA_VERSION
 from .core.artifacts import (
     graph_health,
+    load_graph,
     relationship_edges,
     relationship_lines,
     report_excerpt,
+    report_path,
     shortest_path,
     surface_evidence,
 )
+from .core.export import export_cypher, export_graphml, export_html, export_obsidian
 from .digest import canonical_digest, canonical_state
 from .feedback import (
     feedback_payload_from_args,
@@ -1764,6 +1768,30 @@ def cmd_cache_wipe(a):
         return 2
 
 
+def cmd_report(a):
+    """Print the current MIMRY graph report.
+
+    The report is read-only. If the graph is not current, warn the user
+    but still print the report.
+    """
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    _, graph = _index_and_graph_health(root, ptr)
+
+    if graph["status"] != "current":
+        ui.warn(f"The graph files are {graph['status']}, so the report may be out of date")
+        ui.detail("Run `mimry refresh` to rebuild the graph.")
+
+    report_file = report_path(root)
+    if report_file.exists():
+        print(report_file.read_text(encoding="utf-8"), end="")
+        return 0
+
+    ui.warn("GRAPH_REPORT.md not found")
+    ui.detail("Run `mimry refresh` to build the graph and report.")
+    return 2
+
+
 def cmd_digest(a):
     """Print the canonical semantic digest of the active index
     generation.
@@ -1786,3 +1814,91 @@ def cmd_digest(a):
         return 0
     print(canonical_digest(idx, ptr.get("rootId")))
     return 0
+
+
+def cmd_watch(a):
+    """Poll for changes and refresh when they settle."""
+    from .autoupdate import watch
+
+    root = Path(a.root).resolve()
+    return watch(root, interval=a.interval)
+
+
+def cmd_git_hooks(a):
+    """Manage git hooks for auto-refresh."""
+    from .autoupdate import (
+        git_hooks_install,
+        git_hooks_status,
+        git_hooks_uninstall,
+    )
+
+    root = Path(a.root).resolve()
+    actions = {
+        "install": git_hooks_install,
+        "uninstall": git_hooks_uninstall,
+        "status": git_hooks_status,
+    }
+    return actions[a.action](root)
+
+
+_EXPORT_NAMES = {
+    "html": "graph.html",
+    "graphml": "graph.graphml",
+    "cypher": "graph.cypher",
+    "obsidian": "obsidian",
+}
+
+
+def cmd_export(a):
+    """Export graph in multiple formats."""
+    from .core.export import ExportTargetError
+
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    _, graph = _index_and_graph_health(root, ptr)
+
+    if graph["status"] != "current":
+        ui.warn(f"The graph files are {graph['status']}, so export cannot proceed")
+        ui.detail("Run `mimry refresh`, then try again.")
+        return 1
+
+    # Load the full graph
+    graph_data = load_graph(root)
+    if not graph_data.get("nodes"):
+        ui.warn("No graph data found. Run `mimry refresh` to build the graph.")
+        return 1
+
+    # Determine output path
+    output_path = (
+        Path(a.out)
+        if a.out
+        else root / ".mimry" / "mimry-out" / "export" / _EXPORT_NAMES[a.format]
+    )
+
+    # Export
+    try:
+        if a.format == "html":
+            export_html(graph_data, root, output_path, repo_name=root.name)
+        elif a.format == "graphml":
+            export_graphml(graph_data, output_path)
+        elif a.format == "cypher":
+            export_cypher(graph_data, output_path)
+        elif a.format == "obsidian":
+            export_obsidian(graph_data, root, output_path, force=a.force)
+
+        node_count = len(graph_data.get("nodes", []))
+        edge_count = len(graph_data.get("edges", graph_data.get("links", [])))
+
+        ui.ok(f"Exported to {ui.display_path(output_path)}")
+        ui.detail(f"{ui.count(node_count, 'node')} and {ui.count(edge_count, 'edge')}")
+
+        if a.format == "html" and a.open:
+            try:
+                webbrowser.open(output_path.resolve().as_uri())
+            except webbrowser.Error:
+                ui.detail("Could not open browser automatically")
+
+        return 0
+    except (ExportTargetError, OSError) as e:
+        ui.fail(str(e))
+        return 1

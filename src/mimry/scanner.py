@@ -3,16 +3,28 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
+import posixpath
 import stat
 import unicodedata
 from pathlib import Path
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
 from .constants import SCHEMA_VERSION
-from .core.documents import extract_document_text, is_document
+from .core.documents import (
+    DOCUMENT_ADAPTERS,
+    DOCUMENT_EXTENSIONS,
+    MAX_DOCUMENT_FILE_BYTES,
+    extract_document_text,
+    is_document,
+)
 from .core.languages import extract as extract_language
 from .core.languages import language_for
-from .framework_adapters import enrich_framework_facts, markdown_link_targets, sql_table_references
+from .framework_adapters import (
+    alembic_migration,
+    enrich_framework_facts,
+    markdown_link_targets,
+    sql_table_references,
+)
 from .paths import canonical_rel_path, stable_id
 from .security import (
     _has_heavy_ignore,
@@ -26,8 +38,16 @@ from .security import (
 )
 from .state import scoped
 from .ts_ast_adapter import parse_ts_like
+from .xcode import extract_xcode_targets, parse_pbxproj
 
 SCANNER_FILE_SIZE_LIMIT = 1_000_000
+
+
+def size_limit(path) -> int:
+    """Largest file size, in bytes, the scanner reads for this path."""
+    if Path(path).suffix.lower() in DOCUMENT_EXTENSIONS:
+        return MAX_DOCUMENT_FILE_BYTES
+    return SCANNER_FILE_SIZE_LIMIT
 
 
 class FileChangedError(OSError):
@@ -81,7 +101,7 @@ def _real_root(root) -> str:
     )
 
 
-def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
+def read_snapshot(path, limit=None, *, root=None):
     """Read a file once and prove it did not change underneath us.
 
     Returns ``(data, stat_result)``. A file can change between stat,
@@ -99,6 +119,8 @@ def read_snapshot(path, limit=SCANNER_FILE_SIZE_LIMIT, *, root=None):
     the file unindexable rather than recording a mixed-version record.
     """
     path = Path(path)
+    if limit is None:
+        limit = size_limit(path)
     approved_root = None
     if root is not None:
         # Resolved once per read scope (freshness reads every indexed
@@ -198,6 +220,10 @@ def text_hint(path, limit=12000, data=None):
         raw = path.read_bytes() if data is None else data
     except OSError:
         return ""
+    # Binary plists start with bplist00; their decoded text is junk.
+    # Facts are contributed by plist_facts(), not the hint.
+    if raw.startswith(b"bplist00"):
+        return ""
     # Redaction finds assignments by their line boundaries, so redact
     # before the hint is cut, and keep its lines: every output boundary
     # redacts it again. Source files pass the file gate in code mode, so
@@ -254,7 +280,7 @@ def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.sta
                 # One lstat answers regular-file, not-a-symlink, and
                 # size.
                 info = os.lstat(path)
-                if not stat.S_ISREG(info.st_mode) or info.st_size > SCANNER_FILE_SIZE_LIMIT:
+                if not stat.S_ISREG(info.st_mode) or info.st_size > size_limit(path):
                     continue
                 if probe_open:
                     # Windows/macOS can expose locked or ACL-protected
@@ -282,6 +308,94 @@ def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.sta
                 "Rename one file; MIMRY will not publish ambiguous file IDs."
             )
     return [(canonical, path, info) for canonical, _native_rel, path, info in entries]
+
+
+def _xcode_references(pbxproj: dict, rel_path: str) -> list[str]:
+    """Extract xcode reference paths from a pbxproj dict.
+
+    Repo files a project's targets name as entitlements or Info.plist.
+    Takes the pbxproj's repo-relative POSIX path and returns referenced
+    repo-relative POSIX paths.
+    """
+    refs: set[str] = set()
+    # SRCROOT is parent of the .xcodeproj directory
+    srcroot = posixpath.dirname(posixpath.dirname(rel_path))
+
+    targets = extract_xcode_targets(pbxproj)
+    for target in targets:
+        for attr in ("entitlements", "infoPlist"):
+            ref_path = target.get(attr)
+            if not isinstance(ref_path, str):
+                continue
+
+            # Strip leading $(SRCROOT)/ or $(PROJECT_DIR)/
+            if ref_path.startswith("$(SRCROOT)/"):
+                ref_path = ref_path[len("$(SRCROOT)/") :]
+            elif ref_path.startswith("$(PROJECT_DIR)/"):
+                ref_path = ref_path[len("$(PROJECT_DIR)/") :]
+
+            # Skip absolute paths and paths with remaining variables
+            if ref_path.startswith("/") or "$(" in ref_path:
+                continue
+
+            # Normalize relative to srcroot
+            normalized = posixpath.normpath(posixpath.join(srcroot, ref_path))
+
+            # Drop results equal to .. or starting with ../
+            if normalized == ".." or normalized.startswith("../"):
+                continue
+
+            refs.add(normalized)
+
+    return sorted(refs)
+
+
+def _populate_references(ext, data, references, inherits, path, root, rel_path):
+    """Populate references dict for various file types."""
+    if inherits:
+        references["inherits"] = inherits
+    data_decoded = data.decode("utf-8", errors="ignore")
+    if ext == ".py":
+        migration = alembic_migration(data_decoded)
+        if migration:
+            references["alembic"] = {
+                "revision": migration["revision"],
+                "down_revisions": migration["down_revisions"],
+            }
+    if ext == ".pbxproj":
+        pbxproj_dict = parse_pbxproj(data_decoded)
+        if pbxproj_dict:
+            xcode_refs = _xcode_references(pbxproj_dict, rel_path)
+            if xcode_refs:
+                references["xcode"] = xcode_refs
+    if ext in {".md", ".mdx"}:
+        doc_links = markdown_link_targets(path, root, source=data_decoded)
+        if doc_links:
+            references["doc_links"] = doc_links
+    if ext not in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".bin", ".o", ".exe", ".dll", ".so"}:
+        try:
+            table_refs = sql_table_references(data_decoded)
+            if table_refs:
+                references["table_refs"] = table_refs
+        except (OSError, UnicodeError):
+            pass
+
+
+def _python_imports(node: ast.AST) -> list[str]:
+    """Modules one statement names, as the resolver expects them."""
+    if isinstance(node, ast.Import):
+        return [a.name for a in node.names]
+    elif isinstance(node, ast.ImportFrom):
+        if node.module:
+            return ["." * node.level + node.module]
+        elif node.level > 0:
+            # from . import name or from .. import name
+            result = []
+            for alias in node.names:
+                if alias.name != "*":
+                    result.append("." * node.level + alias.name)
+            return result
+    return []
 
 
 def file_record(path, root, adapter, status, hint, snapshot=None):
@@ -396,10 +510,8 @@ def adapt(path, root, snapshot=None):
                         callee_name = node.func.attr
                     if callee_name:
                         calls.append({"name": callee_name, "line": getattr(node, "lineno", None)})
-                elif isinstance(node, ast.Import):
-                    imports += [a.name for a in node.names]
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    imports.append("." * node.level + node.module)
+                elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                    imports += _python_imports(node)
         except SyntaxError as e:
             f = file_record(
                 path, root, "python-ast", f"parse_error:{e.__class__.__name__}", hint, snapshot
@@ -407,11 +519,13 @@ def adapt(path, root, snapshot=None):
     elif ext in {".js", ".jsx", ".ts", ".tsx"}:
         f = file_record(path, root, "typescript-ast", "ok", hint, snapshot)
         source = data.decode("utf-8", errors="ignore")
-        symbols, edges, imports, exports, status = parse_ts_like(path, root, f, source=source)
+        symbols, edges, imports, exports, status, adapter = parse_ts_like(
+            path, root, f, source=source
+        )
         result = extract_language(path, source)
         calls = result.get("calls", [])
         inherits = result.get("inherits", [])
-        f = file_record(path, root, "typescript-ast", status, hint, snapshot)
+        f = file_record(path, root, adapter, status, hint, snapshot)
     elif is_document(path):
         # The path is still needed for the extension check; only the
         # BYTES come from the snapshot. Dropping it made every Office
@@ -419,7 +533,9 @@ def adapt(path, root, snapshot=None):
         text, status = extract_document_text(path, data=data)
         safe_text = redact_sensitive_text(text) if text else ""
         doc_hint = safe_text[:2000]
-        f = file_record(path, root, "office-document", status, doc_hint, snapshot)
+        ext = path.suffix.lower()
+        adapter_name = DOCUMENT_ADAPTERS[ext]
+        f = file_record(path, root, adapter_name, status, doc_hint, snapshot)
         # Populate table_refs only from the same redacted text allowed
         # into the searchable index and semantic/context surfaces.
         if safe_text:
@@ -474,26 +590,8 @@ def adapt(path, root, snapshot=None):
                     )
             except (OSError, UnicodeError):
                 pass
-    # Populate references for markdown and SQL
-    if ext in {".md", ".mdx"}:
-        source = data.decode("utf-8", errors="ignore")
-        doc_links = markdown_link_targets(path, root, source=source)
-        if doc_links:
-            references["doc_links"] = doc_links
-
-    # Populate table_refs for any text file (including .sql)
-    if ext not in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".bin", ".o", ".exe", ".dll", ".so"}:
-        try:
-            source = data.decode("utf-8", errors="ignore")
-            table_refs = sql_table_references(source)
-            if table_refs:
-                references["table_refs"] = table_refs
-        except (OSError, UnicodeError):
-            pass
-
-    if inherits:
-        references["inherits"] = inherits
-
+    rel_path = canonical_rel_path(path, root)
+    _populate_references(ext, data, references, inherits, path, root, rel_path)
     f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
     verify_unchanged(path, _st, root=root)
     if contains_sensitive_data(

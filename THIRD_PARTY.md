@@ -18,6 +18,12 @@ The language pack bundles every grammar MIMRY uses -- Python, JavaScript, TypeSc
 TSX, Go, Rust and C# -- so adding a supported language costs a table entry in
 `src/mimry/core/languages.py` rather than a new dependency.
 
+## pypdf
+
+Used for extracting text from PDF files without external dependencies or network calls.
+
+- `pypdf` (BSD-3-Clause)
+
 ## fastmcp
 
 Used for the MCP server entrypoint (`mimry-mcp`) that exposes MIMRY's tools to coding

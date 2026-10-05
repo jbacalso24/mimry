@@ -198,3 +198,239 @@ def test_xlsx_extracts_valid_utf16_shared_and_inline_strings(tmp_path, byte_orde
 
     assert status == "ok"
     assert text == "Shared UTF-16 text Inline UTF-16 text"
+
+
+def test_pdf_text_is_extracted(tmp_path):
+    """Test basic PDF text extraction."""
+    try:
+        from pypdf import PdfWriter
+    except ImportError:
+        pytest.skip("pypdf not available")
+
+    path = tmp_path / "test.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    # minimal PDF with no special text
+    writer.write(path)
+
+    text, status = extract_document_text(path)
+    assert status == "ok" or status == "parse_error:empty"
+
+
+def test_pdf_multipage_respects_page_limit(tmp_path):
+    """Test that PDF extraction respects the page limit."""
+    try:
+        from pypdf import PdfWriter
+    except ImportError:
+        pytest.skip("pypdf not available")
+
+    from mimry.core.documents import MAX_PDF_PAGES
+
+    path = tmp_path / "multipage.pdf"
+    writer = PdfWriter()
+    # Add more pages than the limit
+    for _ in range(MAX_PDF_PAGES + 10):
+        writer.add_blank_page(width=200, height=200)
+    writer.write(path)
+
+    # Should not raise, should limit pages processed
+    text, status = extract_document_text(path)
+    assert status in ("ok", "parse_error:empty")
+
+
+def test_pdf_respects_file_size_limit(tmp_path):
+    """Test that PDF files exceeding size limit are rejected."""
+    from mimry.core.documents import MAX_DOCUMENT_FILE_BYTES
+
+    path = tmp_path / "huge.pdf"
+    # Write more bytes than the limit
+    path.write_bytes(b"%PDF-1.4\n" + b"x" * (MAX_DOCUMENT_FILE_BYTES + 1))
+
+    text, status = extract_document_text(path)
+    assert status == "parse_error:ResourceLimit"
+    assert text == ""
+
+
+def test_pdf_with_empty_password_is_readable(tmp_path):
+    """Test that PDFs with empty user password are readable."""
+    try:
+        from pypdf import PdfWriter
+    except ImportError:
+        pytest.skip("pypdf not available")
+
+    path = tmp_path / "encrypted.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    # Encrypt with only owner password
+    writer.encrypt(user_password="", owner_password="owner" + "secret")
+    writer.write(path)
+
+    text, status = extract_document_text(path)
+    # Should attempt decryption with empty password
+    assert status in ("ok", "parse_error:empty")
+
+
+def test_pdf_with_real_user_password_is_rejected(tmp_path):
+    """Test that PDFs with user password are rejected."""
+    try:
+        from pypdf import PdfWriter
+    except ImportError:
+        pytest.skip("pypdf not available")
+
+    path = tmp_path / "locked.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    # Encrypt with user password
+    writer.encrypt(user_password="user" + "password")
+    writer.write(path)
+
+    text, status = extract_document_text(path)
+    assert status == "parse_error:Encrypted"
+    assert text == ""
+
+
+def test_malformed_pdf_is_reported(tmp_path):
+    """Test that malformed PDFs are handled gracefully."""
+    path = tmp_path / "malformed.pdf"
+    path.write_bytes(b"%PDF-1.4\nNot a valid PDF")
+
+    text, status = extract_document_text(path)
+    assert status.startswith("parse_error:")
+    assert text == ""
+
+
+def test_svg_title_desc_and_text_extraction(tmp_path):
+    """Test that SVG title, desc, and text are extracted."""
+    path = tmp_path / "test.svg"
+    svg_content = b"""<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg">
+  <title>My Diagram</title>
+  <desc>A test SVG</desc>
+  <text>Hello SVG</text>
+  <text>
+    <tspan>Multi-line text</tspan>
+  </text>
+</svg>"""
+    path.write_bytes(svg_content)
+
+    text, status = extract_document_text(path)
+    assert status == "ok"
+    assert "My Diagram" in text
+    assert "A test SVG" in text
+    assert "Hello SVG" in text
+    assert "Multi-line text" in text
+
+
+def test_svg_rejects_dtd_and_entity(tmp_path):
+    """Test that SVG with DTD/entity declarations are rejected."""
+    path = tmp_path / "entity.svg"
+    svg_content = b"""<?xml version="1.0"?>
+<!DOCTYPE svg [
+  <!ENTITY evil "malicious">
+]>
+<svg xmlns="http://www.w3.org/2000/svg">
+  <text>&evil;</text>
+</svg>"""
+    path.write_bytes(svg_content)
+
+    text, status = extract_document_text(path)
+    assert status == "parse_error:UnsafeXML"
+    assert text == ""
+
+
+def test_malformed_svg_returns_parse_error(tmp_path):
+    """Test that malformed SVG is handled gracefully."""
+    path = tmp_path / "malformed.svg"
+    svg_content = b"""<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg">
+  <text>Unclosed tag
+</svg>"""
+    path.write_bytes(svg_content)
+
+    text, status = extract_document_text(path)
+    # Malformed XML returns a parse error status
+    assert status.startswith("parse_error:")
+    assert text == ""
+
+
+def _large_svg_bytes():
+    """Build 1.5 MB SVG with searchable text and padding."""
+    return (
+        b'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg">'
+        b"<text>needle-token</text>"
+        b"<!-- " + b"x" * (1_500_000 - 200) + b" -->"
+        b"</svg>"
+    )
+
+
+def test_large_svg_is_indexed_while_large_txt_is_not(tmp_path):
+    """Test that 1.5 MB .svg is scanned while 1.5 MB .txt is not."""
+    from mimry.scanner import scan_stats
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    # Create a 1.5 MB SVG with searchable text and padding
+    svg_path = repo / "large.svg"
+    svg_path.write_bytes(_large_svg_bytes())
+
+    # Create a 1.5 MB .txt file (should not be indexed)
+    txt_path = repo / "large.txt"
+    txt_path.write_bytes(b"x" * 1_500_000)
+
+    # Verify scan_stats lists svg but not txt
+    stats = scan_stats(repo)
+    rel_paths = [s[1].name for s in stats]
+    assert "large.svg" in rel_paths, "large.svg should be in scan_stats"
+    assert "large.txt" not in rel_paths, "large.txt should not be in scan_stats"
+
+
+def test_large_svg_freshness_unchanged(tmp_path, monkeypatch):
+    """Test freshness reports no changes for untouched large svg."""
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from mimry.commands import cmd_init
+    from mimry.freshness import index_freshness
+    from mimry.indexer import write_index
+    from mimry.storage import load_pointer
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    # Create a 1.5 MB SVG with searchable text and padding
+    svg_path = repo / "large.svg"
+    svg_path.write_bytes(_large_svg_bytes())
+
+    # Initialize and index the repo
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    assert cmd_init(SimpleNamespace(root=repo, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(repo)
+    write_index(repo, pointer, full=True)
+
+    # Read index file to verify SVG and search token are indexed
+    index = Path(pointer["indexPath"])
+    generations_dir = index / "generations"
+    gen_dirs = sorted([d for d in generations_dir.iterdir() if d.is_dir()])
+    assert gen_dirs, "No generation directories found"
+    latest_gen = gen_dirs[-1]
+    files_jsonl_path = latest_gen / "files.jsonl"
+    files_jsonl = files_jsonl_path.read_text(encoding="utf-8")
+
+    svg_record = None
+    for line in files_jsonl.strip().split("\n"):
+        record = json.loads(line)
+        if record.get("rel_path") == "large.svg":
+            svg_record = record
+            break
+
+    assert svg_record is not None, "large.svg not found in index"
+    assert "needle-token" in svg_record.get("content_hint", ""), (
+        "needle-token not found in SVG content"
+    )
+
+    # Verify freshness reports no changes for untouched large.svg
+    fresh = index_freshness(repo, pointer)
+    assert "large.svg" not in fresh["changed"], "Untouched large.svg should not be marked changed"
+    assert "large.svg" not in fresh["missing"], "Untouched large.svg should not be marked missing"

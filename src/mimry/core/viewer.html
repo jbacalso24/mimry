@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">
+	<title>MIMRY Graph - __MIMRY_TITLE__</title>
+	<style>
+:root {
+	--bg: #ffffff;
+	--panel: #f6f7f9;
+	--text: #1f2328;
+	--muted: #656d76;
+	--border: #d0d7de;
+	--edge: #8c959f;
+	--accent: #0969da;
+	--focus: #0969da;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #16181d;
+		--panel: #1e2128;
+		--text: #e6e8eb;
+		--muted: #9aa1ab;
+		--border: #30353d;
+		--edge: #8b949e;
+		--accent: #4493f8;
+		--focus: #4493f8;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html, body {
+	height: 100%;
+	overflow: hidden;
+	margin: 0;
+	padding: 0;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+		"Helvetica Neue", Arial, sans-serif;
+	background: var(--bg);
+	color: var(--text);
+	line-height: 1.5;
+}
+
+body {
+	display: flex;
+	flex-direction: column;
+}
+
+header {
+	flex: none;
+	padding: 1rem;
+	border-bottom: 1px solid var(--border);
+	background: var(--panel);
+}
+
+header h1 {
+	margin: 0 0 0.5rem 0;
+	font-size: 1.5rem;
+}
+
+.header-stats {
+	font-size: 0.85rem;
+	opacity: 0.7;
+}
+
+.header-commit {
+	font-size: 0.8rem;
+	opacity: 0.6;
+	margin-top: 0.25rem;
+	font-family: "Monaco", "Courier New", monospace;
+}
+
+.container {
+	flex: 1;
+	display: grid;
+	grid-template-columns: 300px 1fr;
+	gap: 0;
+	min-height: 0;
+}
+
+.sidebar {
+	padding: 1rem;
+	border-right: 1px solid var(--border);
+	overflow-y: auto;
+	background: var(--bg);
+	min-height: 0;
+}
+
+.canvas-wrapper {
+	position: relative;
+	min-height: 0;
+}
+
+#graph-canvas {
+	position: absolute;
+	inset: 0;
+	touch-action: none;
+	cursor: grab;
+}
+
+#graph-canvas.dragging {
+	cursor: grabbing;
+}
+
+.search-box {
+	width: 100%;
+	padding: 0.5rem;
+	margin-bottom: 1rem;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	font-size: 0.9rem;
+	background: var(--bg);
+	color: var(--text);
+}
+
+.search-box:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+}
+
+.toggle-btn {
+	width: 100%;
+	padding: 0.5rem;
+	margin-bottom: 1rem;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--bg);
+	color: var(--text);
+	cursor: pointer;
+	font-size: 0.9rem;
+}
+
+.toggle-btn:hover {
+	background: var(--panel);
+}
+
+.toggle-btn:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+}
+
+.selection-panel {
+	margin-top: 1rem;
+	font-size: 0.9rem;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.node-info {
+	margin-bottom: 1rem;
+	padding: 0.5rem;
+	background: var(--panel);
+	border-radius: 4px;
+}
+
+.node-label {
+	font-weight: bold;
+	margin-bottom: 0.25rem;
+	word-break: break-word;
+}
+
+.node-details {
+	font-size: 0.8rem;
+	opacity: 0.7;
+	margin-bottom: 0.5rem;
+	word-break: break-word;
+}
+
+.edges-group {
+	margin-bottom: 0.75rem;
+}
+
+.edges-group-title {
+	font-weight: bold;
+	margin-bottom: 0.25rem;
+	font-size: 0.85rem;
+	opacity: 0.7;
+}
+
+.relation-title {
+	font-size: 0.8rem;
+	margin: 0.5rem 0 0.125rem 0;
+	color: var(--muted);
+}
+
+.edge-item {
+	display: block;
+	width: 100%;
+	margin: 0 0 0.125rem 0;
+	padding: 0.25rem 0.5rem;
+	border: 0;
+	border-radius: 4px;
+	background: none;
+	font: inherit;
+	font-size: 0.8rem;
+	text-align: left;
+	color: var(--accent);
+	cursor: pointer;
+	overflow-wrap: anywhere;
+}
+
+.edge-item:hover {
+	background: var(--bg);
+	text-decoration: underline;
+}
+
+.edge-item:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.edge-more {
+	font-size: 0.8rem;
+	padding: 0.25rem 0.5rem;
+	color: var(--muted);
+}
+
+.hint {
+	margin: 0;
+	font-size: 0.85rem;
+	color: var(--muted);
+}
+
+.legend {
+	margin-top: 1rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--border);
+	font-size: 0.85rem;
+}
+
+.legend h3 {
+	margin: 0 0 0.5rem 0;
+	font-size: 0.9rem;
+}
+
+.legend-item {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.25rem;
+}
+
+.edge-solid {
+	display: inline-block;
+	width: 20px;
+	height: 2px;
+	background: var(--edge);
+}
+
+.edge-dashed {
+	display: inline-block;
+	width: 20px;
+	height: 2px;
+	background-image: linear-gradient(to right, var(--edge) 50%, transparent 50%);
+	background-size: 4px 2px;
+	background-repeat: repeat-x;
+}
+
+@media (max-width: 700px) {
+	.container {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto 1fr;
+	}
+
+	.sidebar {
+		width: 100%;
+		border-right: none;
+		border-bottom: 1px solid var(--border);
+		max-height: 40vh;
+		overflow: auto;
+	}
+
+	.canvas-wrapper {
+		min-height: 0;
+	}
+}
+	</style>
+</head>
+<body>
+	<header>
+		<h1 id="header-title"></h1>
+		<div class="header-stats" id="header-stats"></div>
+		<div class="header-commit" id="header-commit"></div>
+	</header>
+	<div class="container">
+		<div class="sidebar">
+			<input type="text" id="search" placeholder="Search by label or path..." class="search-box">
+			<button type="button" id="toggle-symbols" class="toggle-btn">Show symbols</button>
+			<div id="selection-panel" class="selection-panel"></div>
+			<div class="legend">
+				<h3>Relations</h3>
+				<div class="legend-item"><span class="edge-solid"></span> extracted</div>
+				<div class="legend-item"><span class="edge-dashed"></span> inferred</div>
+			</div>
+		</div>
+		<div class="canvas-wrapper">
+			<canvas id="graph-canvas"></canvas>
+		</div>
+	</div>
+	<script type="application/json" id="graph-data">__MIMRY_GRAPH_JSON__</script>
+	<script>
+'use strict';
+
+const graphData = JSON.parse(document.getElementById('graph-data').textContent);
+const nodes = graphData.nodes || [];
+const edges = graphData.edges || [];
+const meta = graphData.meta || {};
+const canvas = document.getElementById('graph-canvas');
+const ctx = canvas.getContext('2d');
+const searchBox = document.getElementById('search');
+const toggleBtn = document.getElementById('toggle-symbols');
+const selectionPanel = document.getElementById('selection-panel');
+const wrapper = canvas.parentElement;
+
+const COMMUNITY_COLORS = [
+	'#4e79a7', '#f28e2b', '#e15759', '#59a14f', '#b07aa1', '#76b7b2',
+	'#d4a017', '#9c755f', '#ff7f9f', '#7f7fd5', '#5fa8d3', '#8cb04a'
+];
+
+const theme = {};
+let showSymbols = nodes.length <= 1500;
+let nodeIndex = new Map();
+let layoutIndices = new Int32Array(0);
+let x = new Float64Array(0);
+let y = new Float64Array(0);
+let vx = new Float64Array(0);
+let vy = new Float64Array(0);
+let edgeIdx = [];
+let selectedNodeId = null;
+let searchQuery = '';
+let zoom = 1;
+let panX = 0;
+let panY = 0;
+let layoutAlpha = 1;
+let redrawPending = false;
+let viewW = 0;
+let viewH = 0;
+let userMoved = false;
+let dragged = false;
+let dragStart = { x: 0, y: 0 };
+let dpr = window.devicePixelRatio || 1;
+let pointerDown = false;
+let lastPos = { x: 0, y: 0 };
+let running = false;
+
+function readTheme() {
+	const css = getComputedStyle(document.documentElement);
+	for (const name of ['bg', 'text', 'muted', 'edge', 'accent', 'focus', 'panel', 'border']) {
+		theme[name] = css.getPropertyValue(`--${name}`).trim();
+	}
+	requestRedraw();
+}
+
+function inLayout(node) {
+	return showSymbols || node.type !== 'symbol';
+}
+
+function matchesSearch(node) {
+	if (!searchQuery) return true;
+	const q = searchQuery.toLowerCase();
+	return (node.label || '').toLowerCase().includes(q)
+		|| (node.source_file || '').toLowerCase().includes(q);
+}
+
+function hashCode(str) {
+	let hash = 0;
+	for (let i = 0; i < str.length; i++) {
+		const c = str.charCodeAt(i);
+		hash = ((hash << 5) - hash) + c;
+		hash = hash & hash;
+	}
+	return Math.abs(hash);
+}
+
+function initializeLayout() {
+	nodeIndex.clear();
+	edgeIdx = [];
+	const radius = Math.sqrt(nodes.filter(inLayout).length) * 30;
+
+	for (let i = 0; i < nodes.length; i++) {
+		nodeIndex.set(nodes[i].id, i);
+	}
+
+	x = new Float64Array(nodes.length);
+	y = new Float64Array(nodes.length);
+	vx = new Float64Array(nodes.length);
+	vy = new Float64Array(nodes.length);
+
+	const hash0 = hashCode('seed');
+	for (let i = 0; i < nodes.length; i++) {
+		const hash = hashCode(nodes[i].id + hash0);
+		const angle = (hash % 360) * Math.PI / 180;
+		const r = radius * (0.3 + 0.7 * ((hash >> 8) & 0xFF) / 256);
+		x[i] = r * Math.cos(angle);
+		y[i] = r * Math.sin(angle);
+	}
+
+	for (const edge of edges) {
+		const si = nodeIndex.get(edge.source);
+		const ti = nodeIndex.get(edge.target);
+		if (si !== undefined && ti !== undefined) {
+			edgeIdx.push([si, ti, edge.relation, edge.confidence]);
+		}
+	}
+
+	updateLayoutIndices();
+	layoutAlpha = 1;
+}
+
+function updateLayoutIndices() {
+	const indices = [];
+	for (let i = 0; i < nodes.length; i++) {
+		if (inLayout(nodes[i])) {
+			indices.push(i);
+		}
+	}
+	layoutIndices = new Int32Array(indices);
+}
+
+function tick() {
+	if (layoutAlpha < 0.005) return;
+
+	const K_REPEL = 30;
+	const CELL_SIZE = 80;
+	const K_SPRING = 0.05;
+	const K_GRAVITY = 0.01;
+	const DAMPING = 0.6;
+	const COOLING = 0.98;
+
+	const cellMap = new Map();
+	for (let i = 0; i < layoutIndices.length; i++) {
+		const idx = layoutIndices[i];
+		const cx = Math.floor(x[idx] / CELL_SIZE);
+		const cy = Math.floor(y[idx] / CELL_SIZE);
+		const key = (cx + 32768) * 65536 + (cy + 32768);
+		if (!cellMap.has(key)) cellMap.set(key, []);
+		cellMap.get(key).push(idx);
+	}
+
+	for (let i = 0; i < layoutIndices.length; i++) {
+		const idx = layoutIndices[i];
+		const px = x[idx];
+		const py = y[idx];
+		const cx = Math.floor(px / CELL_SIZE);
+		const cy = Math.floor(py / CELL_SIZE);
+
+		for (let dx = -1; dx <= 1; dx++) {
+			for (let dy = -1; dy <= 1; dy++) {
+				const key = (cx + dx + 32768) * 65536 + (cy + dy + 32768);
+				const cell = cellMap.get(key);
+				if (!cell) continue;
+				for (const j of cell) {
+					if (idx >= j) continue;
+					const dx2 = x[j] - px;
+					const dy2 = y[j] - py;
+					let dist = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+					if (dist > CELL_SIZE) continue;
+					dist = Math.max(dist, 1);
+					const force = K_REPEL * K_REPEL / dist;
+					const fx = (dx2 / dist) * force;
+					const fy = (dy2 / dist) * force;
+					vx[idx] -= fx;
+					vy[idx] -= fy;
+					vx[j] += fx;
+					vy[j] += fy;
+				}
+			}
+		}
+	}
+
+	for (const [si, ti] of edgeIdx) {
+		if (!inLayout(nodes[si]) || !inLayout(nodes[ti])) continue;
+		const dx = x[ti] - x[si];
+		const dy = y[ti] - y[si];
+		let dist = Math.sqrt(dx * dx + dy * dy);
+		dist = Math.max(dist, 1);
+		const force = (dist - K_REPEL) * K_SPRING;
+		const fx = (dx / dist) * force;
+		const fy = (dy / dist) * force;
+		vx[si] += fx;
+		vy[si] += fy;
+		vx[ti] -= fx;
+		vy[ti] -= fy;
+	}
+
+	for (let i = 0; i < layoutIndices.length; i++) {
+		const idx = layoutIndices[i];
+		const px = x[idx];
+		const py = y[idx];
+		const dist = Math.sqrt(px * px + py * py);
+		if (dist > 1) {
+			const force = K_GRAVITY * dist;
+			vx[idx] -= (px / dist) * force;
+			vy[idx] -= (py / dist) * force;
+		}
+	}
+
+	for (let i = 0; i < layoutIndices.length; i++) {
+		const idx = layoutIndices[i];
+		vx[idx] *= DAMPING;
+		vy[idx] *= DAMPING;
+		const vlen = Math.sqrt(vx[idx] * vx[idx] + vy[idx] * vy[idx]);
+		const move = Math.min(vlen * layoutAlpha, 20);
+		if (vlen > 0) {
+			x[idx] += (vx[idx] / vlen) * move;
+			y[idx] += (vy[idx] / vlen) * move;
+		}
+	}
+
+	layoutAlpha *= COOLING;
+}
+
+function getCommunityColor(community) {
+	if (community === null || community === undefined) return theme.muted;
+	return COMMUNITY_COLORS[community % COMMUNITY_COLORS.length];
+}
+
+function requestRedraw() {
+	if (redrawPending) return;
+	redrawPending = true;
+	requestAnimationFrame(() => {
+		redrawPending = false;
+		draw();
+	});
+}
+
+function draw() {
+	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	ctx.fillStyle = theme.bg;
+	ctx.fillRect(0, 0, viewW, viewH);
+
+	ctx.save();
+	ctx.translate(panX, panY);
+	ctx.scale(zoom, zoom);
+
+	for (const [si, ti, relation, confidence] of edgeIdx) {
+		const n1 = nodes[si];
+		const n2 = nodes[ti];
+		if (!inLayout(n1) || !inLayout(n2)) continue;
+
+		const x1 = x[si];
+		const y1 = y[si];
+		const x2 = x[ti];
+		const y2 = y[ti];
+
+		const match1 = matchesSearch(n1);
+		const match2 = matchesSearch(n2);
+		const bothMatch = match1 && match2;
+
+		if (selectedNodeId === n1.id || selectedNodeId === n2.id) {
+			ctx.globalAlpha = 1;
+		} else if (!bothMatch) {
+			ctx.globalAlpha = 0.15;
+		} else {
+			ctx.globalAlpha = 0.35;
+		}
+
+		ctx.strokeStyle = theme.edge;
+		ctx.lineWidth = 1 / zoom;
+
+		if (confidence === 'INFERRED') {
+			ctx.setLineDash([4 / zoom, 4 / zoom]);
+		}
+
+		ctx.beginPath();
+		ctx.moveTo(x1, y1);
+		ctx.lineTo(x2, y2);
+		ctx.stroke();
+		ctx.setLineDash([]);
+	}
+
+	ctx.globalAlpha = 1;
+
+	for (let i = 0; i < layoutIndices.length; i++) {
+		const idx = layoutIndices[i];
+		const node = nodes[idx];
+		const match = matchesSearch(node);
+
+		if (!match) {
+			ctx.globalAlpha = 0.15;
+		}
+
+		const px = x[idx];
+		const py = y[idx];
+		const radius = (node.type === 'symbol' ? 3 : 5) / zoom;
+
+		ctx.fillStyle = getCommunityColor(node.community);
+		ctx.beginPath();
+		ctx.arc(px, py, radius, 0, Math.PI * 2);
+		ctx.fill();
+
+		if (selectedNodeId === node.id) {
+			ctx.strokeStyle = theme.accent;
+			ctx.lineWidth = 2 / zoom;
+			ctx.beginPath();
+			ctx.arc(px, py, radius + 3 / zoom, 0, Math.PI * 2);
+			ctx.stroke();
+		}
+
+		if (!match) {
+			ctx.globalAlpha = 1;
+			continue;
+		}
+
+		if (zoom > 1.5 || selectedNodeId === node.id || searchQuery) {
+			ctx.fillStyle = theme.text;
+			ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			const label = node.label.length > 30 ? node.label.substring(0, 27) + '...' : node.label;
+			ctx.fillText(label, px, py + 5 / zoom);
+		}
+
+		ctx.globalAlpha = 1;
+	}
+
+	ctx.restore();
+}
+
+function fitView() {
+	if (layoutIndices.length === 0) return;
+
+	let minX = Infinity, maxX = -Infinity;
+	let minY = Infinity, maxY = -Infinity;
+
+	for (let i = 0; i < layoutIndices.length; i++) {
+		const idx = layoutIndices[i];
+		minX = Math.min(minX, x[idx]);
+		maxX = Math.max(maxX, x[idx]);
+		minY = Math.min(minY, y[idx]);
+		maxY = Math.max(maxY, y[idx]);
+	}
+
+	if (!isFinite(minX)) return;
+
+	const padding = 40;
+	const rangeX = maxX - minX || 1;
+	const rangeY = maxY - minY || 1;
+
+	zoom = Math.min(viewW / (rangeX + 2 * padding), viewH / (rangeY + 2 * padding));
+	zoom = Math.max(0.05, Math.min(4, zoom));
+	panX = viewW / 2 - (minX + maxX) / 2 * zoom;
+	panY = viewH / 2 - (minY + maxY) / 2 * zoom;
+
+	requestRedraw();
+}
+
+function resizeCanvas() {
+	const rect = wrapper.getBoundingClientRect();
+	dpr = window.devicePixelRatio || 1;
+	viewW = rect.width;
+	viewH = rect.height;
+	canvas.width = Math.round(viewW * dpr);
+	canvas.height = Math.round(viewH * dpr);
+	canvas.style.width = viewW + 'px';
+	canvas.style.height = viewH + 'px';
+	requestRedraw();
+}
+
+function frame() {
+	running = true;
+	for (let i = 0; i < 3 && layoutAlpha > 0.005; i++) {
+		tick();
+	}
+	requestRedraw();
+	if (layoutAlpha > 0.005) {
+		requestAnimationFrame(frame);
+	} else {
+		running = false;
+		if (!userMoved) {
+			fitView();
+		}
+	}
+}
+
+function updateSelection() {
+	selectionPanel.textContent = '';
+	if (!selectedNodeId) {
+		const hint = document.createElement('p');
+		hint.className = 'hint';
+		hint.textContent = 'Click a node to see its connections.';
+		selectionPanel.appendChild(hint);
+		return;
+	}
+
+	const nodeIdx = nodeIndex.get(selectedNodeId);
+	if (nodeIdx === undefined) return;
+	const node = nodes[nodeIdx];
+
+	const info = document.createElement('div');
+	info.className = 'node-info';
+
+	const label = document.createElement('div');
+	label.className = 'node-label';
+	label.textContent = node.label;
+	info.appendChild(label);
+
+	const details = document.createElement('div');
+	details.className = 'node-details';
+	const lines = [];
+	if (node.kind) lines.push(`Kind: ${node.kind}`);
+	if (node.source_file && node.line) {
+		lines.push(`${node.source_file}:${node.line}`);
+	} else if (node.source_file && node.source_file !== node.label) {
+		lines.push(`${node.source_file}`);
+	}
+	if (node.community !== null && node.community !== undefined) {
+		lines.push(`Community: ${node.community}`);
+	}
+	details.textContent = lines.join(' | ');
+	info.appendChild(details);
+
+	const incomingByRelation = {};
+	const outgoingByRelation = {};
+	for (const [si, ti, rel, conf] of edgeIdx) {
+		if (ti === nodeIdx) {
+			if (!(rel in incomingByRelation)) incomingByRelation[rel] = [];
+			incomingByRelation[rel].push([si, conf]);
+		}
+		if (si === nodeIdx) {
+			if (!(rel in outgoingByRelation)) outgoingByRelation[rel] = [];
+			outgoingByRelation[rel].push([ti, conf]);
+		}
+	}
+
+	function appendGroup(parent, title, byRelation) {
+		if (Object.keys(byRelation).length === 0) return;
+		const group = document.createElement('div');
+		group.className = 'edges-group';
+		const groupTitle = document.createElement('div');
+		groupTitle.className = 'edges-group-title';
+		const total = Object.values(byRelation).reduce((sum, list) => sum + list.length, 0);
+		groupTitle.textContent = `${title} (${total})`;
+		group.appendChild(groupTitle);
+
+		for (const rel of Object.keys(byRelation).sort()) {
+			const list = byRelation[rel];
+			const relTitle = document.createElement('div');
+			relTitle.className = 'relation-title';
+			relTitle.textContent = `${rel} (${list.length})`;
+			group.appendChild(relTitle);
+
+			for (const [idx, conf] of list.slice(0, 20)) {
+				const node = nodes[idx];
+				const item = document.createElement('button');
+				item.type = 'button';
+				item.className = 'edge-item';
+				item.textContent = `${node.label}${conf === 'INFERRED' ? ' (inferred)' : ''}`;
+				item.addEventListener('click', () => {
+					selectedNodeId = node.id;
+					updateSelection();
+					panX = viewW / 2 - x[idx] * zoom;
+					panY = viewH / 2 - y[idx] * zoom;
+					requestRedraw();
+				});
+				group.appendChild(item);
+			}
+			if (list.length > 20) {
+				const more = document.createElement('div');
+				more.className = 'edge-more';
+				more.textContent = `+${list.length - 20} more`;
+				group.appendChild(more);
+			}
+		}
+		parent.appendChild(group);
+	}
+
+	appendGroup(info, 'Outgoing', outgoingByRelation);
+	appendGroup(info, 'Incoming', incomingByRelation);
+
+	selectionPanel.appendChild(info);
+}
+
+function setupHeader() {
+	const title = document.getElementById('header-title');
+	title.textContent = meta.title || 'Graph';
+
+	const stats = document.getElementById('header-stats');
+	stats.textContent = `${meta.nodeCount || nodes.length} nodes, ${meta.edgeCount || edges.length} edges`;
+
+	const commit = document.getElementById('header-commit');
+	if (meta.commit) {
+		commit.textContent = `Built from commit: ${meta.commit.substring(0, 7)}`;
+	}
+}
+
+function getHitNode(worldX, worldY) {
+	const hitDist = 8 / zoom;
+	let closest = null;
+	let closestDist = hitDist;
+
+	for (let i = 0; i < layoutIndices.length; i++) {
+		const idx = layoutIndices[i];
+		const dx = x[idx] - worldX;
+		const dy = y[idx] - worldY;
+		const dist = Math.sqrt(dx * dx + dy * dy);
+		if (dist < closestDist) {
+			closestDist = dist;
+			closest = nodes[idx].id;
+		}
+	}
+
+	return closest;
+}
+
+canvas.addEventListener('wheel', (e) => {
+	e.preventDefault();
+	const rect = canvas.getBoundingClientRect();
+	const wx = (e.clientX - rect.left - panX) / zoom;
+	const wy = (e.clientY - rect.top - panY) / zoom;
+
+	const factor = e.deltaY > 0 ? 0.9 : 1.1;
+	zoom *= factor;
+	zoom = Math.max(0.05, Math.min(4, zoom));
+
+	panX = e.clientX - rect.left - wx * zoom;
+	panY = e.clientY - rect.top - wy * zoom;
+
+	userMoved = true;
+	requestRedraw();
+});
+
+canvas.addEventListener('pointerdown', (e) => {
+	if (e.button !== 0) return;
+	pointerDown = true;
+	dragged = false;
+	dragStart = { x: e.clientX, y: e.clientY };
+	lastPos = { x: e.clientX, y: e.clientY };
+	canvas.setPointerCapture(e.pointerId);
+	canvas.classList.add('dragging');
+});
+
+canvas.addEventListener('pointermove', (e) => {
+	if (!pointerDown) return;
+	if (!dragged && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 3) {
+		dragged = true;
+		userMoved = true;
+	}
+	if (!dragged) return;
+	panX += e.clientX - lastPos.x;
+	panY += e.clientY - lastPos.y;
+	lastPos = { x: e.clientX, y: e.clientY };
+	requestRedraw();
+});
+
+function endPointer() {
+	pointerDown = false;
+	canvas.classList.remove('dragging');
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+
+canvas.addEventListener('click', (e) => {
+	if (dragged) {
+		dragged = false;
+		return;
+	}
+
+	const rect = canvas.getBoundingClientRect();
+	const wx = (e.clientX - rect.left - panX) / zoom;
+	const wy = (e.clientY - rect.top - panY) / zoom;
+
+	selectedNodeId = getHitNode(wx, wy);
+	updateSelection();
+	requestRedraw();
+});
+
+searchBox.addEventListener('input', (e) => {
+	searchQuery = e.target.value;
+	requestRedraw();
+});
+
+toggleBtn.addEventListener('click', () => {
+	showSymbols = !showSymbols;
+	toggleBtn.textContent = showSymbols ? 'Hide symbols' : 'Show symbols';
+	updateLayoutIndices();
+	layoutAlpha = 0.5;
+	requestRedraw();
+	if (!running) {
+		frame();
+	}
+});
+
+document.addEventListener('keydown', (e) => {
+	if (e.key === 'Escape') {
+		selectedNodeId = null;
+		searchQuery = '';
+		searchBox.value = '';
+		updateSelection();
+		requestRedraw();
+	}
+});
+
+new ResizeObserver(resizeCanvas).observe(wrapper);
+
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
+
+readTheme();
+setupHeader();
+toggleBtn.textContent = showSymbols ? 'Hide symbols' : 'Show symbols';
+initializeLayout();
+resizeCanvas();
+updateSelection();
+fitView();
+frame();
+	</script>
+</body>
+</html>

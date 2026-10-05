@@ -63,7 +63,7 @@ RETIRED_SEGMENTS = {"archive", "archived", "legacy", "deprecated", "old", "attic
 SOURCE_EXTS = {
     *(".py", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"),
     *(".go", ".rs", ".java", ".kt", ".cs", ".php", ".swift", ".rb", ".scala"),
-    *(".c", ".h", ".cc", ".cpp", ".hpp"),
+    *(".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"),
 }
 # Code that ships with a project but is not the product: an edit task is
 # almost never about it, so it is supporting context rather than a
@@ -79,6 +79,8 @@ TEST_NAME_RE = re.compile(
     r"^test_.+|^tests?\.py$|^conftest\.py$|_test\.(py|go|rs|rb|exs?)$|_spec\.rb$"
     r"|\.(test|spec)\.[cm]?[jt]sx?$"
     r"|^Test[A-Z]\w*\.(java|kt|cs|scala)$|[a-z0-9](Test|Tests|IT|Spec)\.(java|kt|cs|scala)$"
+    r"|^test_.*\.[ch](pp|xx)?$|_test\.[ch](pp|xx)?$|_unittest\.cc$"
+    r"|^Test[A-Z]\w*\.swift$|[a-z0-9](Test|Tests|IT|Spec)\.swift$"
 )
 TEST_TERMS = {"test", "tests", "testing", "pytest", "vitest", "jest", "spec"}
 # Suffixes that inflect a word ("token"/"tokens", "parse"/"parsing"), as

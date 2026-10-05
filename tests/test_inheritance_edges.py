@@ -130,3 +130,32 @@ def test_ambiguous_base_name_still_declines() -> None:
     }
 
     assert resolve_inheritance(inherits, symbols, []) == []
+
+
+def test_python_from_dot_import_reaches_graph(tmp_path: Path) -> None:
+    """Python from . import is indexed as a relative import edge."""
+    root = tmp_path / "repo"
+    pkg = root / "pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "ui.py").write_text("class UIWidget: pass", encoding="utf-8")
+    (pkg / "cli.py").write_text("from . import ui", encoding="utf-8")
+
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(root)
+    assert pointer is not None
+    write_index(root, pointer)
+
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    imports = {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e.get("relation") == "imports"
+    }
+
+    assert ("pkg/cli.py", "pkg/ui.py") in imports, (
+        f"Python from . import edge missing; got imports: {sorted(p for p in imports if p[0])}"
+    )

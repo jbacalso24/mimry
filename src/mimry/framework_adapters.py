@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import ast
 import json
+import plistlib
 import re
 from pathlib import Path
 from typing import Any
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest
 from .paths import stable_id
+from .xcode import extract_xcode_targets, parse_pbxproj
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
 _NEXT_ROUTE_FILES = {"page", "layout", "route", "loading", "error", "not-found"}
@@ -74,6 +76,12 @@ def enrich_framework_facts(
         if sql_facts:
             adapters.append("sql-schema")
             facts.extend(sql_facts)
+        alembic_facts = alembic_migration_facts(
+            source_text or _read_text(path), path, root, file_record
+        )
+        if alembic_facts:
+            adapters.append("sql-alembic")
+            facts.extend(alembic_facts)
 
     if path.name in {"app.json", "app.config.json"} or path.name.startswith("app.config."):
         expo_facts = expo_config_facts(path, root, text=source_text)
@@ -89,6 +97,18 @@ def enrich_framework_facts(
         )
         adapters.append("sql-schema")
         facts.extend(sql_facts or ["sql schema file"])
+
+    if ext == ".pbxproj":
+        pbxproj_result = pbxproj_facts(source_text or _read_text(path), path, root, file_record)
+        if pbxproj_result:
+            adapters.append("swift-ios")
+            facts.extend(pbxproj_result)
+
+    if ext in {".entitlements", ".plist"}:
+        plist_result = plist_facts(path, root, file_record, data=source_data)
+        if plist_result:
+            adapters.append("swift-ios")
+            facts.extend(plist_result)
 
     if ext in {".md", ".mdx"}:
         doc_facts = markdown_doc_facts(path, root, text=source_text)
@@ -503,3 +523,268 @@ def _join_text(existing: str, addition: str, *, limit: int | None = None) -> str
     # on the hint's last line.
     text = "\n | ".join(part for part in (existing, addition) if part)
     return text[:limit] if limit else text
+
+
+def alembic_migration(source: str) -> dict | None:
+    """Parse Alembic migration file and return structured data.
+
+    Returns dict with revision, down_revisions, branch_labels,
+    depends_on, and tables, or None if not an Alembic migration.
+    """
+    if "alembic" not in source:
+        return None
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    has_import = False
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "alembic" or alias.name.startswith("alembic."):
+                        has_import = True
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                if node.module == "alembic" or node.module.startswith("alembic."):
+                    has_import = True
+
+    if not has_import:
+        return None
+
+    revision_id, down_revisions, branch_labels, depends_on = _extract_alembic_vars(tree)
+    if not revision_id:
+        return None
+
+    tables = _extract_alembic_tables(tree)
+
+    return {
+        "revision": revision_id,
+        "down_revisions": sorted(down_revisions),
+        "branch_labels": sorted(branch_labels),
+        "depends_on": sorted(depends_on),
+        "tables": sorted(tables),
+    }
+
+
+def _extract_list_values(node: ast.AST) -> list[str]:
+    """Extract string values from an AST node."""
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, str):
+            return [node.value]
+        elif node.value is None:
+            return []
+    elif isinstance(node, (ast.Tuple, ast.List)):
+        values = []
+        for elt in node.elts:
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                values.append(elt.value)
+        return values
+    return []
+
+
+def _extract_alembic_vars(
+    tree: ast.Module,
+) -> tuple[str | None, list[str], list[str], list[str]]:
+    """Extract revision, down_revision, branch_labels, depends_on."""
+    revision_id = None
+    down_revisions: list[str] = []
+    branch_labels: list[str] = []
+    depends_on: list[str] = []
+
+    for node in tree.body:
+        var_name = None
+        value = None
+
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            if targets and isinstance(targets[0], ast.Name):
+                var_name = targets[0].id
+                value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name):
+                var_name = node.target.id
+                value = node.value
+
+        if var_name is None:
+            continue
+
+        if var_name == "revision" and isinstance(value, ast.Constant):
+            if isinstance(value.value, str):
+                revision_id = value.value
+        elif var_name == "down_revision" and value:
+            down_revisions = _extract_list_values(value)
+        elif var_name == "branch_labels" and value:
+            branch_labels = _extract_list_values(value)
+        elif var_name == "depends_on" and value:
+            depends_on = _extract_list_values(value)
+
+    return revision_id, down_revisions, branch_labels, depends_on
+
+
+def _extract_alembic_tables(tree: ast.Module) -> set[str]:
+    """Extract table names from op.* calls in migration functions."""
+    tables: set[str] = set()
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for stmt in ast.walk(node):
+                if isinstance(stmt, ast.Call):
+                    func_name = _ast_call_name(stmt.func)
+                    if func_name and func_name.split(".")[0] in {"op", "batch_op"}:
+                        op_type = func_name.split(".")[-1]
+                        if op_type in {
+                            "create_table",
+                            "drop_table",
+                            "add_column",
+                            "drop_column",
+                            "alter_column",
+                            "rename_table",
+                            "create_index",
+                        }:
+                            table_name = None
+                            if op_type == "create_index":
+                                # create_index table is 2nd arg
+                                if len(stmt.args) > 1 and isinstance(stmt.args[1], ast.Constant):
+                                    table_name = stmt.args[1].value
+                            else:
+                                # other ops table is 1st arg
+                                if stmt.args and isinstance(stmt.args[0], ast.Constant):
+                                    table_name = stmt.args[0].value
+                            # Check for table_name keyword argument
+                            for kw in stmt.keywords:
+                                if kw.arg == "table_name" and isinstance(kw.value, ast.Constant):
+                                    table_name = kw.value.value
+                            if isinstance(table_name, str):
+                                tables.add(table_name)
+
+    return tables
+
+
+def alembic_migration_facts(
+    text: str, path: Path, root: Path, file_record: dict[str, Any]
+) -> list[str]:
+    """Extract Alembic migration facts from a Python file."""
+    migration = alembic_migration(text)
+    if not migration:
+        return []
+
+    facts: list[str] = []
+    rev = migration["revision"]
+    facts.append(f"alembic revision {rev}")
+    if migration["down_revisions"]:
+        facts.append("alembic down revisions " + " ".join(migration["down_revisions"]))
+    if migration["branch_labels"]:
+        facts.append("alembic branch labels " + " ".join(migration["branch_labels"]))
+    if migration["depends_on"]:
+        facts.append("alembic depends on " + " ".join(migration["depends_on"]))
+    if migration["tables"]:
+        facts.append("alembic tables " + " ".join(migration["tables"]))
+    return facts
+
+
+def pbxproj_facts(text: str, path: Path, root: Path, file_record: dict[str, Any]) -> list[str]:
+    """Extract Xcode project facts from a pbxproj file."""
+    pbxproj_dict = parse_pbxproj(text)
+    if not pbxproj_dict:
+        return []
+
+    facts: list[str] = []
+    targets = extract_xcode_targets(pbxproj_dict)
+
+    for target in targets:
+        name = target.get("name", "")
+        product_type = target.get("productType", "")
+        if name:
+            type_str = product_type.split(".")[-1] if product_type else "unknown"
+            facts.append(f"xcode target {name} type {type_str}")
+        if target.get("bundleId"):
+            facts.append(f"xcode bundle id {target['bundleId']} target {name}")
+        if target.get("entitlements"):
+            facts.append(f"xcode entitlements {target['entitlements']} target {name}")
+        if target.get("infoPlist"):
+            facts.append(f"xcode info plist {target['infoPlist']} target {name}")
+
+    return sorted(set(facts)) if facts else []
+
+
+def plist_facts(
+    path: Path,
+    root: Path,
+    file_record: dict[str, Any],
+    text: str | None = None,
+    data: bytes | None = None,
+) -> list[str]:
+    """Extract facts from .entitlements and Info.plist files.
+
+    Pass `data` (bytes) to avoid reopening the file during indexing.
+    If data is None, will read from path (for non-indexing use).
+    """
+    import xml.parsers.expat
+
+    # Use provided bytes, or read from path
+    if data is None:
+        if text is not None:
+            data = text.encode("utf-8")
+        else:
+            try:
+                data = path.read_bytes()
+            except OSError:
+                return []
+
+    # Enforce 1 MB cap
+    if len(data) > 1_000_000:
+        return []
+
+    # Check for unsafe XML: DOCTYPE with internal subset or <!ENTITY
+    upper = data.replace(b"\x00", b"").upper()
+    if b"<!ENTITY" in upper or re.search(rb"<!DOCTYPE[^>\[]*\[", upper):
+        return []
+
+    facts: list[str] = []
+
+    try:
+        plist_data = plistlib.loads(data)
+    except (plistlib.InvalidFileException, ValueError, xml.parsers.expat.ExpatError):
+        return []
+
+    if not isinstance(plist_data, dict):
+        return []
+
+    # Check if this is an Info.plist
+    is_info_plist = path.name == "Info.plist" or path.name.endswith("-Info.plist")
+
+    if path.suffix == ".plist":
+        if is_info_plist:
+            bundle_id = plist_data.get("CFBundleIdentifier")
+            if isinstance(bundle_id, str):
+                facts.append(f"plist bundle identifier {bundle_id}")
+            extensions = plist_data.get("NSExtension")
+            if isinstance(extensions, dict):
+                point_id = extensions.get("NSExtensionPointIdentifier")
+                if isinstance(point_id, str):
+                    ext_name = point_id.split(".")[-1] if "." in point_id else point_id
+                    facts.append(f"plist app extension {ext_name}")
+    elif path.suffix == ".entitlements":
+        app_groups = plist_data.get("com.apple.security.application-groups")
+        if isinstance(app_groups, (list, tuple)) and app_groups:
+            groups_str = " ".join(str(g) for g in app_groups)
+            facts.append(f"entitlements app groups {groups_str}")
+        keychain_groups = plist_data.get("keychain-access-groups")
+        if isinstance(keychain_groups, (list, tuple)) and keychain_groups:
+            kg_str = " ".join(str(g) for g in keychain_groups)
+            facts.append(f"entitlements keychain groups {kg_str}")
+        associated_domains = plist_data.get("com.apple.developer.associated-domains")
+        if isinstance(associated_domains, (list, tuple)) and associated_domains:
+            ad_str = " ".join(str(d) for d in associated_domains)
+            facts.append(f"entitlements associated domains {ad_str}")
+        aps_env = plist_data.get("aps-environment")
+        if isinstance(aps_env, str):
+            facts.append(f"entitlements aps-environment {aps_env}")
+        icloud = plist_data.get("com.apple.developer.icloud-container-identifiers")
+        if isinstance(icloud, (list, tuple)) and icloud:
+            ic_str = " ".join(str(c) for c in icloud)
+            facts.append(f"entitlements icloud containers {ic_str}")
+
+    return sorted(set(facts)) if facts else []

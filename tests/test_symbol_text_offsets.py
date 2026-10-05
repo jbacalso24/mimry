@@ -65,7 +65,9 @@ def test_ts_adapter_keeps_names_intact(tmp_path: Path) -> None:
     path = tmp_path / "reducer.ts"
     path.write_text(BOM + "export const sidebarToggledHandler = () => {};\n", encoding="utf-8")
 
-    symbols, _edges, _imports, _exports, status = parse_ts_like(path, tmp_path, {"file_id": "f1"})
+    symbols, _edges, _imports, _exports, status, _adapter = parse_ts_like(
+        path, tmp_path, {"file_id": "f1"}
+    )
 
     assert not status.startswith("parse_error"), status
     names = {s["name"] for s in symbols}

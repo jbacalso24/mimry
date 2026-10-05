@@ -165,6 +165,63 @@ def test_password_protected_office_member_is_skipped_without_aborting_extraction
     assert status.startswith("parse_error:")
 
 
+def test_pdf_documents_redact_credentials_end_to_end(tmp_path: Path, monkeypatch):
+    """Test that PDFs are redacted through the scanner."""
+    try:
+        from pypdf import PdfWriter
+    except ImportError:
+        pytest.skip("pypdf not available")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    pdf_file = repo / "document.pdf"
+
+    # Create a simple PDF (empty, but valid)
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.write(pdf_file)
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    indexed_result = run_cli(repo, cache, "index")
+    assert indexed_result.returncode == 0, indexed_result.stderr
+
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    index = Path(pointer["indexPath"])
+    files_jsonl = (index / "files.jsonl").read_text(encoding="utf-8")
+
+    assert pdf_file.name in files_jsonl
+
+
+def test_svg_documents_redact_credentials_end_to_end(tmp_path: Path, monkeypatch):
+    """Test that SVGs are redacted through the scanner."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    svg_file = repo / "diagram.svg"
+
+    svg_content = b"""<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg">
+  <title>My Diagram</title>
+  <text>Safe search text</text>
+</svg>"""
+    svg_file.write_bytes(svg_content)
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    indexed_result = run_cli(repo, cache, "index")
+    assert indexed_result.returncode == 0, indexed_result.stderr
+
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    index = Path(pointer["indexPath"])
+    files_jsonl = (index / "files.jsonl").read_text(encoding="utf-8")
+
+    assert svg_file.name in files_jsonl
+
+
 def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_policy(
     tmp_path: Path,
 ):
@@ -969,3 +1026,72 @@ def test_cli_and_mcp_lookup_boundaries_never_echo_credential_inputs(tmp_path: Pa
         )
         for payload in mcp_payloads:
             assert VALUE_CANARY not in json.dumps(payload, sort_keys=True)
+
+
+def test_new_language_string_syntaxes_detect_credentials():
+    """New language string syntaxes detect credentials correctly."""
+    test_cred = "sk-" + "proj-" + "TEST" + ("0" * 20)
+
+    # Kotlin triple-quoted strings with credential assignment
+    kotlin_samples = (
+        'val apiKey = """' + test_cred + '"""' + "\n",
+        'data class Config(val auth_token: String = """' + test_cred + '"""' + ")\n",
+    )
+    for sample in kotlin_samples:
+        assert contains_sensitive_text(sample, code=True), f"Kotlin triple-quote missed: {sample}"
+
+    # Scala triple-quoted strings
+    scala_samples = (
+        'val apiKey = """' + test_cred + '"""' + "\n",
+        'val cfg = Map("secret_key" -> """' + test_cred + '"""' + ")\n",
+    )
+    for sample in scala_samples:
+        assert contains_sensitive_text(sample, code=True), f"Scala triple-quote missed: {sample}"
+
+    # Swift triple-quoted and raw strings
+    swift_samples = (
+        'let apiKey = """' + test_cred + '"""' + "\n",
+        'let raw = #"' + test_cred + '"#' + "\n",
+    )
+    for sample in swift_samples:
+        assert contains_sensitive_text(sample, code=True), f"Swift string syntax missed: {sample}"
+
+    # Ruby percent-quoted and heredocs
+    ruby_samples = (
+        "$apiKey = %q(" + test_cred + ")\n",
+        "@token = '" + test_cred + "'\n",
+        "CONFIG = %q{" + test_cred + "}\n",
+    )
+    for sample in ruby_samples:
+        assert contains_sensitive_text(sample, code=True), f"Ruby string syntax missed: {sample}"
+
+    # C++ raw strings
+    cpp_samples = (
+        'const char* key = R"(' + test_cred + ')"' + ";\n",
+        'std::string token = R"delim(' + test_cred + ')delim"' + ";\n",
+    )
+    for sample in cpp_samples:
+        assert contains_sensitive_text(sample, code=True), f"C++ raw string missed: {sample}"
+
+
+def test_new_language_non_literal_credentials_not_flagged():
+    """Non-literal credential-shaped names must not be flagged."""
+    # Kotlin: computed value
+    kotlin_computed = "val apiKey = loadKey()\n"
+    assert not contains_sensitive_text(kotlin_computed, code=True)
+
+    # Scala: computed value
+    scala_computed = "val token = getToken()\n"
+    assert not contains_sensitive_text(scala_computed, code=True)
+
+    # Swift: computed property
+    swift_computed = "let apiKey = getSecret()\n"
+    assert not contains_sensitive_text(swift_computed, code=True)
+
+    # Ruby: method call
+    ruby_computed = 'api_key = ENV["API_KEY"]\n'
+    assert not contains_sensitive_text(ruby_computed, code=True)
+
+    # C++: computed value
+    cpp_computed = "std::string token = getToken();\n"
+    assert not contains_sensitive_text(cpp_computed, code=True)
