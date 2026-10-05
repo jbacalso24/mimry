@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
 from .constants import SCHEMA_VERSION
-from .core.documents import extract_document_text, is_document
+from .core.documents import DOCUMENT_ADAPTERS, extract_document_text, is_document
 from .core.languages import extract as extract_language
 from .core.languages import language_for
 from .framework_adapters import enrich_framework_facts, markdown_link_targets, sql_table_references
@@ -419,7 +419,9 @@ def adapt(path, root, snapshot=None):
         text, status = extract_document_text(path, data=data)
         safe_text = redact_sensitive_text(text) if text else ""
         doc_hint = safe_text[:2000]
-        f = file_record(path, root, "office-document", status, doc_hint, snapshot)
+        ext = path.suffix.lower()
+        adapter_name = DOCUMENT_ADAPTERS[ext]
+        f = file_record(path, root, adapter_name, status, doc_hint, snapshot)
         # Populate table_refs only from the same redacted text allowed
         # into the searchable index and semantic/context surfaces.
         if safe_text:

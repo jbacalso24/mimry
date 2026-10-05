@@ -15,6 +15,9 @@ def test_adapter_registry_lists_active_and_planned_adapters():
     assert "react-native-expo" in names
     assert "sql-schema" in names
     assert "markdown-docs" in names
+    assert "office-document" in names
+    assert "pdf-document" in names
+    assert "svg-document" in names
     assert any(a["status"] == "planned" for a in adapters)
 
 
@@ -29,6 +32,9 @@ def test_active_only_adapter_registry_hides_planned_adapters():
     assert "react-native-expo" in {a["name"] for a in adapters}
     assert "sql-schema" in {a["name"] for a in adapters}
     assert "markdown-docs" in {a["name"] for a in adapters}
+    assert "office-document" in {a["name"] for a in adapters}
+    assert "pdf-document" in {a["name"] for a in adapters}
+    assert "svg-document" in {a["name"] for a in adapters}
     assert "js-ts-regex" not in {a["name"] for a in adapters}
 
 

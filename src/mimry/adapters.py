@@ -200,6 +200,54 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         ),
     ),
     AdapterInfo(
+        name="office-document",
+        status="active",
+        kind="document",
+        extensions=(".docx", ".xlsx"),
+        parser="ZIP container parser over word/document.xml and xl/sharedStrings.xml",
+        emits=("files", "content", "table_references"),
+        agent_use=(
+            "Extracts text from Word and Excel documents for indexing and secret scanning without"
+            " external services."
+        ),
+        notes=(
+            "Guards against zip bombs, DTD/entity attacks, and compression bombs; collapses text"
+            " to searchable form."
+        ),
+    ),
+    AdapterInfo(
+        name="pdf-document",
+        status="active",
+        kind="document",
+        extensions=(".pdf",),
+        parser="pypdf text stream extractor",
+        emits=("files", "content", "table_references"),
+        agent_use=(
+            "Extracts text from PDF files for indexing and secret scanning without OCR or vision"
+            " models."
+        ),
+        notes=(
+            "Handles empty user passwords on encrypted PDFs; limits to 200 pages and 20 MB file"
+            " size."
+        ),
+    ),
+    AdapterInfo(
+        name="svg-document",
+        status="active",
+        kind="document",
+        extensions=(".svg",),
+        parser="XML parser over title, desc, text, and tspan elements",
+        emits=("files", "content"),
+        agent_use=(
+            "Extracts human-readable text from SVG diagrams for indexing and searching without"
+            " rendering or rasterizing."
+        ),
+        notes=(
+            "Extracts title, descriptions, and text elements only; guards against DTD/entity"
+            " attacks."
+        ),
+    ),
+    AdapterInfo(
         name="generic-text",
         status="active",
         kind="document",

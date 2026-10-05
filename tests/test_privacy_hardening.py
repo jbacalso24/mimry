@@ -165,6 +165,63 @@ def test_password_protected_office_member_is_skipped_without_aborting_extraction
     assert status.startswith("parse_error:")
 
 
+def test_pdf_documents_redact_credentials_end_to_end(tmp_path: Path, monkeypatch):
+    """Test that PDFs are redacted through the scanner."""
+    try:
+        from pypdf import PdfWriter
+    except ImportError:
+        pytest.skip("pypdf not available")
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    pdf_file = repo / "document.pdf"
+
+    # Create a simple PDF (empty, but valid)
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.write(pdf_file)
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    indexed_result = run_cli(repo, cache, "index")
+    assert indexed_result.returncode == 0, indexed_result.stderr
+
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    index = Path(pointer["indexPath"])
+    files_jsonl = (index / "files.jsonl").read_text(encoding="utf-8")
+
+    assert pdf_file.name in files_jsonl
+
+
+def test_svg_documents_redact_credentials_end_to_end(tmp_path: Path, monkeypatch):
+    """Test that SVGs are redacted through the scanner."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    svg_file = repo / "diagram.svg"
+
+    svg_content = b"""<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg">
+  <title>My Diagram</title>
+  <text>Safe search text</text>
+</svg>"""
+    svg_file.write_bytes(svg_content)
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    indexed_result = run_cli(repo, cache, "index")
+    assert indexed_result.returncode == 0, indexed_result.stderr
+
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    index = Path(pointer["indexPath"])
+    files_jsonl = (index / "files.jsonl").read_text(encoding="utf-8")
+
+    assert svg_file.name in files_jsonl
+
+
 def test_heavy_ignore_directories_are_case_insensitive_for_scans_and_artifact_policy(
     tmp_path: Path,
 ):

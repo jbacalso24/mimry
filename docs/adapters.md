@@ -14,7 +14,12 @@ MIMRY should understand a repo through small, inspectable adapter plugins before
 | `react-native-expo` | Expo config + Expo Router detector | `app.json`, `app.config.*`, `app/**/*.tsx`, screen files | mobile surfaces, Expo routes, screens, native config hints | Surfaces mobile routes/screens and native config hints without simulator access |
 | `sql-schema` | Conservative SQL text parser | `.sql`, Python SQL strings | tables, columns, schema symbols, migration hints | Exposes straightforward SQLite/SQL schemas without executing migrations or DB writes |
 | `markdown-docs` | Markdown heading/frontmatter/link parser | `.md`, `.mdx` | headings, frontmatter, markdown links, wiki links, doc relationship hints | Turns docs/specs/Obsidian notes into citable structured facts without storing full docs |
+| `office-document` | ZIP container parser over Office XML | `.docx`, `.xlsx` | files, content, table references | Extracts text from Word and Excel documents for indexing and secret scanning without external services |
+| `pdf-document` | pypdf text stream extractor | `.pdf` | files, content, table references | Extracts text from PDF files for indexing and secret scanning without OCR or vision models |
+| `svg-document` | XML parser over title, desc, text, tspan | `.svg` | files, content | Extracts human-readable text from SVG diagrams for indexing and searching without rendering or rasterizing |
 | `generic-text` | Safe text hints | fallback | files, metadata, content hints | Docs/config fallback while keeping sensitive files skipped |
+
+Note: Raster images (PNG, JPG) require OCR or vision models and are not supported.
 
 ## Planned adapters before/alongside embeddings
 

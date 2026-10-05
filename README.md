@@ -301,7 +301,8 @@ Indexing parses each file once and derives these edges from what it read:
 | `references` | file to file, file to symbol | markdown links and SQL table mentions |
 
 Languages parsed: Python, JavaScript, JSX, TypeScript, TSX, Go, Rust, and C#.
-Markdown, text, `.docx`, and `.xlsx` are indexed for content and can carry `references` edges.
+Markdown, text, `.docx`, `.xlsx`, `.pdf`, and `.svg` are indexed for content and can carry `references` edges.
+Raster images (PNG, JPG) require OCR or vision models and are out of scope.
 
 Resolution never guesses.
 A target that is ambiguous, or defined outside the repo, produces no edge rather than a plausible one.
