@@ -24,10 +24,23 @@ def _posix(text: str) -> str:
     return text.replace("\\", "/")
 
 
-# subprocess.run(["bash", ...]) with a bare name lets Windows CreateProcess prefer
-# System32\bash.exe (WSL), which mangles the C:/... paths under test. Resolve the
-# POSIX bash on PATH (Git Bash) explicitly so the hook command is exercised, not WSL.
-_BASH = shutil.which("bash") or "bash"
+def _posix_bash() -> str:
+    """Return the bash hook hosts run: Git Bash on Windows, not WSL."""
+    if sys.platform != "win32":
+        return shutil.which("bash") or "bash"
+    # Git for Windows keeps git.exe in <Git>/cmd, <Git>/bin or
+    # <Git>/mingw64/bin, and bash.exe in <Git>/bin. PATH often holds
+    # only <Git>/cmd, so a bare lookup finds System32\bash.exe (WSL),
+    # which cannot run the C:/... paths under test.
+    git = shutil.which("git")
+    for parent in list(Path(git).resolve().parents)[:3] if git else []:
+        candidate = parent / "bin" / "bash.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return shutil.which("bash") or "bash"
+
+
+_BASH = _posix_bash()
 
 
 def _norm_hook(text: str) -> str:
