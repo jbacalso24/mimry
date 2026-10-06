@@ -23,7 +23,10 @@ reads --window lines (default 100) on each side of each matching line.
 The MIMRY agent anchors on the symbol lines its pack lists for that file
 instead, when there are any. A file with no anchor is read from the top.
 A gold file counts as reached only when a window shows a line the pull
-request changed. Results go to results.<set>.sed.json.
+request changed. For a rebase-merged pull request whose earlier commits
+are already in the base, a gold file the last commit does not touch
+counts as reached by any read, as in full mode. Results go to
+results.<set>.sed.json.
 
 Tokens are counted with tiktoken's o200k_base encoding. Run from the
 repo root:
@@ -108,7 +111,7 @@ def grep_search(repo: Path, task: str) -> tuple[int, list[str]]:
 
 
 def changed_lines(repo: Path, task: dict) -> dict[str, set[int]]:
-    """Lines each gold file changed, numbered at the base."""
+    """Changed lines per gold file; absent if rebase merge untouched."""
     base, gold = task["base"], set(task["gold"])
     log = run(["git", "log", "--all", "--format=%H%x00%P%x00%s"], repo)
     children = []
@@ -122,18 +125,20 @@ def changed_lines(repo: Path, task: dict) -> dict[str, set[int]]:
         for sha, _ in children
         if gold <= set(run(["git", "diff", "--name-only", base, sha], repo).splitlines())
     ]
-    merge = (named or touching or [None])[0]
+    merge = (named or touching or [sha for sha, _ in children] or [None])[0]
     if merge is None:
-        raise RuntimeError(f"{task['id']}: no commit after {base} changes every gold file")
+        raise RuntimeError(f"{task['id']}: no commit after {base}")
     lines: dict[str, set[int]] = {}
     for rel in gold:
         diff = run(["git", "diff", "-U0", base, merge, "--", rel], repo)
-        hits = lines.setdefault(rel, set())
+        hits: set[int] = set()
         for start, count in re.findall(r"^@@ -(\d+)(?:,(\d+))? \+", diff, flags=re.M):
             start, count = int(start), int(count or 1)
             # A pure insertion (count 0) sits after line `start`.
             hits.update(range(start, start + count) if count else (start, start + 1))
         hits.discard(0)
+        if hits:
+            lines[rel] = hits
     return lines
 
 
@@ -148,7 +153,7 @@ def keyword_lines(repo: Path, rel: str, words: list[str]) -> tuple[int, list[int
 
 
 def window_read(
-    repo: Path, rel: str, anchors: list[int], changed: set[int], width: int
+    repo: Path, rel: str, anchors: list[int], changed: set[int] | None, width: int
 ) -> tuple[int, bool]:
     """Cost of sed windows around anchors; whether one shows change."""
     try:
@@ -163,7 +168,9 @@ def window_read(
         else:
             spans.append([start, end])
     text = "\n".join("\n".join(lines[start - 1 : end]) for start, end in spans)
-    shown = any(start <= line <= end for start, end in spans for line in changed)
+    shown = changed is None or any(
+        start <= line <= end for start, end in spans for line in changed
+    )
     return tokens(text), shown
 
 
@@ -173,7 +180,7 @@ def sed_read(
     cost = 0
     if not anchors:
         cost, anchors = keyword_lines(repo, path, sed["words"])
-    spent, shown = window_read(repo, path, anchors, sed["changed"].get(path, set()), sed["width"])
+    spent, shown = window_read(repo, path, anchors, sed["changed"].get(path), sed["width"])
     return cost + spent, shown
 
 
