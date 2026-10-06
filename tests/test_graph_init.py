@@ -62,7 +62,7 @@ def test_refresh_runs_graph_index_and_status(tmp_path):
 
     assert res.returncode == 0, res.stderr
     assert "OK Indexed repo for the first time" in res.stdout
-    assert "4 files - 5 symbols - 5 links" in res.stdout
+    assert "4 files - 6 symbols - 6 links" in res.stdout
     assert (visible_graph_dir / "graph.json").exists()
 
     status = _run(repo, env, "status", "--verbose")

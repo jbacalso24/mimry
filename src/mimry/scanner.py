@@ -4,6 +4,7 @@ import ast
 import hashlib
 import os
 import posixpath
+import re
 import stat
 import unicodedata
 from pathlib import Path
@@ -38,10 +39,78 @@ from .security import (
     safe_root,
 )
 from .state import scoped
-from .ts_ast_adapter import parse_ts_like
+from .ts_ast_adapter import TS_EXTENSIONS, parse_ts_like
 from .xcode import extract_xcode_targets, parse_pbxproj
 
 SCANNER_FILE_SIZE_LIMIT = 1_000_000
+
+_MD_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_MD_HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$")
+# ponytail: a cap keeps generated docs from flooding symbols; raise it
+# if real handbooks hit it.
+MARKDOWN_HEADING_LIMIT = 500
+
+
+def markdown_heading_symbols(file_id: str, text: str) -> tuple[list[dict], list[dict]]:
+    """Each ATX heading outside fenced code, as a symbol spanning
+    its section.
+
+    A section runs to the line before the next heading of the same or a
+    higher level, or to the end of the file.
+    """
+    lines = [line.rstrip("\r") for line in text.split("\n")]
+    if lines and lines[-1] == "":
+        lines.pop()
+    headings: list[tuple[int, int, str]] = []
+    fence = ""
+    for number, line in enumerate(lines, 1):
+        opened = _MD_FENCE.match(line)
+        if opened:
+            marker = opened.group(1)
+            if not fence:
+                fence = marker
+            elif marker[0] == fence[0] and len(marker) >= len(fence):
+                fence = ""
+            continue
+        if fence:
+            continue
+        heading = _MD_HEADING.match(line)
+        if not heading:
+            continue
+        title = heading.group(2).strip()
+        if not title or redact_sensitive_text(title) != title:
+            continue
+        headings.append((len(heading.group(1)), number, title))
+        if len(headings) >= MARKDOWN_HEADING_LIMIT:
+            break
+    symbols, edges = [], []
+    for i, (level, start, title) in enumerate(headings):
+        end = next((line - 1 for lvl, line, _ in headings[i + 1 :] if lvl <= level), len(lines))
+        sid = stable_id(file_id, title, "heading", start)
+        symbols.append(
+            {
+                "symbol_id": sid,
+                "file_id": file_id,
+                "name": title,
+                "kind": "heading",
+                "language": "markdown",
+                "exported": False,
+                "line_start": start,
+                "line_end": end,
+            }
+        )
+        edges.append(
+            {
+                "edge_id": stable_id(file_id, sid, "defines"),
+                "source_type": "file",
+                "source_id": file_id,
+                "target_type": "symbol",
+                "target_id": sid,
+                "edge_type": "defines",
+                "confidence": 1.0,
+            }
+        )
+    return symbols, edges
 
 
 def size_limit(path) -> int:
@@ -542,7 +611,7 @@ def adapt(path, root, snapshot=None):
             f = file_record(
                 path, root, "python-ast", f"parse_error:{e.__class__.__name__}", hint, snapshot
             )
-    elif ext in {".js", ".jsx", ".ts", ".tsx"}:
+    elif ext in TS_EXTENSIONS:
         f = file_record(path, root, "typescript-ast", "ok", hint, snapshot)
         source = data.decode("utf-8", errors="ignore")
         symbols, edges, imports, exports, status, adapter = parse_ts_like(
@@ -571,7 +640,7 @@ def adapt(path, root, snapshot=None):
     else:
         # Go/Rust/C# via core.languages
         language = language_for(path)
-        if language and ext not in {".py", ".js", ".jsx", ".ts", ".tsx"}:
+        if language and ext != ".py" and ext not in TS_EXTENSIONS:
             try:
                 source = data.decode("utf-8", errors="ignore")
                 result = extract_language(path, source)
@@ -616,6 +685,10 @@ def adapt(path, root, snapshot=None):
                     )
             except (OSError, UnicodeError):
                 pass
+    if ext in {".md", ".mdx"}:
+        symbols, edges = markdown_heading_symbols(
+            f["file_id"], data.decode("utf-8", errors="ignore")
+        )
     rel_path = canonical_rel_path(path, root)
     _populate_references(ext, data, references, inherits, path, root, rel_path)
     f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)

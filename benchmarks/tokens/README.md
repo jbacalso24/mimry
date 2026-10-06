@@ -58,7 +58,7 @@ There are three task sets, each from different repositories:
 
 ## Results
 
-Four versions are compared, each developed against the dev set only.
+Five versions are compared, each developed against the dev set only.
 
 - **baseline**: MIMRY 0.2.1 (commit 9b053e0), before any change made with this benchmark.
 - **ranking fixes** (commit f7e2789):
@@ -75,10 +75,12 @@ Four versions are compared, each developed against the dev set only.
     Files under `bench/` rank with benchmarks, below the source.
   - The context pack is shorter: about 1,500 tokens per query instead of about 2,700 (median, both sets).
     It drops files scoring under a tenth of the top match, repeated lists, repository-wide graph summaries and internal scoring text.
-- **credential fixes** (this version): source files that only name or build a credential were still refused as secrets, which hid got's two central files (`source/core/index.ts` and `options.ts`) and gin's `auth.go`.
+- **credential fixes**: source files that only name or build a credential were still refused as secrets, which hid got's two central files (`source/core/index.ts` and `options.ts`) and gin's `auth.go`.
   A nested template literal, a value that is one of its label's own name parts or a credential field name (`secret: 'passphrase'`), a TypeScript literal-union type (`'username' | 'password'`) and JavaScript private member access (`this.#internals.password`) no longer count as literal secrets.
   Across the 11 dev and holdout repositories, refused code files fall from 49 to 42, and none is newly refused.
   Files under `benchmark/` now rank with benchmarks, below the source.
+- **0.3.0** (this version): Markdown headings are indexed as symbols spanning their section, and `.mjs`, `.cjs`, `.mts` and `.cts` files are parsed as JavaScript and TypeScript.
+  It was measured once on holdout2, after the change was final; the retired holdout was not run.
 
 | Set | Version | Tokens saved vs grep | Located: grep / MIMRY | Median task, tokens saved | Tasks both located, tokens saved |
 |---|---|---|---|---|---|
@@ -86,12 +88,14 @@ Four versions are compared, each developed against the dev set only.
 | dev, 40 tasks | ranking fixes | 28.3% | 30 / 32 | 21.6% | 35.8% (26 tasks) |
 | dev, 40 tasks | retrieval fixes | 32.2% | 30 / 33 | 30.6% | 42.5% (27 tasks) |
 | dev, 40 tasks | credential fixes | 32.2% | 30 / 33 | 30.6% | 42.5% (27 tasks) |
+| dev, 40 tasks | 0.3.0 | 32.1% | 30 / 33 | 30.6% | 42.4% (27 tasks) |
 | holdout, 48 tasks | baseline | -4.2% | 33 / 30 | -10.0% | -28.2% (27 tasks) |
 | holdout, 48 tasks | ranking fixes | 62.2% | 33 / 42 | 67.4% | 47.1% (31 tasks) |
 | holdout, 48 tasks | retrieval fixes | 65.8% | 33 / 42 | 68.9% | 55.7% (31 tasks) |
 | holdout, 48 tasks (retired) | credential fixes | 68.7% | 33 / 45 | 68.9% | 60.9% (33 tasks) |
 | holdout2, 44 tasks | retrieval fixes | 39.6% | 28 / 31 | 46.2% | 35.7% (25 tasks) |
 | holdout2, 44 tasks | credential fixes | 40.2% | 28 / 31 | 46.4% | 37.3% (25 tasks) |
+| holdout2, 44 tasks | 0.3.0 | 39.9% | 28 / 31 | 46.0% | 36.7% (25 tasks) |
 
 At the baseline MIMRY read more tokens than grep and fully located fewer tasks.
 The ranking fixes made MIMRY read fewer tokens than grep on both sets and locate more tasks.
@@ -104,15 +108,19 @@ Inspecting got's tasks showed the cause was not ranking: its two central files w
 That inspection retired the holdout; there, the credential fixes locate 3 more got tasks (45 of 48), a number kept for reference only.
 
 The credential fixes change no dev task.
-holdout2 gives this version's number: one run, on repositories never used while developing MIMRY.
-Its savings are smaller than on the first holdout: 40.2% fewer tokens than grep, with 31 tasks located to grep's 28.
+holdout2 gives each version's number since the credential fixes: one run per version, on repositories never used while developing MIMRY.
+For 0.3.0 its savings are smaller than on the first holdout: 39.9% fewer tokens than grep, with 31 tasks located to grep's 28.
 By repository, MIMRY saves from 16.5% (typer) to 70.3% (uvicorn), and in each it locates at least as many tasks as grep.
-retrofit is the weak spot: there MIMRY reads 57.5% more tokens than grep, and each locates 1 of its 4 tasks.
+retrofit is the weak spot: there MIMRY reads 58.0% more tokens than grep, and each locates 1 of its 4 tasks.
 Against the retrieval fixes, the credential fixes change two holdout2 tasks, both in hono, and locate the same tasks.
+Against the credential fixes, 0.3.0 locates the same tasks on both sets; it changes 14 dev tasks, each by under 100 tokens, and 7 holdout2 tasks.
+The largest change is hono#5426: its gold file `src/adapter/lambda-edge/handler.ts` drops from second to third, below `src/adapter/aws-lambda/handler.ts`, and MIMRY reads 9,242 tokens instead of 4,275.
+That task accounts for 4,967 of the 6,205 extra tokens on holdout2, and it was not tuned, since holdout2 is never used to tune.
 The grep agent's results are identical in every run.
 
-Per-task numbers for this version are in [results.dev.json](results.dev.json), [results.holdout.json](results.holdout.json) and [results.holdout2.json](results.holdout2.json).
-The retrieval fixes' are in [results.holdout.retrieval.json](results.holdout.retrieval.json) and [results.holdout2.retrieval.json](results.holdout2.retrieval.json), with dev results identical to this version's.
+Per-task numbers for 0.3.0 are in [results.dev.json](results.dev.json) and [results.holdout2.json](results.holdout2.json).
+The credential fixes' are in [results.dev.credential.json](results.dev.credential.json), [results.holdout.json](results.holdout.json) and [results.holdout2.credential.json](results.holdout2.credential.json).
+The retrieval fixes' are in [results.holdout.retrieval.json](results.holdout.retrieval.json) and [results.holdout2.retrieval.json](results.holdout2.retrieval.json), with dev results identical to the credential fixes'.
 The ranking fixes' are in [results.dev.f7e2789.json](results.dev.f7e2789.json) and [results.holdout.f7e2789.json](results.holdout.f7e2789.json), and the baseline's in [results.dev.baseline.json](results.dev.baseline.json) and [results.holdout.baseline.json](results.holdout.baseline.json).
 
 "Tokens saved vs grep" is the share of the grep agent's total tokens that MIMRY did not need, over all tasks in the set; negative means MIMRY read more.
@@ -122,30 +130,33 @@ The per-task median leaves out tasks where grep found no file at all, such as uv
 
 ## Reading windows with sed
 
-With `--reads sed`, on this version:
+With `--reads sed`:
 
-| Set | Tokens saved vs grep | Located: grep / MIMRY | Median task, tokens saved | Tasks both located, tokens saved |
-|---|---|---|---|---|
-| dev, 40 tasks | 27.6% | 27 / 29 | 22.1% | 45.2% (24 tasks) |
-| holdout2, 44 tasks | 37.2% | 27 / 29 | 46.1% | 42.9% (24 tasks) |
+| Set | Version | Tokens saved vs grep | Located: grep / MIMRY | Median task, tokens saved | Tasks both located, tokens saved |
+|---|---|---|---|---|---|
+| dev, 40 tasks | credential fixes | 27.6% | 27 / 29 | 22.1% | 45.2% (24 tasks) |
+| dev, 40 tasks | 0.3.0 | 28.0% | 27 / 29 | 23.0% | 45.2% (24 tasks) |
+| holdout2, 44 tasks | credential fixes | 37.2% | 27 / 29 | 46.1% | 42.9% (24 tasks) |
+| holdout2, 44 tasks | 0.3.0 | 36.9% | 27 / 29 | 45.5% | 42.1% (24 tasks) |
 
-On holdout2, MIMRY still reads 37% fewer tokens than grep, against 40% with whole-file reads, and its per-task median barely moves.
+On holdout2, 0.3.0 still reads 37% fewer tokens than grep, against 40% with whole-file reads, and its per-task median barely moves.
 Both agents locate fewer tasks, because a window can miss the changed lines: on holdout2 it did for 1 gold file read by grep and 2 read by MIMRY, one per task the agent then failed to locate.
 Both also read more in total than with whole-file reads: each read pays for `grep -n` as well, and a task that is not located spends the rest of its budget.
-By repository, MIMRY saves from 18.1% (typer) to 59.7% (uvicorn); on retrofit it reads 56.4% more than grep, as with whole-file reads.
-holdout2 was run once in this mode, after the dev run.
+By repository, 0.3.0 saves from 18.1% (typer) to 59.7% (uvicorn); on retrofit it reads 56.9% more than grep, as with whole-file reads.
+holdout2 was run once in this mode per version, after the dev run.
+Against the credential fixes, 0.3.0 changes the same 7 holdout2 tasks as with whole-file reads, and hono#5426 again accounts for most of the difference (6,610 of 7,895 tokens).
 
 Four tasks were merged by rebase: GitHub's merge commit is the pull request's last commit, so the task's base already holds its earlier commits (zod#6581, ripgrep#3487 and ripgrep#3472 in dev, viper#2027 in holdout2).
 In sed mode, a gold file that last commit does not touch counts as reached by any read, as in full mode.
 This affects both read modes, since those tasks run on code that already holds part of the change.
 
-Per-task numbers are in [results.dev.sed.json](results.dev.sed.json) and [results.holdout2.sed.json](results.holdout2.sed.json).
+Per-task numbers for 0.3.0 are in [results.dev.sed.json](results.dev.sed.json) and [results.holdout2.sed.json](results.holdout2.sed.json), and the credential fixes' in [results.dev.sed.credential.json](results.dev.sed.credential.json) and [results.holdout2.sed.credential.json](results.holdout2.sed.credential.json).
 
 ## Whole-repository ratio
 
 Some tools report savings against reading every file in the repository.
 No agent works that way, so it is not the headline number here.
-For comparison with such claims only, the current version read a median of 16.4 times (dev), 24.7 times (holdout) and 22.2 times (holdout2) fewer tokens than the whole repository holds, against 15.5 and 23.3 (dev, holdout) for the ranking fixes and 8.5 and 6.6 at the baseline.
+For comparison with such claims only, 0.3.0 read a median of 16.4 times (dev) and 22.2 times (holdout2) fewer tokens than the whole repository holds, and the credential fixes 24.7 times on the retired holdout, against 15.5 and 23.3 (dev, holdout) for the ranking fixes and 8.5 and 6.6 at the baseline.
 
 ## Running it
 

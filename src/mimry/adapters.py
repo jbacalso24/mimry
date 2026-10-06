@@ -48,7 +48,7 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         name="typescript-ast",
         status="active",
         kind="code",
-        extensions=(".js", ".jsx", ".ts", ".tsx"),
+        extensions=(".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"),
         parser="tree-sitter-language-pack",
         emits=(
             "files",
@@ -282,7 +282,7 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         name="js-ts-regex",
         status="active",
         kind="code",
-        extensions=(".ts", ".tsx", ".js", ".jsx"),
+        extensions=(".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"),
         parser="regex import/export scanner fallback",
         emits=("files", "imports", "exports", "symbols", "defines_edges", "line_ranges"),
         agent_use=(

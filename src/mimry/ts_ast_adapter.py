@@ -8,7 +8,7 @@ from .constants import EXPORT_RE, IMPORT_RE, REQUIRE_RE
 from .paths import stable_id
 from .security import is_text
 
-TS_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx"}
+TS_EXTENSIONS = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 
 
 def _language_for(path: Path) -> str:
@@ -16,7 +16,7 @@ def _language_for(path: Path) -> str:
         return "tsx"
     if path.suffix.lower() == ".jsx":
         return "javascript"
-    if path.suffix.lower() == ".ts":
+    if path.suffix.lower() in (".ts", ".mts", ".cts"):
         return "typescript"
     return "javascript"
 

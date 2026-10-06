@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from . import security
-from .reuse import INDEXED, SENSITIVE, load_stat_cache
+from .reuse import INDEXED, SENSITIVE, code_fingerprint, load_stat_cache
 from .scanner import read_snapshot, scan_stats, size_limit
 from .security import filter_index_records, path_has_ignored_part
 from .state import (
@@ -94,7 +94,10 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     # spellings. scan() also preserves the existing fail-closed NFC
     # collision check.
     native = {canonical: (path, st) for canonical, path, st in scan_stats(root, probe_open=False)}
-    stat_cache = None if verify else load_stat_cache(idx)
+    built = load_stat_cache(idx)
+    stat_cache = None if verify else built
+    # An index built by other MIMRY code lacks what this code extracts.
+    outdated_build = built is not None and built.fingerprint not in (None, code_fingerprint())
     # Content hashes of ``root / rel_path``, proven from verified
     # snapshots or by an unchanged stat identity; graph health reuses
     # them instead of reading every source file a second time.
@@ -210,7 +213,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     state = (
         "missing"
         if not files_path.exists()
-        else ("stale" if changed or missing or policy_excluded else "current")
+        else ("stale" if changed or missing or policy_excluded or outdated_build else "current")
     )
     graph_path = idx / "graph.json"
     graph, _ = load_json_state(graph_path, default={"nodes": [], "edges": []})
@@ -265,6 +268,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
         # agent context.
         "unindexable_count": len(unindexable) + secret_skipped,
         "state": state,
+        "outdated_build": outdated_build,
         "graph": visible_graph,
         "generation_id": ptr.get("generationId"),
         "layout": "generation" if ptr.get("generationId") else "legacy",

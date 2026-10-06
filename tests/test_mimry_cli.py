@@ -412,6 +412,18 @@ def test_claude_code_hook_matches_the_grep_tool(tmp_path):
     settings = json.loads((repo / cfg.hook_path).read_text(encoding="utf-8"))
     entry = next(e for e in settings["hooks"]["PreToolUse"] if installer._is_mimry_hook(e))
     assert "Grep" in entry["matcher"].split("|")
+    assert "Read" not in entry["matcher"].split("|")
+
+
+def test_agent_guidance_starts_with_mimry_and_keeps_rg_for_exact_strings():
+    """MIMRY replaces exploring by grep, not exact lookups: rg answers
+    a known string in one call. Plain grep -r is named only to warn
+    against it."""
+    for text in (installer.always_on_body(), installer.skill_body("claude-code")):
+        assert "mimry preflight" in text
+        assert "`rg`" in text and "`git grep`" in text
+        text_lower = text.lower()
+        assert "never plain `grep -r`" in text_lower or "never use plain `grep -r`" in text_lower
 
 
 def test_generated_hook_command_executes_posix_launcher_with_spaces_and_quote_through_bash(
@@ -536,6 +548,68 @@ def test_hook_check_emits_nudge_when_mimry_exists(tmp_path, payload):
     )
     assert res.returncode == 0, res.stderr
     assert "MIMRY is available" in res.stdout
+
+
+def test_hook_check_reminds_once_per_session(tmp_path):
+    repo = copy_fixture(tmp_path)
+    (repo / ".mimry").mkdir()
+    (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+
+    def hook(session_id: str) -> subprocess.CompletedProcess:
+        payload = {"tool_name": "Grep", "tool_input": {"pattern": "x"}, "session_id": session_id}
+        return subprocess.run(
+            [sys.executable, "-m", "mimry.cli", "--root", str(repo), "hook-check"],
+            cwd=repo,
+            env=env,
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    res1 = hook("s1")
+    assert res1.returncode == 0, res1.stderr
+    assert "MIMRY is available" in res1.stdout
+    res2 = hook("s1")
+    assert res2.returncode == 0, res2.stderr
+    assert res2.stdout == ""
+    res3 = hook("s2")
+    assert res3.returncode == 0, res3.stderr
+    assert "MIMRY is available" in res3.stdout
+
+
+def test_hook_check_ignores_reads(tmp_path):
+    repo = copy_fixture(tmp_path)
+    (repo / ".mimry").mkdir()
+    (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+
+    def hook(payload: dict) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-m", "mimry.cli", "--root", str(repo), "hook-check"],
+            cwd=repo,
+            env=env,
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    read_payload = {
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(repo / "src" / "grep_helpers.py")},
+    }
+    res1 = hook(read_payload)
+    assert res1.returncode == 0, res1.stderr
+    assert res1.stdout == ""
+
+    bash_payload = {"tool_input": {"command": "cat src/app.py"}}
+    res2 = hook(bash_payload)
+    assert res2.returncode == 0, res2.stderr
+    assert res2.stdout == ""
 
 
 def test_hook_check_honors_root_and_never_fails(tmp_path):
@@ -1158,7 +1232,7 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
     assert "Reindexed first" in res.stdout
 
 
-def test_preflight_keeps_stale_cached_context_fast_without_reindexing(tmp_path):
+def test_preflight_reindexes_a_stale_index_first(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
@@ -1172,11 +1246,47 @@ def test_preflight_keeps_stale_cached_context_fast_without_reindexing(tmp_path):
 
     res = run_cli(repo, cache, "preflight", "preflight marker auth session")
 
-    assert res.returncode == 0, res.stderr
+    assert res.returncode == 0
     assert "OK Context ready for" in res.stdout
-    assert "! Results may be out of date" in res.stdout
-    assert "Reindexed first" not in res.stdout and "Built the index" not in res.stdout
-    assert "Run `mimry reindex` to update." in res.stdout
+    assert "Reindexed first - 1 file changed" in res.stdout
+    assert "! Results may be out of date" not in res.stdout
+
+
+def test_context_reindexes_a_stale_index_first(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graph_artifacts(repo)
+    target = repo / "src" / "auth" / "session.py"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\ndef context_marker():\n    return True\n",
+        encoding="utf-8",
+    )
+
+    res = run_cli(repo, cache, "context", "context marker auth session")
+
+    assert res.returncode == 0
+    assert "Reindexed first - 1 file changed" in res.stdout
+
+
+def test_find_on_a_stale_index_does_not_reindex(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graph_artifacts(repo)
+    target = repo / "src" / "auth" / "session.py"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\ndef find_marker():\n    return True\n",
+        encoding="utf-8",
+    )
+
+    res = run_cli(repo, cache, "find", "find marker auth session")
+
+    assert res.returncode == 0
+    assert "Reindexed first" not in res.stdout
+    assert run_cli(repo, cache, "status").returncode == 2
 
 
 def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):

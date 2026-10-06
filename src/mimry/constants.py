@@ -72,8 +72,12 @@ TEXT_EXTS = {
     ".py",
     ".js",
     ".jsx",
+    ".mjs",
+    ".cjs",
     ".ts",
     ".tsx",
+    ".mts",
+    ".cts",
     # Keep in step with core.languages.EXTENSION_LANGUAGE. A parsed
     # language missing here is scanned for symbols but never for secrets
     # (has_sensitive_content returns False outside this set) and yields

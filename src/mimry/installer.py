@@ -162,7 +162,8 @@ _REFERENCES: dict[str, str] = {
         """\n"""
         """Rules:\n"""
         """\n"""
-        """- Prefer `mimry_preflight` before broad search or repeated file reads.\n"""
+        """- Start a task with `mimry_preflight` instead of exploring by grep; for an exact"""
+        """ string you already know, use `rg` or `git grep` directly.\n"""
         """- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n"""
         """- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n"""
         """- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n"""
@@ -490,12 +491,14 @@ def skill_body(platform_key: str) -> str:
     invocation = "$mimry" if platform_key == "codex" else "MIMRY"
     platform_notes = {
         "claude-code": (
-            "Claude Code: use this skill with project `.claude/skills/mimry/` installs. Optional"
-            " hooks can nudge before broad Bash/Read/Glob exploration."
+            "Claude Code: use this skill with project `.claude/skills/mimry/` installs."
+            " Optional hooks remind the agent once per session, on its first search,"
+            " that MIMRY is available."
         ),
         "codex": (
-            "Codex: invoke as `$mimry` when command-style skill invocation is available. Optional"
-            " `.codex/hooks.json` can nudge before broad Bash exploration."
+            "Codex: invoke as `$mimry` when command-style skill invocation is available."
+            " Optional `.codex/hooks.json` reminds the agent once per session, on its"
+            " first shell search, that MIMRY is available."
         ),
         "hermes": (
             "Hermes: this skill is installed under `.hermes/skills/mimry/` or the Hermes profile"
@@ -513,7 +516,7 @@ def skill_body(platform_key: str) -> str:
     )
     return f"""---
 name: mimry
-description: Use local repo memory before broad search or blind file reading. Run preflight, read context packs, query indexed files/symbols/relationships, explain rankings, and record feedback after verified work.
+description: Use local repo memory at the start of every repo task instead of exploring by grep. Run preflight, read context packs, query indexed files/symbols/relationships, explain rankings, and record feedback after verified work. For an exact string already known, rg or git grep is fine.
 version: {_VERSION}
 ---
 
@@ -528,6 +531,8 @@ Platform note: {note}
 ## Non-negotiable workflow
 
 Use this skill for repo/project work: architecture discovery, debugging, implementation, refactors, audits, reviews, migrations, handoffs, and "where is X?" questions.
+
+Once MIMRY has shown where to look, use `rg` (or the harness's Grep tool, or `git grep` when `rg` is missing) for exact strings you already know. Never use plain `grep -r`; it descends into `node_modules`, `.git` and build output.
 
 1. Start with status/preflight, not broad search:
 
@@ -561,7 +566,7 @@ mimry feedback --query "<task>" --context .mimry/mimry-out/context/latest.md --o
 ## Stale/missing state rules
 
 - If MIMRY is not initialized for an owned repo, run `mimry preflight "<task>"`; it initializes and builds useful local context.
-- Default preflight is fast: it refreshes cheap index data when needed but does not run the slow full refresh unless requested.
+- `preflight`, `context`, `brief` and `route` reindex first when files changed since the last index, so they never answer from a stale one. `find`, `symbol`, `related` and the other lookups stay fast and warn instead; run `mimry reindex` when they do.
 - Use `mimry refresh` or `mimry preflight --force-refresh "<task>"` when graph freshness matters more than speed.
 - If graph artifacts are stale/missing, say so. Do not invent relationship paths.
 
@@ -654,7 +659,8 @@ def always_on_body() -> str:
 This project can use MIMRY local repo memory.
 
 Rules:
-- Before broad grep, repeated file reads, or guessing where code lives, run `mimry route "<task>"` plus `mimry preflight "<task>"`, or use `mimry_route` / `mimry_preflight` when MCP tools are available.
+- Start every task with `mimry preflight "<task>"` (or `mimry_preflight` when MCP tools are available) instead of exploring with grep or guessing where code lives.
+- For an exact string you already know, use `rg` (or `git grep`) directly; never plain `grep -r`.
 - Use `mimry brief "<task>" --agent <role>` or `mimry_brief` for delegation/handoff.
 - Read `.mimry/mimry-out/context/latest.md` or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
@@ -827,10 +833,9 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
         existing = {}
     command = _hook_command()
     hook = {
-        # Grep is Claude Code's search tool; omitting it meant the hook
-        # only fired on shelled-out `grep`/`rg`, never on the tool
-        # AGENT_RULES.md actually targets.
-        "matcher": "Bash" if cfg.key == "codex" else "Bash|Read|Glob|Grep",
+        # Grep and Glob are Claude Code's search tools; Bash covers
+        # shelled-out grep/rg. Reads never trigger the reminder.
+        "matcher": "Bash" if cfg.key == "codex" else "Bash|Glob|Grep",
         "hooks": [{"type": "command", "command": command}],
     }
     pre_tool = existing.setdefault("hooks", {}).setdefault("PreToolUse", [])
@@ -1082,8 +1087,8 @@ def install_skill(
     hook_target = _install_hooks(root, cfg, dry_run=True) if hooks else None
     if hook_target:
         extras.append(
-            f"a hook in {cfg.hook_path.as_posix()} that nudges agents to use MIMRY before broad"
-            " searches"
+            f"a hook in {cfg.hook_path.as_posix()} that reminds agents"
+            " once per session that MIMRY is available"
         )
     if dry_run:
         print("Dry run - nothing was written")

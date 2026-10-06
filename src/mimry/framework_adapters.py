@@ -13,7 +13,7 @@ from .xcode import extract_xcode_targets, parse_pbxproj
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
 _NEXT_ROUTE_FILES = {"page", "layout", "route", "loading", "error", "not-found"}
-_TS_EXTS = {".js", ".jsx", ".ts", ".tsx"}
+_TS_EXTS = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 _SQL_TABLE_RE = re.compile(
     r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"`\[]?(?P<name>[A-Za-z_][\w.]*)[\"`\]]?\s*\((?P<body>.*?)\)",
     re.IGNORECASE | re.DOTALL,
