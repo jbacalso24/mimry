@@ -224,8 +224,8 @@ _REASON_PHRASES = (
 )
 
 
-def reason_summary(reason: str) -> str:
-    """Plain-language summary of a ranking reason string."""
+def reason_phrases(reason: str) -> list[str]:
+    """Extract plain-language phrases from a ranking reason string."""
     phrases: list[str] = []
     for part in reason.split(";")[0].split(","):
         lowered = part.strip().lower()
@@ -234,4 +234,9 @@ def reason_summary(reason: str) -> str:
                 if phrase not in phrases:
                     phrases.append(phrase)
                 break
-    return facts(*phrases) or "matches your query"
+    return phrases
+
+
+def reason_summary(reason: str) -> str:
+    """Plain-language summary of a ranking reason string."""
+    return facts(*reason_phrases(reason)) or "matches your query"
