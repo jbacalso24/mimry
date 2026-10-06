@@ -18,6 +18,14 @@ An agent stops once it has read every gold file, or after 10 reads.
 Tokens are counted with tiktoken's `o200k_base` encoding.
 Indexing is not charged, because it runs locally once and uses no model tokens.
 
+Some agents, Codex among them, do not open whole files: they find lines with `grep -n` and read a window around each with `sed -n`.
+`--reads sed` measures that instead.
+Before each read, the agent pays for `git grep -n` of the task keywords in that file, then reads 100 lines on each side of each matching line.
+The MIMRY agent anchors on the symbol lines its context pack lists for that file instead, when there are any.
+A file with no anchor is read from the top.
+A gold file counts as reached only when a window shows a line the pull request changed.
+The window size was fixed at 100 lines before any run and was not tuned.
+
 The agents are scripted so that results are reproducible and free to rerun.
 A model-driven agent would choose its reads differently, so these numbers compare the search tools, not complete agents.
 
@@ -112,6 +120,27 @@ The ranking fixes' are in [results.dev.f7e2789.json](results.dev.f7e2789.json) a
 A task that is not located costs everything spent until the budget runs out, for either agent.
 The per-task median leaves out tasks where grep found no file at all, such as uvicorn#3104, whose title names a library the code did not contain yet; they still count in the totals.
 
+## Reading windows with sed
+
+With `--reads sed`, on this version:
+
+| Set | Tokens saved vs grep | Located: grep / MIMRY | Median task, tokens saved | Tasks both located, tokens saved |
+|---|---|---|---|---|
+| dev, 40 tasks | 27.6% | 27 / 29 | 22.1% | 45.2% (24 tasks) |
+| holdout2, 44 tasks | 37.2% | 27 / 29 | 46.1% | 42.9% (24 tasks) |
+
+On holdout2, MIMRY still reads 37% fewer tokens than grep, against 40% with whole-file reads, and its per-task median barely moves.
+Both agents locate fewer tasks, because a window can miss the changed lines: on holdout2 it did for 1 gold file read by grep and 2 read by MIMRY, one per task the agent then failed to locate.
+Both also read more in total than with whole-file reads: each read pays for `grep -n` as well, and a task that is not located spends the rest of its budget.
+By repository, MIMRY saves from 18.1% (typer) to 59.7% (uvicorn); on retrofit it reads 56.4% more than grep, as with whole-file reads.
+holdout2 was run once in this mode, after the dev run.
+
+Four tasks were merged by rebase: GitHub's merge commit is the pull request's last commit, so the task's base already holds its earlier commits (zod#6581, ripgrep#3487 and ripgrep#3472 in dev, viper#2027 in holdout2).
+In sed mode, a gold file that last commit does not touch counts as reached by any read, as in full mode.
+This affects both read modes, since those tasks run on code that already holds part of the change.
+
+Per-task numbers are in [results.dev.sed.json](results.dev.sed.json) and [results.holdout2.sed.json](results.holdout2.sed.json).
+
 ## Whole-repository ratio
 
 Some tools report savings against reading every file in the repository.
@@ -126,4 +155,5 @@ uv run --with tiktoken python benchmarks/tokens/run.py --work <scratch-dir> --se
 
 The runner clones each repository into the scratch directory, checks out each task's base commit, and writes `results.<set>.json` next to this file.
 `--set` takes dev, holdout or holdout2.
+`--reads sed` charges `grep -n` and `sed -n` windows instead of whole-file reads and writes `results.<set>.sed.json`; `--window` sets the lines read on each side of a match (default 100).
 Selecting new tasks needs an authenticated `gh` CLI: `python benchmarks/tokens/select_tasks.py dev`.

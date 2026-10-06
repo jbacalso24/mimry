@@ -218,6 +218,7 @@ Run `mimry install --list-platforms` for aliases, `mimry install --project --pla
   Everything stays local, semantic search uses a deterministic local method (`local-hash-v1`), and credential files are skipped.
 - **It saves tokens.**
   On 44 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 40% fewer tokens than one using grep, and read every source file the change modified in 31 tasks to grep's 28 ([token benchmark](benchmarks/tokens/README.md)).
+  When both agents read `sed` windows around `grep -n` matches instead of whole files, MIMRY read 37% fewer tokens and located 29 tasks to grep's 27.
   Results are compact summaries and relative paths, never full source dumps.
 
 ## Commands
