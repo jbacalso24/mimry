@@ -25,6 +25,7 @@ from .framework_adapters import (
     markdown_link_targets,
     sql_table_references,
 )
+from .intent import CAMEL_BOUNDARY_RE, STOPWORDS, TOKEN_RE
 from .paths import canonical_rel_path, stable_id
 from .security import (
     _has_heavy_ignore,
@@ -231,6 +232,31 @@ def text_hint(path, limit=12000, data=None):
     # out of the index.
     text = redact_sensitive_text(raw[:limit].decode("utf-8", errors="ignore"))
     return "\n".join([line.strip() for line in text.splitlines() if line.strip()][:40])[:2000]
+
+
+def body_terms(data: bytes) -> str:
+    """Bag of identifier tokens from file content for full-file FTS.
+
+    Tokenize the entire file and return deterministic term repetition,
+    up to 3 occurrences per token, for BM25 term frequency saturation.
+    """
+    text = redact_sensitive_text(data.decode("utf-8", errors="ignore"))
+    term_counts: dict[str, int] = {}
+    for raw in TOKEN_RE.findall(text.replace("_", " ").replace("-", " ").replace("/", " ")):
+        raw_lower = raw.lower()
+        if len(raw_lower) >= 2 and not raw_lower.isdigit() and raw_lower not in STOPWORDS:
+            term_counts[raw_lower] = term_counts.get(raw_lower, 0) + 1
+        if any(c.isupper() for c in raw):
+            pieces = CAMEL_BOUNDARY_RE.split(raw)
+            for piece in pieces:
+                term = piece.lower()
+                if len(term) >= 2 and not term.isdigit() and term not in STOPWORDS:
+                    term_counts[term] = term_counts.get(term, 0) + 1
+    result = []
+    for term in sorted(term_counts.keys()):
+        count = min(term_counts[term], 3)
+        result.extend([term] * count)
+    return " ".join(result)
 
 
 def scan(root):

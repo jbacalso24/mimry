@@ -273,6 +273,12 @@ def prune_root_registry() -> list[dict[str, Any]]:
         return removed
 
 
+FILES_FTS_CREATE = (
+    "create virtual table if not exists files_fts using fts5(file_id unindexed, "
+    "rel_path, filename, extension, content_hint, metadata_text, body)"
+)
+
+
 def connect(idx):
     idx.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(idx / "mimry.sqlite")
@@ -282,8 +288,7 @@ def connect(idx):
         """metadata_text text); """
         """create table if not exists symbols(symbol_id text primary key, file_id text, name """
         """text, kind text, language text, line_start integer); """
-        """create virtual table if not exists files_fts using fts5(file_id unindexed, """
-        """rel_path, filename, extension, content_hint, metadata_text); """
+        f"{FILES_FTS_CREATE}; "
         """create table if not exists index_generation(generation_id text primary key, """
         """created_at text not null, semantic_checksum text);"""
     )

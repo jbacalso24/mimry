@@ -80,7 +80,7 @@ def test_fts_cutoff_survivors_independent_of_insertion_order(tmp_idx):
             )
             con_forward.execute(
                 "insert into files_fts(file_id, rel_path, filename, extension, content_hint,"
-                " metadata_text) values (?,?,?,?,?,?)",
+                " metadata_text, body) values (?,?,?,?,?,?,?)",
                 (
                     f["file_id"],
                     f["rel_path"],
@@ -88,6 +88,7 @@ def test_fts_cutoff_survivors_independent_of_insertion_order(tmp_idx):
                     f["extension"],
                     f["content_hint"],
                     f["metadata_text"],
+                    "",
                 ),
             )
         con_forward.commit()
@@ -109,7 +110,7 @@ def test_fts_cutoff_survivors_independent_of_insertion_order(tmp_idx):
             )
             con_reverse.execute(
                 "insert into files_fts(file_id, rel_path, filename, extension, content_hint,"
-                " metadata_text) values (?,?,?,?,?,?)",
+                " metadata_text, body) values (?,?,?,?,?,?,?)",
                 (
                     f["file_id"],
                     f["rel_path"],
@@ -117,6 +118,7 @@ def test_fts_cutoff_survivors_independent_of_insertion_order(tmp_idx):
                     f["extension"],
                     f["content_hint"],
                     f["metadata_text"],
+                    "",
                 ),
             )
         con_reverse.commit()
@@ -179,7 +181,7 @@ def test_fts_result_ordering_stable_across_repeat_builds(tmp_idx):
             )
             con.execute(
                 "insert into files_fts(file_id, rel_path, filename, extension, content_hint,"
-                " metadata_text) values (?,?,?,?,?,?)",
+                " metadata_text, body) values (?,?,?,?,?,?,?)",
                 (
                     f["file_id"],
                     f["rel_path"],
@@ -187,6 +189,7 @@ def test_fts_result_ordering_stable_across_repeat_builds(tmp_idx):
                     f["extension"],
                     f["content_hint"],
                     f["metadata_text"],
+                    "",
                 ),
             )
         con.commit()
@@ -730,7 +733,7 @@ def _write_files_jsonl(idx, records):
                 ),
             )
             con.execute(
-                "insert into files_fts values(?,?,?,?,?,?)",
+                "insert into files_fts values(?,?,?,?,?,?,?)",
                 (
                     record["file_id"],
                     record["rel_path"],
@@ -738,6 +741,7 @@ def _write_files_jsonl(idx, records):
                     record["extension"],
                     record["content_hint"],
                     record["metadata_text"],
+                    "",
                 ),
             )
     con.close()
