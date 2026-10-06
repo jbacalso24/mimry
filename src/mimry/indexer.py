@@ -42,10 +42,11 @@ from .scanner import (
     SensitiveContentError,
     UnopenableFileError,
     adapt,
+    body_terms,
     read_snapshot,
     scan_stats,
 )
-from .security import sanitize_data
+from .security import is_text, sanitize_data
 from .semantic import build_semantic_index, file_semantic_chunks
 from .state import (
     GENERATION_MANIFEST,
@@ -61,7 +62,14 @@ from .state import (
     replace_path,
     validate_generation,
 )
-from .storage import active_index_pointer, connect, register_root, save_pointer, write_jsonl
+from .storage import (
+    FILES_FTS_CREATE,
+    active_index_pointer,
+    connect,
+    register_root,
+    save_pointer,
+    write_jsonl,
+)
 
 
 def _fault(point: str) -> None:
@@ -189,6 +197,8 @@ def _adapt_file(path: Path, root: Path, rel_path: str) -> tuple[str, list | None
     # rebuilt serially for every file.
     file_rec, file_symbols = row["out"][0], row["out"][1]
     row["chunks"] = file_semantic_chunks(file_rec, sorted(file_symbols, key=_symbol_order))
+    # Whole-file identifier terms; content_hint covers only first 40.
+    row["fts_body"] = body_terms(snapshot[0]) if is_text(path) else ""
     return INDEXED, identity(snapshot[1]), json.dumps(row, sort_keys=True)
 
 
@@ -281,6 +291,7 @@ def _collect(
     candidates = scan_stats(root, probe_open=False)
     reused: dict[str, tuple[str, dict] | None] = {}
     chunks_by_file_id: dict[str, list] = {}
+    fts_body_by_file_id: dict[str, str] = {}
     todo: list[tuple[str, Path]] = []
     for rel_path, path, live in candidates:
         # Config manifests read sibling lockfiles, so their output is
@@ -328,6 +339,8 @@ def _collect(
         output = row["out"]
         if row.get("chunks") is not None:
             chunks_by_file_id[output[0]["file_id"]] = row["chunks"]
+        if row.get("fts_body") is not None:
+            fts_body_by_file_id[output[0]["file_id"]] = row["fts_body"]
         (
             file_rec,
             file_symbols,
@@ -388,6 +401,7 @@ def _collect(
         record["stat_entries"] = stat_entries
         record["adapt_lines"] = adapt_lines
         record["chunks"] = chunks_by_file_id
+        record["fts_body"] = fts_body_by_file_id
         # What the previous generation was built from, to recognise a
         # no-op run.
         record["previous_lines"] = (
@@ -821,7 +835,8 @@ def write_index(root, ptr, *, full: bool = False):
             with con:
                 con.execute("delete from files")
                 con.execute("delete from symbols")
-                con.execute("delete from files_fts")
+                con.execute("drop table if exists files_fts")
+                con.execute(FILES_FTS_CREATE)
                 con.execute("delete from semantic_chunks where root_id = ?", (ptr["rootId"],))
                 con.execute("delete from semantic_metadata where root_id = ?", (ptr["rootId"],))
                 con.execute("delete from index_generation")
@@ -843,8 +858,9 @@ def write_index(root, ptr, *, full: bool = False):
                             file_rec["metadata_text"],
                         ),
                     )
+                    fts_body = record.get("fts_body", {}).get(file_rec["file_id"], "")
                     con.execute(
-                        "insert into files_fts values(?,?,?,?,?,?)",
+                        "insert into files_fts values(?,?,?,?,?,?,?)",
                         (
                             file_rec["file_id"],
                             file_rec["rel_path"],
@@ -852,6 +868,7 @@ def write_index(root, ptr, *, full: bool = False):
                             file_rec["extension"],
                             file_rec["content_hint"],
                             file_rec["metadata_text"],
+                            fts_body,
                         ),
                     )
                 for symbol in symbols:

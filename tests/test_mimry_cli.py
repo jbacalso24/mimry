@@ -1115,12 +1115,11 @@ testpaths = ["tests"]
         "## Final Report Checklist",
     ):
         assert section in text
-    assert "Root:" in text
-    assert "Index: current" in text
-    assert "MIMRY graph artifacts: current" in text
-    assert "Refresh action: none" in text
+    assert "- Index current: " in text
+    assert "Root:" not in text
     assert "src/auth/session.py" in text
-    assert "Reason:" in text
+    assert "Why: " in text
+    assert "Reason:" not in text
     assert "Score:" in text
     assert "uv run pytest" in text
     assert "uv run ruff check ." in text

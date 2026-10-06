@@ -5,11 +5,13 @@ from pathlib import Path
 
 from mimry.core.artifacts import graph_rows
 from mimry.intent import (
+    apply_intent_adjustment,
     excluded_query_terms,
     is_concept_intent,
     is_edit_intent,
     is_source_file,
     is_test_file,
+    location_terms,
     query_terms,
     term_matches_token,
 )
@@ -550,3 +552,35 @@ def test_english_function_words_in_a_task_title_do_not_locate_code(tmp_path):
     rows = graph_rows(tmp_path, "users being logged out when their login is renewed", limit=10)
 
     assert [row["path"] for row in rows] == ["src/session.py"]
+
+
+def test_stopwords_and_action_verbs_are_filtered_from_location_terms():
+    assert location_terms(query_terms("refactor: replace several vars with consts")) == [
+        "vars",
+        "consts",
+    ]
+
+
+def test_stopwords_and_action_verbs_excluded_from_location_terms_in_full_sentences():
+    terms = location_terms(query_terms("Use the cached session instead of a new one"))
+    assert "cached" in terms
+    assert "session" in terms
+    assert "use" not in terms
+    assert "instead" not in terms
+
+
+def test_location_terms_fallback_when_all_terms_are_actions():
+    assert location_terms(query_terms("rename")) != []
+
+
+def test_bench_segment_gets_same_downrank_as_benchmarks():
+    bench_path = "packages/bench/comparison.ts"
+    benchmarks_path = "packages/benchmarks/comparison.ts"
+    terms = query_terms("fix widget")
+
+    bench_score, bench_reasons = apply_intent_adjustment(100, bench_path, terms)
+    benchmarks_score, benchmarks_reasons = apply_intent_adjustment(100, benchmarks_path, terms)
+
+    assert bench_score == benchmarks_score
+    assert "supporting code downrank for edit intent" in bench_reasons
+    assert "supporting code downrank for edit intent" in benchmarks_reasons

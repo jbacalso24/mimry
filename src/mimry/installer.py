@@ -527,14 +527,14 @@ CLI fallback is fine when MCP is unavailable.
 
 ## How to read MIMRY results
 
-Ranking reasons matter. Strong signals include:
+Each file in a context pack has a `Why:` line. Strongest evidence first:
 
-- filename/path/symbol match
-- FTS/BM25 match
-- token match, including camelCase/PascalCase fragments
-- framework adapter facts
-- graph community/proximity/path evidence
-- feedback boosts from previously opened/changed/missed files
+- name matches / path matches: a task word is in the file's name, path, or a symbol it defines
+- content matches: a task word appears in the file's text
+- connected to other matches: the graph links it to other results
+- project config, helped in past tasks, similar wording: supporting evidence
+
+`matched:` lists the task words that hit and `symbols:` the matching symbols.
 
 Weak/limited signals include generic content hints, semantic-only matches, stale graph artifacts, and broad docs/plans for code-edit queries. Use `mimry explain`, `mimry why`, or `mimry path` when the ranking is surprising.
 

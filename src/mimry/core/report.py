@@ -282,9 +282,6 @@ def render_report(graph: dict, *, commit: str | None = None, title: str | None =
     - Line 1 is read as report_title
     - A line starting with "- Built from commit:" is parsed for the
       commit hash
-    - Sections under ## Community Hubs, ## God Nodes, ## Surprising
-      Connections are extracted; ## Suggested Questions is deliberately
-      skipped by report_excerpt to keep context packs consistent
     """
 
     # Default title if not provided

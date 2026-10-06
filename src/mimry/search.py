@@ -30,19 +30,25 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
         return {}
     try:
         con = connect(idx)
+        # First weight is unindexed file_id; rel_path, filename,
+        # extension, content_hint, metadata_text, body follow.
         rows = con.execute(
-            "select file_id, bm25(files_fts, 1.0, 1.4, 0.4, 0.8, 0.8) as rank "
+            "select file_id, bm25(files_fts, 0.0, 1.0, 1.4, 0.4, 0.8, 0.8, 0.8) as rank "
             "from files_fts where files_fts match ? order by rank, rel_path, file_id limit 80",
             (match,),
         ).fetchall()
         con.close()
     except Exception:
         return {}
+    if not rows:
+        return {}
     scores: dict[str, tuple[int, str]] = {}
+    best = min(rank for _file_id, rank in rows)
     for file_id, rank in rows:
-        # SQLite FTS5 bm25 returns lower-is-better negative-ish values.
-        # Convert to a bounded boost.
-        boost = max(8, min(80, int(abs(float(rank)) * 1000) + 18))
+        if best < 0:
+            boost = 8 + round(72 * rank / best)
+        else:
+            boost = 8
         scores[file_id] = (boost, "FTS/BM25 match")
     return scores
 

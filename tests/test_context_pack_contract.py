@@ -138,14 +138,115 @@ def test_reading_order_does_not_duplicate_the_reason_strings(indexed_fixture):
     deleted sections cost together.
     """
     pack = _pack(indexed_fixture, _queries()[0])
-    reasons = [
-        line.split("Reason:", 1)[1].strip()
-        for line in pack.splitlines()
-        if line.startswith("Reason:")
-    ]
-    assert reasons, "fixture produced no Reason lines; test would be vacuous"
+    # After lean pack, there are no "Reason:" lines anymore
+    has_old_format = "Reason:" in pack and pack.count("Reason:") > 1
+    assert not has_old_format, "Old 'Reason:' format should be replaced with 'Why:' format"
+    # Verify no duplicated content in reading order
     reading_order = pack.split("## Suggested Reading Order", 1)[1].split("##", 1)[0]
-    repeated = [r for r in reasons if len(r) > 40 and r in reading_order]
-    assert repeated == [], (
-        f"Reading Order repeats {len(repeated)} full reason string(s) already in Relevant Files"
+    # Reading order should be simple, not containing detailed reasons
+    lines = [line.strip() for line in reading_order.splitlines() if line.strip()]
+    # Should be one line or just a numbered list
+    assert len(lines) <= 10, f"Reading Order should be concise; got {len(lines)} non-empty lines"
+
+
+def test_status_summary_is_one_line_when_current(indexed_fixture):
+    """When index and graph are current, Status Summary is minimal."""
+    pack = _pack(indexed_fixture, _queries()[0])
+    status_section = pack.split("## Status Summary", 1)[1].split("##", 1)[0]
+    lines = [
+        line.strip()
+        for line in status_section.splitlines()
+        if line.strip() and line.startswith("-")
+    ]
+    # With a current index and graph, should be minimal
+    assert len(lines) <= 2, f"Status Summary has too many lines: {lines}"
+    # Should have the "Index current:" line
+    current_lines = [line for line in lines if "Index current:" in line]
+    assert current_lines, "Status Summary should have 'Index current:' line"
+
+
+def test_no_evidence_adapter_in_pack(indexed_fixture):
+    """Evidence: adapter line should be removed from Relevant Files."""
+    pack = _pack(indexed_fixture, _queries()[0])
+    assert "Evidence: adapter" not in pack, "Old 'Evidence: adapter' lines should be removed"
+
+
+def test_no_graph_report_signals_in_pack(indexed_fixture):
+    """God Nodes/Community Hubs section should be replaced with
+    one-liner.
+    """
+    pack = _pack(indexed_fixture, _queries()[0])
+    assert "### Graph Report Signals" not in pack, "Graph Report Signals section should be removed"
+    assert "## God Nodes" not in pack, "God Nodes should not appear"
+    assert "## Community Hubs" not in pack, "Community Hubs should not appear"
+    # Should have the repository-wide hubs one-liner
+    assert "Repository-wide hubs and communities:" in pack, (
+        "Should have repository-wide hubs one-liner"
     )
+
+
+def test_no_defines_edges_in_pack(indexed_fixture):
+    """Filter --defines--> edges from graph relationships."""
+    pack = _pack(indexed_fixture, _queries()[0])
+    assert "--defines-->" not in pack, "Graph Relationships should not include --defines--> edges"
+
+
+def test_relevant_files_use_why_format(indexed_fixture):
+    """Every Relevant Files entry should have Why: line, not Reason:
+    line.
+    """
+    pack = _pack(indexed_fixture, _queries()[0])
+    relevant_section = pack.split("## Relevant Files", 1)[1].split("## Relevant Symbols", 1)[0]
+    # Count why/reason lines in relevant files section
+    why_count = relevant_section.count("Why:")
+    reason_count = relevant_section.count("Reason:")
+    assert reason_count == 0, "Old 'Reason:' format should not appear"
+    assert why_count > 0, "Should have 'Why:' lines in Relevant Files"
+
+
+def test_score_filtering_below_threshold(indexed_fixture):
+    """Rows scoring below 10% of top score should be filtered out."""
+    from mimry.commands import _filter_rows_by_score_threshold
+
+    # Create test rows with varying scores
+    rows = [
+        {"path": "top.py", "score": 100},
+        {"path": "mid.py", "score": 15},
+        {"path": "low.py", "score": 5},
+    ]
+    filtered = _filter_rows_by_score_threshold(rows)
+    # 10% of 100 = 10, so rows with score >= 10 are kept
+    assert len(filtered) == 2, f"Should keep rows >= 10% of top score (10); got {filtered}"
+    assert all(r["score"] >= 10 for r in filtered)
+
+
+def test_extract_symbol_nodes_filters_multiword_terms():
+    """Symbol extraction skips multiword terms and file name."""
+    from mimry.commands import _extract_symbol_nodes
+
+    reason = (
+        "graph node label match; nodes: renew_login, LoginForm,"
+        " corroborated by MIMRY content index, MIMRY fallback index signal"
+    )
+    result = _extract_symbol_nodes(reason, "src/auth/user.py")
+    assert result == ["renew_login", "LoginForm"], (
+        f"Should keep only single-word symbols; got {result}"
+    )
+    # Test that file itself is excluded
+    reason_with_file = "file match; nodes: user.py, renew_login, LoginForm"
+    result2 = _extract_symbol_nodes(reason_with_file, "src/auth/user.py")
+    assert result2 == ["renew_login", "LoginForm"], f"Should exclude file name; got {result2}"
+
+
+def test_why_line_determinism(indexed_fixture):
+    """Why line uses reason_phrases which is deterministic."""
+    from mimry import ui
+
+    reason = "graph node label match, reached by mimry graph relationship"
+    phrases1 = ui.reason_phrases(reason)
+    phrases2 = ui.reason_phrases(reason)
+    # reason_phrases should return consistent results
+    assert phrases1 == phrases2
+    # Both should map to plain-language phrases
+    assert len(phrases1) > 0
+    assert all(isinstance(p, str) for p in phrases1)

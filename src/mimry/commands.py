@@ -8,7 +8,7 @@ import time
 import uuid
 import webbrowser
 from functools import wraps
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 from . import ui
@@ -24,7 +24,6 @@ from .core.artifacts import (
     load_graph,
     relationship_edges,
     relationship_lines,
-    report_excerpt,
     report_path,
     shortest_path,
     surface_evidence,
@@ -610,6 +609,41 @@ def _selected_file_records(fresh: dict, rows: list[dict]) -> dict[str, dict]:
     return {f["rel_path"]: f for f in fresh["files"] if f.get("rel_path") in selected}
 
 
+def _extract_matched_terms(reason: str) -> list[str]:
+    """Extract token match terms from a reason string.
+
+    Example from search.score format:
+    "token match: replace, token match: vars" -> ["replace", "vars"]
+    """
+    matched = []
+    for part in reason.split(","):
+        if "token match:" in part:
+            term = part.split("token match:", 1)[1].strip()
+            if term:
+                matched.append(term)
+    return matched
+
+
+def _extract_symbol_nodes(reason: str, path: str) -> list[str]:
+    """Extract symbol node names, excluding the file itself."""
+    file_name = PurePosixPath(path).name
+    symbols = []
+    for part in reason.split(";"):
+        if "nodes:" in part:
+            names = (t.strip() for t in part.split("nodes:", 1)[1].split(","))
+            symbols.extend(n for n in names if n and " " not in n and n not in (path, file_name))
+    return symbols
+
+
+def _filter_rows_by_score_threshold(rows: list[dict]) -> list[dict]:
+    """Filter rows below 10% of the highest score."""
+    if not rows:
+        return []
+    top_score = max(r["score"] for r in rows)
+    threshold = top_score * 0.1
+    return [r for r in rows if r["score"] >= threshold]
+
+
 def _symbol_lines(fresh: dict, rows: list[dict], limit: int = 12) -> list[str]:
     return [
         f"- `{markdown_inline(name)}` ({markdown_inline(kind)}, {markdown_inline(language)}) -"
@@ -640,6 +674,49 @@ def _file_role(path: str) -> str:
     return "supporting context"
 
 
+def _path_list_line(paths: list[str], empty: str) -> str:
+    """Format paths as single line: up to 8 backticked comma-separated,
+    then `and K more`, or the `empty` string when none.
+    """
+    if not paths:
+        return f"- {empty}"
+    backticked = [f"`{markdown_inline(p)}`" for p in paths[:8]]
+    line = "- " + ", ".join(backticked)
+    if len(paths) > 8:
+        line += f", and {len(paths) - 8} more"
+    return line
+
+
+def _status_summary_not_current(
+    root: Path, ptr: dict, fresh: dict, graph: dict, semantic_state: dict, semantic: bool
+) -> list[str]:
+    """Status lines when the index or graph needs a refresh."""
+    last_indexed = ptr.get("lastIndexedAt") or "never"
+    return [
+        f"- Root: `{root}`",
+        (
+            f"- Index: {fresh['state']} (last indexed: {last_indexed}; files:"
+            f" {len(fresh['files'])}; symbols: {len(fresh['symbols'])})"
+        ),
+        f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
+        (
+            f"- MIMRY graph artifacts: {graph['status']} ({graph['graph_nodes']} nodes /"
+            f" {graph['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)"
+        ),
+        (
+            f"- Semantic: {semantic_state['status']} ({semantic_state['chunks']} chunks,"
+            f" backend {semantic_state['backend']}; mode: {'on' if semantic else 'off'})"
+        ),
+        (
+            f"- MIMRY graph files: graph.json"
+            f" {'present' if graph['graph_exists'] else 'missing'}, GRAPH_REPORT.md"
+            f" {'present' if graph['report_exists'] else 'missing'}, manifest.json"
+            f" {'present' if graph['manifest_exists'] else 'missing'}"
+        ),
+        f"- Refresh action: {_refresh_action(fresh, graph)}",
+    ]
+
+
 def _reading_order_lines(rows: list[dict]) -> list[str]:
     if not rows:
         return [
@@ -649,27 +726,18 @@ def _reading_order_lines(rows: list[dict]) -> list[str]:
     source_rows = [r for r in rows if _is_likely_edit_surface(r["path"])]
     support_rows = [r for r in rows if not _is_likely_edit_surface(r["path"])]
     ordered = source_rows + support_rows
-    lines = []
-    for i, row in enumerate(ordered, 1):
-        rationale = (
-            "primary code/edit path"
-            if _is_likely_edit_surface(row["path"])
-            else _file_role(row["path"])
-        )
-        # Ordering plus rationale only. The evidence string is printed
-        # in full under Relevant Files; repeating it here cost 517 of
-        # 2969 tokens, three times what the two contract sections it
-        # displaced cost together.
-        lines.append(f"{i}. `{markdown_inline(row['path'])}` - {rationale}")
-    return lines
+
+    ordered_paths = [r["path"] for r in ordered]
+    rows_paths = [r["path"] for r in rows]
+    if ordered_paths == rows_paths:
+        return [f"Read Relevant Files 1-{len(rows)} in order."]
+
+    return [f"{i}. `{markdown_inline(row['path'])}`" for i, row in enumerate(ordered, 1)]
 
 
-def _surface_lines(rows: list[dict], *, edit: bool) -> list[str]:
-    selected = [row for row in rows if _is_likely_edit_surface(row["path"]) is edit]
-    if not selected:
-        label = "edit surfaces" if edit else "non-edit supporting files"
-        return [f"- No obvious {label} selected by this query."]
-    return [f"- `{markdown_inline(row['path'])}` - {_file_role(row['path'])}" for row in selected]
+def _surface_paths(rows: list[dict], *, edit: bool) -> list[str]:
+    """Filter rows by whether they are edit surfaces."""
+    return [r["path"] for r in rows if _is_likely_edit_surface(r["path"]) is edit]
 
 
 FRAMEWORK_FACT_MARKERS = (
@@ -716,7 +784,7 @@ def _verification_commands(fresh: dict) -> list[str]:
     return verification_commands(fresh)
 
 
-def _detected_supporting_file_lines(fresh: dict, rows: list[dict], limit: int = 8) -> list[str]:
+def _detected_supporting_paths(fresh: dict, rows: list[dict], limit: int = 8) -> list[str]:
     already = {row["path"] for row in rows}
     candidates = []
     for f in fresh["files"]:
@@ -725,10 +793,7 @@ def _detected_supporting_file_lines(fresh: dict, rows: list[dict], limit: int = 
             continue
         role = _file_role(rel_path)
         if role in {"test/verification support", "docs/rules support", "config/manifest support"}:
-            candidates.append(
-                f"- `{markdown_inline(rel_path)}` - detected {role}; read if it constrains the"
-                " change or verification."
-            )
+            candidates.append(rel_path)
         if len(candidates) >= limit:
             break
     return candidates
@@ -791,8 +856,9 @@ def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]
     # 8, not the default 12: the same files are already enumerated under
     # Relevant Files and Reading Order, so the marginal path adds
     # little.
-    rel_lines = relationship_lines(root, paths, max_lines=8)
-    exc = report_excerpt(root)
+    # Relevant Symbols already lists what each file defines.
+    all_edges = relationship_lines(root, paths, max_lines=8)
+    rel_lines = [line for line in all_edges if " --defines--> " not in line]
     if graph["status"] != "current":
         status = graph["status"]
         return [
@@ -815,8 +881,7 @@ def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]
             " navigation matters."
         ),
     ]
-    if exc:
-        lines += ["", "### Graph Report Signals", exc]
+    lines.append("- Repository-wide hubs and communities: run `mimry report`.")
     return lines
 
 
@@ -843,11 +908,24 @@ def _write_context_pack(
         semantic=semantic,
         excluded_paths=fresh["excluded_paths"],
     )
+    rows = _filter_rows_by_score_threshold(rows)
+
     semantic_state = semantic_health(
         Path(ptr["indexPath"]), ptr.get("rootId"), expected_files=len(fresh["files"])
     )
     file_records = _selected_file_records(fresh, rows)
     verification_commands = _verification_commands(fresh)
+
+    if fresh["state"] == "current" and graph["status"] == "current":
+        status_summary_lines = [
+            f"- Index current: {len(fresh['files'])} files, {len(fresh['symbols'])} symbols"
+            f" (indexed {ptr.get('lastIndexedAt') or 'never'})"
+        ]
+    else:
+        status_summary_lines = _status_summary_not_current(
+            root, ptr, fresh, graph, semantic_state, semantic
+        )
+
     lines = [
         "# MIMRY Context Pack",
         "",
@@ -855,26 +933,7 @@ def _write_context_pack(
         markdown_inline(query),
         "",
         "## Status Summary",
-        f"- Root: `{root}`",
-        (
-            f"- Index: {fresh['state']} (last indexed: {ptr.get('lastIndexedAt') or 'never'};"
-            f" files: {len(fresh['files'])}; symbols: {len(fresh['symbols'])})"
-        ),
-        f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
-        (
-            f"- MIMRY graph artifacts: {graph['status']} ({graph['graph_nodes']} nodes /"
-            f" {graph['graph_edges']} edges; output: `.mimry/mimry-out/graph/`; cache-backed)"
-        ),
-        (
-            f"- Semantic: {semantic_state['status']} ({semantic_state['chunks']} chunks, backend"
-            f" {semantic_state['backend']}; mode: {'on' if semantic else 'off'})"
-        ),
-        (
-            f"- MIMRY graph files: graph.json {'present' if graph['graph_exists'] else 'missing'},"
-            f" GRAPH_REPORT.md {'present' if graph['report_exists'] else 'missing'}, manifest.json"
-            f" {'present' if graph['manifest_exists'] else 'missing'}"
-        ),
-        f"- Refresh action: {_refresh_action(fresh, graph)}",
+        *status_summary_lines,
         "",
         "## Summary",
         (
@@ -888,13 +947,22 @@ def _write_context_pack(
     ]
     for i, r in enumerate(rows, 1):
         role = _file_role(r["path"])
-        adapter = file_records.get(r["path"], {}).get("adapter", "unknown")
+        phrases = ui.reason_phrases(r["reason"])
+        why_line = f"Why: {', '.join(phrases) or 'matches your query'}"
+
+        matched = _extract_matched_terms(r["reason"])
+        if matched:
+            why_line += "; matched: " + ", ".join(matched)
+
+        symbols = _extract_symbol_nodes(r["reason"], r["path"])
+        if symbols:
+            why_line += "; symbols: " + ", ".join(symbols)
+
         lines += [
             f"### {i}. `{markdown_inline(r['path'])}`",
             f"Score: {r['score']}",
-            f"Reason: {markdown_inline(r['reason'])}",
+            why_line,
             f"Role: {role}",
-            f"Evidence: adapter `{markdown_inline(adapter)}`",
         ]
         details = r.get("details") or ""
         if details:
@@ -921,11 +989,15 @@ def _write_context_pack(
         *_reading_order_lines(rows),
         "",
         "## Likely Edit Surfaces",
-        *_surface_lines(rows, edit=True),
+        _path_list_line(
+            _surface_paths(rows, edit=True), "No obvious edit surfaces selected by this query."
+        ),
         "",
         "## Likely Non-Edit Supporting Files",
-        *_surface_lines(rows, edit=False),
-        *_detected_supporting_file_lines(fresh, rows),
+        _path_list_line(
+            _surface_paths(rows, edit=False) + _detected_supporting_paths(fresh, rows),
+            "No obvious non-edit supporting files selected by this query.",
+        ),
         "",
         "## Risk Notes",
         *_risk_lines(fresh, rows),
