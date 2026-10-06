@@ -184,9 +184,14 @@ def summarize(results: list[dict]) -> dict[str, object]:
         )
         if both
         else None,
+        # Skip rows where grep found nothing; no per-task ratio.
         "median_task_savings_vs_grep_pct": round(
             100
-            * statistics.median(1 - r["mimry"]["tokens"] / r["grep"]["tokens"] for r in results),
+            * statistics.median(
+                1 - r["mimry"]["tokens"] / r["grep"]["tokens"]
+                for r in results
+                if r["grep"]["tokens"] > 0
+            ),
             1,
         ),
         "median_x_fewer_than_reading_whole_repo": round(statistics.median(ratios), 1),
