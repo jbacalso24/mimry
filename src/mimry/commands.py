@@ -194,8 +194,9 @@ def cmd_init(a):
     )
     atomic_write_text(
         mdir(root) / "AGENT_RULES.md",
-        "# MIMRY Agent Rules\n\nUse MIMRY before repeated grep or blind file"
-        " reading.\nTester-owned `acceptance_tests/` is excluded from ordinary MIMRY indexing by"
+        "# MIMRY Agent Rules\n\nStart every task with MIMRY instead of exploring the repo by grep."
+        " For an exact string you already know, use `rg` (or `git grep`) directly."
+        "\nTester-owned `acceptance_tests/` is excluded from ordinary MIMRY indexing by"
         " default. This is cooperative workflow isolation, not secrecy: repository users can still"
         " open those files directly.\n",
     )
@@ -428,7 +429,7 @@ def _stale_changes(fresh: dict) -> tuple[list[str], list[str]]:
 
 def _stale_summary(fresh: dict) -> str:
     edited, new = _stale_changes(fresh)
-    return _counted(
+    summary = _counted(
         (
             (len(edited), "changed"),
             (len(new), "new"),
@@ -436,6 +437,9 @@ def _stale_summary(fresh: dict) -> str:
             (fresh["policy_excluded_count"], "now ignored"),
         )
     )
+    if fresh.get("outdated_build"):
+        return ", ".join(filter(None, (summary, "indexed by a different MIMRY version")))
+    return summary
 
 
 def _print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
@@ -569,6 +573,48 @@ def _index_and_graph_health(root: Path, ptr: dict):
         native_paths=fresh.get("native_paths"),
     )
     return fresh, graph
+
+
+def refresh_if_stale(root: Path) -> dict | None:
+    """Reindex when files changed since the last index.
+
+    Returns the index stats, or None when the index was current or
+    MIMRY is not set up. Call it before taking the shared reader lock:
+    indexing takes the lock exclusively.
+    """
+    with active_index_pointer(root) as active:
+        if active is None or index_freshness(root, active)["state"] != "stale":
+            return None
+    return write_index(root, require(root, validate=False))
+
+
+def _change_summary(stats: dict) -> str:
+    changes = stats.get("changes") or {}
+    counted = _counted(
+        (
+            (len(changes.get("changed", [])), "changed"),
+            (len(changes.get("added", [])), "added"),
+            (len(changes.get("removed", [])), "removed"),
+        )
+    )
+    return counted or "nothing changed"
+
+
+def _fresh_index(command):
+    """Reindex first when files changed since the last index."""
+
+    @wraps(command)
+    def guarded(a):
+        started = time.perf_counter()
+        stats = refresh_if_stale(Path(a.root).resolve())
+        if stats is not None and not getattr(a, "json", False):
+            ui.ok(
+                f"Reindexed first - {_change_summary(stats)}"
+                f" ({ui.took(time.perf_counter() - started)})"
+            )
+        return command(a)
+
+    return guarded
 
 
 def _print_index_note(fresh: dict, graph: dict) -> None:
@@ -1083,10 +1129,10 @@ def cmd_preflight(a):
         fresh, graph = _index_and_graph_health(root, ptr)
 
     stats = None
-    # Fast mode: index only when there is no index at all, or when asked
-    # to. A stale index still answers, with a warning, instead of
-    # costing a reindex.
-    if getattr(a, "force_refresh", False) or fresh["state"] == "missing":
+    # Index when there is none, when files changed since the last
+    # index, or when asked: a stale index points confidently at the
+    # wrong files.
+    if getattr(a, "force_refresh", False) or fresh["state"] in ("missing", "stale"):
         started = time.perf_counter()
         stats = write_index(root, ptr)
         elapsed = time.perf_counter() - started
@@ -1103,14 +1149,7 @@ def cmd_preflight(a):
     if stats is not None:
         action = "Set up MIMRY and built the index" if init_ran else "Built the index"
         if stats.get("changes") is not None:
-            changed = _counted(
-                (
-                    (len(stats["changes"]["changed"]), "changed"),
-                    (len(stats["changes"]["added"]), "added"),
-                    (len(stats["changes"]["removed"]), "removed"),
-                )
-            )
-            action = "Reindexed first" + (f" - {changed}" if changed else " - nothing changed")
+            action = f"Reindexed first - {_change_summary(stats)}"
         ui.detail(f"{action} ({totals}, {ui.took(elapsed)})")
     elif fresh["state"] == "current" and graph["status"] == "current":
         ui.detail(f"Index is up to date ({totals}, indexed {ui.ago(ptr.get('lastIndexedAt'))})")
@@ -1370,6 +1409,7 @@ def _print_verification(commands: list[str], limit: int = 5) -> None:
         ui.detail(command)
 
 
+@_fresh_index
 @_index_reader
 def cmd_route(a):
     root = Path(a.root).resolve()
@@ -1399,6 +1439,7 @@ def cmd_route(a):
     return 0
 
 
+@_fresh_index
 @_index_reader
 def cmd_brief(a):
     root = Path(a.root).resolve()
@@ -1652,31 +1693,70 @@ def _joined(items: list[str], total: int) -> str:
 SYMBOL_DISPLAY_LIMIT = 50
 
 
-@_index_reader
-def cmd_symbol(a):
-    ptr = require(Path(a.root).resolve())
-    name = sanitize_query(a.name)
+def symbol_matches(ptr: dict, name: str) -> list[dict]:
+    """Symbols whose name contains ``name``; falling back to file
+    names.
+
+    Agents often ask for a script or module by name, and a file such as
+    ``scan_standards.py`` need not define a symbol called that.
+    """
     idx = Path(ptr["indexPath"])
     visible_files, visible_symbols = filter_index_records(
         load_jsonl(idx / "files.jsonl"), load_jsonl(idx / "symbols.jsonl")
     )
     files = {f["file_id"]: f for f in visible_files}
-    matches = [s for s in visible_symbols if name.lower() in s["name"].lower()]
+    needle = name.lower()
+    matches = [
+        {
+            "name": s["name"],
+            "kind": s["kind"],
+            "language": s["language"],
+            "path": files.get(s["file_id"], {}).get("rel_path", s["file_id"]),
+            "line_start": s.get("line_start"),
+        }
+        for s in visible_symbols
+        if needle in s["name"].lower()
+    ]
+    if matches:
+        return matches
+    return [
+        {
+            "name": f["filename"],
+            "kind": "file",
+            "language": "",
+            "path": f["rel_path"],
+            "line_start": None,
+        }
+        for f in sorted(visible_files, key=lambda f: f["rel_path"])
+        if needle in Path(f["filename"]).stem.lower()
+    ]
+
+
+@_index_reader
+def cmd_symbol(a):
+    ptr = require(Path(a.root).resolve())
+    name = sanitize_query(a.name)
+    matches = symbol_matches(ptr, name)
     if not matches:
         print(f"No symbols match {ui.quote(name)}.")
         ui.detail(f'Try part of the name, or `mimry find "{name}"` to search files.')
         return 0
-    ui.title(f"{ui.count(len(matches), 'symbol')} matching {ui.quote(name)}")
+    if matches[0]["kind"] == "file":
+        title = (
+            f"No symbols match {ui.quote(name)}; {ui.count(len(matches), 'file')} named like it"
+        )
+        ui.title(title)
+    else:
+        ui.title(f"{ui.count(len(matches), 'symbol')} matching {ui.quote(name)}")
     print()
     ui.table(
         [
             (
-                s["name"],
-                s["kind"],
-                f"{files.get(s['file_id'], {}).get('rel_path', s['file_id'])}"
-                + (f":{s['line_start']}" if s.get("line_start") else ""),
+                m["name"],
+                m["kind"],
+                m["path"] + (f":{m['line_start']}" if m["line_start"] else ""),
             )
-            for s in matches[:SYMBOL_DISPLAY_LIMIT]
+            for m in matches[:SYMBOL_DISPLAY_LIMIT]
         ]
     )
     if len(matches) > SYMBOL_DISPLAY_LIMIT:
@@ -1689,6 +1769,7 @@ def cmd_symbol(a):
     return 0
 
 
+@_fresh_index
 @_index_reader
 def cmd_context(a):
     root = Path(a.root).resolve()

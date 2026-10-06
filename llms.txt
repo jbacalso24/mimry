@@ -8,11 +8,11 @@ Agent workflow in a repo:
 
 1. `mimry preflight "<task>"` sets MIMRY up if needed and prints the files to read first.
 2. Read `.mimry/mimry-out/context/latest.md`, the context pack: ranked files with reasons, key symbols, relationships, risky paths, and verification commands.
-3. Navigate with focused queries before broad grep: `mimry find "<query>"`, `mimry symbol <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`.
+3. Navigate with focused queries instead of exploring by grep: `mimry find "<query>"`, `mimry symbol <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`. For an exact string you already know, use `rg` (or `git grep`) directly.
 4. Verify against real source, tests, and build output. MIMRY output is navigation, not proof.
 5. Record what helped: `mimry feedback --query "<task>" --opened <files> --changed <files> --verification "<result>" --outcome passed`.
 
-If MIMRY reports the index is out of date, run `mimry reindex`. Piped output uses ASCII marks (`OK`, `!`, `x`); exit code 0 is ok, 1 is not set up, 2 is stale or an error. `mimry route "<task>" --json` returns structured data.
+`preflight`, `context`, `brief` and `route` reindex first when files changed or MIMRY was upgraded; if a lookup such as `find` reports the index is out of date, run `mimry reindex`. Piped output uses ASCII marks (`OK`, `!`, `x`); exit code 0 is ok, 1 is not set up, 2 is stale or an error. `mimry route "<task>" --json` returns structured data.
 
 Connect as an MCP server: `claude mcp add --scope user mimry -- mimry-mcp` (Claude Code), `codex mcp add mimry -- mimry-mcp` (Codex), or `{"mcpServers": {"mimry": {"command": "mimry-mcp"}}}` for other clients. Tools include `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_semantic`, `mimry_symbol`, `mimry_context`, `mimry_explain`, `mimry_path`, `mimry_why`, `mimry_route`, `mimry_brief`, `mimry_status`, `mimry_reindex`, and `mimry_feedback`; each accepts an optional `root`.
 

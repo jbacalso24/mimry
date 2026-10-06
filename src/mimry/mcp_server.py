@@ -21,7 +21,9 @@ from mimry.commands import (
     cmd_preflight,
     cmd_refresh,
     cmd_why,
+    refresh_if_stale,
     require,
+    symbol_matches,
 )
 from mimry.core.artifacts import graph_health
 from mimry.digest import canonical_digest
@@ -41,7 +43,6 @@ from mimry.plan import (
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
 from mimry.security import (
-    filter_index_records,
     redact_sensitive_text,
     safe_root,
     sanitize_data,
@@ -55,7 +56,7 @@ from mimry.state import (
     StateLockTimeoutError,
     UnsupportedIndexSchemaError,
 )
-from mimry.storage import RootIdentityError, active_index_pointer, load_jsonl, load_pointer
+from mimry.storage import RootIdentityError, active_index_pointer, load_pointer
 
 mcp = FastMCP("MIMRY")
 
@@ -234,7 +235,7 @@ def _root(root: str | None) -> Path:
     return safe_root(Path(root or "."))
 
 
-def _index_operation(*, exclusive: bool = False):
+def _index_operation(*, exclusive: bool = False, refresh: bool = False):
     def decorate(func):
         func_signature = signature(func)
 
@@ -242,6 +243,8 @@ def _index_operation(*, exclusive: bool = False):
         def guarded(*args, **kwargs):
             bound = func_signature.bind_partial(*args, **kwargs)
             root_path = _root(bound.arguments.get("root"))
+            if refresh:
+                refresh_if_stale(root_path)
             with active_index_pointer(root_path, exclusive=exclusive):
                 return func(*args, **kwargs)
 
@@ -458,7 +461,7 @@ def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[
 
 @mcp.tool
 @_state_guard
-@_index_operation()
+@_index_operation(refresh=True)
 def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
     """Recommend an agent/role and supporting context for a task.
 
@@ -471,7 +474,7 @@ def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str
 
 @mcp.tool
 @_state_guard
-@_index_operation()
+@_index_operation(refresh=True)
 def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
     """Write a role-aware MIMRY agent brief.
 
@@ -496,34 +499,17 @@ def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8)
 @_state_guard
 @_index_operation()
 def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
-    """Search indexed symbols by name."""
+    """Search indexed symbols by name, falling back to file names."""
     root_path = _root(root)
     name = sanitize_query(name)
     ptr = require(root_path)
-    idx = Path(ptr["indexPath"])
-    visible_files, visible_symbols = filter_index_records(
-        load_jsonl(idx / "files.jsonl"), load_jsonl(idx / "symbols.jsonl")
-    )
-    files = {f["file_id"]: f for f in visible_files}
-    matches = []
-    for s in visible_symbols:
-        if name.lower() in s["name"].lower():
-            f = files.get(s["file_id"], {})
-            matches.append(
-                {
-                    "name": s["name"],
-                    "kind": s["kind"],
-                    "language": s["language"],
-                    "path": f.get("rel_path", s["file_id"]),
-                    "line_start": s.get("line_start"),
-                }
-            )
+    matches = symbol_matches(ptr, name)
     return sanitize_data({"name": name, "root": str(root_path), "symbols": matches})
 
 
 @mcp.tool
 @_state_guard
-@_index_operation()
+@_index_operation(refresh=True)
 def mimry_context(query: str, root: str | None = None, semantic: bool = False) -> dict[str, Any]:
     """Generate a MIMRY context pack.
 

@@ -78,14 +78,15 @@ def build_parser():
     s = sub.add_parser("refresh", help="Run internal graph build, MIMRY index, then status")
     s.add_argument("--full", action="store_true", help=full_help)
     s.set_defaults(func=cmd_refresh)
-    s = sub.add_parser("preflight", help="Fast readiness check and task context generation")
+    s = sub.add_parser(
+        "preflight",
+        help="Readiness check and task context; reindexes first when files changed",
+    )
     s.add_argument("task", help="Task description to build the context pack around")
     s.add_argument(
         "--force-refresh",
         action="store_true",
-        help=(
-            "Run the slow full refresh path (graph build + MIMRY index) before context generation"
-        ),
+        help="Run the full refresh (graph build + MIMRY index) before context generation",
     )
     s.set_defaults(func=cmd_preflight)
     s = sub.add_parser("status")

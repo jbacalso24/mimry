@@ -24,14 +24,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from mimry.commands import cmd_init, cmd_preflight, cmd_status
+from mimry.commands import _write_context_pack, cmd_init, cmd_preflight, cmd_status
 from mimry.core.artifacts import graph_health
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.search import find_rows
 from mimry.state import UNINDEXABLE_FILE
-from mimry.storage import load_pointer
+from mimry.storage import active_index_pointer, load_pointer
 
 REFUSED = "app/refused.py"
 
@@ -223,9 +223,12 @@ def test_native_nfd_file_matches_indexed_nfc_identity_without_repeat_secret_scan
     assert scanned == []
 
 
-def test_changed_file_that_becomes_sensitive_is_hidden_from_stale_context(tmp_path: Path) -> None:
+def test_changed_file_that_becomes_sensitive_is_hidden_from_stale_context(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     root = _repo(tmp_path)
     ptr = _index(root)
+    capsys.readouterr()
     target = root / "app" / "clean.py"
     token = "ghp_" + "a" * 36
     target.write_text(f'API_TOKEN = "{token}"\n', encoding="utf-8")
@@ -245,9 +248,18 @@ def test_changed_file_that_becomes_sensitive_is_hidden_from_stale_context(tmp_pa
     )
     assert all(row["path"] != "app/clean.py" for row in rows)
 
+    with active_index_pointer(root) as active:
+        _write_context_pack(root, active, "clean go")
+    stale_context = context_file(root).read_text(encoding="utf-8")
+    assert "app/clean.py" not in stale_context
+
     assert cmd_preflight(SimpleNamespace(root=root, task="clean go", force_refresh=False)) == 0
+    stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
+    assert "Reindexed first" in stdout
+    assert "app/clean.py" not in stdout
     assert "app/clean.py" not in context
+    assert index_freshness(root, load_pointer(root))["state"] == "current"
 
 
 def test_secret_appended_beyond_snapshot_limit_is_stale_and_hidden_from_cached_readers(
@@ -289,6 +301,11 @@ def test_secret_appended_beyond_snapshot_limit_is_stale_and_hidden_from_cached_r
     )
     assert all(row["path"] != "app/boundary.py" for row in rows)
 
+    with active_index_pointer(root) as active:
+        _write_context_pack(root, active, "indexed boundary marker")
+    stale_context = context_file(root).read_text(encoding="utf-8")
+    assert "app/boundary.py" not in stale_context
+
     assert (
         cmd_preflight(
             SimpleNamespace(root=root, task="indexed boundary marker", force_refresh=False)
@@ -297,10 +314,10 @@ def test_secret_appended_beyond_snapshot_limit_is_stale_and_hidden_from_cached_r
     )
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
-    assert "! Results may be out of date" in stdout
-    assert "Reindexed first" not in stdout and "Built the index" not in stdout
+    assert "Reindexed first" in stdout
     assert "app/boundary.py" not in stdout
     assert "app/boundary.py" not in context
+    assert index_freshness(root, load_pointer(root))["state"] == "current"
 
 
 def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
@@ -331,6 +348,12 @@ def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
     )
     assert all(row["path"] != "src/auth/session.py" for row in rows)
 
+    with active_index_pointer(root) as active:
+        _write_context_pack(root, active, "authenticate session indexed marker")
+    stale_context = context_file(root).read_text(encoding="utf-8")
+    assert "Index: stale" in stale_context
+    assert "src/auth/session.py" not in stale_context
+
     assert (
         cmd_preflight(
             SimpleNamespace(
@@ -341,12 +364,10 @@ def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
     )
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
-    assert "! Results may be out of date" in stdout
-    assert "Reindexed first" not in stdout and "Built the index" not in stdout
+    assert "Reindexed first" in stdout
     assert "src/auth/session.py" not in stdout
-    assert "Index: stale" in context
     assert "src/auth/session.py" not in context
-    assert index_freshness(root, ptr)["state"] == "stale"
+    assert index_freshness(root, load_pointer(root))["state"] == "current"
 
 
 def test_indexed_file_replaced_by_same_content_symlink_is_stale_and_hidden(tmp_path: Path) -> None:
@@ -450,3 +471,25 @@ def test_a_secret_verdict_from_older_code_is_checked_again(tmp_path: Path, monke
     monkeypatch.setattr(security, "has_sensitive_content", lambda path, data=None: False)
 
     assert "app/settings.py" in index_freshness(root, ptr)["changed"]
+
+
+def test_index_built_by_other_mimry_code_is_stale_until_reindexed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """New MIMRY extracts more; unchanged repo must pick it up."""
+    import mimry.reuse as reuse
+
+    root = _repo(tmp_path)
+    ptr = _index(root)
+    assert index_freshness(root, ptr)["state"] == "current"
+
+    monkeypatch.setattr(reuse, "_FINGERPRINT", "a-newer-mimry")
+    fresh = index_freshness(root, ptr)
+    assert fresh["state"] == "stale"
+    assert fresh["outdated_build"] is True
+    assert fresh["changed"] == [] and fresh["missing"] == []
+
+    write_index(root, ptr)
+    rebuilt = load_pointer(root)
+    assert rebuilt is not None
+    assert index_freshness(root, rebuilt)["state"] == "current"

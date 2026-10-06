@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from mimry import mcp_server
+from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.mcp_server import (
     mimry_brief,
@@ -188,6 +189,34 @@ def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, mon
     ):
         assert section in text
     assert "After verification, run `mimry feedback ...`" in text
+
+
+def test_mcp_context_reindexes_a_stale_index_first(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root_id = str(uuid.uuid4())
+    ptr = {
+        "rootId": root_id,
+        "rootPath": str(repo),
+        "rootType": "repo",
+        "indexPath": str(idx_path(root_id)),
+        "createdAt": "test",
+        "lastIndexedAt": None,
+        "schemaVersion": 1,
+    }
+    save_pointer(repo, ptr)
+    write_index(repo, ptr)
+
+    target = repo / "src" / "auth" / "session.py"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\ndef mcp_marker():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    mimry_context("fix auth session", str(repo))
+
+    assert index_freshness(repo, load_pointer(repo))["state"] == "current"
 
 
 def test_mcp_route_and_brief_return_structured_payloads(tmp_path: Path, monkeypatch):

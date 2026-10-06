@@ -110,9 +110,10 @@ This section is written for an AI coding agent working in a repository where MIM
 
 ### When to use MIMRY
 
-Use MIMRY before broad search.
-Run it first whenever you need to find where something lives, what a task touches, or how two parts of the code connect.
-Fall back to `grep`, `rg`, or reading files only to verify MIMRY's answer or when it cannot answer.
+Start every task with MIMRY.
+It replaces exploring the repository by grep: guessing search terms, then reading files to see whether they matter.
+Run it whenever you need to find where something lives, what a task touches, or how two parts of the code connect.
+For an exact string you already know, such as an identifier or an error message, use `rg` directly, or `git grep` when `rg` is not installed.
 
 ### The workflow
 
@@ -130,7 +131,8 @@ Fall back to `grep`, `rg`, or reading files only to verify MIMRY's answer or whe
 
 ### Rules
 
-- If MIMRY says the index is out of date, run `mimry reindex` (fast: it only re-reads changed files).
+- `preflight`, `context`, `brief` and `route` reindex first when files changed or MIMRY was upgraded, so a task never starts from a stale index.
+- If a quick lookup such as `find` or `symbol` says the index is out of date, run `mimry reindex` (fast: it only re-reads changed files).
 - Treat `.mimry/`, caches, and generated files as support artifacts, never as the place to fix a bug.
 - Never paste secret values into context or reports; MIMRY skips secret-looking files and redacts feedback.
 - Output is plain ASCII when piped (`OK`, `!`, `x` marks), and exit codes are meaningful: `0` ok, `1` not set up, `2` stale or an error.
@@ -198,7 +200,7 @@ mimry install --project --platform claude-code --always-on --hooks
 
 - `--project` installs into this repo only; omit it to install for every project.
 - `--always-on` adds a short rules block to the agent's always-read file, such as `AGENTS.md`.
-- `--hooks` adds a hook that nudges the agent to use MIMRY before broad searches.
+- `--hooks` adds a hook that reminds the agent once per session, on its first search, that MIMRY is available.
 
 Supported platforms: `claude-code`, `codex`, `opencode`, `kilo`, `aider`, `copilot`, `claw`, `droid`, `trae`, `trae-cn`, `hermes`, `kiro`, `gemini`, `agents`, `amp`, `devin`, `antigravity`, `kimi`, `pi`, `codebuddy`.
 Run `mimry install --list-platforms` for aliases, `mimry install --project --platform <name> --status` to check an install, and `mimry uninstall --project --platform <name> --always-on --hooks` to remove it.
@@ -232,7 +234,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry find "<query>"` | Rank files for a query (`--semantic` blends in fuzzy matches) |
 | `mimry related "<query>"` | Find files connected through the graph |
 | `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
-| `mimry symbol <name>` | Find where a symbol is defined |
+| `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |
 | `mimry context "<task>"` | Write a context pack without the preflight checks |
 | `mimry explain "<task>"` | Files, key symbols, and how they connect |
 | `mimry path <a> <b>` | Shortest relationship path between two files or symbols |
