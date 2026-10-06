@@ -1,0 +1,11 @@
+{
+  "tasks_per_repo": 8,
+  "repos": [
+    "fastapi/typer",
+    "Kludex/uvicorn",
+    "spf13/viper",
+    "honojs/hono",
+    "hyperium/hyper",
+    "lysine-dev/retrofit"
+  ]
+}

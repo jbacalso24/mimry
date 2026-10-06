@@ -21,7 +21,7 @@ Tokens are counted with tiktoken's o200k_base encoding. Run from the
 repo root:
 
     uv run --with tiktoken python benchmarks/tokens/run.py \\
-        --work C:/tmp/mimry-tokens [--set dev|holdout]
+        --work C:/tmp/mimry-tokens [--set dev|holdout|holdout2]
 """
 
 from __future__ import annotations
@@ -198,7 +198,9 @@ def main() -> int:
     parser.add_argument(
         "--work", type=Path, required=True, help="Scratch directory for clones and the MIMRY cache"
     )
-    parser.add_argument("--set", default="dev", choices=["dev", "holdout"], help="Task set to run")
+    parser.add_argument(
+        "--set", default="dev", choices=["dev", "holdout", "holdout2"], help="Task set to run"
+    )
     parser.add_argument("--only", help="Run only task ids containing this text")
     args = parser.parse_args()
     work = args.work.resolve()

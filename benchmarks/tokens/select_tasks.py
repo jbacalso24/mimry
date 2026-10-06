@@ -15,7 +15,7 @@ cannot be cherry-picked for MIMRY:
   was before the change
 
 Requires an authenticated `gh` CLI. Usage: select_tasks.py
-[dev|holdout]. Writes benchmarks/tokens/tasks.<set>.json.
+[dev|holdout|holdout2]. Writes benchmarks/tokens/tasks.<set>.json.
 """
 
 from __future__ import annotations
