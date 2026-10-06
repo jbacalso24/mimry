@@ -4,6 +4,11 @@ import pytest
 
 _SESSION_CACHE_HOME = os.environ.get("MIMRY_CACHE_HOME")
 
+# `mimry install` registers the MCP server with the user's real agent
+# CLIs and config files; the suite must never do that. Subprocess tests
+# inherit this, and tests of registration unset it.
+os.environ.setdefault("MIMRY_NO_MCP_REGISTRATION", "1")
+
 
 @pytest.fixture(autouse=True)
 def _isolated_cache_home(tmp_path_factory, monkeypatch):

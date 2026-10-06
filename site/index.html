@@ -390,7 +390,7 @@ Start with
 <span class="dim">      name matches</span></pre>
         </div>
       </div>
-      <p class="footnote">On 48 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 66% fewer tokens than one using grep, and read every source file the change modified in 42 tasks to grep's 33. <a href="https://github.com/jbacalso24/mimry/tree/main/benchmarks/tokens">See the token benchmark</a></p>
+      <p class="footnote">On 44 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 40% fewer tokens than one using grep, and read every source file the change modified in 31 tasks to grep's 28. When both agents read sed windows around grep matches instead of whole files, MIMRY read 37% fewer tokens and located 29 tasks to grep's 27. <a href="https://github.com/jbacalso24/mimry/tree/main/benchmarks/tokens">See the token benchmark</a></p>
       <p class="footnote">On MIMRY's frozen retrieval benchmark, 94% of the files a task needs appear in its top five results (recall@5 0.94, nDCG@5 0.84). <a href="https://github.com/jbacalso24/mimry/tree/main/benchmarks">See the retrieval benchmark</a></p>
     </div>
   </section>

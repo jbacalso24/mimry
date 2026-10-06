@@ -1,0 +1,1093 @@
+{
+  "summary": {
+    "tasks": 44,
+    "read_budget": 10,
+    "success": {
+      "grep": 28,
+      "mimry": 31
+    },
+    "tokens_total": {
+      "grep": 2358844,
+      "mimry": 1411582
+    },
+    "savings_vs_grep_pct": 40.2,
+    "both_succeeded": 25,
+    "savings_vs_grep_pct_both_succeeded": 37.3,
+    "median_task_savings_vs_grep_pct": 46.4,
+    "median_x_fewer_than_reading_whole_repo": 22.2
+  },
+  "tasks": [
+    {
+      "id": "fastapi/typer#1912",
+      "task": "\ud83d\udc1b Fix showing `fast` button as external link in animated terminals in docs",
+      "gold": [
+        "docs/js/termynal.js"
+      ],
+      "repo_tokens": 575902,
+      "grep": {
+        "tokens": 85046,
+        "search_tokens": 3984,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 70273,
+        "search_tokens": 1709,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "fastapi/typer#1904",
+      "task": "\ud83d\udc1b Prevent scroll-to-top on restart/fast buttons in the documentation",
+      "gold": [
+        "docs/js/termynal.js"
+      ],
+      "repo_tokens": 575111,
+      "grep": {
+        "tokens": 49489,
+        "search_tokens": 827,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 54147,
+        "search_tokens": 1535,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "fastapi/typer#1843",
+      "task": "\ud83d\udc1b Fix formatting in `NoSuchOption.format_message()`",
+      "gold": [
+        "typer/_click/exceptions.py"
+      ],
+      "repo_tokens": 577721,
+      "grep": {
+        "tokens": 2186,
+        "search_tokens": 344,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 3616,
+        "search_tokens": 1774,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "fastapi/typer#1821",
+      "task": "\ud83d\udc1b Ensure that the default of a list argument is used correctly",
+      "gold": [
+        "typer/_click/parser.py"
+      ],
+      "repo_tokens": 576668,
+      "grep": {
+        "tokens": 99496,
+        "search_tokens": 5108,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 87794,
+        "search_tokens": 1765,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "fastapi/typer#1820",
+      "task": "\ud83d\udc1b Respect wait=False when launching URLs with xdg-open",
+      "gold": [
+        "typer/main.py"
+      ],
+      "repo_tokens": 577063,
+      "grep": {
+        "tokens": 15418,
+        "search_tokens": 1927,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 23654,
+        "search_tokens": 1580,
+        "reads": 6,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "fastapi/typer#1812",
+      "task": "\ud83d\udc1b Ensure that hidden commands are not shown when Rich markup is disabled",
+      "gold": [
+        "typer/core.py"
+      ],
+      "repo_tokens": 576276,
+      "grep": {
+        "tokens": 76238,
+        "search_tokens": 3090,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 88118,
+        "search_tokens": 1874,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "fastapi/typer#1807",
+      "task": "\ud83d\udc77 Add CI to create draft release after merging a `release` PR",
+      "gold": [
+        "scripts/prepare_release.py"
+      ],
+      "repo_tokens": 575765,
+      "grep": {
+        "tokens": 84055,
+        "search_tokens": 2514,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 2972,
+        "search_tokens": 1582,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "fastapi/typer#1792",
+      "task": "\u267b\ufe0f Unify the testing functionality",
+      "gold": [
+        "typer/testing.py"
+      ],
+      "repo_tokens": 572955,
+      "grep": {
+        "tokens": 67189,
+        "search_tokens": 2961,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 69673,
+        "search_tokens": 1577,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3146",
+      "task": "Support HTTP/2 response trailers",
+      "gold": [
+        "uvicorn/protocols/http/zttp_h2_impl.py"
+      ],
+      "repo_tokens": 395120,
+      "grep": {
+        "tokens": 14456,
+        "search_tokens": 1093,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 7884,
+        "search_tokens": 1791,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3137",
+      "task": "Add HTTP/2 Early Hints support",
+      "gold": [
+        "uvicorn/_types.py",
+        "uvicorn/protocols/http/zttp_h2_impl.py"
+      ],
+      "repo_tokens": 394500,
+      "grep": {
+        "tokens": 240177,
+        "search_tokens": 725,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 41509,
+        "search_tokens": 1829,
+        "reads": 10,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": false
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3119",
+      "task": "Add ::1 to FORWARDED_ALLOW_IPS",
+      "gold": [
+        "uvicorn/config.py",
+        "uvicorn/main.py"
+      ],
+      "repo_tokens": 394102,
+      "grep": {
+        "tokens": 16044,
+        "search_tokens": 43,
+        "reads": 3,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 19311,
+        "search_tokens": 1649,
+        "reads": 4,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3107",
+      "task": "Unset the keep-alive timer when upgrading to WebSocket",
+      "gold": [
+        "uvicorn/protocols/http/h11_impl.py",
+        "uvicorn/protocols/http/zttp_impl.py"
+      ],
+      "repo_tokens": 394138,
+      "grep": {
+        "tokens": 14483,
+        "search_tokens": 1132,
+        "reads": 3,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 23479,
+        "search_tokens": 1924,
+        "reads": 5,
+        "first_gold_read": 4,
+        "gold_found": 2,
+        "success": true
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3104",
+      "task": "Add support for zuvloop",
+      "gold": [
+        "uvicorn/config.py"
+      ],
+      "repo_tokens": 391447,
+      "grep": {
+        "tokens": 0,
+        "search_tokens": 0,
+        "reads": 0,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 29168,
+        "search_tokens": 1722,
+        "reads": 8,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3103",
+      "task": "Handle Connection close tokens across HTTP protocols",
+      "gold": [
+        "uvicorn/protocols/http/httptools_impl.py",
+        "uvicorn/protocols/http/zttp_impl.py"
+      ],
+      "repo_tokens": 390831,
+      "grep": {
+        "tokens": 71204,
+        "search_tokens": 1786,
+        "reads": 10,
+        "first_gold_read": 8,
+        "gold_found": 1,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 15204,
+        "search_tokens": 2057,
+        "reads": 3,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3101",
+      "task": "Require explicit opt-in for zttp HTTP/2",
+      "gold": [
+        "uvicorn/config.py",
+        "uvicorn/main.py"
+      ],
+      "repo_tokens": 391810,
+      "grep": {
+        "tokens": 198280,
+        "search_tokens": 1363,
+        "reads": 6,
+        "first_gold_read": 4,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 33686,
+        "search_tokens": 1783,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3078",
+      "task": "Remove duplicate Date header from SansIO WebSocket handshakes",
+      "gold": [
+        "uvicorn/protocols/websockets/websockets_sansio_impl.py"
+      ],
+      "repo_tokens": 373505,
+      "grep": {
+        "tokens": 41278,
+        "search_tokens": 1127,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 6989,
+        "search_tokens": 2069,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/viper#2040",
+      "task": "feat: use maintained yaml library",
+      "gold": [
+        "internal/encoding/yaml/codec.go"
+      ],
+      "repo_tokens": 96369,
+      "grep": {
+        "tokens": 48628,
+        "search_tokens": 172,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 1161,
+        "search_tokens": 1079,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/viper#2029",
+      "task": "refactor: use the built-in max/min to simplify the code",
+      "gold": [
+        "util.go"
+      ],
+      "repo_tokens": 96335,
+      "grep": {
+        "tokens": 41944,
+        "search_tokens": 235,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 4270,
+        "search_tokens": 1290,
+        "reads": 6,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/viper#2027",
+      "task": "Return not found error if setting config",
+      "gold": [
+        "file.go",
+        "viper.go"
+      ],
+      "repo_tokens": 89885,
+      "grep": {
+        "tokens": 40772,
+        "search_tokens": 582,
+        "reads": 6,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 20765,
+        "search_tokens": 1227,
+        "reads": 5,
+        "first_gold_read": 4,
+        "gold_found": 2,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/viper#2015",
+      "task": "Add support for flags pflag.BoolSlice, pflag.UintSlice and pflag.Float64Slice",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 95878,
+      "grep": {
+        "tokens": 29401,
+        "search_tokens": 101,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 16065,
+        "search_tokens": 1237,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/viper#2007",
+      "task": "fix: config type check when loading any config",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 95851,
+      "grep": {
+        "tokens": 29964,
+        "search_tokens": 658,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 16071,
+        "search_tokens": 1237,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/viper#2003",
+      "task": "fix(config): get config type from v.configType or config file ext",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 95453,
+      "grep": {
+        "tokens": 29900,
+        "search_tokens": 643,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 16083,
+        "search_tokens": 1265,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/viper#1887",
+      "task": "feat: copy keydelim from parent chart in viper.Sub()",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 96598,
+      "grep": {
+        "tokens": 29679,
+        "search_tokens": 492,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 16119,
+        "search_tokens": 1328,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "spf13/viper#1872",
+      "task": "Add decoder hook option",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 96293,
+      "grep": {
+        "tokens": 15095,
+        "search_tokens": 198,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 16160,
+        "search_tokens": 1263,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "honojs/hono#5487",
+      "task": "fix(jsx): add px to numeric gridGap, gridRowGap and gridColumnGap",
+      "gold": [
+        "src/jsx/utils.ts"
+      ],
+      "repo_tokens": 980528,
+      "grep": {
+        "tokens": 55512,
+        "search_tokens": 938,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 35238,
+        "search_tokens": 1514,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "honojs/hono#5476",
+      "task": "fix(jsx): allow JSXNode function component results",
+      "gold": [
+        "src/jsx/base.ts"
+      ],
+      "repo_tokens": 980501,
+      "grep": {
+        "tokens": 7046,
+        "search_tokens": 3256,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 5571,
+        "search_tokens": 1781,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "honojs/hono#5475",
+      "task": "fix(etag): correctly match mixed-case header name in retainedHeader option",
+      "gold": [
+        "src/middleware/etag/index.ts"
+      ],
+      "repo_tokens": 980474,
+      "grep": {
+        "tokens": 9077,
+        "search_tokens": 8100,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 2501,
+        "search_tokens": 1524,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "honojs/hono#5468",
+      "task": "feat(adapters/netlify): publish to JSR",
+      "gold": [
+        "adapters/netlify/src/conninfo.ts",
+        "adapters/netlify/src/index.ts",
+        "adapters/netlify/src/mod.ts"
+      ],
+      "repo_tokens": 977869,
+      "grep": {
+        "tokens": 53873,
+        "search_tokens": 568,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 2370,
+        "search_tokens": 1521,
+        "reads": 6,
+        "first_gold_read": 1,
+        "gold_found": 3,
+        "success": true
+      }
+    },
+    {
+      "id": "honojs/hono#5465",
+      "task": "feat(adapters/deno): publish to JSR",
+      "gold": [
+        "adapters/deno/src/index.ts"
+      ],
+      "repo_tokens": 977883,
+      "grep": {
+        "tokens": 54489,
+        "search_tokens": 993,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 9797,
+        "search_tokens": 1768,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "honojs/hono#5446",
+      "task": "fix(types): allow returning a Blob as a response body",
+      "gold": [
+        "src/context.ts"
+      ],
+      "repo_tokens": 939434,
+      "grep": {
+        "tokens": 18776,
+        "search_tokens": 4380,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 35180,
+        "search_tokens": 1635,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "honojs/hono#5426",
+      "task": "fix(lambda-edge): sync content type detection with aws-lambda",
+      "gold": [
+        "src/adapter/lambda-edge/handler.ts"
+      ],
+      "repo_tokens": 909301,
+      "grep": {
+        "tokens": 13444,
+        "search_tokens": 6962,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 4275,
+        "search_tokens": 1808,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "honojs/hono#5424",
+      "task": "fix(aws-lambda): treat binary +xml archive media types as binary",
+      "gold": [
+        "src/adapter/aws-lambda/handler.ts"
+      ],
+      "repo_tokens": 908932,
+      "grep": {
+        "tokens": 13402,
+        "search_tokens": 3060,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 7589,
+        "search_tokens": 1715,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "hyperium/hyper#4224",
+      "task": "fix(http1): remove invalid content-length if transfer-encoding is auto-added",
+      "gold": [
+        "src/proto/h1/role.rs"
+      ],
+      "repo_tokens": 366555,
+      "grep": {
+        "tokens": 70494,
+        "search_tokens": 1759,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 16796,
+        "search_tokens": 1418,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "hyperium/hyper#4223",
+      "task": "fix(http1): always remove content-length if transfer-encoding is sent",
+      "gold": [
+        "src/proto/h1/role.rs"
+      ],
+      "repo_tokens": 366152,
+      "grep": {
+        "tokens": 17348,
+        "search_tokens": 1963,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 24954,
+        "search_tokens": 1395,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "hyperium/hyper#4201",
+      "task": "fix(http1): let a Connection close token win over a later keep-alive",
+      "gold": [
+        "src/proto/h1/role.rs"
+      ],
+      "repo_tokens": 365158,
+      "grep": {
+        "tokens": 72204,
+        "search_tokens": 3511,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 101103,
+        "search_tokens": 1434,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "hyperium/hyper#4198",
+      "task": "fix(http2): do not reserve capacity for idle Upgraded streams",
+      "gold": [
+        "src/proto/h2/upgrade.rs"
+      ],
+      "repo_tokens": 361681,
+      "grep": {
+        "tokens": 119215,
+        "search_tokens": 982,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 10427,
+        "search_tokens": 1481,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "hyperium/hyper#4196",
+      "task": "Preserve hop-by-hop when setting close or keep-alive",
+      "gold": [
+        "src/proto/h1/conn.rs"
+      ],
+      "repo_tokens": 361420,
+      "grep": {
+        "tokens": 51383,
+        "search_tokens": 1167,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 12393,
+        "search_tokens": 1415,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "hyperium/hyper#4188",
+      "task": "fix(ext): remove broken `OriginalHeaderOrder` doctest",
+      "gold": [
+        "src/ext/mod.rs"
+      ],
+      "repo_tokens": 361740,
+      "grep": {
+        "tokens": 25842,
+        "search_tokens": 871,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 4010,
+        "search_tokens": 1435,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true
+      }
+    },
+    {
+      "id": "hyperium/hyper#4168",
+      "task": "perf(body): simpler custom Incoming channel",
+      "gold": [
+        "src/body/incoming.rs",
+        "src/body/mod.rs",
+        "src/common/mod.rs"
+      ],
+      "repo_tokens": 361256,
+      "grep": {
+        "tokens": 118349,
+        "search_tokens": 1315,
+        "reads": 10,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 62764,
+        "search_tokens": 1289,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": false
+      }
+    },
+    {
+      "id": "hyperium/hyper#4157",
+      "task": "refactor: drop redundant `continue` and remove needless_continue allow",
+      "gold": [
+        "src/proto/h1/dispatch.rs",
+        "src/proto/h2/client.rs",
+        "src/proto/h2/upgrade.rs"
+      ],
+      "repo_tokens": 358237,
+      "grep": {
+        "tokens": 96405,
+        "search_tokens": 493,
+        "reads": 8,
+        "first_gold_read": 3,
+        "gold_found": 3,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 43583,
+        "search_tokens": 1386,
+        "reads": 8,
+        "first_gold_read": 1,
+        "gold_found": 3,
+        "success": true
+      }
+    },
+    {
+      "id": "lysine-dev/retrofit#4764",
+      "task": "Remove use of JVM toolchain for main compilation",
+      "gold": [
+        "retrofit/src/main/java/retrofit2/HttpServiceMethod.java",
+        "retrofit/src/main/java/retrofit2/Utils.java"
+      ],
+      "repo_tokens": 1834716,
+      "grep": {
+        "tokens": 28882,
+        "search_tokens": 1300,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 12767,
+        "search_tokens": 1890,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "lysine-dev/retrofit#4704",
+      "task": "Fix broken/outdated links",
+      "gold": [
+        "retrofit/src/main/java/retrofit2/Retrofit.java",
+        "website/src/content.config.ts"
+      ],
+      "repo_tokens": 1833712,
+      "grep": {
+        "tokens": 67755,
+        "search_tokens": 5064,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 290826,
+        "search_tokens": 2214,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false
+      }
+    },
+    {
+      "id": "lysine-dev/retrofit#4595",
+      "task": "Support QUERY method",
+      "gold": [
+        "retrofit/src/main/java/retrofit2/RequestFactory.java",
+        "retrofit/src/main/java/retrofit2/Retrofit.java"
+      ],
+      "repo_tokens": 1834019,
+      "grep": {
+        "tokens": 82698,
+        "search_tokens": 6115,
+        "reads": 7,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true
+      },
+      "mimry": {
+        "tokens": 34795,
+        "search_tokens": 1591,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": false
+      }
+    },
+    {
+      "id": "lysine-dev/retrofit#4542",
+      "task": "Add Invocation.annotationUrl",
+      "gold": [
+        "retrofit/src/main/java/retrofit2/Invocation.java",
+        "retrofit/src/main/java/retrofit2/RequestFactory.java"
+      ],
+      "repo_tokens": 1826474,
+      "grep": {
+        "tokens": 42228,
+        "search_tokens": 435,
+        "reads": 10,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": false
+      },
+      "mimry": {
+        "tokens": 10472,
+        "search_tokens": 1809,
+        "reads": 4,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true
+      }
+    }
+  ]
+}

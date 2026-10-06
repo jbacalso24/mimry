@@ -403,6 +403,24 @@ NAMED_OR_COMPUTED_CREDENTIALS_IN_CODE = (
         ' """\n'
     ),
     '    """Args:\n        token: which token?\n    """\n',
+    # Code that only names a credential or builds one from variables.
+    (
+        "const getAuthorizationHeader = (u: string, p: string) => u\n"
+        "  ? `Basic ${stringToBase64(`${u}:${p}`)}`\n"
+        "  : undefined;\n"
+    ),
+    "secret: 'passphrase',\n",
+    "token: 'secret',\n",
+    'const AuthUserKey = "user"\n',
+    'const AuthProxyUserKey = "proxy_user"\n',
+    "function hasCredentialInUrl(url: URL, credential: 'username' | 'password'): boolean {\n",
+    "url.password = this.#internals.password;\n",
+    (
+        "export const changed = (a: URL, b: URL, credential: 'username'"
+        " | 'password'): boolean => (\n  a.origin !== b.origin\n);\n"
+    ),
+    "function role(credential: 'admin' | 'guest'): void {\n",
+    "type Credential =\n  | 'admin'\n  | 'guest';\n",
 )
 LITERAL_CREDENTIALS_IN_CODE = (
     f'password = "{DEFENSIVE_MARKER}"\n',
@@ -447,6 +465,14 @@ LITERAL_CREDENTIALS_IN_CODE = (
     f'const authToken = isProd ?\n  "{DEFENSIVE_MARKER}" :\n  "";\n',
     f'const authToken = isProd ? "" :\n  "{DEFENSIVE_MARKER}";\n',
     f"'token' => 'Bearer ' .\n    '{DEFENSIVE_MARKER}',\n",
+    # Counter-examples that must stay sensitive and be redacted.
+    f"const auth = `Basic {DEFENSIVE_MARKER}`;\n",
+    f'secret: "{DEFENSIVE_MARKER}",\n',
+    f'const AuthUserKey = "{DEFENSIVE_MARKER}"\n',
+    f"password = this.{DEFENSIVE_MARKER}#x\n",
+    f'const cfg = {{ password: "{DEFENSIVE_MARKER}" || fallback }};\n',
+    f'const getToken = () => ("{DEFENSIVE_MARKER}");\n',
+    f'password = "{DEFENSIVE_MARKER}" | flags\n',
 )
 # Literals the detector once let through outside parsed source, with the
 # secret in each.
@@ -511,6 +537,9 @@ def test_literal_credentials_in_source_code_stay_sensitive_and_redacted():
     ):
         assert not contains_sensitive_text(line, code=True), line
         assert DEFENSIVE_MARKER not in redact_sensitive_text(line), line
+    # A value that merely contains a credential word is still a value.
+    assert contains_sensitive_text('token = "my_secret"\n', code=True)
+    assert contains_sensitive_text('password = "!@#$%^&*"\n', code=True)
 
 
 def test_configuration_literals_are_sensitive_and_redacted():

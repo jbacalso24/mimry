@@ -4,12 +4,39 @@ import json
 import os
 import shlex
 import shutil
+import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from shutil import which
 
 from . import ui
+
+
+@dataclass(frozen=True)
+class McpCli:
+    """Registration through the agent's own CLI, which owns its config
+    format. ``{server}`` in ``add`` is the server's executable."""
+
+    binary: str
+    add: tuple[str, ...]
+    remove: tuple[str, ...]
+    # Exits 0 when the server is registered; None when no check
+    # exists.
+    status: tuple[str, ...] | None = None
+    # The CLI splits the command on spaces, so a path with a
+    # space breaks.
+    splits_command: bool = False
+
+
+@dataclass(frozen=True)
+class McpJson:
+    """Registration by merging an entry into the agent's JSON config."""
+
+    path: Path
+    key: str
+    entry: Callable[[str], dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -21,9 +48,12 @@ class MimryPlatform:
     always_on_file: Path | None = None
     hook_path: Path | None = None
     aliases: tuple[str, ...] = ()
+    mcp: McpCli | McpJson | None = None
 
 
 _VERSION = "0.1.0"
+# Agents without MCP support; the skill alone covers them.
+_NO_MCP = frozenset({"aider", "pi", "agents"})
 _PLATFORM_ALIASES = {
     "claude": "claude-code",
     "claude-code": "claude-code",
@@ -217,6 +247,12 @@ def platforms() -> dict[str, MimryPlatform]:
             always_on_file=Path("CLAUDE.md"),
             hook_path=Path(".claude") / "settings.json",
             aliases=("claude", "windows"),
+            mcp=McpCli(
+                "claude",
+                ("mcp", "add", "--scope", "user", "mimry", "--", "{server}"),
+                ("mcp", "remove", "--scope", "user", "mimry"),
+                status=("mcp", "get", "mimry"),
+            ),
         ),
         "codex": MimryPlatform(
             key="codex",
@@ -225,6 +261,12 @@ def platforms() -> dict[str, MimryPlatform]:
             global_path=home / ".codex" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
             hook_path=Path(".codex") / "hooks.json",
+            mcp=McpCli(
+                "codex",
+                ("mcp", "add", "mimry", "--", "{server}"),
+                ("mcp", "remove", "mimry"),
+                status=("mcp", "get", "mimry"),
+            ),
         ),
         "opencode": MimryPlatform(
             key="opencode",
@@ -232,6 +274,11 @@ def platforms() -> dict[str, MimryPlatform]:
             project_path=skill(".opencode"),
             global_path=home / ".config" / "opencode" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
+            mcp=McpJson(
+                home / ".config" / "opencode" / "opencode.json",
+                "mcp",
+                lambda server: {"type": "local", "command": [server], "enabled": True},
+            ),
         ),
         "kilo": MimryPlatform(
             key="kilo",
@@ -253,6 +300,11 @@ def platforms() -> dict[str, MimryPlatform]:
             project_path=skill(".copilot"),
             global_path=home / ".copilot" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
+            mcp=McpCli(
+                "copilot",
+                ("mcp", "add", "mimry", "--", "{server}"),
+                ("mcp", "remove", "mimry"),
+            ),
         ),
         "claw": MimryPlatform(
             key="claw",
@@ -269,6 +321,12 @@ def platforms() -> dict[str, MimryPlatform]:
             global_path=home / ".factory" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
             aliases=("factory",),
+            mcp=McpCli(
+                "droid",
+                ("mcp", "add", "mimry", "{server}"),
+                ("mcp", "remove", "mimry"),
+                splits_command=True,
+            ),
         ),
         "trae": MimryPlatform(
             key="trae",
@@ -297,6 +355,11 @@ def platforms() -> dict[str, MimryPlatform]:
             project_path=skill(".kiro"),
             global_path=home / ".kiro" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
+            mcp=McpJson(
+                home / ".kiro" / "settings" / "mcp.json",
+                "mcpServers",
+                lambda server: {"command": server, "args": []},
+            ),
         ),
         "gemini": MimryPlatform(
             key="gemini",
@@ -306,6 +369,13 @@ def platforms() -> dict[str, MimryPlatform]:
             if sys.platform == "win32"
             else home / ".gemini" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("GEMINI.md"),
+            # Without --scope user, Gemini CLI writes the project's
+            # settings.
+            mcp=McpCli(
+                "gemini",
+                ("mcp", "add", "--scope", "user", "mimry", "{server}"),
+                ("mcp", "remove", "--scope", "user", "mimry"),
+            ),
         ),
         "agents": MimryPlatform(
             key="agents",
@@ -321,6 +391,11 @@ def platforms() -> dict[str, MimryPlatform]:
             project_path=skill(".agents"),
             global_path=home / ".config" / "agents" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
+            mcp=McpCli(
+                "amp",
+                ("mcp", "add", "mimry", "--", "{server}"),
+                ("mcp", "remove", "mimry"),
+            ),
         ),
         "devin": MimryPlatform(
             key="devin",
@@ -328,6 +403,11 @@ def platforms() -> dict[str, MimryPlatform]:
             project_path=skill(".devin"),
             global_path=home / ".config" / "devin" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
+            mcp=McpCli(
+                "devin",
+                ("mcp", "add", "-s", "user", "mimry", "--", "{server}"),
+                ("mcp", "remove", "-s", "user", "mimry"),
+            ),
         ),
         "antigravity": MimryPlatform(
             key="antigravity",
@@ -343,6 +423,11 @@ def platforms() -> dict[str, MimryPlatform]:
             project_path=skill(".kimi"),
             global_path=home / ".kimi" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
+            mcp=McpCli(
+                "kimi",
+                ("mcp", "add", "--transport", "stdio", "mimry", "--", "{server}"),
+                ("mcp", "remove", "mimry"),
+            ),
         ),
         "pi": MimryPlatform(
             key="pi",
@@ -652,16 +737,20 @@ def _remove_always_on(root: Path, cfg: MimryPlatform) -> Path | None:
     return dst
 
 
-def _resolve_mimry_exe() -> str:
-    found = which("mimry")
+def _resolve_executable(name: str) -> str:
+    found = which(name)
     if found:
         return found
     scripts_dir = Path(sys.executable).parent
-    for name in ("mimry.exe", "mimry"):
-        candidate = scripts_dir / name
+    for suffix in (".exe", ""):
+        candidate = scripts_dir / (name + suffix)
         if candidate.exists():
             return str(candidate)
-    return "mimry"
+    return name
+
+
+def _resolve_mimry_exe() -> str:
+    return _resolve_executable("mimry")
 
 
 def _posix_executable() -> str:
@@ -680,6 +769,50 @@ def _posix_executable() -> str:
 def _hook_command() -> str:
     """Build a command for hook hosts that run it with POSIX Bash."""
     return f"{_posix_executable()} hook-check"
+
+
+def _run_agent_cli(binary: str, args: list[str]) -> tuple[int, str]:
+    """Run an agent CLI and return (returncode, output_line)."""
+    try:
+        result = subprocess.run(
+            [binary, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
+            timeout=120,
+            check=False,
+        )
+        return (result.returncode, (result.stderr or result.stdout).strip())
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return (1, str(exc))
+
+
+def _mcp_disabled(no_mcp: bool) -> bool:
+    return no_mcp or bool(os.environ.get("MIMRY_NO_MCP_REGISTRATION"))
+
+
+def _mcp_snippet(server: str) -> str:
+    return json.dumps({"mcpServers": {"mimry": {"command": server}}}, indent=2)
+
+
+def _mcp_args(args: tuple[str, ...], server: str) -> list[str]:
+    return [server if arg == "{server}" else arg for arg in args]
+
+
+def _read_json_config(path: Path) -> dict | None:
+    """Read a JSON config file.
+
+    Returns {} if missing, None if broken.
+    """
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 
 def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Path | None:
@@ -738,6 +871,123 @@ def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
     return dst
 
 
+def register_mcp(cfg: MimryPlatform, *, dry_run: bool) -> None:
+    """Register the MIMRY MCP server with the agent.
+
+    Prints its own lines with ui.
+    """
+    if cfg.key in _NO_MCP:
+        ui.detail(f"{cfg.label} has no MCP support; the skill covers it")
+        return
+    server = _resolve_executable("mimry-mcp")
+    if cfg.mcp is None:
+        ui.detail(f"To give {cfg.label} MIMRY's tools, add this MCP server in its settings:")
+        print(_mcp_snippet(server))
+        return
+    if isinstance(cfg.mcp, McpCli):
+        cli = cfg.mcp
+        has_space = any(char.isspace() for char in server)
+        shown = f'"{server}"' if has_space else server
+        command_text = " ".join([cli.binary, *_mcp_args(cli.add, shown)])
+        if cli.splits_command and has_space:
+            ui.detail(f"To give {cfg.label} MIMRY's tools, add this MCP server in its settings:")
+            print(_mcp_snippet(server))
+            return
+        binary = shutil.which(cli.binary)
+        if binary is None:
+            ui.detail(
+                f"`{cli.binary}` was not found; to give {cfg.label} MIMRY's tools, run:"
+                f" {command_text}"
+            )
+            return
+        if dry_run:
+            ui.detail(f"Would register the MIMRY MCP server: {command_text}")
+            return
+        _run_agent_cli(binary, list(cli.remove))
+        code, output = _run_agent_cli(binary, _mcp_args(cli.add, server))
+        if code == 0:
+            ui.detail(f"Registered the MIMRY MCP server with {cfg.label}")
+        else:
+            last_line = output.split("\n")[-1] if output else ""
+            ui.warn(f"Could not register the MIMRY MCP server with {cfg.label}: {last_line}")
+            ui.detail(f"Run it yourself: {command_text}")
+    elif isinstance(cfg.mcp, McpJson):
+        path = cfg.mcp.path
+        key = cfg.mcp.key
+        data = _read_json_config(path)
+        jsonc_sibling = path.with_suffix(".jsonc")
+        if (
+            data is None
+            or jsonc_sibling.exists()
+            or (key in data and not isinstance(data[key], dict))
+        ):
+            ui.detail(f"To give {cfg.label} MIMRY's tools, add this MCP server in its settings:")
+            entry_shape = {key: {"mimry": cfg.mcp.entry(server)}}
+            print(json.dumps(entry_shape, indent=2))
+            ui.detail(f"Add it to {ui.display_path(path)}")
+            return
+        if dry_run:
+            ui.detail(f"Would add the MIMRY MCP server to {ui.display_path(path)}")
+            return
+        data.setdefault(key, {})["mimry"] = cfg.mcp.entry(server)
+        _atomic_write(path, json.dumps(data, indent=2) + "\n")
+        ui.detail(f"Registered the MIMRY MCP server in {ui.display_path(path)}")
+
+
+def unregister_mcp(cfg: MimryPlatform) -> bool:
+    """Unregister the MIMRY MCP server.
+
+    Returns True when something was removed.
+    """
+    if cfg.mcp is None or cfg.key in _NO_MCP:
+        return False
+    if isinstance(cfg.mcp, McpCli):
+        cli = cfg.mcp
+        binary = shutil.which(cli.binary)
+        if binary is None:
+            return False
+        code, _ = _run_agent_cli(binary, list(cli.remove))
+        return code == 0
+    elif isinstance(cfg.mcp, McpJson):
+        path = cfg.mcp.path
+        key = cfg.mcp.key
+        data = _read_json_config(path)
+        if not (isinstance(data, dict) and isinstance(data.get(key), dict)):
+            return False
+        if "mimry" not in data[key]:
+            return False
+        del data[key]["mimry"]
+        if not data[key]:
+            del data[key]
+        _atomic_write(path, json.dumps(data, indent=2) + "\n")
+        return True
+    return False
+
+
+def mcp_registered(cfg: MimryPlatform) -> bool | None:
+    """Check if MCP is registered.
+
+    Returns None if cannot check cheaply.
+    """
+    if cfg.mcp is None or cfg.key in _NO_MCP:
+        return None
+    if isinstance(cfg.mcp, McpCli):
+        cli = cfg.mcp
+        if cli.status is None:
+            return None
+        binary = shutil.which(cli.binary)
+        if binary is None:
+            return None
+        code, _ = _run_agent_cli(binary, list(cli.status))
+        return code == 0
+    elif isinstance(cfg.mcp, McpJson):
+        path = cfg.mcp.path
+        key = cfg.mcp.key
+        data = _read_json_config(path)
+        return isinstance(data, dict) and isinstance(data.get(key), dict) and "mimry" in data[key]
+    return None
+
+
 def _scope(project: bool) -> str:
     return "this project" if project else "all projects"
 
@@ -762,6 +1012,10 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
         result["always_on"] = _has_always_on(root, cfg)
     if project and cfg.hook_path:
         result["hooks"] = _has_hook(root, cfg)
+    if not _mcp_disabled(False):
+        mcp_check = mcp_registered(cfg)
+        if mcp_check is not None:
+            result["mcp"] = mcp_check
     healthy = all(result.values())
     headline = f"MIMRY skill for {cfg.label} ({_scope(project)})"
     if healthy:
@@ -779,6 +1033,8 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
         checks.append(("always_on", "Always-on", cfg.always_on_file.as_posix(), "missing"))
     if "hooks" in result:
         checks.append(("hooks", "Hook", cfg.hook_path.as_posix(), "missing"))
+    if "mcp" in result:
+        checks.append(("mcp", "MCP server", "registered", "not registered"))
     ui.table(
         [
             (
@@ -808,6 +1064,7 @@ def install_skill(
     dry_run: bool = False,
     always_on: bool = False,
     hooks: bool = False,
+    mcp: bool = True,
 ) -> Path:
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
@@ -838,6 +1095,8 @@ def install_skill(
             ui.detail(f"Would add {extra}")
         if hooks and not hook_target:
             ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
+        if not _mcp_disabled(not mcp):
+            register_mcp(cfg, dry_run=True)
         return dst
     _install_references(dst.parent)
     _atomic_write(dst, skill_body(key))
@@ -857,6 +1116,8 @@ def install_skill(
         ui.detail(f"Added {extra}")
     if hooks and not hook_target:
         ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
+    if not _mcp_disabled(not mcp):
+        register_mcp(cfg, dry_run=False)
     if project:
         rels = [p.relative_to(root).as_posix() + ("/" if p.is_dir() else "") for p in git_paths]
         ui.detail(f"To share it with your team: git add {' '.join(rels)}")
@@ -864,7 +1125,13 @@ def install_skill(
 
 
 def uninstall_skill(
-    platform_name: str, *, project: bool, root: Path, always_on: bool = False, hooks: bool = False
+    platform_name: str,
+    *,
+    project: bool,
+    root: Path,
+    always_on: bool = False,
+    hooks: bool = False,
+    mcp: bool = True,
 ) -> bool:
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
@@ -883,12 +1150,13 @@ def uninstall_skill(
         removed.append(path)
     if hooks and project and (path := _remove_hooks(root, cfg)):
         removed.append(path)
+    mcp_removed = not project and not _mcp_disabled(not mcp) and unregister_mcp(cfg)
     for d in (dst.parent, dst.parent.parent, dst.parent.parent.parent):
         try:
             d.rmdir()
         except OSError:
             break
-    if not removed:
+    if not removed and not mcp_removed:
         print(
             f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label}"
             f" ({_scope(project)})."
@@ -897,6 +1165,8 @@ def uninstall_skill(
     ui.ok(f"Removed MIMRY for {cfg.label} ({_scope(project)})")
     for path in removed:
         ui.detail(ui.faint(_shown(path, root, project)))
+    if mcp_removed:
+        ui.detail(f"Removed the MIMRY MCP server from {cfg.label}")
     kept = []
     if project and not always_on and _has_always_on(root, cfg):
         kept.append(("--always-on", f"the always-on block in {cfg.always_on_file.as_posix()}"))
@@ -907,6 +1177,11 @@ def uninstall_skill(
         ui.detail(
             f"Kept {' and '.join(what for _, what in kept)}. Add {flags} to remove"
             f" {'them' if len(kept) > 1 else 'it'} too."
+        )
+    if project and cfg.mcp is not None and not _mcp_disabled(not mcp):
+        ui.detail(
+            "Kept the MCP server registration, which every project shares;"
+            f" `mimry uninstall --platform {key}` removes it."
         )
     return True
 
@@ -932,6 +1207,7 @@ def cmd_install(a) -> int:
         dry_run=a.dry_run,
         always_on=a.always_on,
         hooks=a.hooks,
+        mcp=not a.no_mcp,
     )
     return 0
 
@@ -940,6 +1216,11 @@ def cmd_uninstall(a) -> int:
     if not a.platform:
         raise SystemExit(ui.error_text("Choose a platform with --platform <name>"))
     uninstall_skill(
-        a.platform, project=a.project, root=Path(a.root), always_on=a.always_on, hooks=a.hooks
+        a.platform,
+        project=a.project,
+        root=Path(a.root),
+        always_on=a.always_on,
+        hooks=a.hooks,
+        mcp=not a.no_mcp,
     )
     return 0

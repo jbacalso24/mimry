@@ -139,6 +139,11 @@ Fall back to `grep`, `rg`, or reading files only to verify MIMRY's answer or whe
 ## Connect MIMRY to your agent
 
 Agents can call MIMRY directly as an MCP server (stdio transport, command `mimry-mcp`).
+`mimry install --platform <agent>` registers it for you at user scope, so every project gets it: through the agent's own CLI for Claude Code, Codex, Gemini CLI, Factory Droid, Kimi, Copilot CLI, Amp and Devin, and in the config file for Kiro and OpenCode.
+For other agents it prints the snippet to add in their MCP settings.
+Pass `--no-mcp`, or set `MIMRY_NO_MCP_REGISTRATION=1`, to skip it; a global `mimry uninstall --platform <agent>` removes it.
+
+To register it by hand instead:
 
 Claude Code:
 
@@ -212,7 +217,8 @@ Run `mimry install --list-platforms` for aliases, `mimry install --project --pla
 - **It is private by default.**
   Everything stays local, semantic search uses a deterministic local method (`local-hash-v1`), and credential files are skipped.
 - **It saves tokens.**
-  On 48 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 66% fewer tokens than one using grep, and read every source file the change modified in 42 tasks to grep's 33 ([token benchmark](benchmarks/tokens/README.md)).
+  On 44 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 40% fewer tokens than one using grep, and read every source file the change modified in 31 tasks to grep's 28 ([token benchmark](benchmarks/tokens/README.md)).
+  When both agents read `sed` windows around `grep -n` matches instead of whole files, MIMRY read 37% fewer tokens and located 29 tasks to grep's 27.
   Results are compact summaries and relative paths, never full source dumps.
 
 ## Commands

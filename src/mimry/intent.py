@@ -107,7 +107,7 @@ SOURCE_EXTS = {
 # almost never about it, so it is supporting context rather than a
 # primary edit surface.
 NON_PRIMARY_SEGMENTS = {
-    *("examples", "example", "samples", "sample", "bench", "benches", "benchmarks"),
+    *("examples", "example", "samples", "sample", "bench", "benches", "benchmarks", "benchmark"),
     *("vendor", "third_party", "node_modules"),
 }
 TEST_SEGMENTS = {"tests", "test", "__tests__", "testdata", "testing"}

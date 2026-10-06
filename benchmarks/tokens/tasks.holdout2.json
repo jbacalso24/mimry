@@ -1,0 +1,458 @@
+[
+  {
+    "id": "fastapi/typer#1912",
+    "repo": "fastapi/typer",
+    "pr": 1912,
+    "task": "\ud83d\udc1b Fix showing `fast` button as external link in animated terminals in docs",
+    "base": "b736701b4ce5701ebb06e2c03444522aae7be602",
+    "gold": [
+      "docs/js/termynal.js"
+    ]
+  },
+  {
+    "id": "fastapi/typer#1904",
+    "repo": "fastapi/typer",
+    "pr": 1904,
+    "task": "\ud83d\udc1b Prevent scroll-to-top on restart/fast buttons in the documentation",
+    "base": "9051baad9c86d0af1e51492924045f9909288510",
+    "gold": [
+      "docs/js/termynal.js"
+    ]
+  },
+  {
+    "id": "fastapi/typer#1843",
+    "repo": "fastapi/typer",
+    "pr": 1843,
+    "task": "\ud83d\udc1b Fix formatting in `NoSuchOption.format_message()`",
+    "base": "cff81065f6a6b4400a3f9daa076bb52c051e5734",
+    "gold": [
+      "typer/_click/exceptions.py"
+    ]
+  },
+  {
+    "id": "fastapi/typer#1821",
+    "repo": "fastapi/typer",
+    "pr": 1821,
+    "task": "\ud83d\udc1b Ensure that the default of a list argument is used correctly",
+    "base": "7f888b24c867458ab9547702720b71dc920c8925",
+    "gold": [
+      "typer/_click/parser.py"
+    ]
+  },
+  {
+    "id": "fastapi/typer#1820",
+    "repo": "fastapi/typer",
+    "pr": 1820,
+    "task": "\ud83d\udc1b Respect wait=False when launching URLs with xdg-open",
+    "base": "d2e002ab0d0afc9527cfacc00dd4c359a44898e9",
+    "gold": [
+      "typer/main.py"
+    ]
+  },
+  {
+    "id": "fastapi/typer#1812",
+    "repo": "fastapi/typer",
+    "pr": 1812,
+    "task": "\ud83d\udc1b Ensure that hidden commands are not shown when Rich markup is disabled",
+    "base": "c2d97d133a02bd358886d0006c6028c6789879f2",
+    "gold": [
+      "typer/core.py"
+    ]
+  },
+  {
+    "id": "fastapi/typer#1807",
+    "repo": "fastapi/typer",
+    "pr": 1807,
+    "task": "\ud83d\udc77 Add CI to create draft release after merging a `release` PR",
+    "base": "2f54c22fd9590f93bcbe24f9ecd2c472087b0704",
+    "gold": [
+      "scripts/prepare_release.py"
+    ]
+  },
+  {
+    "id": "fastapi/typer#1792",
+    "repo": "fastapi/typer",
+    "pr": 1792,
+    "task": "\u267b\ufe0f Unify the testing functionality",
+    "base": "eef433fcf337734f51ac68a77a82748adfacaa85",
+    "gold": [
+      "typer/testing.py"
+    ]
+  },
+  {
+    "id": "Kludex/uvicorn#3146",
+    "repo": "Kludex/uvicorn",
+    "pr": 3146,
+    "task": "Support HTTP/2 response trailers",
+    "base": "9bd4404cca9506e9ba4f46b69ef72d011ceef2bd",
+    "gold": [
+      "uvicorn/protocols/http/zttp_h2_impl.py"
+    ]
+  },
+  {
+    "id": "Kludex/uvicorn#3137",
+    "repo": "Kludex/uvicorn",
+    "pr": 3137,
+    "task": "Add HTTP/2 Early Hints support",
+    "base": "421708fbc1a704dac8bd4053a7c4c0bf4d3704ee",
+    "gold": [
+      "uvicorn/_types.py",
+      "uvicorn/protocols/http/zttp_h2_impl.py"
+    ]
+  },
+  {
+    "id": "Kludex/uvicorn#3119",
+    "repo": "Kludex/uvicorn",
+    "pr": 3119,
+    "task": "Add ::1 to FORWARDED_ALLOW_IPS",
+    "base": "098b206ff7b01098561956ff4e7746d05e02acc6",
+    "gold": [
+      "uvicorn/config.py",
+      "uvicorn/main.py"
+    ]
+  },
+  {
+    "id": "Kludex/uvicorn#3107",
+    "repo": "Kludex/uvicorn",
+    "pr": 3107,
+    "task": "Unset the keep-alive timer when upgrading to WebSocket",
+    "base": "63971ed952090438896e6eba7d07178b616d97cc",
+    "gold": [
+      "uvicorn/protocols/http/h11_impl.py",
+      "uvicorn/protocols/http/zttp_impl.py"
+    ]
+  },
+  {
+    "id": "Kludex/uvicorn#3104",
+    "repo": "Kludex/uvicorn",
+    "pr": 3104,
+    "task": "Add support for zuvloop",
+    "base": "09a236b050ab58ae51f17dca54dedae78376a978",
+    "gold": [
+      "uvicorn/config.py"
+    ]
+  },
+  {
+    "id": "Kludex/uvicorn#3103",
+    "repo": "Kludex/uvicorn",
+    "pr": 3103,
+    "task": "Handle Connection close tokens across HTTP protocols",
+    "base": "d2edc00818f31b89b21b7621e26071834a5efb94",
+    "gold": [
+      "uvicorn/protocols/http/httptools_impl.py",
+      "uvicorn/protocols/http/zttp_impl.py"
+    ]
+  },
+  {
+    "id": "Kludex/uvicorn#3101",
+    "repo": "Kludex/uvicorn",
+    "pr": 3101,
+    "task": "Require explicit opt-in for zttp HTTP/2",
+    "base": "fa324a415364563cf45908966435e2480a6b46bf",
+    "gold": [
+      "uvicorn/config.py",
+      "uvicorn/main.py"
+    ]
+  },
+  {
+    "id": "Kludex/uvicorn#3078",
+    "repo": "Kludex/uvicorn",
+    "pr": 3078,
+    "task": "Remove duplicate Date header from SansIO WebSocket handshakes",
+    "base": "27019b2a4b1fa6d68a289fcf7d738fbdc6ee4e5d",
+    "gold": [
+      "uvicorn/protocols/websockets/websockets_sansio_impl.py"
+    ]
+  },
+  {
+    "id": "spf13/viper#2040",
+    "repo": "spf13/viper",
+    "pr": 2040,
+    "task": "feat: use maintained yaml library",
+    "base": "8fd6b8123b5ff4eab8af0d018ba2d998d8630cc8",
+    "gold": [
+      "internal/encoding/yaml/codec.go"
+    ]
+  },
+  {
+    "id": "spf13/viper#2029",
+    "repo": "spf13/viper",
+    "pr": 2029,
+    "task": "refactor: use the built-in max/min to simplify the code",
+    "base": "b7b990446f12cd982ddc5e5618fccfd887c16784",
+    "gold": [
+      "util.go"
+    ]
+  },
+  {
+    "id": "spf13/viper#2027",
+    "repo": "spf13/viper",
+    "pr": 2027,
+    "task": "Return not found error if setting config",
+    "base": "6f44d6965ba144ffc95996b1d21ba11e786def4b",
+    "gold": [
+      "file.go",
+      "viper.go"
+    ]
+  },
+  {
+    "id": "spf13/viper#2015",
+    "repo": "spf13/viper",
+    "pr": 2015,
+    "task": "Add support for flags pflag.BoolSlice, pflag.UintSlice and pflag.Float64Slice",
+    "base": "7328d1b53ab472c6927ec1ced9763f478e0e6008",
+    "gold": [
+      "viper.go"
+    ]
+  },
+  {
+    "id": "spf13/viper#2007",
+    "repo": "spf13/viper",
+    "pr": 2007,
+    "task": "fix: config type check when loading any config",
+    "base": "4ddd7c091cc0153bda143ddb90e29b2160869ce9",
+    "gold": [
+      "viper.go"
+    ]
+  },
+  {
+    "id": "spf13/viper#2003",
+    "repo": "spf13/viper",
+    "pr": 2003,
+    "task": "fix(config): get config type from v.configType or config file ext",
+    "base": "d319333b0ffd91a9681feaf2d202ce9332df8ecc",
+    "gold": [
+      "viper.go"
+    ]
+  },
+  {
+    "id": "spf13/viper#1887",
+    "repo": "spf13/viper",
+    "pr": 1887,
+    "task": "feat: copy keydelim from parent chart in viper.Sub()",
+    "base": "ae564f05cb912ebe4642ff28b81b9c4cf8302071",
+    "gold": [
+      "viper.go"
+    ]
+  },
+  {
+    "id": "spf13/viper#1872",
+    "repo": "spf13/viper",
+    "pr": 1872,
+    "task": "Add decoder hook option",
+    "base": "5964efa262fa03ea9866953d734f04be97d0b7c4",
+    "gold": [
+      "viper.go"
+    ]
+  },
+  {
+    "id": "honojs/hono#5487",
+    "repo": "honojs/hono",
+    "pr": 5487,
+    "task": "fix(jsx): add px to numeric gridGap, gridRowGap and gridColumnGap",
+    "base": "c3053ccf14f1c4c70a0c2888eed6121b9f6c8f95",
+    "gold": [
+      "src/jsx/utils.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5476",
+    "repo": "honojs/hono",
+    "pr": 5476,
+    "task": "fix(jsx): allow JSXNode function component results",
+    "base": "6d73a74f9757ed65d6103c0e8375097fa20873c4",
+    "gold": [
+      "src/jsx/base.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5475",
+    "repo": "honojs/hono",
+    "pr": 5475,
+    "task": "fix(etag): correctly match mixed-case header name in retainedHeader option",
+    "base": "c437d7569219a21e45fa81797749e8f34fe19dcc",
+    "gold": [
+      "src/middleware/etag/index.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5468",
+    "repo": "honojs/hono",
+    "pr": 5468,
+    "task": "feat(adapters/netlify): publish to JSR",
+    "base": "f3d5e8856244eb5faf9e1322834ca1639134d971",
+    "gold": [
+      "adapters/netlify/src/conninfo.ts",
+      "adapters/netlify/src/index.ts",
+      "adapters/netlify/src/mod.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5465",
+    "repo": "honojs/hono",
+    "pr": 5465,
+    "task": "feat(adapters/deno): publish to JSR",
+    "base": "b877827fccde0be4ee78457ae8b65db2436139f9",
+    "gold": [
+      "adapters/deno/src/index.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5446",
+    "repo": "honojs/hono",
+    "pr": 5446,
+    "task": "fix(types): allow returning a Blob as a response body",
+    "base": "5f31392d724cf98c9e48a3de119a55284583ad5f",
+    "gold": [
+      "src/context.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5426",
+    "repo": "honojs/hono",
+    "pr": 5426,
+    "task": "fix(lambda-edge): sync content type detection with aws-lambda",
+    "base": "28e8572cd265b4da1160ce6cd51919bb70516e2c",
+    "gold": [
+      "src/adapter/lambda-edge/handler.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5424",
+    "repo": "honojs/hono",
+    "pr": 5424,
+    "task": "fix(aws-lambda): treat binary +xml archive media types as binary",
+    "base": "52febbcc30bc509d5e4987577e63906fe08fc471",
+    "gold": [
+      "src/adapter/aws-lambda/handler.ts"
+    ]
+  },
+  {
+    "id": "hyperium/hyper#4224",
+    "repo": "hyperium/hyper",
+    "pr": 4224,
+    "task": "fix(http1): remove invalid content-length if transfer-encoding is auto-added",
+    "base": "a5d7fd7861598c0b8c857cb75240a75bcfbd96a3",
+    "gold": [
+      "src/proto/h1/role.rs"
+    ]
+  },
+  {
+    "id": "hyperium/hyper#4223",
+    "repo": "hyperium/hyper",
+    "pr": 4223,
+    "task": "fix(http1): always remove content-length if transfer-encoding is sent",
+    "base": "5dadff76d1cb5d21046218df3568569fbba8ed21",
+    "gold": [
+      "src/proto/h1/role.rs"
+    ]
+  },
+  {
+    "id": "hyperium/hyper#4201",
+    "repo": "hyperium/hyper",
+    "pr": 4201,
+    "task": "fix(http1): let a Connection close token win over a later keep-alive",
+    "base": "d1cd14eff392be63a2318d690cc9380723ec61a1",
+    "gold": [
+      "src/proto/h1/role.rs"
+    ]
+  },
+  {
+    "id": "hyperium/hyper#4198",
+    "repo": "hyperium/hyper",
+    "pr": 4198,
+    "task": "fix(http2): do not reserve capacity for idle Upgraded streams",
+    "base": "74a39081ff1496970fb75da75c5282b23a9b69e5",
+    "gold": [
+      "src/proto/h2/upgrade.rs"
+    ]
+  },
+  {
+    "id": "hyperium/hyper#4196",
+    "repo": "hyperium/hyper",
+    "pr": 4196,
+    "task": "Preserve hop-by-hop when setting close or keep-alive",
+    "base": "c6dca2078ce223050dc0832be7c9ab07baa6c4bf",
+    "gold": [
+      "src/proto/h1/conn.rs"
+    ]
+  },
+  {
+    "id": "hyperium/hyper#4188",
+    "repo": "hyperium/hyper",
+    "pr": 4188,
+    "task": "fix(ext): remove broken `OriginalHeaderOrder` doctest",
+    "base": "6612d993a6bcfb6a21a8739b51779a30170402cc",
+    "gold": [
+      "src/ext/mod.rs"
+    ]
+  },
+  {
+    "id": "hyperium/hyper#4168",
+    "repo": "hyperium/hyper",
+    "pr": 4168,
+    "task": "perf(body): simpler custom Incoming channel",
+    "base": "4f36f33a28709f93d693bc9f942b93b54d7032a4",
+    "gold": [
+      "src/body/incoming.rs",
+      "src/body/mod.rs",
+      "src/common/mod.rs"
+    ]
+  },
+  {
+    "id": "hyperium/hyper#4157",
+    "repo": "hyperium/hyper",
+    "pr": 4157,
+    "task": "refactor: drop redundant `continue` and remove needless_continue allow",
+    "base": "fca07bd3937d4a3a4822372acdf766d0640796af",
+    "gold": [
+      "src/proto/h1/dispatch.rs",
+      "src/proto/h2/client.rs",
+      "src/proto/h2/upgrade.rs"
+    ]
+  },
+  {
+    "id": "lysine-dev/retrofit#4764",
+    "repo": "lysine-dev/retrofit",
+    "pr": 4764,
+    "task": "Remove use of JVM toolchain for main compilation",
+    "base": "e27d855b7b029e7f907dfc52205fdb3e9c603c16",
+    "gold": [
+      "retrofit/src/main/java/retrofit2/HttpServiceMethod.java",
+      "retrofit/src/main/java/retrofit2/Utils.java"
+    ]
+  },
+  {
+    "id": "lysine-dev/retrofit#4704",
+    "repo": "lysine-dev/retrofit",
+    "pr": 4704,
+    "task": "Fix broken/outdated links",
+    "base": "ec97634651f0c49541202b2ff39d4ca85e183b10",
+    "gold": [
+      "retrofit/src/main/java/retrofit2/Retrofit.java",
+      "website/src/content.config.ts"
+    ]
+  },
+  {
+    "id": "lysine-dev/retrofit#4595",
+    "repo": "lysine-dev/retrofit",
+    "pr": 4595,
+    "task": "Support QUERY method",
+    "base": "d9d9f059dfcea63ed1d6babdd70b3ff6ca787e6e",
+    "gold": [
+      "retrofit/src/main/java/retrofit2/RequestFactory.java",
+      "retrofit/src/main/java/retrofit2/Retrofit.java"
+    ]
+  },
+  {
+    "id": "lysine-dev/retrofit#4542",
+    "repo": "lysine-dev/retrofit",
+    "pr": 4542,
+    "task": "Add Invocation.annotationUrl",
+    "base": "3cca1a728c5c1508b1f92b03058b23287f226141",
+    "gold": [
+      "retrofit/src/main/java/retrofit2/Invocation.java",
+      "retrofit/src/main/java/retrofit2/RequestFactory.java"
+    ]
+  }
+]
