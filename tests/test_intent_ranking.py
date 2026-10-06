@@ -584,3 +584,16 @@ def test_bench_segment_gets_same_downrank_as_benchmarks():
     assert bench_score == benchmarks_score
     assert "supporting code downrank for edit intent" in bench_reasons
     assert "supporting code downrank for edit intent" in benchmarks_reasons
+
+
+def test_benchmark_segment_gets_same_downrank_as_benchmarks():
+    benchmark_path = "benchmark/index.ts"
+    benchmarks_path = "benchmarks/x.ts"
+    terms = query_terms("fix widget")
+
+    benchmark_score, benchmark_reasons = apply_intent_adjustment(100, benchmark_path, terms)
+    benchmarks_score, benchmarks_reasons = apply_intent_adjustment(100, benchmarks_path, terms)
+
+    assert benchmark_score == benchmarks_score
+    assert "supporting code downrank for edit intent" in benchmark_reasons
+    assert "supporting code downrank for edit intent" in benchmarks_reasons

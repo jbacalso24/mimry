@@ -215,6 +215,11 @@ _SPACED_WORDS_RE = re.compile(r"\w[ \t]+\w")
 _VALUE_RE = re.compile(
     r"\s*(?:\"\"\"[\s\S]*?\"\"\"|'''[\s\S]*?'''|\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|[^,{;})\r\n]*)"
 )
+# ``'username' | 'password'``: a string literal joined to another by a
+# single ``|`` is a member of a TypeScript literal-union type.
+_UNION_NEXT_RE = re.compile(r"\s*\|(?!\|)\s*[\"'`]")
+_UNION_PREVIOUS_RE = re.compile(r"[\"'`]\s*(?<!\|)\|\s*\Z")
+_FIELD_NAME_RE = re.compile(r"[A-Za-z][A-Za-z_]*")
 # The rest is only for parsed source. Quotes, brackets and value ends,
 # plus comments, which start after whitespace (``x  # note``, ``x  //
 # note``).
@@ -465,6 +470,28 @@ def _expression_is_credential(
     )
 
 
+def _literal_names_field(literal: re.Match[str], label: str) -> bool:
+    """Whether a literal names a field, not a credential.
+
+    A literal names a field when it matches [A-Za-z][A-Za-z_]* and
+    (lowercased) is in the label's tokens or SENSITIVE_LABEL_TOKENS.
+    """
+    text = _literal_text(literal)
+    if not _FIELD_NAME_RE.fullmatch(text):
+        return False
+    text_lower = text.lower()
+    return text_lower in _label_tokens(label) or text_lower in SENSITIVE_LABEL_TOKENS
+
+
+def _in_literal_union(text: str, literal: re.Match[str]) -> bool:
+    """Whether a literal is part of a TypeScript literal-union type."""
+    start = literal.start()
+    return bool(
+        _UNION_NEXT_RE.match(text, literal.end())
+        or _UNION_PREVIOUS_RE.search(text, max(0, start - 80), start)
+    )
+
+
 def _code_value_is_credential(
     text: str, start: int, operator: str, label: str, scanner: _Scanner
 ) -> bool:
@@ -490,14 +517,19 @@ def _code_value_is_credential(
             return _code_value_is_credential(
                 text, _skip_blanks(text, annotation.end()), "=", label, scanner
             )
-    # ``app.secret_key = "secret_key"`` and ``"auth": ("auth",
-    # "oauth")``: a value naming its own label is a key or keyword
-    # table, not a secret.
+
+    # ``app.secret_key = "secret_key"``, ``"auth": ("auth", "oauth")``,
+    # ``secret: 'passphrase'`` and ``AuthUserKey = "user"``: a value
+    # naming its own label or a field is a keyword table, not a secret.
     if label.rsplit(".", 1)[-1].lower() in {
         _literal_text(literal).lower() for literal in value.literals
     }:
         return False
-    if any(_string_literal_is_credential(literal, code=True) for literal in value.literals):
+    if any(
+        _string_literal_is_credential(literal, code=True)
+        for literal in value.literals
+        if not _literal_names_field(literal, label) and not _in_literal_union(text, literal)
+    ):
         return True
     if not shape or shape[0] in "_([":
         return False  # nothing assigned, or a value made of the literals just judged
@@ -702,8 +734,10 @@ def _reads_as_code(shape: str) -> bool:
 
     See _scan_value.
     """
+    # Accept JS private member access by normalizing .# to .
+    normalized = shape.replace(".#", ".")
     return (
-        bool(_CODE_SHAPE_RE.fullmatch(shape))
+        bool(_CODE_SHAPE_RE.fullmatch(normalized))
         and not _HYPHENATED_WORD_RE.search(shape)
         # An expression does not end in an operator: ``cGFzc3dvcmQ=`` is
         # base64. (``>`` closes generics, as in ``Option<Auth>``.)
@@ -740,6 +774,8 @@ def _string_literal_is_credential(literal: re.Match[str], *, code: bool) -> bool
         or (literal["literal"][0] == "`" and "${" in text)
     ):
         return False  # a formatted string or template literal is an expression
+    if code and literal["literal"][0] == "`" and not any(char.isalnum() for char in text):
+        return False  # tail of a nested template like `)}` has no letters or digits
     lowered = text.lower()
     return bool(text) and not (
         text == REDACTED
