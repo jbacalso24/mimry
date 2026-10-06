@@ -212,7 +212,7 @@ Run `mimry install --list-platforms` for aliases, `mimry install --project --pla
 - **It is private by default.**
   Everything stays local, semantic search uses a deterministic local method (`local-hash-v1`), and credential files are skipped.
 - **It saves tokens.**
-  On 48 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 66% fewer tokens than one using grep, and read every source file the change modified in 42 tasks to grep's 33 ([token benchmark](benchmarks/tokens/README.md)).
+  On 44 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 40% fewer tokens than one using grep, and read every source file the change modified in 31 tasks to grep's 28 ([token benchmark](benchmarks/tokens/README.md)).
   Results are compact summaries and relative paths, never full source dumps.
 
 ## Commands
