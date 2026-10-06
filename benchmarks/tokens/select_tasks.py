@@ -4,6 +4,8 @@ The rule is mechanical and fixed before any result is seen, so tasks
 cannot be cherry-picked for MIMRY:
 
 - newest merged PRs first, scanning at most SCAN_LIMIT per repository
+- only PRs merged into the default branch; a PR merged into another
+  branch may have no surviving base commit
 - skip bot authors and housekeeping titles (bump, release, revert, docs,
   ...), plus tooling-only titles (lint, formatter, codespell, cleanup)
   whose diffs touch files no task description could point to
@@ -55,6 +57,7 @@ def is_source(path: str) -> bool:
 
 def select(repo: str, per_repo: int) -> list[dict[str, object]]:
     tasks: list[dict[str, object]] = []
+    default_branch = gh(f"repos/{repo}")["default_branch"]
     for page in range(1, SCAN_LIMIT // 100 + 1):
         pulls = gh(
             f"repos/{repo}/pulls?state=closed&sort=created&direction=desc&per_page=100&page={page}"
@@ -64,6 +67,8 @@ def select(repo: str, per_repo: int) -> list[dict[str, object]]:
                 return tasks
             title = pr["title"].strip()
             if not pr.get("merged_at") or not pr.get("merge_commit_sha"):
+                continue
+            if pr["base"]["ref"] != default_branch:
                 continue
             if pr["user"]["type"] == "Bot" or pr["user"]["login"].endswith("[bot]"):
                 continue

@@ -80,16 +80,6 @@
     ]
   },
   {
-    "id": "Kludex/uvicorn#3181",
-    "repo": "Kludex/uvicorn",
-    "pr": 3181,
-    "task": "Exclude legacy WebSocket header encoding from coverage",
-    "base": "5aa33bfff69890584ff9b62f30272b8f7a748c89",
-    "gold": [
-      "uvicorn/protocols/websockets/websockets_sansio_impl.py"
-    ]
-  },
-  {
     "id": "Kludex/uvicorn#3146",
     "repo": "Kludex/uvicorn",
     "pr": 3146,
@@ -165,6 +155,16 @@
     ]
   },
   {
+    "id": "Kludex/uvicorn#3078",
+    "repo": "Kludex/uvicorn",
+    "pr": 3078,
+    "task": "Remove duplicate Date header from SansIO WebSocket handshakes",
+    "base": "27019b2a4b1fa6d68a289fcf7d738fbdc6ee4e5d",
+    "gold": [
+      "uvicorn/protocols/websockets/websockets_sansio_impl.py"
+    ]
+  },
+  {
     "id": "spf13/viper#2040",
     "repo": "spf13/viper",
     "pr": 2040,
@@ -216,16 +216,6 @@
     ]
   },
   {
-    "id": "spf13/viper#2005",
-    "repo": "spf13/viper",
-    "pr": 2005,
-    "task": "Backport config type fixes to 1.20.x",
-    "base": "fd05140cd675b256b5076759e38403874fc5826d",
-    "gold": [
-      "viper.go"
-    ]
-  },
-  {
     "id": "spf13/viper#2003",
     "repo": "spf13/viper",
     "pr": 2003,
@@ -246,35 +236,13 @@
     ]
   },
   {
-    "id": "honojs/hono#5513",
-    "repo": "honojs/hono",
-    "pr": 5513,
-    "task": "fix(hono): handle non-Error throws with onError",
-    "base": "0b1d26d37cf04f4e385542851d693514a17cb359",
+    "id": "spf13/viper#1872",
+    "repo": "spf13/viper",
+    "pr": 1872,
+    "task": "Add decoder hook option",
+    "base": "5964efa262fa03ea9866953d734f04be97d0b7c4",
     "gold": [
-      "src/compose.ts",
-      "src/hono-base.ts"
-    ]
-  },
-  {
-    "id": "honojs/hono#5510",
-    "repo": "honojs/hono",
-    "pr": 5510,
-    "task": "fix(router): respect strict trailing-slash routing",
-    "base": "3531a00c1ae13567fe907ba6687223ba97c497d3",
-    "gold": [
-      "src/router/linear-router/router.ts",
-      "src/router/pattern-router/router.ts"
-    ]
-  },
-  {
-    "id": "honojs/hono#5488",
-    "repo": "honojs/hono",
-    "pr": 5488,
-    "task": "fix(reg-exp-router): reject param patterns that can match an empty string",
-    "base": "0d71f60ddffff089e6fa3c658730e3a0a7e1e5e1",
-    "gold": [
-      "src/router/reg-exp-router/node.ts"
+      "viper.go"
     ]
   },
   {
@@ -327,6 +295,36 @@
     "base": "b877827fccde0be4ee78457ae8b65db2436139f9",
     "gold": [
       "adapters/deno/src/index.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5446",
+    "repo": "honojs/hono",
+    "pr": 5446,
+    "task": "fix(types): allow returning a Blob as a response body",
+    "base": "5f31392d724cf98c9e48a3de119a55284583ad5f",
+    "gold": [
+      "src/context.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5426",
+    "repo": "honojs/hono",
+    "pr": 5426,
+    "task": "fix(lambda-edge): sync content type detection with aws-lambda",
+    "base": "28e8572cd265b4da1160ce6cd51919bb70516e2c",
+    "gold": [
+      "src/adapter/lambda-edge/handler.ts"
+    ]
+  },
+  {
+    "id": "honojs/hono#5424",
+    "repo": "honojs/hono",
+    "pr": 5424,
+    "task": "fix(aws-lambda): treat binary +xml archive media types as binary",
+    "base": "52febbcc30bc509d5e4987577e63906fe08fc471",
+    "gold": [
+      "src/adapter/aws-lambda/handler.ts"
     ]
   },
   {
