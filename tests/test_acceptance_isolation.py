@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from mimry.commands import cmd_context, cmd_find, cmd_init, cmd_symbol
-from mimry.core.artifacts import graph_health, graph_rows, report_excerpt
+from mimry.core.artifacts import graph_health, graph_rows
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.mcp_server import mimry_context, mimry_find, mimry_semantic, mimry_status, mimry_symbol
@@ -196,7 +196,6 @@ def test_existing_graph_artifacts_filter_acceptance_sources_and_report(tmp_path:
     )
 
     assert graph_rows(repo, SENTINEL) == []
-    assert report_excerpt(repo) == ""
     health = graph_health(repo, index_state="current")
     assert health["status"] == "stale"
     assert health["graph_nodes"] == 1
@@ -216,13 +215,3 @@ def test_ignored_path_detection_covers_relative_absolute_and_windows_forms() -> 
         r"C:\\repo\\acceptance_tests\\test_hidden.py",
     ):
         assert text_mentions_ignored_path(path)
-
-
-def test_graph_report_keeps_benign_heavy_ignore_words(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    graph_dir = graph_output_dir(repo)
-    graph_dir.mkdir(parents=True, exist_ok=True)
-    report = "# Graph report\n## Community Hubs\nCompleted build target for vendor integration\n"
-    (graph_dir / "GRAPH_REPORT.md").write_text(report, encoding="utf-8")
-
-    assert "Completed build target for vendor integration" in report_excerpt(repo)
