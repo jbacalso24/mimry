@@ -139,6 +139,11 @@ Fall back to `grep`, `rg`, or reading files only to verify MIMRY's answer or whe
 ## Connect MIMRY to your agent
 
 Agents can call MIMRY directly as an MCP server (stdio transport, command `mimry-mcp`).
+`mimry install --platform <agent>` registers it for you at user scope, so every project gets it: through the agent's own CLI for Claude Code, Codex, Gemini CLI, Factory Droid, Kimi, Copilot CLI, Amp and Devin, and in the config file for Kiro and OpenCode.
+For other agents it prints the snippet to add in their MCP settings.
+Pass `--no-mcp`, or set `MIMRY_NO_MCP_REGISTRATION=1`, to skip it; a global `mimry uninstall --platform <agent>` removes it.
+
+To register it by hand instead:
 
 Claude Code:
 

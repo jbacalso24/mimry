@@ -311,6 +311,11 @@ def build_parser():
         action="store_true",
         help="List supported install platforms and destinations",
     )
+    i.add_argument(
+        "--no-mcp",
+        action="store_true",
+        help="Do not register the MIMRY MCP server with the agent",
+    )
     i.set_defaults(func=cmd_install)
     u = sub.add_parser("uninstall", help="Remove a MIMRY agent skill install")
     u.add_argument(
@@ -330,6 +335,11 @@ def build_parser():
         "--hooks",
         action="store_true",
         help="With --project, also remove supported PreToolUse hooks",
+    )
+    u.add_argument(
+        "--no-mcp",
+        action="store_true",
+        help="Leave the MCP server registration in place",
     )
     u.set_defaults(func=cmd_uninstall)
     sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(
