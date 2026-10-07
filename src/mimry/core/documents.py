@@ -8,10 +8,10 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-from pypdf import PdfReader
-
 # pypdf logs recoverable damage in a file at WARNING and ERROR; the
-# extraction status already reports what failed.
+# extraction status already reports what failed. pypdf itself is
+# imported where PDFs are read, so an install that lacks it still runs
+# every command and indexes everything else.
 logging.getLogger("pypdf").setLevel(logging.CRITICAL)
 
 # Extensions for office document files that MIMRY can extract text from.
@@ -46,6 +46,10 @@ class DocumentEncryptedError(ValueError):
 
 
 class DocumentParseError(ValueError):
+    pass
+
+
+class DocumentDependencyError(ValueError):
     pass
 
 
@@ -119,6 +123,8 @@ def extract_document_text(
         return ("", "parse_error:ResourceLimit")
     except DocumentEncryptedError:
         return ("", "parse_error:Encrypted")
+    except DocumentDependencyError:
+        return ("", "parse_error:MissingDependency")
     except DocumentParseError as e:
         return ("", f"parse_error:{str(e)}")
     except UnsafeDocumentXMLError:
@@ -159,10 +165,15 @@ def _extract_pdf_text(data: bytes, *, limit: int) -> str:
     Raises DocumentResourceLimitError for files over 20 MB or with
     more than 200 pages. Raises DocumentEncryptedError if PDF is
     encrypted and decrypt("") fails. Raises DocumentParseError for
-    malformed PDFs.
+    malformed PDFs, and DocumentDependencyError when pypdf is not
+    installed.
     """
     if len(data) > MAX_DOCUMENT_FILE_BYTES:
         raise DocumentResourceLimitError("PDF exceeds 20 MB")
+    try:
+        from pypdf import PdfReader
+    except ImportError as e:
+        raise DocumentDependencyError("pypdf is not installed") from e
 
     try:
         # pypdf caps decompressed streams (zlib_maximum_output_length,

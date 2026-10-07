@@ -164,6 +164,7 @@ def _symbol_order(symbol: dict) -> tuple:
 
 SKIPPED = "skipped"
 UNINDEXABLE = "unindexable"
+MISSING_DEPENDENCY = "parse_error:MissingDependency"
 # Below this many files, worker start-up (a fresh interpreter importing
 # the parsers) costs more than it saves.
 PARALLEL_MIN_FILES = 64
@@ -333,8 +334,12 @@ def _collect(
             if outcome == UNINDEXABLE:
                 _note_unindexable(path)
                 continue
-            stat_entries[rel_path] = [*stat_identity, INDEXED]
             row = json.loads(line)
+            # Read without its reader library (an incomplete install):
+            # never reuse that, so the first index after the repair
+            # reads the file properly.
+            if row["out"][0].get("parse_status") != MISSING_DEPENDENCY:
+                stat_entries[rel_path] = [*stat_identity, INDEXED]
         adapt_lines.append(line)
         output = row["out"]
         if row.get("chunks") is not None:
@@ -813,9 +818,16 @@ def write_index(root, ptr, *, full: bool = False):
             skipped = len(unindexable) + sum(
                 entry[4] == SENSITIVE for entry in record["stat_entries"].values()
             )
+            # Recorded, but without text: the reader library is missing.
+            unread = sum(f.get("parse_status") == MISSING_DEPENDENCY for f in files)
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
-                return {**kept, "changes": changes, "unindexable": skipped}
+                return {
+                    **kept,
+                    "changes": changes,
+                    "unindexable": skipped,
+                    "missing_dependency": unread,
+                }
             progress("MIMRY: building graph", force=True)
             graph = _build_core_graph(
                 files, symbols, edges, imports, exports, calls, symbols_by_file, references
@@ -981,4 +993,5 @@ def write_index(root, ptr, *, full: bool = False):
         "semantic_backend": semantic["backend"],
         "changes": changes,
         "unindexable": skipped,
+        "missing_dependency": unread,
     }
