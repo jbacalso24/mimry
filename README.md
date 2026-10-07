@@ -463,7 +463,13 @@ CI runs on every push and pull request: lint, tests, an end-to-end determinism m
 A separate workflow audits the locked runtime dependencies for known vulnerabilities whenever they change, and weekly.
 Releases are cut by pushing a `vX.Y.Z` tag, which builds reproducible artifacts and publishes them to PyPI and GitHub Releases.
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the release checks.
-Report security issues privately as described in [`SECURITY.md`](SECURITY.md); contributions follow [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Report security issues privately as described in [`SECURITY.md`](SECURITY.md).
+
+## Contributing
+
+Contributions are welcome: bug fixes, portability and privacy improvements, documentation, and retrieval changes backed by the benchmark.
+Open an issue first for large features or changes to privacy defaults.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and the checks to run before opening a pull request.
 
 ## Development
 
@@ -493,3 +499,9 @@ Run `uv run mimry-integration-smoke` for a real MCP stdio round trip plus isolat
 
 MIMRY is a public alpha: early but usable for local, per-project agent memory, and its interfaces may still change before 1.0.
 It is not a whole-computer brain and should not be pointed at entire drives or home directories.
+
+## License
+
+MIMRY is free and open source under the [MIT License](LICENSE).
+Feel free to use it in your own projects, personal or commercial, and to modify, fork or build on it.
+Keep the copyright and license notice when you redistribute it.
