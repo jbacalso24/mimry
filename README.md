@@ -463,7 +463,13 @@ CI runs on every push and pull request: lint, tests, an end-to-end determinism m
 A separate workflow audits the locked runtime dependencies for known vulnerabilities whenever they change, and weekly.
 Releases are cut by pushing a `vX.Y.Z` tag, which builds reproducible artifacts and publishes them to PyPI and GitHub Releases.
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the release checks.
-Report security issues privately as described in [`SECURITY.md`](SECURITY.md); contributions follow [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Report security issues privately as described in [`SECURITY.md`](SECURITY.md).
+
+## Contributing
+
+Contributions are welcome: bug fixes, portability and privacy improvements, documentation, and retrieval changes backed by the benchmark.
+Open an issue first for large features or changes to privacy defaults.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and the checks to run before opening a pull request.
 
 ## Development
 
