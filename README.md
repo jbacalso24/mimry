@@ -499,3 +499,9 @@ Run `uv run mimry-integration-smoke` for a real MCP stdio round trip plus isolat
 
 MIMRY is a public alpha: early but usable for local, per-project agent memory, and its interfaces may still change before 1.0.
 It is not a whole-computer brain and should not be pointed at entire drives or home directories.
+
+## License
+
+MIMRY is free and open source under the [MIT License](LICENSE).
+Feel free to use it in your own projects, personal or commercial, and to modify, fork or build on it.
+Keep the copyright and license notice when you redistribute it.
