@@ -72,6 +72,9 @@ mimry --help
 ```
 
 Upgrade later with `uv tool upgrade mimry`.
+It updates the install in place and adds any new dependencies.
+On Windows, close agent sessions that use MIMRY first: each one keeps `mimry-mcp` running, and Windows will not replace files a running program has open.
+If `mimry status` reports that the install is incomplete, it prints the command that repairs it, usually `uv tool upgrade mimry`.
 
 ## Quickstart
 
@@ -476,8 +479,12 @@ uv run pytest -q
 Install the CLI from your checkout, so edits take effect immediately:
 
 ```bash
-uv tool install --editable . --force
+uv tool install --editable .
 ```
+
+An editable install picks up code changes, but not dependency changes.
+After a pull that changes the dependencies in `pyproject.toml`, run `uv tool upgrade mimry` to install them; `mimry status` names any that are missing.
+Do not reinstall with `uv tool install --force` instead: it deletes the whole tool environment first, and on Windows, while any `mimry-mcp` is running, the delete stops at the first locked file and leaves a half-removed install.
 
 Install the Git hooks with `uv run pre-commit install`.
 Run `uv run mimry-integration-smoke` for a real MCP stdio round trip plus isolated Claude Code and Codex registration checks; it never touches your normal agent configuration.

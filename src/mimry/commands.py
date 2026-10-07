@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -8,10 +9,11 @@ import time
 import uuid
 import webbrowser
 from functools import wraps
+from importlib import metadata
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
-from . import ui
+from . import __version__, ui
 from .adapters import list_adapters
 from .cache_safety import (
     UnsafeCachePathError,
@@ -329,6 +331,52 @@ def _totals(files: int, symbols: int, links: int) -> str:
     return ui.facts(ui.count(files, "file"), ui.count(symbols, "symbol"), ui.count(links, "link"))
 
 
+def _repair_command() -> str:
+    """The command that reinstalls MIMRY with all its dependencies."""
+    if (Path(sys.prefix) / "uv-receipt.toml").is_file():
+        # Syncs the tool environment in place, editable installs
+        # included. `uv tool install --force` deletes it first instead,
+        # which fails halfway on Windows while mimry-mcp is running.
+        return "uv tool upgrade mimry"
+    if "pipx" in Path(sys.prefix).parts:
+        return "pipx reinstall mimry"
+    return "python -m pip install --upgrade mimry"
+
+
+def _install_problem() -> str | None:
+    """What is wrong with this MIMRY install, or None.
+
+    An editable install runs new code but keeps the dependencies of the
+    version it was made from, and an interrupted reinstall can delete
+    package metadata, so the CLI can start while part of the install is
+    missing.
+    """
+    try:
+        installed = metadata.version("mimry")
+        requirements = metadata.requires("mimry") or []
+    except metadata.PackageNotFoundError:
+        return "This MIMRY install is incomplete - its package metadata is missing"
+    if installed != __version__:
+        return (
+            f"This MIMRY install is out of sync - the code is {__version__}, but its"
+            f" dependencies were installed for {installed}"
+        )
+    missing = []
+    for requirement in requirements:
+        if ";" in requirement:
+            # ponytail: markers go unevaluated (that needs `packaging`);
+            # no direct dependency carries one today.
+            continue
+        name = re.match(r"[A-Za-z0-9._-]+", requirement).group(0)
+        try:
+            metadata.distribution(name)
+        except metadata.PackageNotFoundError:
+            missing.append(name)
+    if missing:
+        return f"This MIMRY install is incomplete - missing {', '.join(missing)}"
+    return None
+
+
 def _print_index_result(
     root: Path, stats: dict, seconds: float, *, full: bool, verbose: bool = False
 ) -> None:
@@ -363,6 +411,11 @@ def _print_index_result(
         ui.detail(
             f"{ui.count(stats['unindexable'], 'file')} skipped: may contain secrets or could not"
             " be read"
+        )
+    if stats.get("missing_dependency"):
+        ui.warn(
+            f"{ui.count(stats['missing_dependency'], 'PDF')} indexed without text: pypdf is"
+            f" missing. Run `{_repair_command()}` to add it."
         )
     if verbose:
         ui.table(
@@ -554,6 +607,10 @@ def cmd_refresh(a):
 def cmd_status(a):
     root = Path(a.root).resolve()
     safe_root(root)
+    problem = _install_problem()
+    if problem:
+        ui.warn(problem)
+        ui.detail(f"Run `{_repair_command()}` to repair it.")
     ptr = load_pointer(root)
     if not ptr:
         ui.warn(f"MIMRY is not set up for {_root_name(root)} yet")
