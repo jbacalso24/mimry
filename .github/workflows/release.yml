@@ -60,3 +60,83 @@ jobs:
             dist/*.tar.gz
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+  aur-build:
+    # Arch users install with `yay -S mimry`. Render the AUR package for the
+    # sdist just published to PyPI, then build, install and smoke-test it on
+    # Arch. Everything but pacman runs as an unprivileged user.
+    needs: release
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 20
+    steps:
+      - name: Install Arch build tools
+        run: pacman -Syu --noconfirm --needed base-devel git pacman-contrib python python-build python-hatchling python-pip uv
+
+      - uses: actions/checkout@v4
+
+      - name: Render, build, install and smoke-test the package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          useradd -m builder
+          cp -r "$GITHUB_WORKSPACE" /home/builder/mimry
+          chown -R builder: /home/builder/mimry
+          sudo -u builder bash /home/builder/mimry/packaging/aur/update.sh "$version" /home/builder/aur
+          cd /home/builder/aur
+          sudo -u builder makepkg --noconfirm
+          pacman -U --noconfirm "mimry-$version-"*.pkg.tar.zst
+          sudo -u builder bash /home/builder/mimry/packaging/aur/smoke.sh "$version"
+          mkdir "$GITHUB_WORKSPACE/aur-package"
+          cp PKGBUILD .SRCINFO requirements-*.txt "$GITHUB_WORKSPACE/aur-package/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aur-package
+          path: aur-package
+          include-hidden-files: true   # .SRCINFO
+          if-no-files-found: error
+
+  aur-publish:
+    # Pushes the tested package files to the AUR. Kept apart from the build so
+    # the SSH key never shares a job with downloaded code.
+    needs: aur-build
+    runs-on: ubuntu-latest
+    environment: aur
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: aur-package
+          path: aur-package
+
+      - name: Push to the AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::notice::AUR_SSH_PRIVATE_KEY is not set, so the AUR package was built and tested but not published."
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          ssh_dir="$(mktemp -d)"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$ssh_dir/key"
+          chmod 600 "$ssh_dir/key"
+          # Trust only the Ed25519 host key fingerprint published on https://aur.archlinux.org.
+          ssh-keyscan -t ed25519 aur.archlinux.org > "$ssh_dir/known_hosts"
+          if ! ssh-keygen -lf "$ssh_dir/known_hosts" | grep -q "SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4"; then
+            echo "::error::aur.archlinux.org presented an unexpected host key."
+            exit 1
+          fi
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts -o StrictHostKeyChecking=yes"
+          git clone ssh://aur@aur.archlinux.org/mimry.git aur-repo
+          cd aur-repo
+          git rm -q --ignore-unmatch 'requirements-*.txt'
+          cp ../aur-package/PKGBUILD ../aur-package/.SRCINFO ../aur-package/requirements-*.txt .
+          git add PKGBUILD .SRCINFO requirements-*.txt
+          if git diff --cached --quiet; then
+            echo "The AUR already has mimry $version."
+          else
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -qm "Update to $version"
+            git push origin HEAD:master
+          fi

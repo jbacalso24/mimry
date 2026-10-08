@@ -39,6 +39,28 @@ The PyPI Trusted Publisher is configured for repository `jbacalso24/mimry`, work
 
 `main` accepts changes only through pull requests, so tag the merged commit on `main`, not a local branch commit.
 
+### Arch Linux (AUR)
+
+Arch users install the [`mimry`](https://aur.archlinux.org/packages/mimry) AUR package with `yay -S mimry`.
+Arch ships tree-sitter and its grammar pack at versions other than the ones MIMRY pins, so the package carries its own environment in `/usr/lib/mimry`, built from the hash-pinned requirements in `uv.lock`.
+[`packaging/aur/`](packaging/aur) holds the `PKGBUILD` template, `update.sh`, which renders it for a released version, and `smoke.sh`, which checks an installed package.
+
+After PyPI publishing, the release workflow runs two more jobs.
+`aur-build` renders the package in an Arch container for the sdist just published, builds and installs it, and runs the smoke test.
+`aur-publish` then pushes `PKGBUILD`, `.SRCINFO` and the requirements file to the AUR over SSH, in a separate job so the key never shares a job with downloaded code.
+It pins the AUR's Ed25519 host key, and a rerun for a version the AUR already has changes nothing.
+If the AUR fails after PyPI succeeded, rerun only the failed jobs.
+
+One-time setup, done by the maintainer:
+
+1. Create an account on [aur.archlinux.org](https://aur.archlinux.org) and add a dedicated SSH public key to it, used for nothing else.
+2. In the repository settings, create an environment named `aur`, limit it to `v*` tags, and add the private key as the environment secret `AUR_SSH_PRIVATE_KEY`.
+
+Until the secret exists, `aur-publish` succeeds without publishing and leaves a notice, so a release still proves the package builds.
+The first successful push creates the package on the AUR, owned by the account that holds the key.
+
+To publish a packaging fix without a new MIMRY release, bump `pkgrel` with `update.sh <version> <out-dir> <pkgrel>` from a checkout of the release tag, on Arch as a normal user, then commit the three files to the AUR repository by hand.
+
 ```bash
 uv tool install mimry          # users
 git clone https://github.com/jbacalso24/mimry.git && cd mimry && uv sync --locked   # contributors
