@@ -140,6 +140,15 @@ def build_parser():
         action="store_true",
         help="Blend local-only semantic chunks into normal FTS/graph/feedback ranking",
     )
+    s.add_argument("--snippets", action="store_true", help="Include bounded live-source snippets")
+    s.add_argument("--snippet-lines", type=int, default=8, help="Maximum lines per snippet")
+    s.add_argument("--snippet-chars", type=int, default=800, help="Maximum characters per snippet")
+    s.add_argument(
+        "--snippet-total-lines", type=int, default=40, help="Maximum snippet lines overall"
+    )
+    s.add_argument(
+        "--snippet-total-chars", type=int, default=4000, help="Maximum snippet characters overall"
+    )
     s.set_defaults(func=cmd_find)
     s = sub.add_parser(
         "semantic",
