@@ -4,3 +4,6 @@
 # content-derived metrics, so pin them to LF on every platform.
 benchmarks/fixtures/** text eol=lf
 tests/fixtures/** text eol=lf
+
+# makepkg reads PKGBUILD and its scripts as shell; CRLF breaks them.
+packaging/aur/** text eol=lf

@@ -1,0 +1,46 @@
+# Maintainer: Judison <judisonbacalso24 at gmail dot com>
+
+# MIMRY pins tree-sitter and its grammar pack to exact versions for
+# deterministic parsing, and Arch ships different ones, so the package
+# carries its own environment with the versions from MIMRY's lock file.
+# update.sh fills in pkgver, the requirements file and the checksums.
+pkgname=mimry
+pkgver=0
+pkgrel=1
+pkgdesc='Local repo memory for coding agents: a CLI and MCP server that ranks the files that matter for a task'
+arch=('x86_64')
+url='https://github.com/jbacalso24/mimry'
+license=('MIT')
+depends=('python')
+makedepends=('python-build' 'python-hatchling' 'python-pip')
+options=('!debug' '!strip')
+source=("https://files.pythonhosted.org/packages/source/${pkgname::1}/$pkgname/$pkgname-$pkgver.tar.gz"
+        "requirements-$pkgver.txt")
+sha256sums=('SKIP'
+            'SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+package() {
+  local env="/usr/lib/$pkgname"
+  python -m venv "$pkgdir$env"
+  "$pkgdir$env/bin/python" -m pip install --no-cache-dir --disable-pip-version-check \
+    --require-hashes --only-binary :all: --no-deps -r "requirements-$pkgver.txt"
+  "$pkgdir$env/bin/python" -m pip install --no-cache-dir --disable-pip-version-check \
+    --no-deps "$pkgname-$pkgver"/dist/*.whl
+  "$pkgdir$env/bin/python" -m pip uninstall --yes --disable-pip-version-check pip
+
+  # The environment was built under $pkgdir; point it at where it is installed.
+  find "$pkgdir$env/bin" -type f -exec grep -Iq . {} \; -exec sed -i "s|$pkgdir||g" {} +
+  sed -i "s|$pkgdir||g" "$pkgdir$env/pyvenv.cfg"
+  find "$pkgdir$env" -name __pycache__ -type d -prune -exec rm -rf {} +
+  python -m compileall -q -s "$pkgdir" -p / "$pkgdir$env/lib"
+
+  install -d "$pkgdir/usr/bin"
+  ln -s "$env/bin/mimry" "$pkgdir/usr/bin/mimry"
+  ln -s "$env/bin/mimry-mcp" "$pkgdir/usr/bin/mimry-mcp"
+  install -Dm644 "$pkgname-$pkgver/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
