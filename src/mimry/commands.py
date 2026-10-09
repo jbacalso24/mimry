@@ -70,6 +70,7 @@ from .security import (
     sanitize_query,
 )
 from .semantic import semantic_health, semantic_rows
+from .source_snippets import with_source_snippets
 from .state import atomic_write_text
 from .storage import (
     active_index_pointer,
@@ -1345,6 +1346,15 @@ def _print_results(rows: list[dict], *, verbose: bool) -> None:
                 print(
                     f"      {ui.faint(ui.shorten(' '.join(_excerpt_lines(row['details'])), 240))}"
                 )
+        snippet = row.get("snippet")
+        if snippet and "text" in snippet:
+            print(f"      {row['path']}:{snippet['start_line']}-{snippet['end_line']}")
+            for number, line in enumerate(snippet["text"].splitlines(), snippet["start_line"]):
+                print(f"      {number:>5} | {line}")
+            if snippet["truncated"]:
+                print("      [snippet truncated]")
+        elif snippet:
+            print(f"      [snippet unavailable: {snippet['status']}]")
 
 
 def _print_results_section(heading: str, rows: list[dict], *, verbose: bool) -> None:
@@ -1414,6 +1424,21 @@ def cmd_find(a):
         _print_semantic_degrade(idx, ptr.get("rootId"))
     query = sanitize_query(a.query)
     rows = find_rows(idx, query, a.limit, root=root, root_id=ptr.get("rootId"), semantic=semantic)
+    if getattr(a, "snippets", False):
+        try:
+            rows = with_source_snippets(
+                rows,
+                root=root,
+                pointer=ptr,
+                query=query,
+                lines_per_result=a.snippet_lines,
+                chars_per_result=a.snippet_chars,
+                total_lines=a.snippet_total_lines,
+                total_chars=a.snippet_total_chars,
+            )
+        except ValueError as exc:
+            ui.fail("Invalid snippet limits", str(exc))
+            return 2
     _print_search("Best matches for", query, rows, verbose=getattr(a, "verbose", False))
     return 0
 

@@ -234,7 +234,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | Command | Use it to |
 |---|---|
 | `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
-| `mimry find "<query>"` | Rank files for a query (`--semantic` blends in fuzzy matches) |
+| `mimry find "<query>"` | Rank files for a query (`--semantic` blends in fuzzy matches; `--snippets` adds bounded, live-source excerpts) |
 | `mimry related "<query>"` | Find files connected through the graph |
 | `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
 | `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |

@@ -49,6 +49,7 @@ from mimry.security import (
     sanitize_query,
 )
 from mimry.semantic import semantic_health, semantic_rows
+from mimry.source_snippets import with_source_snippets
 from mimry.state import (
     GENERATION_SCHEMA_VERSION,
     IndexSchemaMigrationError,
@@ -399,9 +400,17 @@ def mimry_preflight(
 @_state_guard
 @_index_operation()
 def mimry_find(
-    query: str, root: str | None = None, limit: int = 10, semantic: bool = False
+    query: str,
+    root: str | None = None,
+    limit: int = 10,
+    semantic: bool = False,
+    snippets: bool = False,
+    snippet_lines: int = 8,
+    snippet_chars: int = 800,
+    snippet_total_lines: int = 40,
+    snippet_total_chars: int = 4000,
 ) -> dict[str, Any]:
-    """Search indexed files with ranking reasons."""
+    """Search files, optionally with bounded live-source snippets."""
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
@@ -413,6 +422,17 @@ def mimry_find(
         root_id=ptr.get("rootId"),
         semantic=semantic,
     )
+    if snippets:
+        rows = with_source_snippets(
+            rows,
+            root=root_path,
+            pointer=ptr,
+            query=query,
+            lines_per_result=snippet_lines,
+            chars_per_result=snippet_chars,
+            total_lines=snippet_total_lines,
+            total_chars=snippet_total_chars,
+        )
     payload = {
         "query": redact_sensitive_text(query),
         "root": str(root_path),
