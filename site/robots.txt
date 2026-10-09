@@ -2,3 +2,7 @@ User-agent: *
 Allow: /
 
 Sitemap: https://jbacalso24.github.io/mimry/sitemap.xml
+
+# Maintainer note: this project can publish /mimry/robots.txt only. It cannot
+# create GitHub Pages' host-root /robots.txt; a 404 there does not disallow
+# crawling this project path.

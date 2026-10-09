@@ -298,7 +298,7 @@ footer nav { display: flex; flex-wrap: wrap; gap: 24px; }
 @media (max-width: 640px) {
   .wrap { padding-inline: 16px; }
   .top nav { gap: 18px; }
-  .top nav a:not(.gh) { display: none; }
+  .top nav a:not(.gh):not(.guide) { display: none; }
   .hero { padding-block: 16px 72px; }
   h1 { margin-bottom: 28px; }
   .lede { font-size: 1.12rem; }
@@ -320,6 +320,7 @@ footer nav { display: flex; flex-wrap: wrap; gap: 24px; }
   <nav aria-label="Main">
     <a href="#how-it-works">How it works</a>
     <a href="#setup">Setup</a>
+    <a class="guide" href="context-retrieval/">Context guide</a>
     <a href="#faq">FAQ</a>
     <a class="gh" href="https://github.com/jbacalso24/mimry">GitHub</a>
     <button class="theme" type="button" id="theme" aria-label="Switch to dark mode" hidden><!-- Phosphor Icons, MIT --><svg class="i-moon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></svg><svg class="i-sun" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z"/></svg></button>
@@ -442,7 +443,7 @@ Start with
     <div class="wrap setup">
       <div>
         <h2>Connect your agent</h2>
-        <p class="intro">MIMRY runs as an MCP server, so agents call it directly. Add it once per machine.</p>
+        <p class="intro">MIMRY runs as an MCP server, so agents call it directly. Add it once per machine, then install its workflow instructions in the repositories where you want agents to start with context.</p>
         <div class="tabs">
           <div class="tablist" role="tablist" aria-label="Agent">
             <button role="tab" id="tab-claude" aria-controls="panel-claude" aria-selected="true">Claude Code</button>
@@ -451,11 +452,11 @@ Start with
           </div>
           <div class="panel" role="tabpanel" id="panel-claude" aria-labelledby="tab-claude">
             <pre><code>claude mcp add --scope user mimry -- mimry-mcp</code></pre>
-            <p>Teach it the workflow too: <code>mimry install --project --platform claude-code --always-on --hooks</code></p>
+            <p>Teach it the workflow too: <code>mimry install --project --platform claude-code --always-on --hooks</code>. <a href="claude-code/">Follow the Claude Code setup guide</a>.</p>
           </div>
           <div class="panel" role="tabpanel" id="panel-codex" aria-labelledby="tab-codex" hidden>
             <pre><code>codex mcp add mimry -- mimry-mcp</code></pre>
-            <p>Teach it the workflow too: <code>mimry install --project --platform codex --always-on --hooks</code></p>
+            <p>Teach it the workflow too: <code>mimry install --project --platform codex --always-on --hooks</code>. <a href="codex/">Follow the Codex setup guide</a>.</p>
           </div>
           <div class="panel" role="tabpanel" id="panel-other" aria-labelledby="tab-other" hidden>
             <pre><code>{
@@ -476,6 +477,7 @@ Start with
           <li><strong>Verify</strong><p>Tests and build output stay the final truth.</p></li>
           <li><strong>Record</strong><p><code>mimry feedback</code> turns what helped into ranking signal.</p></li>
         </ol>
+        <p class="footnote">See <a href="context-retrieval/">how preflight checks freshness, ranks files, follows graph evidence and writes the context pack</a>.</p>
       </div>
     </div>
   </section>
@@ -502,6 +504,9 @@ Start with
       <a href="https://github.com/jbacalso24/mimry">GitHub</a>
       <a href="https://pypi.org/project/mimry/">PyPI</a>
       <a href="https://github.com/jbacalso24/mimry#readme">Documentation</a>
+      <a href="claude-code/">Claude Code setup</a>
+      <a href="codex/">Codex setup</a>
+      <a href="context-retrieval/">Context retrieval</a>
       <a href="https://github.com/jbacalso24/mimry/releases">Releases</a>
       <a href="llms.txt">llms.txt</a>
     </nav>

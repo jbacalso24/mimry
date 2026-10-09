@@ -18,6 +18,9 @@ Connect as an MCP server: `claude mcp add --scope user mimry -- mimry-mcp` (Clau
 
 ## Docs
 
+- [Claude Code setup](https://jbacalso24.github.io/mimry/claude-code/): connect the MCP server, install the project workflow and hooks, verify status, and start a task
+- [Codex setup](https://jbacalso24.github.io/mimry/codex/): connect the MCP server, install the Codex project skill and hooks, verify status, and start a task
+- [How MIMRY retrieves context](https://jbacalso24.github.io/mimry/context-retrieval/): freshness, indexing, ranking evidence, context packs, source verification, and feedback
 - [README](https://github.com/jbacalso24/mimry/blob/main/README.md): what MIMRY is, install, quickstart, agent workflow, MCP setup, and every command
 - [Context packs](https://github.com/jbacalso24/mimry/blob/main/docs/context-packs.md): the section contract of `.mimry/mimry-out/context/latest.md`
 - [Adapters](https://github.com/jbacalso24/mimry/blob/main/docs/adapters.md): the file-type adapters and what each extracts
