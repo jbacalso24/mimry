@@ -234,7 +234,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | Command | Use it to |
 |---|---|
 | `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
-| `mimry find "<query>"` | Rank files for a query (`--semantic` blends in fuzzy matches) |
+| `mimry find "<query>"` | Rank files; repeat `--language`, `--path-glob`, or `--exclude-glob`, and page with `--offset`/`--limit` (`--semantic` blends fuzzy matches) |
 | `mimry related "<query>"` | Find files connected through the graph |
 | `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
 | `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |
@@ -262,6 +262,17 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry cache wipe --current` | Delete this repo's cached index |
 
 Use `mimry --root /path/to/repo <command>` to target another repo.
+
+`find` applies every filter before pagination.
+`--language` matches a file by its extension and by the languages of the symbols indexed in it, accepts extensions as names (`py`, `ts`, `rs`), counts `.tsx` files as TypeScript, and rejects names it does not know.
+Path globs are case-sensitive and repository-relative.
+`*` matches within one path segment, and `**` matches zero or more whole segments, so `*.py` matches only files at the root and `**/*.py` matches Python files at any depth.
+The active scope is shown in CLI output, in the MCP `scope` field and in verbose ranking reasons.
+Absolute or `..` globs, non-string filter values and invalid pagination values are rejected.
+
+Pagination is opt-in: pass `--offset 0` (MCP `offset: 0`) for the first page, then raise `--offset` by `--limit` for each later page.
+Without `--offset`, `find` keeps its compact ranking, which can differ from the first page of a paginated search.
+MCP `scope` reports the normalized `offset` and whether pagination was requested.
 
 `mimry doctor` checks that the installed code matches its package, that its dependencies and parsers work, and that the repo's index and caches are intact.
 It only reads: it never sets up, indexes, repairs or installs anything, and it uses no network.

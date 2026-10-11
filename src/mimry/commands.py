@@ -1413,7 +1413,37 @@ def cmd_find(a):
     if semantic:
         _print_semantic_degrade(idx, ptr.get("rootId"))
     query = sanitize_query(a.query)
-    rows = find_rows(idx, query, a.limit, root=root, root_id=ptr.get("rootId"), semantic=semantic)
+    languages = getattr(a, "language", [])
+    path_globs = getattr(a, "path_glob", [])
+    exclude_globs = getattr(a, "exclude_glob", [])
+    offset = getattr(a, "offset", None)
+    try:
+        rows = find_rows(
+            idx,
+            query,
+            a.limit,
+            root=root,
+            root_id=ptr.get("rootId"),
+            semantic=semantic,
+            languages=languages,
+            path_globs=path_globs,
+            exclude_globs=exclude_globs,
+            offset=offset,
+        )
+    except ValueError as exc:
+        ui.fail("Invalid search scope", str(exc))
+        return 2
+    scope = []
+    if languages:
+        scope.append("language=" + ",".join(languages))
+    if path_globs:
+        scope.append("path=" + ",".join(path_globs))
+    if exclude_globs:
+        scope.append("exclude=" + ",".join(exclude_globs))
+    if offset is not None:
+        scope.append(f"offset={offset}")
+    if scope:
+        ui.detail("Scope: " + "; ".join(scope))
     _print_search("Best matches for", query, rows, verbose=getattr(a, "verbose", False))
     return 0
 
