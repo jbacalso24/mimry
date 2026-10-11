@@ -1046,6 +1046,7 @@ def _write_context_pack(
         "",
         "## Relevant Files",
         "Paths are repository-relative. Open the source before editing any of them.",
+        "Where a file lists lines to read first, read those lines before the rest of the file.",
         "",
     ]
     for i, r in enumerate(rows, 1):
@@ -1067,6 +1068,8 @@ def _write_context_pack(
             why_line,
             f"Role: {role}",
         ]
+        if r.get("ranges"):
+            lines += [f"Read first: {_ranges_text(r['ranges'], _code_name)}"]
         details = r.get("details") or ""
         if details:
             excerpt = " ".join(markdown_inline(line) for line in _excerpt_lines(details))
@@ -1335,10 +1338,21 @@ def _print_semantic_degrade(idx: Path, root_id: str | None) -> bool:
     return False
 
 
+def _code_name(value: str) -> str:
+    return f"`{markdown_inline(value)}`"
+
+
+def _ranges_text(ranges: list[dict], name=str) -> str:
+    """``lines 13-15 (name), 40-60 (name)`` for a result's ranges."""
+    return "lines " + ", ".join(f"{r['start']}-{r['end']} ({name(r['name'])})" for r in ranges)
+
+
 def _print_results(rows: list[dict], *, verbose: bool) -> None:
     for i, row in enumerate(rows, 1):
         print(f"  {i:>2}  {row['path']}")
         print(f"      {ui.faint(ui.reason_summary(row['reason']))}")
+        if row.get("ranges"):
+            print(f"      read first: {_ranges_text(row['ranges'])}")
         if verbose:
             print(f"      {ui.faint('score ' + str(row['score']) + ': ' + row['reason'])}")
             if row.get("details"):

@@ -152,6 +152,30 @@ This affects both read modes, since those tasks run on code that already holds p
 
 Per-task numbers for 0.3.0 are in [results.dev.sed.json](results.dev.sed.json) and [results.holdout2.sed.json](results.holdout2.sed.json), and the credential fixes' in [results.dev.sed.credential.json](results.dev.sed.credential.json) and [results.holdout2.sed.credential.json](results.holdout2.sed.credential.json).
 
+## Reading line ranges
+
+MIMRY's results name the lines to read first in each file: the functions, classes and Markdown sections that match the task, with their start and end lines (`Read first: lines 120-168 (calculate_tax)`), and the skill and agent rules tell agents to read those lines before the rest of the file.
+`--reads ranges` measures that.
+The grep agent reads whole files, as in full mode, because grep's output names no range.
+The MIMRY agent reads the ranges its pack lists for a file, and pays for those lines only.
+If they do not show a line the pull request changed in a gold file, it then reads the whole file, which costs a second read from the budget of 10.
+A file the pack lists no ranges for is read whole.
+For the rebase-merged tasks above, a gold file the last commit does not touch counts as reached by any read.
+
+| Set | Version | Tokens saved vs grep | Located: grep / MIMRY | Median task, tokens saved | Tasks both located, tokens saved |
+|---|---|---|---|---|---|
+| dev, 40 tasks | line ranges | 64.2% | 30 / 32 | 56.5% | 63.6% (27 tasks) |
+
+On dev, reading the listed ranges halves what MIMRY reads: 677,799 tokens against 0.3.0's 1,285,495 with whole-file reads, while grep reads 1,894,477.
+It locates one task fewer than with whole-file reads (32 against 33): in ripgrep#3472 the ranges missed the change in several of the four gold files, and the second reads used up the budget.
+Of the 67 gold files on dev, a listed range showed a changed line in 23.
+In 10 the change was within 60 lines of a listed range, in 16 it was further away, in a part of the file the task did not name, and 17 were never listed with ranges, most of them in tasks MIMRY did not locate.
+The last one is a rebase-merged gold file the last commit does not touch.
+Ranking files by their best-matching piece was also tried, and located no more tasks while reading slightly more with whole-file reads, so pieces only choose the ranges.
+With whole-file reads this version saves 31.6% on dev and locates 33 tasks, against 0.3.0's 32.1% and 33: the listed ranges make each context pack slightly longer.
+holdout2 was not run for this change; it is run once per version, at release.
+Per-task numbers are in [results.dev.ranges.json](results.dev.ranges.json).
+
 ## Whole-repository ratio
 
 Some tools report savings against reading every file in the repository.
@@ -167,4 +191,5 @@ uv run --with tiktoken python benchmarks/tokens/run.py --work <scratch-dir> --se
 The runner clones each repository into the scratch directory, checks out each task's base commit, and writes `results.<set>.json` next to this file.
 `--set` takes dev, holdout or holdout2.
 `--reads sed` charges `grep -n` and `sed -n` windows instead of whole-file reads and writes `results.<set>.sed.json`; `--window` sets the lines read on each side of a match (default 100).
+`--reads ranges` has the MIMRY agent read the line ranges its pack lists first and writes `results.<set>.ranges.json`.
 Selecting new tasks needs an authenticated `gh` CLI: `python benchmarks/tokens/select_tasks.py dev`.

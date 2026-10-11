@@ -12,6 +12,7 @@ from .intent import (
     query_terms,
 )
 from .paths import canonical_cached_rel_path
+from .pieces import best_ranges, piece_matches
 from .security import filter_index_records
 from .semantic import merge_semantic_rows, semantic_rows
 from .storage import connect, load_jsonl, load_pointer
@@ -51,6 +52,15 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
             boost = 8
         scores[file_id] = (boost, "FTS/BM25 match")
     return scores
+
+
+def _with_ranges(rows, pieces, id_by_path):
+    """Name the lines to read first in each result: its best pieces."""
+    out = []
+    for row in rows:
+        matches = pieces.get(id_by_path.get(row["path"], ""))
+        out.append({**row, "ranges": best_ranges(matches)} if matches else row)
+    return out
 
 
 def score(f, q, fts_boost: tuple[int, str] | None = None):
@@ -146,7 +156,9 @@ def find_rows(
     files, _ = filter_index_records(load_jsonl(idx / "files.jsonl"))
     files = _without_excluded(files, excluded_paths)
     fts_scores = _fts_scores(idx, q)
-    known_paths = {f["rel_path"] for f in files}
+    pieces = piece_matches(idx, q)
+    id_by_path = {f["rel_path"]: f["file_id"] for f in files}
+    known_paths = set(id_by_path)
 
     clusters = {}
     if graph and (idx / "graph.json").exists():
@@ -223,8 +235,10 @@ def find_rows(
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
-            return _with_semantic(
+            rows = _with_semantic(
                 ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths
             )
+            return _with_ranges(rows, pieces, id_by_path)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
-    return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)
+    rows = _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)
+    return _with_ranges(rows, pieces, id_by_path)

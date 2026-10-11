@@ -123,6 +123,7 @@ For an exact string you already know, such as an identifier or an error message,
 1. **Start the task:** `mimry preflight "<task in plain words>"`.
 2. **Read the context pack:** `.mimry/mimry-out/context/latest.md`.
    It lists ranked files with reasons, key symbols, relationships, risky paths, and verification commands.
+   Where a file's functions, classes or sections match the task, it names their lines (`Read first: lines 120-168`), so the agent reads those before the rest of the file.
 3. **Navigate with focused queries** instead of scanning the tree:
    `mimry find "<query>"`, `mimry symbol <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`.
 4. **Verify against the source.**
@@ -180,7 +181,7 @@ The server works on its current directory by default, and every tool accepts a `
 | MCP tool | What it does |
 |---|---|
 | `mimry_preflight` | Set up if needed, then write a context pack and return the top files for a task |
-| `mimry_find` | Rank files for a query |
+| `mimry_find` | Rank files for a query, with the line ranges to read first in each |
 | `mimry_related` | Files related to a query through the graph |
 | `mimry_semantic` | Fuzzy "something like this" search |
 | `mimry_symbol` | Look up a function, class, or other symbol by name |
@@ -234,7 +235,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | Command | Use it to |
 |---|---|
 | `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
-| `mimry find "<query>"` | Rank files for a query (`--semantic` blends in fuzzy matches) |
+| `mimry find "<query>"` | Rank files for a query, with the lines to read first (`--semantic` blends in fuzzy matches) |
 | `mimry related "<query>"` | Find files connected through the graph |
 | `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
 | `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |
@@ -309,7 +310,7 @@ project-root/
 The index itself lives in your user cache directory, outside the repo.
 It is a generated artifact, not a source of truth.
 
-A context pack contains the query and index freshness, ranked files with reasons, symbol hints, relationships, a suggested reading order, likely edit surfaces versus support files, risk notes for generated or sensitive paths, verification commands from the project's manifests and docs, and a final-report checklist.
+A context pack contains the query and index freshness, ranked files with reasons and the line ranges to read first, symbol hints, relationships, a suggested reading order, likely edit surfaces versus support files, risk notes for generated or sensitive paths, verification commands from the project's manifests and docs, and a final-report checklist.
 It uses relative paths and never includes full source or secret values.
 See [`docs/context-packs.md`](docs/context-packs.md) for the contract.
 
