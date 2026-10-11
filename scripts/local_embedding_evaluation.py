@@ -17,7 +17,16 @@ from statistics import median
 from typing import Any
 from urllib.parse import urlsplit
 
-from mimry.benchmark import _env, _paths, _run, load_cases, ndcg_at_k, percentile, recall_at_k
+from mimry.benchmark import (
+    _digest,
+    _env,
+    _paths,
+    _run,
+    load_cases,
+    ndcg_at_k,
+    percentile,
+    recall_at_k,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "benchmarks" / "fixtures" / "agent_repo"
@@ -127,6 +136,10 @@ class OllamaClient:
         for raw in raw_vectors:
             if not isinstance(raw, list) or len(raw) != self.expected_dimension:
                 raise RuntimeError("provider returned an unexpected vector dimension")
+            if not all(
+                isinstance(value, (int, float)) and not isinstance(value, bool) for value in raw
+            ):
+                raise RuntimeError("provider returned a non-numeric vector")
             vector = [float(value) for value in raw]
             if not all(math.isfinite(value) for value in vector):
                 raise RuntimeError("provider returned a non-finite vector")
@@ -290,11 +303,9 @@ def evaluate(model: str, endpoint: str, expected_dimension: int, timeout: float)
         "claim_boundary": CLAIM_BOUNDARY,
         "source_sha": source_sha,
         "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "fixture_sha256": hashlib.sha256(
-            b"".join(
-                path.relative_to(FIXTURE).as_posix().encode() + path.read_bytes() for path in files
-            )
-        ).hexdigest(),
+        # Same digest as benchmarks/result.core.json, so reports can be
+        # matched to the fixture the committed evidence used.
+        "fixture_sha256": _digest(FIXTURE),
         "cases_sha256": hashlib.sha256(CASES.read_bytes()).hexdigest(),
         "input_hashes": input_hashes,
         "provider": {

@@ -68,6 +68,13 @@ def test_provider_rejects_wrong_dimensions_and_non_finite_vectors(monkeypatch):
     with pytest.raises(RuntimeError, match="non-finite"):
         client.embed("fixture-model", ["safe public fixture"])
 
+    for bad in ([True, 0.0], ["1", 0.0], [None, 0.0]):
+        monkeypatch.setattr(
+            client, "_json", lambda *args, bad=bad, **kwargs: {"embeddings": [bad]}
+        )
+        with pytest.raises(RuntimeError, match="non-numeric"):
+            client.embed("fixture-model", ["safe public fixture"])
+
 
 def test_readiness_requires_exact_installed_model_and_digest(monkeypatch):
     client = OllamaClient("http://127.0.0.1:11434", timeout=1, expected_dimension=2)
