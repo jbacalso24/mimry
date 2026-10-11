@@ -6,6 +6,7 @@ import os
 import posixpath
 import re
 import stat
+import subprocess
 import unicodedata
 from pathlib import Path
 
@@ -345,6 +346,46 @@ def scan_entries(root, *, probe_open: bool = True) -> list[tuple[str, Path]]:
     return [(canonical, path) for canonical, path, _st in scan_stats(root, probe_open=probe_open)]
 
 
+def git_ignored(root: str) -> tuple[frozenset[str], frozenset[str]]:
+    """Untracked files and directories that git ignores under ``root``,
+    as root-relative POSIX paths, directories ending in "/".
+
+    Build output, caches and downloaded data a repo's .gitignore names
+    are not code an agent should be pointed at. A root outside git, or
+    without git installed, ignores nothing.
+    """
+    try:
+        res = subprocess.run(
+            [
+                "git",
+                "-C",
+                root,
+                "ls-files",
+                "-z",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+            ],
+            capture_output=True,
+            check=False,
+            # Never inherit stdin: under the MCP stdio server it is the
+            # JSON-RPC channel.
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError:
+        return frozenset(), frozenset()
+    if res.returncode != 0:
+        return frozenset(), frozenset()
+    paths = [p for p in res.stdout.decode("utf-8", errors="surrogateescape").split("\0") if p]
+    if "./" in paths:
+        # The root itself is ignored by an enclosing repo; indexing it
+        # was asked for explicitly.
+        return frozenset(), frozenset()
+    dirs = frozenset(p for p in paths if p.endswith("/"))
+    return frozenset(p for p in paths if not p.endswith("/")), dirs
+
+
 def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.stat_result]]:
     """Return ``(canonical_rel_path, native_path, lstat)`` for every
     indexable candidate.
@@ -358,6 +399,7 @@ def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.sta
     root = Path(root)
     root_str = str(root)
     entries: list[tuple[str, str, Path, os.stat_result]] = []
+    ignored_files, ignored_dirs = git_ignored(root_str)
     # Prune ignored directories instead of walking and then filtering
     # them: .git, .venv and node_modules routinely hold 95%+ of the
     # paths on disk. Only heavy-ignore names prune: every other path
@@ -365,11 +407,20 @@ def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.sta
     # against its full relative path. followlinks=False matches rglob,
     # which never descended into symlinked dirs.
     for dirpath, dirnames, filenames in os.walk(root_str, followlinks=False):
-        dirnames[:] = [name for name in dirnames if not _has_heavy_ignore((name,))]
         rel_dir = dirpath[len(root_str) :].lstrip(os.sep).replace(os.sep, "/")
+        prefix = f"{rel_dir}/" if rel_dir else ""
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if not _has_heavy_ignore((name,)) and f"{prefix}{name}/" not in ignored_dirs
+        ]
         for name in filenames:
             path = Path(dirpath, name)
-            if _has_heavy_ignore((name,)) or is_sensitive(path):
+            if (
+                _has_heavy_ignore((name,))
+                or f"{prefix}{name}" in ignored_files
+                or is_sensitive(path)
+            ):
                 continue
             try:
                 # One lstat answers regular-file, not-a-symlink, and

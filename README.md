@@ -431,6 +431,7 @@ For a personal "global" memory, make a curated folder such as `~/Workspace` and 
 - Semantic search defaults to the deterministic local `local-hash-v1`; nothing is sent to a remote embedding service.
 - Feedback is local metadata, not telemetry, and secret-looking values are redacted before they are stored.
 - Scanner rules skip common credential files.
+- In a git repository, untracked files the `.gitignore` names (build output, caches, local settings) are not indexed; tracked files always are.
 - Tester-owned `acceptance_tests/` trees stay out of ordinary index surfaces by default.
   This is cooperative isolation, not secrecy: anyone with the repo can still open those files.
 
