@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .freshness import index_freshness
+from .intent import query_terms, term_matches_token, text_terms
 from .paths import canonical_cached_rel_path
 from .scanner import read_snapshot
 from .security import has_sensitive_content, is_sensitive, is_text
@@ -22,14 +23,17 @@ def _positive(name: str, value: int) -> int:
 
 
 def _match_line(lines: list[str], query: str) -> int:
-    terms = [term.casefold() for term in query.split() if term.strip()]
-    if not terms:
-        return 0
+    """The first line naming the most query words, matched as ranking
+    matches them: whole words and their inflections, without stopwords.
+    """
+    terms = query_terms(query)
+    best, best_hits = 0, 0
     for index, line in enumerate(lines):
-        folded = line.casefold()
-        if any(term in folded for term in terms):
-            return index
-    return 0
+        tokens = text_terms(line)
+        hits = sum(1 for term in terms if any(term_matches_token(term, t) for t in tokens))
+        if hits > best_hits:
+            best, best_hits = index, hits
+    return best
 
 
 def with_source_snippets(
@@ -53,7 +57,10 @@ def with_source_snippets(
     remaining_lines = _positive("snippet_total_lines", total_lines)
     remaining_chars = _positive("snippet_total_chars", total_chars)
     root = root.resolve()
-    freshness = index_freshness(root, pointer, verify=True)
+    # Stat-based freshness is enough: every snippet's bytes are hashed
+    # against the indexed hash below, so re-hashing the whole repository
+    # on each search would only add cost.
+    freshness = index_freshness(root, pointer)
     changed = set(freshness["changed"])
     allowed = {record["rel_path"]: record for record in freshness["files"]}
     native_paths = freshness.get("native_paths", {})
@@ -102,11 +109,7 @@ def with_source_snippets(
                     # even when clipping/rstrip leaves an empty string.
                     used_lines = 1 + clipped.count("\n")
                     end_line = start_index + used_lines
-                    truncated = (
-                        clipped != rendered
-                        or start_index + take < len(source_lines)
-                        or take < lines_per_result
-                    )
+                    truncated = clipped != rendered or start_index + take < len(source_lines)
                     row["snippet"] = {
                         "start_line": start_index + 1,
                         "end_line": end_line,

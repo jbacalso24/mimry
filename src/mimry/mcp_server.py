@@ -423,16 +423,22 @@ def mimry_find(
         semantic=semantic,
     )
     if snippets:
-        rows = with_source_snippets(
-            rows,
-            root=root_path,
-            pointer=ptr,
-            query=query,
-            lines_per_result=snippet_lines,
-            chars_per_result=snippet_chars,
-            total_lines=snippet_total_lines,
-            total_chars=snippet_total_chars,
-        )
+        try:
+            rows = with_source_snippets(
+                rows,
+                root=root_path,
+                pointer=ptr,
+                query=query,
+                lines_per_result=snippet_lines,
+                chars_per_result=snippet_chars,
+                total_lines=snippet_total_lines,
+                total_chars=snippet_total_chars,
+            )
+        except ValueError as exc:
+            return {
+                "returncode": 2,
+                "error": {"code": "invalid_snippet_limits", "message": str(exc)},
+            }
     payload = {
         "query": redact_sensitive_text(query),
         "root": str(root_path),

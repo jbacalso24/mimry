@@ -223,5 +223,56 @@ def test_blank_line_range_and_global_budgets_are_exact(tmp_path, monkeypatch):
 
 def test_mcp_rejects_invalid_budget(tmp_path, monkeypatch):
     repo, _, _ = _indexed(tmp_path, monkeypatch)
-    with pytest.raises(ValueError, match="snippet_lines must be a positive integer"):
-        mimry_find("session", str(repo), snippets=True, snippet_lines=0)
+    result = mimry_find("session", str(repo), snippets=True, snippet_lines=0)
+    assert result == {
+        "returncode": 2,
+        "error": {
+            "code": "invalid_snippet_limits",
+            "message": "snippet_lines must be a positive integer",
+        },
+    }
+
+
+def test_snippet_starts_at_the_line_naming_most_query_words(tmp_path, monkeypatch):
+    repo, _, pointer = _indexed(tmp_path, monkeypatch)
+    target = repo / "src/auth/session.py"
+    target.write_text(
+        "# This file is part of the billing service.\n"
+        "import math\n"
+        "\n"
+        "def format_currency(amount):\n"
+        "    return amount\n"
+        "\n"
+        "def calculate_invoice_tax(subtotal, rate):\n"
+        "    return subtotal * rate\n",
+        encoding="utf-8",
+    )
+    write_index(repo, pointer)
+    pointer = load_pointer(repo)
+
+    enriched = with_source_snippets(
+        [{"path": "src/auth/session.py"}],
+        root=repo,
+        pointer=pointer,
+        query="change how invoice tax is calculated",
+        lines_per_result=2,
+    )
+
+    assert enriched[0]["snippet"]["start_line"] == 7
+    assert enriched[0]["snippet"]["text"].startswith("def calculate_invoice_tax")
+    assert enriched[0]["snippet"]["truncated"] is False
+
+
+def test_whole_short_file_is_not_marked_truncated(tmp_path, monkeypatch):
+    repo, _, pointer = _indexed(tmp_path, monkeypatch)
+    target = repo / "src/auth/session.py"
+    target.write_text("def ping():\n    return 'pong'\n", encoding="utf-8")
+    write_index(repo, pointer)
+    pointer = load_pointer(repo)
+
+    enriched = with_source_snippets(
+        [{"path": "src/auth/session.py"}], root=repo, pointer=pointer, query="ping"
+    )
+
+    assert enriched[0]["snippet"]["end_line"] == 2
+    assert enriched[0]["snippet"]["truncated"] is False
