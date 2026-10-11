@@ -13,6 +13,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from mimry.adapters import list_adapters
+from mimry.cache_safety import IndexOutsideCacheError
 from mimry.commands import (
     _write_context_pack,
     cmd_explain,
@@ -164,6 +165,14 @@ def _state_guard(func):
                         "holder": exc.holder or None,
                     },
                     "recommended": "Check for another running MIMRY process, then retry.",
+                }
+            )
+        except IndexOutsideCacheError as exc:
+            return sanitize_data(
+                {
+                    "returncode": 2,
+                    "error": {"code": "index_outside_cache", "message": str(exc)},
+                    "recommended": "Run `mimry_preflight` or `mimry index` to rebuild it.",
                 }
             )
         except RootIdentityError as exc:

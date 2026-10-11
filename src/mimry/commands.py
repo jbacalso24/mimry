@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from . import __version__, ui
 from .adapters import list_adapters
 from .cache_safety import (
+    IndexOutsideCacheError,
     UnsafeCachePathError,
     validated_cache_home,
     validated_current_root_cache_path,
@@ -1180,10 +1181,15 @@ def cmd_preflight(a):
         if init_status != 0:
             return init_status
 
-    with active_index_pointer(root) as active:
-        assert active is not None
-        ptr = active
-        fresh, graph = _index_and_graph_health(root, ptr)
+    try:
+        with active_index_pointer(root) as active:
+            assert active is not None
+            ptr = active
+            fresh, graph = _index_and_graph_health(root, ptr)
+    except IndexOutsideCacheError:
+        # MIMRY_CACHE_HOME changed since the last index; indexing
+        # builds a new one in the current cache and leaves the old one.
+        fresh = {"state": "missing"}
 
     stats = None
     # Index when there is none, when files changed since the last

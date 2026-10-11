@@ -10,6 +10,21 @@ class UnsafeCachePathError(ValueError):
     pass
 
 
+class IndexOutsideCacheError(UnsafeCachePathError):
+    """A repo's index lives outside the current MIMRY cache, usually
+    because MIMRY_CACHE_HOME changed since it was built.
+    """
+
+    def __init__(self, index_path: Path, cache: Path):
+        self.index_path = index_path
+        self.cache = cache
+        super().__init__(
+            f"Its index is in {index_path}, outside the current MIMRY cache {cache}. "
+            "Run `mimry index` to build it in the current cache, or set MIMRY_CACHE_HOME "
+            "back to the cache that holds it."
+        )
+
+
 def _is_relative_to(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
@@ -61,10 +76,10 @@ def validated_current_index_path(index_path: Path, current_root: Path | None = N
     if not idx.is_absolute():
         raise UnsafeCachePathError(f"MIMRY index path must be absolute: {idx}")
     resolved_idx = idx.resolve(strict=False)
-    if resolved_idx == indexes_base or not _is_relative_to(resolved_idx, indexes_base):
-        raise UnsafeCachePathError(
-            f"Refusing to wipe index outside MIMRY indexes cache: {resolved_idx}"
-        )
+    if resolved_idx == indexes_base:
+        raise UnsafeCachePathError(f"Refusing to wipe the whole MIMRY indexes cache: {idx}")
+    if not _is_relative_to(resolved_idx, indexes_base):
+        raise IndexOutsideCacheError(resolved_idx, cache)
     return resolved_idx
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .cache_safety import IndexOutsideCacheError, validated_current_index_path
 from .commands import _health, _repair_command
 from .paths import pointer_file
 from .state import validate_generation
@@ -192,8 +193,20 @@ def _root_checks(root: Path, *, verify: bool) -> list[dict[str, Any]]:
             raise ValueError("invalid pointer shape")
         if Path(ptr["rootPath"]).expanduser().resolve(strict=False) != root:
             raise ValueError("pointer belongs to another root")
+        validated_current_index_path(Path(ptr["indexPath"]), root)
         validate_generation(ptr)
         fresh, graph, semantic = _health(root, ptr, verify=verify)
+    except IndexOutsideCacheError:
+        return [
+            _check(
+                "root.index",
+                "error",
+                "root index is in another MIMRY cache",
+                "Run `mimry index` to build it in the current cache, or set MIMRY_CACHE_HOME back"
+                " to the cache that holds it.",
+                state="outside_cache",
+            )
+        ]
     except Exception as exc:
         return [
             _check(
@@ -257,7 +270,7 @@ def doctor_report(root: Path, *, verify: bool = False) -> dict[str, Any]:
     elif any(
         check["id"].startswith(("installation.", "parsers.")) and check["status"] == "error"
         for check in checks
-    ) or root_state in {"uninitialized", "missing"}:
+    ) or root_state in {"uninitialized", "missing", "outside_cache"}:
         condition = "incomplete"
     elif any(check["status"] == "warning" for check in checks):
         condition = "stale"
