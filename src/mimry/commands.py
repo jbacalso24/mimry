@@ -71,6 +71,7 @@ from .security import (
     sanitize_query,
 )
 from .semantic import semantic_health, semantic_rows
+from .source_snippets import with_source_snippets
 from .state import atomic_write_text
 from .storage import (
     active_index_pointer,
@@ -1047,6 +1048,7 @@ def _write_context_pack(
         "",
         "## Relevant Files",
         "Paths are repository-relative. Open the source before editing any of them.",
+        "Where a file lists lines to read first, read those lines before the rest of the file.",
         "",
     ]
     for i, r in enumerate(rows, 1):
@@ -1068,6 +1070,8 @@ def _write_context_pack(
             why_line,
             f"Role: {role}",
         ]
+        if r.get("ranges"):
+            lines += [f"Read first: {_ranges_text(r['ranges'], _code_name)}"]
         details = r.get("details") or ""
         if details:
             excerpt = " ".join(markdown_inline(line) for line in _excerpt_lines(details))
@@ -1341,16 +1345,36 @@ def _print_semantic_degrade(idx: Path, root_id: str | None) -> bool:
     return False
 
 
+def _code_name(value: str) -> str:
+    return f"`{markdown_inline(value)}`"
+
+
+def _ranges_text(ranges: list[dict], name=str) -> str:
+    """``lines 13-15 (name), 40-60 (name)`` for a result's ranges."""
+    return "lines " + ", ".join(f"{r['start']}-{r['end']} ({name(r['name'])})" for r in ranges)
+
+
 def _print_results(rows: list[dict], *, verbose: bool) -> None:
     for i, row in enumerate(rows, 1):
         print(f"  {i:>2}  {row['path']}")
         print(f"      {ui.faint(ui.reason_summary(row['reason']))}")
+        if row.get("ranges"):
+            print(f"      read first: {_ranges_text(row['ranges'])}")
         if verbose:
             print(f"      {ui.faint('score ' + str(row['score']) + ': ' + row['reason'])}")
             if row.get("details"):
                 print(
                     f"      {ui.faint(ui.shorten(' '.join(_excerpt_lines(row['details'])), 240))}"
                 )
+        snippet = row.get("snippet")
+        if snippet and "text" in snippet:
+            print(f"      {row['path']}:{snippet['start_line']}-{snippet['end_line']}")
+            for number, line in enumerate(snippet["text"].splitlines(), snippet["start_line"]):
+                print(f"      {number:>5} | {line}")
+            if snippet["truncated"]:
+                print("      [snippet truncated]")
+        elif snippet:
+            print(f"      [snippet unavailable: {snippet['status']}]")
 
 
 def _print_results_section(heading: str, rows: list[dict], *, verbose: bool) -> None:
@@ -1419,7 +1443,52 @@ def cmd_find(a):
     if semantic:
         _print_semantic_degrade(idx, ptr.get("rootId"))
     query = sanitize_query(a.query)
-    rows = find_rows(idx, query, a.limit, root=root, root_id=ptr.get("rootId"), semantic=semantic)
+    languages = getattr(a, "language", [])
+    path_globs = getattr(a, "path_glob", [])
+    exclude_globs = getattr(a, "exclude_glob", [])
+    offset = getattr(a, "offset", None)
+    try:
+        rows = find_rows(
+            idx,
+            query,
+            a.limit,
+            root=root,
+            root_id=ptr.get("rootId"),
+            semantic=semantic,
+            languages=languages,
+            path_globs=path_globs,
+            exclude_globs=exclude_globs,
+            offset=offset,
+        )
+    except ValueError as exc:
+        ui.fail("Invalid search scope", str(exc))
+        return 2
+    scope = []
+    if languages:
+        scope.append("language=" + ",".join(languages))
+    if path_globs:
+        scope.append("path=" + ",".join(path_globs))
+    if exclude_globs:
+        scope.append("exclude=" + ",".join(exclude_globs))
+    if offset is not None:
+        scope.append(f"offset={offset}")
+    if scope:
+        ui.detail("Scope: " + "; ".join(scope))
+    if getattr(a, "snippets", False):
+        try:
+            rows = with_source_snippets(
+                rows,
+                root=root,
+                pointer=ptr,
+                query=query,
+                lines_per_result=a.snippet_lines,
+                chars_per_result=a.snippet_chars,
+                total_lines=a.snippet_total_lines,
+                total_chars=a.snippet_total_chars,
+            )
+        except ValueError as exc:
+            ui.fail("Invalid snippet limits", str(exc))
+            return 2
     _print_search("Best matches for", query, rows, verbose=getattr(a, "verbose", False))
     return 0
 

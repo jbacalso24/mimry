@@ -1,10 +1,10 @@
 {
   "aggregates": {
     "abstention_accuracy": 1.0,
-    "context_p95_ms": 495.1433,
-    "context_token_proxy_max": 1376,
+    "context_p95_ms": 551.6764,
+    "context_token_proxy_max": 1438,
     "decoy_rate_at_5": 0.10810810810810811,
-    "find_p95_ms": 592.2539,
+    "find_p95_ms": 560.2553,
     "ndcg_at_5": 0.8374430927979282,
     "primary_hit_at_3": 0.875,
     "recall_at_5": 0.9375
@@ -12,12 +12,12 @@
   "cases": [
     {
       "abstained": null,
-      "context_ms": 415.5738,
-      "context_token_proxy": 1376,
+      "context_ms": 523.7879,
+      "context_token_proxy": 1438,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 351.0835,
-      "find_token_proxy": 126,
+      "find_median_ms": 461.8268,
+      "find_token_proxy": 160,
       "id": "session-renewal",
       "ndcg_at_5": 0.9750432864211676,
       "paths": [
@@ -33,12 +33,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 422.2598,
-      "context_token_proxy": 622,
+      "context_ms": 538.1668,
+      "context_token_proxy": 655,
       "decoys_at_5": 1,
       "expect_empty": false,
-      "find_median_ms": 369.5822,
-      "find_token_proxy": 47,
+      "find_median_ms": 470.4247,
+      "find_token_proxy": 73,
       "id": "bearer-middleware",
       "ndcg_at_5": 0.7452525342261976,
       "paths": [
@@ -51,12 +51,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 426.8759,
-      "context_token_proxy": 944,
+      "context_ms": 511.6545,
+      "context_token_proxy": 1007,
       "decoys_at_5": 1,
       "expect_empty": false,
-      "find_median_ms": 379.1917,
-      "find_token_proxy": 111,
+      "find_median_ms": 440.5449,
+      "find_token_proxy": 157,
       "id": "checkout-runtime",
       "ndcg_at_5": 0.8595547154669839,
       "paths": [
@@ -72,12 +72,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 495.1155,
-      "context_token_proxy": 1202,
+      "context_ms": 547.6305,
+      "context_token_proxy": 1265,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 379.8983,
-      "find_token_proxy": 109,
+      "find_median_ms": 458.3501,
+      "find_token_proxy": 142,
       "id": "checkout-tests",
       "ndcg_at_5": 0.9721212198129313,
       "paths": [
@@ -93,12 +93,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 456.4503,
-      "context_token_proxy": 1001,
+      "context_ms": 545.7908,
+      "context_token_proxy": 1061,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 392.4452,
-      "find_token_proxy": 119,
+      "find_median_ms": 519.3916,
+      "find_token_proxy": 162,
       "id": "session-migration",
       "ndcg_at_5": 0.9359826917490579,
       "paths": [
@@ -114,11 +114,11 @@
     },
     {
       "abstained": true,
-      "context_ms": 438.3714,
-      "context_token_proxy": 612,
+      "context_ms": 536.7833,
+      "context_token_proxy": 634,
       "decoys_at_5": 0,
       "expect_empty": true,
-      "find_median_ms": 386.4539,
+      "find_median_ms": 495.5909,
       "find_token_proxy": 34,
       "id": "unknown",
       "ndcg_at_5": 1.0,
@@ -129,12 +129,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 472.4839,
-      "context_token_proxy": 947,
+      "context_ms": 551.6764,
+      "context_token_proxy": 1010,
       "decoys_at_5": 1,
       "expect_empty": false,
-      "find_median_ms": 423.585,
-      "find_token_proxy": 115,
+      "find_median_ms": 429.0367,
+      "find_token_proxy": 160,
       "id": "checkout-payment-chain",
       "ndcg_at_5": 0.8579514172105233,
       "paths": [
@@ -150,12 +150,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 437.8851,
-      "context_token_proxy": 977,
+      "context_ms": 506.6178,
+      "context_token_proxy": 1039,
       "decoys_at_5": 0,
       "expect_empty": false,
-      "find_median_ms": 389.3952,
-      "find_token_proxy": 129,
+      "find_median_ms": 434.2927,
+      "find_token_proxy": 173,
       "id": "session-service-fan-in",
       "ndcg_at_5": 0.6305667822198809,
       "paths": [
@@ -171,12 +171,12 @@
     },
     {
       "abstained": null,
-      "context_ms": 495.1433,
-      "context_token_proxy": 968,
+      "context_ms": 526.3097,
+      "context_token_proxy": 1029,
       "decoys_at_5": 1,
       "expect_empty": false,
-      "find_median_ms": 395.0691,
-      "find_token_proxy": 131,
+      "find_median_ms": 467.1502,
+      "find_token_proxy": 187,
       "id": "login-to-database",
       "ndcg_at_5": 0.723072095276683,
       "paths": [
@@ -213,13 +213,13 @@
   "profile": "quick-local-index",
   "python": "3.12.11",
   "repeat": 3,
-  "retrieval_source_sha256": "db11e0759d3cc90b3dc7bfdd3d333a4aa79d28229cfe80530ec8798d9fc4d393",
+  "retrieval_source_sha256": "a6e9a247dc307c6de257c98fc9d19a094a6c1fa9f67a190d1773cafb6bf57872",
   "schema_version": 1,
   "setup_ms": {
-    "index": 2111.0741,
-    "init": 337.5173
+    "index": 4387.237,
+    "init": 510.7809
   },
-  "setup_total_ms": 2448.5914,
+  "setup_total_ms": 4898.0179,
   "state": "PASS",
   "thresholds": {
     "abstention_accuracy_min": 1.0,
