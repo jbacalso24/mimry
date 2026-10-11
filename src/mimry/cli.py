@@ -43,6 +43,7 @@ def build_parser():
         cmd_watch,
         cmd_why,
     )
+    from .doctor import cmd_doctor
     from .hook import cmd_hook_check
     from .installer import cmd_install, cmd_uninstall
 
@@ -96,6 +97,16 @@ def build_parser():
         help="Re-hash every file instead of trusting unchanged metadata, like git",
     )
     s.set_defaults(func=cmd_status)
+    s = sub.add_parser(
+        "doctor", help="Run read-only installation, parser, index, and cache diagnostics"
+    )
+    s.add_argument("--json", action="store_true", help="Print a stable structured JSON report")
+    s.add_argument(
+        "--verify",
+        action="store_true",
+        help="Re-hash indexed files while checking freshness; still performs no writes",
+    )
+    s.set_defaults(func=cmd_doctor)
     s = sub.add_parser("watch", help="Poll for changes and refresh when they settle")
     s.add_argument(
         "--interval",
