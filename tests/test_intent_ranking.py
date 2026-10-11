@@ -597,3 +597,45 @@ def test_benchmark_segment_gets_same_downrank_as_benchmarks():
     assert benchmark_score == benchmarks_score
     assert "supporting code downrank for edit intent" in benchmark_reasons
     assert "supporting code downrank for edit intent" in benchmarks_reasons
+
+
+def test_content_match_lifts_a_file_the_graph_ranks_below_the_limit(tmp_path):
+    graph_dir = tmp_path / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    labels = {
+        "src/a.py": "invoice tax rounding",
+        "src/b.py": "invoice tax totals",
+        "src/c.py": "tax",
+    }
+    graph = {
+        "nodes": [
+            {"id": path, "label": label, "source_file": path} for path, label in labels.items()
+        ],
+        "links": [],
+    }
+    (graph_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
+    idx = tmp_path / "index"
+    idx.mkdir()
+    write_jsonl(
+        idx / "files.jsonl",
+        [
+            {
+                "file_id": path,
+                "filename": Path(path).name,
+                "rel_path": path,
+                # Only c.py's content matches the task.
+                "content_hint": "invoice tax rounding" if path == "src/c.py" else "",
+                "metadata_text": "",
+                "adapter": "python-ast",
+            }
+            for path in labels
+        ],
+    )
+    query = "invoice tax rounding"
+    assert [row["path"] for row in graph_rows(tmp_path, query, limit=None)][-1] == "src/c.py"
+
+    # c.py is last by graph alone and first once its content match is
+    # added; a limit of 1 must not cut it before that merge.
+    top = find_rows(idx, query, limit=1, graph=True, root=tmp_path)[0]
+    assert top["path"] == "src/c.py"
+    assert "corroborated by MIMRY content index" in top["reason"]

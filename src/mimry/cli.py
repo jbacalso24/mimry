@@ -4,6 +4,24 @@ import os
 import sys
 
 
+def _positive_int(value: str) -> int:
+    import argparse
+
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
+
+
+def _non_negative_int(value: str) -> int:
+    import argparse
+
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative integer")
+    return number
+
+
 def build_parser():
     # Imported here, not at module load: `hook-check` runs before every
     # agent tool call and must not pay for the indexing stack it never
@@ -145,11 +163,49 @@ def build_parser():
     s.set_defaults(func=cmd_adapters)
     s = sub.add_parser("find")
     s.add_argument("query")
-    s.add_argument("--limit", type=int, default=10)
+    s.add_argument(
+        "--limit", type=_positive_int, default=10, help="Results per page (default: 10)"
+    )
+    s.add_argument(
+        "--offset",
+        type=_non_negative_int,
+        default=None,
+        help="Enable stable pagination and skip filtered results (pass 0 on the first page)",
+    )
+    s.add_argument(
+        "--language",
+        action="append",
+        default=[],
+        help=(
+            "Only files in this language, by extension or indexed symbols;"
+            " py, ts and rs work (repeatable)"
+        ),
+    )
+    s.add_argument(
+        "--path-glob",
+        action="append",
+        default=[],
+        help="Include repository-relative path glob (repeatable)",
+    )
+    s.add_argument(
+        "--exclude-glob",
+        action="append",
+        default=[],
+        help="Exclude repository-relative path glob (repeatable)",
+    )
     s.add_argument(
         "--semantic",
         action="store_true",
         help="Blend local-only semantic chunks into normal FTS/graph/feedback ranking",
+    )
+    s.add_argument("--snippets", action="store_true", help="Include bounded live-source snippets")
+    s.add_argument("--snippet-lines", type=int, default=8, help="Maximum lines per snippet")
+    s.add_argument("--snippet-chars", type=int, default=800, help="Maximum characters per snippet")
+    s.add_argument(
+        "--snippet-total-lines", type=int, default=40, help="Maximum snippet lines overall"
+    )
+    s.add_argument(
+        "--snippet-total-chars", type=int, default=4000, help="Maximum snippet characters overall"
     )
     s.set_defaults(func=cmd_find)
     s = sub.add_parser(
@@ -419,6 +475,7 @@ def main(argv=None):
         from .hook import cmd_hook_check
 
         return cmd_hook_check(SimpleNamespace(root=hook_root))
+    from .cache_safety import IndexOutsideCacheError
     from .plan import PlanError
     from .state import (
         IndexSchemaMigrationError,
@@ -444,6 +501,8 @@ def main(argv=None):
         ui.fail("Another MIMRY command is still using this index", str(exc))
     except RootIdentityError as exc:
         ui.fail("This .mimry folder belongs to a different location", str(exc))
+    except IndexOutsideCacheError as exc:
+        ui.fail("This repo's index is in another MIMRY cache", str(exc))
     except PlanError as exc:
         ui.fail("Plan error", str(exc))
     return 2
