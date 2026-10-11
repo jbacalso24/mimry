@@ -234,7 +234,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | Command | Use it to |
 |---|---|
 | `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
-| `mimry find "<query>"` | Rank files for a query (`--semantic` blends in fuzzy matches) |
+| `mimry find "<query>"` | Rank files; repeat `--language`, `--path-glob`, or `--exclude-glob`, and page with `--offset`/`--limit` (`--semantic` blends fuzzy matches) |
 | `mimry related "<query>"` | Find files connected through the graph |
 | `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
 | `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |
@@ -261,6 +261,19 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry cache wipe --current` | Delete this repo's cached index |
 
 Use `mimry --root /path/to/repo <command>` to target another repo.
+
+`find` applies every filter before pagination. Language matching uses indexed parser/symbol metadata
+(not filename extensions), so a file with no indexed symbol definitions does not match a language
+filter. Path globs are case-sensitive and repository-relative: `*` matches within one path segment,
+while `**` matches zero or more complete segments (`*.py` is root-only and `**/*.py` includes root and
+nested Python files). Active scope labels remain visible in CLI output, MCP `scope`, and verbose ranking
+reasons. Absolute or traversal-bearing globs, non-string filter values, and invalid pagination values
+are rejected explicitly.
+
+Stable unfiltered pagination is explicit: pass `--offset 0` (or MCP `offset: 0`) on the first page,
+then advance by `--limit` for every later page. Omitting `--offset` preserves the compact legacy search
+candidate window and is not interchangeable with the first page of a paginated request. MCP scope
+metadata reports both the normalized `offset` and `pagination_requested` state.
 
 Keeping an index current:
 

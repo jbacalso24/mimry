@@ -399,24 +399,52 @@ def mimry_preflight(
 @_state_guard
 @_index_operation()
 def mimry_find(
-    query: str, root: str | None = None, limit: int = 10, semantic: bool = False
+    query: str,
+    root: str | None = None,
+    limit: int = 10,
+    semantic: bool = False,
+    languages: list[str] | None = None,
+    path_globs: list[str] | None = None,
+    exclude_globs: list[str] | None = None,
+    offset: int | None = None,
 ) -> dict[str, Any]:
-    """Search indexed files with ranking reasons."""
+    """Search files with opt-in stable pagination.
+
+    Pass offset=0 on page one.
+    """
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows = find_rows(
-        Path(ptr["indexPath"]),
-        query,
-        limit,
-        root=root_path,
-        root_id=ptr.get("rootId"),
-        semantic=semantic,
-    )
+    try:
+        rows = find_rows(
+            Path(ptr["indexPath"]),
+            query,
+            limit,
+            root=root_path,
+            root_id=ptr.get("rootId"),
+            semantic=semantic,
+            languages=languages,
+            path_globs=path_globs,
+            exclude_globs=exclude_globs,
+            offset=offset,
+        )
+    except ValueError as exc:
+        return {
+            "returncode": 2,
+            "error": {"code": "invalid_search_scope", "message": str(exc)},
+        }
     payload = {
         "query": redact_sensitive_text(query),
         "root": str(root_path),
         "results": sanitize_data(rows),
+        "scope": {
+            "languages": languages or [],
+            "path_globs": path_globs or [],
+            "exclude_globs": exclude_globs or [],
+            "offset": 0 if offset is None else offset,
+            "pagination_requested": offset is not None,
+            "limit": limit,
+        },
     }
     if semantic:
         payload["semantic"] = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))

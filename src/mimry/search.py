@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import fnmatch
 import json
+from functools import cache
 from pathlib import Path
 
 from .core.artifacts import graph_available, graph_rows
@@ -15,6 +17,102 @@ from .paths import canonical_cached_rel_path
 from .security import filter_index_records
 from .semantic import merge_semantic_rows, semantic_rows
 from .storage import connect, load_jsonl, load_pointer
+
+
+def _validated_globs(values, label):
+    if values is not None and not isinstance(values, (list, tuple)):
+        raise ValueError(f"{label}s must be a list of strings")
+    globs = []
+    for raw in values or ():
+        if not isinstance(raw, str):
+            raise ValueError(f"{label} must be a string")
+        value = raw.strip().replace("\\", "/")
+        parts = value.split("/")
+        if not value or value.startswith("/") or "\x00" in value or ".." in parts:
+            raise ValueError(
+                f"{label} must be a non-empty repository-relative glob without '..': {raw!r}"
+            )
+        if len(value) >= 2 and value[1] == ":":
+            raise ValueError(f"{label} must be repository-relative, not absolute: {raw!r}")
+        globs.append(value)
+    return tuple(dict.fromkeys(globs))
+
+
+def _path_glob_matches(path: str, pattern: str) -> bool:
+    """Match a repository path with segment-aware ``**`` semantics."""
+    path_parts = path.split("/")
+    pattern_parts = pattern.split("/")
+
+    @cache
+    def match(path_index: int, pattern_index: int) -> bool:
+        if pattern_index == len(pattern_parts):
+            return path_index == len(path_parts)
+        part = pattern_parts[pattern_index]
+        if part == "**":
+            return match(path_index, pattern_index + 1) or (
+                path_index < len(path_parts) and match(path_index + 1, pattern_index)
+            )
+        return (
+            path_index < len(path_parts)
+            and fnmatch.fnmatchcase(path_parts[path_index], part)
+            and match(path_index + 1, pattern_index + 1)
+        )
+
+    return match(0, 0)
+
+
+def _search_scope(*, languages=None, path_globs=None, exclude_globs=None, offset=None, limit=10):
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit must be a positive integer")
+    if offset is not None and (
+        isinstance(offset, bool) or not isinstance(offset, int) or offset < 0
+    ):
+        raise ValueError("offset must be a non-negative integer")
+    if languages is not None and not isinstance(languages, (list, tuple)):
+        raise ValueError("languages must be a list of strings")
+    normalized_languages = []
+    for raw in languages or ():
+        if not isinstance(raw, str):
+            raise ValueError("language must be a string")
+        value = raw.strip().casefold()
+        if not value:
+            raise ValueError("language must not be empty")
+        normalized_languages.append(value)
+    return {
+        "languages": tuple(dict.fromkeys(normalized_languages)),
+        "path_globs": _validated_globs(path_globs, "path glob"),
+        "exclude_globs": _validated_globs(exclude_globs, "exclude glob"),
+        "offset": 0 if offset is None else offset,
+        "pagination_requested": offset is not None,
+        "limit": limit,
+    }
+
+
+def _filter_and_page(rows, *, scope, languages_by_path):
+    filtered = []
+    for row in rows:
+        path = row["path"]
+        languages = languages_by_path.get(path, frozenset())
+        if scope["languages"] and not languages.intersection(scope["languages"]):
+            continue
+        if scope["path_globs"] and not any(
+            _path_glob_matches(path, pattern) for pattern in scope["path_globs"]
+        ):
+            continue
+        if any(_path_glob_matches(path, pattern) for pattern in scope["exclude_globs"]):
+            continue
+        labels = []
+        if scope["languages"]:
+            labels.append(
+                "language filter: " + "/".join(sorted(languages.intersection(scope["languages"])))
+            )
+        if scope["path_globs"]:
+            labels.append("path filter: " + ", ".join(scope["path_globs"]))
+        if scope["exclude_globs"]:
+            labels.append("excluded paths: " + ", ".join(scope["exclude_globs"]))
+        filtered.append({**row, "reason": ", ".join([row["reason"], *labels])})
+    start = scope["offset"]
+    return filtered[start : start + scope["limit"]]
 
 
 def _fts_match_query(terms: list[str]) -> str:
@@ -125,16 +223,41 @@ def _without_excluded(rows, excluded_paths):
 
 def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded_paths):
     if not semantic:
-        return _apply_exclusions(_without_excluded(rows, excluded_paths), q)[:limit]
+        return _apply_exclusions(_without_excluded(rows, excluded_paths), q)
     sem_rows, _health = semantic_rows(idx, root_id, q, limit)
     merged = merge_semantic_rows(rows, sem_rows, limit=limit)
     ranked = apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)
-    return _apply_exclusions(_without_excluded(ranked, excluded_paths), q)[:limit]
+    return _apply_exclusions(_without_excluded(ranked, excluded_paths), q)
 
 
 def find_rows(
-    idx, q, limit=10, graph=False, root=None, root_id=None, semantic=False, excluded_paths=None
+    idx,
+    q,
+    limit=10,
+    graph=False,
+    root=None,
+    root_id=None,
+    semantic=False,
+    excluded_paths=None,
+    *,
+    languages=None,
+    path_globs=None,
+    exclude_globs=None,
+    offset=None,
 ):
+    scope = _search_scope(
+        languages=languages,
+        path_globs=path_globs,
+        exclude_globs=exclude_globs,
+        offset=offset,
+        limit=limit,
+    )
+    scoped_or_paginated = bool(
+        scope["languages"]
+        or scope["path_globs"]
+        or scope["exclude_globs"]
+        or scope["pagination_requested"]
+    )
     if excluded_paths is None and root is not None:
         ptr = load_pointer(root)
         if ptr is not None and Path(ptr["indexPath"]) == Path(idx):
@@ -145,8 +268,17 @@ def find_rows(
     fallback_rows = []
     files, _ = filter_index_records(load_jsonl(idx / "files.jsonl"))
     files = _without_excluded(files, excluded_paths)
+    _unused, symbols = filter_index_records(files, load_jsonl(idx / "symbols.jsonl"))
+    file_paths = {f["file_id"]: f["rel_path"] for f in files}
+    languages_by_path: dict[str, set[str]] = {}
+    for symbol in symbols:
+        language = str(symbol.get("language") or "").strip().casefold()
+        path = file_paths.get(symbol.get("file_id"))
+        if language and path:
+            languages_by_path.setdefault(path, set()).add(language)
     fts_scores = _fts_scores(idx, q)
     known_paths = {f["rel_path"] for f in files}
+    candidate_limit = max(len(files), limit + scope["offset"]) if scoped_or_paginated else limit
 
     clusters = {}
     if graph and (idx / "graph.json").exists():
@@ -176,7 +308,7 @@ def find_rows(
     fallback_rows = sorted(fallback_rows, key=lambda r: (-r["score"], r["path"]))
     fallback_by_path = {r["path"]: r for r in fallback_rows if "config-manifest" in r["reason"]}
     if root is not None and graph_available(root):
-        rows = graph_rows(root, q, limit)
+        rows = graph_rows(root, q, candidate_limit)
         if rows:
             rows = _without_excluded(
                 [
@@ -223,8 +355,26 @@ def find_rows(
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
-            return _with_semantic(
-                ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths
+            ranked = _with_semantic(
+                ranked,
+                idx,
+                root_id,
+                q,
+                known_paths,
+                candidate_limit,
+                semantic,
+                excluded_paths,
             )
+            return _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
-    return _with_semantic(ranked, idx, root_id, q, known_paths, limit, semantic, excluded_paths)
+    ranked = _with_semantic(
+        ranked,
+        idx,
+        root_id,
+        q,
+        known_paths,
+        candidate_limit,
+        semantic,
+        excluded_paths,
+    )
+    return _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
