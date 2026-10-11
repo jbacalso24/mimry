@@ -262,18 +262,16 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 
 Use `mimry --root /path/to/repo <command>` to target another repo.
 
-`find` applies every filter before pagination. Language matching uses indexed parser/symbol metadata
-(not filename extensions), so a file with no indexed symbol definitions does not match a language
-filter. Path globs are case-sensitive and repository-relative: `*` matches within one path segment,
-while `**` matches zero or more complete segments (`*.py` is root-only and `**/*.py` includes root and
-nested Python files). Active scope labels remain visible in CLI output, MCP `scope`, and verbose ranking
-reasons. Absolute or traversal-bearing globs, non-string filter values, and invalid pagination values
-are rejected explicitly.
+`find` applies every filter before pagination.
+`--language` matches a file by its extension and by the languages of the symbols indexed in it, accepts extensions as names (`py`, `ts`, `rs`), counts `.tsx` files as TypeScript, and rejects names it does not know.
+Path globs are case-sensitive and repository-relative.
+`*` matches within one path segment, and `**` matches zero or more whole segments, so `*.py` matches only files at the root and `**/*.py` matches Python files at any depth.
+The active scope is shown in CLI output, in the MCP `scope` field and in verbose ranking reasons.
+Absolute or `..` globs, non-string filter values and invalid pagination values are rejected.
 
-Stable unfiltered pagination is explicit: pass `--offset 0` (or MCP `offset: 0`) on the first page,
-then advance by `--limit` for every later page. Omitting `--offset` preserves the compact legacy search
-candidate window and is not interchangeable with the first page of a paginated request. MCP scope
-metadata reports both the normalized `offset` and `pagination_requested` state.
+Pagination is opt-in: pass `--offset 0` (MCP `offset: 0`) for the first page, then raise `--offset` by `--limit` for each later page.
+Without `--offset`, `find` keeps its compact ranking, which can differ from the first page of a paginated search.
+MCP `scope` reports the normalized `offset` and whether pagination was requested.
 
 Keeping an index current:
 

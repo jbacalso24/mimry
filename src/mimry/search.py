@@ -6,6 +6,7 @@ from functools import cache
 from pathlib import Path
 
 from .core.artifacts import graph_available, graph_rows
+from .core.languages import EXTENSION_LANGUAGE, language_for
 from .feedback import apply_feedback_to_rows
 from .intent import (
     apply_exclusion_adjustment,
@@ -17,6 +18,17 @@ from .paths import canonical_cached_rel_path
 from .security import filter_index_records
 from .semantic import merge_semantic_rows, semantic_rows
 from .storage import connect, load_jsonl, load_pointer
+
+# `--language py` means python: extensions work as language names.
+LANGUAGE_ALIASES = {ext.lstrip("."): language for ext, language in EXTENSION_LANGUAGE.items()}
+
+
+def _file_languages(path: str) -> set[str]:
+    """A file's languages by extension; TSX counts as TypeScript."""
+    language = language_for(path)
+    if language is None:
+        return set()
+    return {language, "typescript"} if language == "tsx" else {language}
 
 
 def _validated_globs(values, label):
@@ -77,6 +89,8 @@ def _search_scope(*, languages=None, path_globs=None, exclude_globs=None, offset
         value = raw.strip().casefold()
         if not value:
             raise ValueError("language must not be empty")
+        if value not in EXTENSION_LANGUAGE.values():
+            value = LANGUAGE_ALIASES.get(value, value)
         normalized_languages.append(value)
     return {
         "languages": tuple(dict.fromkeys(normalized_languages)),
@@ -270,12 +284,21 @@ def find_rows(
     files = _without_excluded(files, excluded_paths)
     _unused, symbols = filter_index_records(files, load_jsonl(idx / "symbols.jsonl"))
     file_paths = {f["file_id"]: f["rel_path"] for f in files}
-    languages_by_path: dict[str, set[str]] = {}
+    languages_by_path: dict[str, set[str]] = {
+        f["rel_path"]: _file_languages(f["rel_path"]) for f in files
+    }
     for symbol in symbols:
         language = str(symbol.get("language") or "").strip().casefold()
         path = file_paths.get(symbol.get("file_id"))
         if language and path:
             languages_by_path.setdefault(path, set()).add(language)
+    known_languages = set(EXTENSION_LANGUAGE.values()).union(*languages_by_path.values())
+    unknown = [language for language in scope["languages"] if language not in known_languages]
+    if unknown:
+        raise ValueError(
+            f"unknown language {', '.join(unknown)}; use one of: "
+            + ", ".join(sorted(known_languages))
+        )
     fts_scores = _fts_scores(idx, q)
     known_paths = {f["rel_path"] for f in files}
     candidate_limit = max(len(files), limit + scope["offset"]) if scoped_or_paginated else limit

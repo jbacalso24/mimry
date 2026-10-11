@@ -321,3 +321,30 @@ def test_mcp_sanitizes_filter_scope_and_error_text(tmp_path, monkeypatch):
 
     assert "super-secret-canary" not in rendered
     assert "[REDACTED]" in rendered
+
+
+def test_language_filter_keeps_files_without_symbols_and_accepts_extensions(tmp_path, monkeypatch):
+    repo, ptr = _indexed(tmp_path, monkeypatch)
+    (repo / "src" / "auth" / "report.py").write_text(
+        'print("auth session report")\n', encoding="utf-8"
+    )
+    write_index(repo, ptr)
+    idx = Path(load_pointer(repo)["indexPath"])
+
+    by_name = [r["path"] for r in find_rows(idx, "auth session report", languages=["python"])]
+    by_extension = [r["path"] for r in find_rows(idx, "auth session report", languages=["py"])]
+
+    assert "src/auth/report.py" in by_name
+    assert by_extension == by_name
+
+
+def test_unknown_language_is_rejected_with_the_valid_names(tmp_path, monkeypatch):
+    _repo, ptr = _indexed(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match=r"unknown language cobol; use one of: .*python"):
+        find_rows(Path(ptr["indexPath"]), "auth session", languages=["cobol"])
+
+
+def test_tsx_files_count_as_typescript():
+    assert search._file_languages("web/App.tsx") == {"tsx", "typescript"}
+    assert search._file_languages("web/app.ts") == {"typescript"}
+    assert search._file_languages("README") == set()
