@@ -25,6 +25,7 @@ from .core.resolve import (
     resolve_table_refs,
 )
 from .paths import graph_output_dir, idx_path, now, pointer_file
+from .pieces import PIECES_FTS_CREATE, file_pieces
 from .reuse import (
     ADAPT_CACHE,
     INDEXED,
@@ -200,6 +201,7 @@ def _adapt_file(path: Path, root: Path, rel_path: str) -> tuple[str, list | None
     row["chunks"] = file_semantic_chunks(file_rec, sorted(file_symbols, key=_symbol_order))
     # Whole-file identifier terms; content_hint covers only first 40.
     row["fts_body"] = body_terms(snapshot[0]) if is_text(path) else ""
+    row["pieces"] = file_pieces(snapshot[0], file_symbols) if is_text(path) else []
     return INDEXED, identity(snapshot[1]), json.dumps(row, sort_keys=True)
 
 
@@ -293,6 +295,7 @@ def _collect(
     reused: dict[str, tuple[str, dict] | None] = {}
     chunks_by_file_id: dict[str, list] = {}
     fts_body_by_file_id: dict[str, str] = {}
+    pieces_by_file_id: dict[str, list] = {}
     todo: list[tuple[str, Path]] = []
     for rel_path, path, live in candidates:
         # Config manifests read sibling lockfiles, so their output is
@@ -346,6 +349,8 @@ def _collect(
             chunks_by_file_id[output[0]["file_id"]] = row["chunks"]
         if row.get("fts_body") is not None:
             fts_body_by_file_id[output[0]["file_id"]] = row["fts_body"]
+        if row.get("pieces"):
+            pieces_by_file_id[output[0]["file_id"]] = row["pieces"]
         (
             file_rec,
             file_symbols,
@@ -407,6 +412,7 @@ def _collect(
         record["adapt_lines"] = adapt_lines
         record["chunks"] = chunks_by_file_id
         record["fts_body"] = fts_body_by_file_id
+        record["pieces"] = pieces_by_file_id
         # What the previous generation was built from, to recognise a
         # no-op run.
         record["previous_lines"] = (
@@ -849,6 +855,8 @@ def write_index(root, ptr, *, full: bool = False):
                 con.execute("delete from symbols")
                 con.execute("drop table if exists files_fts")
                 con.execute(FILES_FTS_CREATE)
+                con.execute("drop table if exists pieces_fts")
+                con.execute(PIECES_FTS_CREATE)
                 con.execute("delete from semantic_chunks where root_id = ?", (ptr["rootId"],))
                 con.execute("delete from semantic_metadata where root_id = ?", (ptr["rootId"],))
                 con.execute("delete from index_generation")
@@ -883,6 +891,13 @@ def write_index(root, ptr, *, full: bool = False):
                             fts_body,
                         ),
                     )
+                    for start, end, name, body in record.get("pieces", {}).get(
+                        file_rec["file_id"], []
+                    ):
+                        con.execute(
+                            "insert into pieces_fts values(?,?,?,?,?)",
+                            (file_rec["file_id"], start, end, name, body),
+                        )
                 for symbol in symbols:
                     con.execute(
                         "insert or replace into symbols values(?,?,?,?,?,?)",

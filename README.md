@@ -123,6 +123,7 @@ For an exact string you already know, such as an identifier or an error message,
 1. **Start the task:** `mimry preflight "<task in plain words>"`.
 2. **Read the context pack:** `.mimry/mimry-out/context/latest.md`.
    It lists ranked files with reasons, key symbols, relationships, risky paths, and verification commands.
+   Where a file's functions, classes or sections match the task, it names their lines (`Read first: lines 120-168`), so the agent reads those before the rest of the file.
 3. **Navigate with focused queries** instead of scanning the tree:
    `mimry find "<query>"`, `mimry symbol <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`.
 4. **Verify against the source.**
@@ -180,7 +181,7 @@ The server works on its current directory by default, and every tool accepts a `
 | MCP tool | What it does |
 |---|---|
 | `mimry_preflight` | Set up if needed, then write a context pack and return the top files for a task |
-| `mimry_find` | Rank files for a query |
+| `mimry_find` | Rank files for a query, with the line ranges to read first in each |
 | `mimry_related` | Files related to a query through the graph |
 | `mimry_semantic` | Fuzzy "something like this" search |
 | `mimry_symbol` | Look up a function, class, or other symbol by name |
@@ -234,7 +235,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | Command | Use it to |
 |---|---|
 | `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
-| `mimry find "<query>"` | Rank files for a query (`--semantic` blends in fuzzy matches; `--snippets` adds bounded, live-source excerpts) |
+| `mimry find "<query>"` | Rank files, with the lines to read first; repeat `--language`, `--path-glob`, or `--exclude-glob`, and page with `--offset`/`--limit` (`--semantic` blends fuzzy matches; `--snippets` adds bounded, live-source excerpts) |
 | `mimry related "<query>"` | Find files connected through the graph |
 | `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
 | `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |
@@ -247,6 +248,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry init` / `mimry index` | Set up a repo and build the index |
 | `mimry reindex` / `mimry refresh` | Update the index (`--full` re-parses everything) |
 | `mimry status` | Is the index current? (`--verify` re-hashes every file) |
+| `mimry doctor` | Read-only install, parser, index, and cache diagnostics (`--json` for tools) |
 | `mimry watch` | Poll for changes and refresh when they settle |
 | `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`) |
 | `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back |
@@ -261,6 +263,22 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry cache wipe --current` | Delete this repo's cached index |
 
 Use `mimry --root /path/to/repo <command>` to target another repo.
+
+`find` applies every filter before pagination.
+`--language` matches a file by its extension and by the languages of the symbols indexed in it, accepts extensions as names (`py`, `ts`, `rs`), counts `.tsx` files as TypeScript, and rejects names it does not know.
+Path globs are case-sensitive and repository-relative.
+`*` matches within one path segment, and `**` matches zero or more whole segments, so `*.py` matches only files at the root and `**/*.py` matches Python files at any depth.
+The active scope is shown in CLI output, in the MCP `scope` field and in verbose ranking reasons.
+Absolute or `..` globs, non-string filter values and invalid pagination values are rejected.
+
+Pagination is opt-in: pass `--offset 0` (MCP `offset: 0`) for the first page, then raise `--offset` by `--limit` for each later page.
+Without `--offset`, `find` keeps its compact ranking, which can differ from the first page of a paginated search.
+MCP `scope` reports the normalized `offset` and whether pagination was requested.
+
+`mimry doctor` checks that the installed code matches its package, that its dependencies and parsers work, and that the repo's index and caches are intact.
+It only reads: it never sets up, indexes, repairs or installs anything, and it uses no network.
+Each problem comes with the command that fixes it.
+It exits 0 when everything is healthy, 1 when the repo is not set up or its index is out of date, and 2 when the install, a parser, the root or the index is broken.
 
 Keeping an index current:
 
@@ -303,7 +321,7 @@ project-root/
 The index itself lives in your user cache directory, outside the repo.
 It is a generated artifact, not a source of truth.
 
-A context pack contains the query and index freshness, ranked files with reasons, symbol hints, relationships, a suggested reading order, likely edit surfaces versus support files, risk notes for generated or sensitive paths, verification commands from the project's manifests and docs, and a final-report checklist.
+A context pack contains the query and index freshness, ranked files with reasons and the line ranges to read first, symbol hints, relationships, a suggested reading order, likely edit surfaces versus support files, risk notes for generated or sensitive paths, verification commands from the project's manifests and docs, and a final-report checklist.
 It uses relative paths and never includes full source or secret values.
 See [`docs/context-packs.md`](docs/context-packs.md) for the contract.
 

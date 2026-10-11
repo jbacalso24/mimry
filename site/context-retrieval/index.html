@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How MIMRY retrieves repository context</title>
+<meta name="description" content="How MIMRY turns a task into ranked repository files, symbols, graph relationships, and a context pack—and how agents should verify the result.">
+<link rel="canonical" href="https://jbacalso24.github.io/mimry/context-retrieval/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="MIMRY">
+<meta property="og:title" content="How MIMRY retrieves repository context">
+<meta property="og:description" content="From preflight and freshness checks to ranked files, graph evidence, context packs, source verification, and feedback.">
+<meta property="og:url" content="https://jbacalso24.github.io/mimry/context-retrieval/">
+<meta property="og:image" content="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314223A'/%3E%3Crect x='7' y='9' width='18' height='4' rx='1' fill='%23F4D35E'/%3E%3Crect x='7' y='16' width='13' height='3' rx='1' fill='%23F5F7F6'/%3E%3Crect x='7' y='22' width='9' height='3' rx='1' fill='%23F5F7F6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../guide.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"How MIMRY retrieves repository context","description":"How MIMRY checks index freshness, ranks files and symbols, uses relationship evidence, writes context packs, and learns from verified feedback.","url":"https://jbacalso24.github.io/mimry/context-retrieval/","mainEntityOfPage":"https://jbacalso24.github.io/mimry/context-retrieval/","author":{"@type":"Person","name":"Judison Bacalso","url":"https://github.com/jbacalso24"},"publisher":{"@type":"Organization","name":"MIMRY","url":"https://jbacalso24.github.io/mimry/"}}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap top"><a class="brand" href="../">MIMRY</a><nav aria-label="Main"><a href="../claude-code/">Claude Code</a><a href="../codex/">Codex</a><a href="../context-retrieval/" aria-current="page">Context retrieval</a><a href="https://github.com/jbacalso24/mimry">GitHub</a></nav></header>
+<main class="wrap" id="main">
+<p class="breadcrumb"><a href="../">MIMRY</a> / Context retrieval</p>
+<h1>How MIMRY retrieves repository context</h1>
+<p class="lede">MIMRY does not paste a repository into an agent prompt. It maintains a local index, ranks a bounded set of files for a specific task, explains the evidence, and writes a short reading map.</p>
+<section>
+<h2>The preflight path</h2>
+<ol class="steps">
+<li><h3>Check repository and index state</h3><p><code>mimry preflight "&lt;task&gt;"</code> sets up a repo when needed and refreshes the index when files changed or MIMRY was upgraded. Generated state lives under <code>.mimry/</code> and the user cache; it is not source code to edit.</p></li>
+<li><h3>Extract searchable evidence</h3><p>MIMRY records files and language-aware symbols, then adds relationships such as imports, calls, definitions, inheritance, and references. Adapters add bounded facts for surfaces including Next.js routes, FastAPI endpoints, SQL schemas, manifests, and Markdown headings.</p></li>
+<li><h3>Rank against the task</h3><p>The query is matched against paths, names, content hints, symbols, graph-near files, and prior explicit feedback. Results state why they ranked. Optional local semantic search uses a deterministic local method; it does not send code to a remote embedding service.</p></li>
+<li><h3>Write the context pack</h3><p>The result is saved to <code>.mimry/mimry-out/context/latest.md</code>. It contains a status summary, ranked files, relevant symbols, graph relationships, suggested reading order, likely edit surfaces, risks, and verification commands.</p></li>
+<li><h3>Inspect and verify</h3><p>The agent opens selected source and repository rules, makes a bounded change, and runs real tests or builds. MIMRY is navigation; source files and execution remain the truth.</p></li>
+</ol>
+</section>
+<section>
+<h2>Commands for different questions</h2>
+<table><thead><tr><th>Question</th><th>Command</th></tr></thead><tbody><tr><td>What should I read for this task?</td><td><code>mimry preflight "&lt;specific task&gt;"</code></td></tr><tr><td>Which files best match this concept?</td><td><code>mimry find "&lt;query&gt;"</code></td></tr><tr><td>Where is this class, function, or heading?</td><td><code>mimry symbol "&lt;name&gt;"</code></td></tr><tr><td>What nearby files are connected in the graph?</td><td><code>mimry related "&lt;query&gt;"</code></td></tr><tr><td>Why did this file rank?</td><td><code>mimry why path/to/file --query "&lt;task&gt;"</code></td></tr><tr><td>Is there a relationship path between two surfaces?</td><td><code>mimry path "&lt;source&gt;" "&lt;target&gt;"</code></td></tr><tr><td>What is vaguely similar to this description?</td><td><code>mimry semantic "&lt;query&gt;"</code></td></tr></tbody></table>
+<p class="note">For an exact identifier or error message you already know, use <code>rg</code> or <code>git grep</code> directly. MIMRY is for choosing the right context, not replacing every exact-text lookup.</p>
+</section>
+<section>
+<h2>What the context pack does not claim</h2>
+<div class="cards"><article class="card"><h3>It is not source truth</h3><p>A high score does not prove a file needs changing. Read the file and its callers, then test.</p></article><article class="card"><h3>No invented graph edges</h3><p>When a relationship cannot be resolved unambiguously, MIMRY omits the edge rather than guessing.</p></article><article class="card"><h3>No remote code upload</h3><p>Indexing and semantic retrieval run locally. Secret-looking files and generated dependency directories are excluded by policy.</p></article><article class="card"><h3>Feedback is explicit</h3><p><code>mimry feedback</code> records opened, changed, missed, or ignored files after work; it does not infer success from an agent's confidence.</p></article></div>
+</section>
+<section>
+<h2>A complete agent loop</h2>
+<pre><code>mimry preflight "add expiry validation to API sessions"
+# read .mimry/mimry-out/context/latest.md
+mimry why backend/api/auth.py --query "add expiry validation to API sessions"
+mimry path backend/api/auth.py db/schema.sql
+# inspect source, make the change, run the repo's tests
+mimry feedback --query "add expiry validation to API sessions" \
+  --opened backend/api/auth.py,backend/services/session_service.py \
+  --changed backend/services/session_service.py \
+  --verification "targeted tests passed" --outcome passed
+mimry refresh</code></pre>
+<p>Connect this workflow to <a href="../claude-code/">Claude Code</a> or <a href="../codex/">Codex</a>. The <a href="https://github.com/jbacalso24/mimry/blob/main/docs/context-packs.md">context pack contract</a> documents every section in the generated file.</p>
+</section>
+</main>
+<footer><div class="wrap"><span>MIMRY is local, open-source software.</span><nav aria-label="Project"><a href="../">Home</a><a href="https://github.com/jbacalso24/mimry/blob/main/README.md">Full documentation</a><a href="../llms.txt">llms.txt</a></nav></div></footer>
+</body>
+</html>

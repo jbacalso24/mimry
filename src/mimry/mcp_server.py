@@ -404,24 +404,41 @@ def mimry_find(
     root: str | None = None,
     limit: int = 10,
     semantic: bool = False,
+    languages: list[str] | None = None,
+    path_globs: list[str] | None = None,
+    exclude_globs: list[str] | None = None,
+    offset: int | None = None,
     snippets: bool = False,
     snippet_lines: int = 8,
     snippet_chars: int = 800,
     snippet_total_lines: int = 40,
     snippet_total_chars: int = 4000,
 ) -> dict[str, Any]:
-    """Search files, optionally with bounded live-source snippets."""
+    """Search files, optionally with bounded live-source snippets.
+
+    Pass offset=0 on page one.
+    """
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows = find_rows(
-        Path(ptr["indexPath"]),
-        query,
-        limit,
-        root=root_path,
-        root_id=ptr.get("rootId"),
-        semantic=semantic,
-    )
+    try:
+        rows = find_rows(
+            Path(ptr["indexPath"]),
+            query,
+            limit,
+            root=root_path,
+            root_id=ptr.get("rootId"),
+            semantic=semantic,
+            languages=languages,
+            path_globs=path_globs,
+            exclude_globs=exclude_globs,
+            offset=offset,
+        )
+    except ValueError as exc:
+        return {
+            "returncode": 2,
+            "error": {"code": "invalid_search_scope", "message": str(exc)},
+        }
     if snippets:
         try:
             rows = with_source_snippets(
@@ -443,6 +460,14 @@ def mimry_find(
         "query": redact_sensitive_text(query),
         "root": str(root_path),
         "results": sanitize_data(rows),
+        "scope": {
+            "languages": languages or [],
+            "path_globs": path_globs or [],
+            "exclude_globs": exclude_globs or [],
+            "offset": 0 if offset is None else offset,
+            "pagination_requested": offset is not None,
+            "limit": limit,
+        },
     }
     if semantic:
         payload["semantic"] = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))
