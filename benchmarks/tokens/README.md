@@ -89,6 +89,7 @@ Five versions are compared, each developed against the dev set only.
 | dev, 40 tasks | retrieval fixes | 32.2% | 30 / 33 | 30.6% | 42.5% (27 tasks) |
 | dev, 40 tasks | credential fixes | 32.2% | 30 / 33 | 30.6% | 42.5% (27 tasks) |
 | dev, 40 tasks | 0.3.0 | 32.1% | 30 / 33 | 30.6% | 42.4% (27 tasks) |
+| dev, 40 tasks | rank before the cut | 36.5% | 30 / 35 | 31.8% | 43.2% (29 tasks) |
 | holdout, 48 tasks | baseline | -4.2% | 33 / 30 | -10.0% | -28.2% (27 tasks) |
 | holdout, 48 tasks | ranking fixes | 62.2% | 33 / 42 | 67.4% | 47.1% (31 tasks) |
 | holdout, 48 tasks | retrieval fixes | 65.8% | 33 / 42 | 68.9% | 55.7% (31 tasks) |
@@ -117,6 +118,12 @@ Against the credential fixes, 0.3.0 locates the same tasks on both sets; it chan
 The largest change is hono#5426: its gold file `src/adapter/lambda-edge/handler.ts` drops from second to third, below `src/adapter/aws-lambda/handler.ts`, and MIMRY reads 9,242 tokens instead of 4,275.
 That task accounts for 4,967 of the 6,205 extra tokens on holdout2, and it was not tuned, since holdout2 is never used to tune.
 The grep agent's results are identical in every run.
+
+**Rank before the cut** fixes a bug in how graph and content matches combine.
+The graph's matches were cut to the result limit (8 for a context pack) before each file's content score was added, so a file the graph ranked ninth could never lead, however well its content matched.
+Now every graph match gets its content score first, and the cut comes after.
+On dev MIMRY locates 35 tasks instead of 33 and saves 36.5% instead of 32.1%; holdout2 was not run for this change.
+Its per-task numbers are in [results.dev.rank.json](results.dev.rank.json).
 
 Per-task numbers for 0.3.0 are in [results.dev.json](results.dev.json) and [results.holdout2.json](results.holdout2.json).
 The credential fixes' are in [results.dev.credential.json](results.dev.credential.json), [results.holdout.json](results.holdout.json) and [results.holdout2.credential.json](results.holdout2.credential.json).
@@ -164,7 +171,8 @@ For the rebase-merged tasks above, a gold file the last commit does not touch co
 
 | Set | Version | Tokens saved vs grep | Located: grep / MIMRY | Median task, tokens saved | Tasks both located, tokens saved |
 |---|---|---|---|---|---|
-| dev, 40 tasks | line ranges | 64.2% | 30 / 32 | 56.5% | 63.6% (27 tasks) |
+| dev, 40 tasks | line ranges, without the rank fix | 64.2% | 30 / 32 | 56.5% | 63.6% (27 tasks) |
+| dev, 40 tasks | line ranges, with the rank fix | 68.4% | 30 / 34 | 62.4% | 67.7% (29 tasks) |
 
 On dev, reading the listed ranges halves what MIMRY reads: 677,799 tokens against 0.3.0's 1,285,495 with whole-file reads, while grep reads 1,894,477.
 It locates one task fewer than with whole-file reads (32 against 33): in ripgrep#3472 the ranges missed the change in several of the four gold files, and the second reads used up the budget.
@@ -174,7 +182,8 @@ The last one is a rebase-merged gold file the last commit does not touch.
 Ranking files by their best-matching piece was also tried, and located no more tasks while reading slightly more with whole-file reads, so pieces only choose the ranges.
 With whole-file reads this version saves 31.6% on dev and locates 33 tasks, against 0.3.0's 32.1% and 33: the listed ranges make each context pack slightly longer.
 holdout2 was not run for this change; it is run once per version, at release.
-Per-task numbers are in [results.dev.ranges.json](results.dev.ranges.json).
+With the rank fix above, MIMRY locates 34 tasks and reads 598,419 tokens, 68.4% fewer than grep.
+Per-task numbers for that run are in [results.dev.ranges.json](results.dev.ranges.json).
 
 ## Whole-repository ratio
 
