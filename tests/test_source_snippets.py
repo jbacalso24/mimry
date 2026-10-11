@@ -276,3 +276,19 @@ def test_whole_short_file_is_not_marked_truncated(tmp_path, monkeypatch):
 
     assert enriched[0]["snippet"]["end_line"] == 2
     assert enriched[0]["snippet"]["truncated"] is False
+
+
+def test_snippets_follow_search_filters_and_pages(tmp_path, monkeypatch):
+    repo, cache, _ = _indexed(tmp_path, monkeypatch)
+    payload = mimry_find(
+        "session", str(repo), limit=2, offset=0, path_globs=["src/auth/**"], snippets=True
+    )
+    paths = [row["path"] for row in payload["results"]]
+    assert paths and all(path.startswith("src/auth/") for path in paths)
+    assert all("snippet" in row for row in payload["results"])
+
+    cli = run_cli(
+        repo, cache, "find", "session", "--path-glob", "src/auth/**", "--snippets", "--limit", "2"
+    )
+    assert cli.returncode == 0, cli.stderr
+    assert "Scope: path=src/auth/**" in cli.stdout + cli.stderr
