@@ -176,7 +176,10 @@ def find_rows(
     fallback_rows = sorted(fallback_rows, key=lambda r: (-r["score"], r["path"]))
     fallback_by_path = {r["path"]: r for r in fallback_rows if "config-manifest" in r["reason"]}
     if root is not None and graph_available(root):
-        rows = graph_rows(root, q, limit)
+        # Every graph match, not just the top `limit`: a file the graph
+        # ranks lower can lead once its content match is added below,
+        # and the cut to `limit` comes after that merge.
+        rows = graph_rows(root, q, None)
         if rows:
             rows = _without_excluded(
                 [
