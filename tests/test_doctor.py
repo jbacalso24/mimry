@@ -25,8 +25,11 @@ def _install_ok(monkeypatch) -> None:
     )
 
 
-def _pointer(root: Path) -> dict[str, str]:
-    return {"rootId": "root-id", "rootPath": str(root), "indexPath": str(root / "index")}
+def _pointer(root: Path, monkeypatch) -> dict[str, str]:
+    # The index sits in the current cache, as a real one does.
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(root / "cache" / "mimry"))
+    index = root / "cache" / "mimry" / "indexes" / "root-id"
+    return {"rootId": "root-id", "rootPath": str(root), "indexPath": str(index)}
 
 
 def _healthy_health(root: Path, pointer: dict, *, verify: bool):
@@ -66,7 +69,7 @@ def _snapshot(*roots: Path) -> dict[str, tuple[int, int, bytes]]:
 
 def test_healthy_report_is_structured_and_exit_zero(tmp_path, monkeypatch):
     _install_ok(monkeypatch)
-    _write_pointer(tmp_path, _pointer(tmp_path))
+    _write_pointer(tmp_path, _pointer(tmp_path, monkeypatch))
     monkeypatch.setattr(doctor, "validate_generation", lambda pointer: None)
     monkeypatch.setattr(doctor, "_health", _healthy_health)
 
@@ -123,7 +126,7 @@ def test_uninitialized_complete_install_is_warning(tmp_path, monkeypatch):
 
 def test_stale_index_and_caches_are_actionable(tmp_path, monkeypatch):
     _install_ok(monkeypatch)
-    _write_pointer(tmp_path, _pointer(tmp_path))
+    _write_pointer(tmp_path, _pointer(tmp_path, monkeypatch))
     monkeypatch.setattr(doctor, "validate_generation", lambda pointer: None)
     monkeypatch.setattr(
         doctor,

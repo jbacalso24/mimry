@@ -28,12 +28,20 @@ are already in the base, a gold file the last commit does not touch
 counts as reached by any read, as in full mode. Results go to
 results.<set>.sed.json.
 
+With --reads ranges, the grep agent reads whole files as in full mode,
+and the MIMRY agent reads the line ranges its pack lists under "Read
+first" before the rest of a file. A range read costs the tokens of
+those lines. If it does not show a line the pull request changed in a
+gold file, the agent reads the whole file next, which costs a second
+read from the budget. A file with no ranges is read whole. Results go
+to results.<set>.ranges.json.
+
 Tokens are counted with tiktoken's o200k_base encoding. Run from the
 repo root:
 
     uv run --with tiktoken python benchmarks/tokens/run.py \\
         --work C:/tmp/mimry-tokens \\
-        [--set dev|holdout|holdout2] [--reads full|sed]
+        [--set dev|holdout|holdout2] [--reads full|sed|ranges]
 """
 
 from __future__ import annotations
@@ -62,6 +70,9 @@ STOPWORDS = set(
     """.split()
 )
 SYMBOL_LINE = re.compile(r"^- `[^`]+` \([^)]*\) - `([^`]+):(\d+)`", re.M)
+PACK_FILE = re.compile(r"^### \d+\. `([^`]+)`")
+PACK_RANGES = re.compile(r"^Read first: lines (.+)$")
+RANGE = re.compile(r"(\d+)-(\d+) \(")
 ENC = tiktoken.get_encoding("o200k_base")
 
 
@@ -185,13 +196,25 @@ def sed_read(
 
 
 def walk(
-    repo: Path, gold: list[str], search_cost: int, order: list[str], fallback=None, read=None
+    repo: Path,
+    gold: list[str],
+    search_cost: int,
+    order: list[str],
+    fallback=None,
+    read=None,
+    then_whole=False,
 ) -> dict[str, object]:
+    """Read files in order until every gold file is reached.
+
+    With ``then_whole``, a read that misses a gold file's change is
+    followed by a whole-file read of it, which costs a second read.
+    """
     custom_read = read is not None
     read = read or (lambda path: (read_cost(repo, path), True))
     remaining, opened, cost, first_gold, missed = set(gold), [], search_cost, None, 0
+    reads = 0
     queue = list(order)
-    while remaining and len(opened) < READ_BUDGET:
+    while remaining and reads < READ_BUDGET:
         if not queue:
             if fallback is None:
                 break
@@ -203,8 +226,14 @@ def walk(
         if path in opened:
             continue
         opened.append(path)
+        reads += 1
         spent, shown = read(path)
         cost += spent
+        if then_whole and not shown and path in remaining and reads < READ_BUDGET:
+            missed += 1
+            reads += 1
+            spent, shown = read_cost(repo, path), True
+            cost += spent
         if path in remaining:
             if shown:
                 remaining.discard(path)
@@ -214,7 +243,7 @@ def walk(
     result = {
         "tokens": cost,
         "search_tokens": search_cost,
-        "reads": len(opened),
+        "reads": reads,
         "first_gold_read": first_gold,
         "gold_found": len(gold) - len(remaining),
         "success": not remaining,
@@ -245,8 +274,39 @@ def checkout(work: Path, repo_name: str, sha: str) -> Path:
     return repo
 
 
+def pack_ranges(pack: str) -> dict[str, list[tuple[int, int]]]:
+    """The "Read first" line ranges the pack lists for each file."""
+    ranges: dict[str, list[tuple[int, int]]] = {}
+    current = None
+    for line in pack.splitlines():
+        if match := PACK_FILE.match(line):
+            current = match.group(1)
+        elif current and (match := PACK_RANGES.match(line)):
+            ranges[current] = [(int(a), int(b)) for a, b in RANGE.findall(match.group(1))]
+    return ranges
+
+
+def range_read(
+    repo: Path, rel: str, spans: list[tuple[int, int]], changed: set[int] | None
+) -> tuple[int, bool]:
+    """Cost of reading these line ranges; whether one shows a change."""
+    try:
+        lines = (repo / rel).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return 0, False
+    text = "\n".join("\n".join(lines[start - 1 : end]) for start, end in spans)
+    shown = changed is None or any(
+        start <= line <= end for start, end in spans for line in changed
+    )
+    return tokens(text), shown
+
+
 def mimry_agent(
-    repo: Path, task: dict, env: dict[str, str], sed: dict | None = None
+    repo: Path,
+    task: dict,
+    env: dict[str, str],
+    sed: dict | None = None,
+    changed: dict[str, set[int]] | None = None,
 ) -> dict[str, object]:
     cli = [sys.executable, "-m", "mimry.cli", "--root", str(repo)]
     run([*cli, "index"], repo, env)
@@ -258,6 +318,14 @@ def mimry_agent(
         for rel, line in SYMBOL_LINE.findall(pack):
             symbols.setdefault(rel, []).append(int(line))
     read = None if sed is None else (lambda path: sed_read(repo, path, sed, symbols.get(path)))
+    if changed is not None:
+        listed = pack_ranges(pack)
+
+        def read(path):
+            if path not in listed:
+                return read_cost(repo, path), True
+            return range_read(repo, path, listed[path], changed.get(path))
+
     return walk(
         repo,
         task["gold"],
@@ -265,6 +333,7 @@ def mimry_agent(
         order,
         lambda: grep_search(repo, task["task"]),
         read=read,
+        then_whole=changed is not None,
     )
 
 
@@ -314,8 +383,11 @@ def main() -> int:
     parser.add_argument(
         "--reads",
         default="full",
-        choices=["full", "sed"],
-        help="full: a read is the file's first 2,000 lines; sed: windows around anchor lines",
+        choices=["full", "sed", "ranges"],
+        help=(
+            "full: a read is the file's first 2,000 lines; sed: windows around anchor lines;"
+            " ranges: MIMRY reads the line ranges its pack lists first"
+        ),
     )
     parser.add_argument(
         "--window", type=int, default=100, help="sed mode: lines read on each side of an anchor"
@@ -353,7 +425,13 @@ def main() -> int:
                 ranked,
                 read=sed and (lambda path, repo=repo, sed=sed: sed_read(repo, path, sed)),
             ),
-            "mimry": mimry_agent(repo, task, env, sed),
+            "mimry": mimry_agent(
+                repo,
+                task,
+                env,
+                sed,
+                changed_lines(repo, task) if args.reads == "ranges" else None,
+            ),
         }
         results.append(row)
         g, m = row["grep"], row["mimry"]
@@ -366,9 +444,14 @@ def main() -> int:
     summary = summarize(results)
     if args.reads == "sed":
         summary |= {"reads": "sed", "window": args.window}
+    if args.reads == "ranges":
+        summary |= {
+            "reads": "ranges",
+            "range_misses": sum(r["mimry"]["gold_missed"] for r in results),
+        }
     report = {"summary": summary, "tasks": results}
     if not args.only:
-        suffix = ".sed" if args.reads == "sed" else ""
+        suffix = "" if args.reads == "full" else f".{args.reads}"
         (HERE / f"results.{args.set}{suffix}.json").write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8"
         )

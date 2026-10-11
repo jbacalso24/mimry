@@ -9,7 +9,7 @@ Required sections:
 - `# MIMRY Context Pack`
 - query
 - status: root, index freshness, graph freshness, and refresh action (condensed)
-- relevant files with scores, reasons, adapter evidence, and roles (compact)
+- relevant files with scores, reasons, adapter evidence, and roles (compact), and for each file the line ranges to read first (`Read first: lines 120-168 (`name`)`), when its functions, classes or sections match the query
 - relevant symbols/entities when indexed
 - graph relationships/communities/report signals when current
 - explicit degradation when graph data is missing/stale; MIMRY must not invent links

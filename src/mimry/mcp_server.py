@@ -12,7 +12,9 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from mimry import __version__
 from mimry.adapters import list_adapters
+from mimry.cache_safety import IndexOutsideCacheError
 from mimry.commands import (
     _write_context_pack,
     cmd_explain,
@@ -49,6 +51,7 @@ from mimry.security import (
     sanitize_query,
 )
 from mimry.semantic import semantic_health, semantic_rows
+from mimry.source_snippets import with_source_snippets
 from mimry.state import (
     GENERATION_SCHEMA_VERSION,
     IndexSchemaMigrationError,
@@ -58,7 +61,18 @@ from mimry.state import (
 )
 from mimry.storage import RootIdentityError, active_index_pointer, load_pointer
 
-mcp = FastMCP("MIMRY")
+# Sent to the agent when it connects, so it knows when to reach for
+# MIMRY instead of grep without reading the skill first.
+INSTRUCTIONS = (
+    "MIMRY is a local index of this repository: files, symbols and how they connect."
+    " Start a repository task with mimry_preflight and the task in your own words, then read"
+    " the context pack it names before opening files; it ranks the files the task likely"
+    " touches and says why. Use mimry_find for a focused search and mimry_symbol for a"
+    " function or class by name. For an exact string you already know, use rg or git grep"
+    " instead. Results are navigation, not proof: check the source before relying on them."
+)
+
+mcp = FastMCP("MIMRY", instructions=INSTRUCTIONS, version=__version__)
 
 
 def _schema_upgrade_error_payload(
@@ -164,6 +178,14 @@ def _state_guard(func):
                         "holder": exc.holder or None,
                     },
                     "recommended": "Check for another running MIMRY process, then retry.",
+                }
+            )
+        except IndexOutsideCacheError as exc:
+            return sanitize_data(
+                {
+                    "returncode": 2,
+                    "error": {"code": "index_outside_cache", "message": str(exc)},
+                    "recommended": "Run `mimry_preflight` or `mimry index` to rebuild it.",
                 }
             )
         except RootIdentityError as exc:
@@ -399,24 +421,74 @@ def mimry_preflight(
 @_state_guard
 @_index_operation()
 def mimry_find(
-    query: str, root: str | None = None, limit: int = 10, semantic: bool = False
+    query: str,
+    root: str | None = None,
+    limit: int = 10,
+    semantic: bool = False,
+    languages: list[str] | None = None,
+    path_globs: list[str] | None = None,
+    exclude_globs: list[str] | None = None,
+    offset: int | None = None,
+    snippets: bool = False,
+    snippet_lines: int = 8,
+    snippet_chars: int = 800,
+    snippet_total_lines: int = 40,
+    snippet_total_chars: int = 4000,
 ) -> dict[str, Any]:
-    """Search indexed files with ranking reasons."""
+    """Search files, optionally with bounded live-source snippets.
+
+    Pass offset=0 on page one.
+    """
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows = find_rows(
-        Path(ptr["indexPath"]),
-        query,
-        limit,
-        root=root_path,
-        root_id=ptr.get("rootId"),
-        semantic=semantic,
-    )
+    try:
+        rows = find_rows(
+            Path(ptr["indexPath"]),
+            query,
+            limit,
+            root=root_path,
+            root_id=ptr.get("rootId"),
+            semantic=semantic,
+            languages=languages,
+            path_globs=path_globs,
+            exclude_globs=exclude_globs,
+            offset=offset,
+        )
+    except ValueError as exc:
+        return {
+            "returncode": 2,
+            "error": {"code": "invalid_search_scope", "message": str(exc)},
+        }
+    if snippets:
+        try:
+            rows = with_source_snippets(
+                rows,
+                root=root_path,
+                pointer=ptr,
+                query=query,
+                lines_per_result=snippet_lines,
+                chars_per_result=snippet_chars,
+                total_lines=snippet_total_lines,
+                total_chars=snippet_total_chars,
+            )
+        except ValueError as exc:
+            return {
+                "returncode": 2,
+                "error": {"code": "invalid_snippet_limits", "message": str(exc)},
+            }
     payload = {
         "query": redact_sensitive_text(query),
         "root": str(root_path),
         "results": sanitize_data(rows),
+        "scope": {
+            "languages": languages or [],
+            "path_globs": path_globs or [],
+            "exclude_globs": exclude_globs or [],
+            "offset": 0 if offset is None else offset,
+            "pagination_requested": offset is not None,
+            "limit": limit,
+        },
     }
     if semantic:
         payload["semantic"] = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))

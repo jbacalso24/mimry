@@ -98,7 +98,8 @@ _REFERENCES: dict[str, str] = {
         """4. If stale/missing, run `mimry preflight \"<task>\"`.\n"""
         """5. Read `.mimry/mimry-out/context/latest.md` or """
         """`.mimry/mimry-out/context/brief-<agent>.md`.\n"""
-        """6. Inspect source files directly before editing.\n"""
+        """6. Inspect source files directly before editing. Where a file lists `Read first: """
+        """lines X-Y`, read those lines before the rest of the file.\n"""
         """\n"""
         """## Source of truth\n"""
         """\n"""
@@ -165,6 +166,8 @@ _REFERENCES: dict[str, str] = {
         """- Start a task with `mimry_preflight` instead of exploring by grep; for an exact"""
         """ string you already know, use `rg` or `git grep` directly.\n"""
         """- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n"""
+        """- Where a result lists `ranges` or `Read first: lines X-Y`, read those lines (for"""
+        """ example with an offset and a limit) before the rest of the file.\n"""
         """- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n"""
         """- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n"""
         """- Use CLI fallback when MCP is unavailable or the agent host has not loaded the """
@@ -556,6 +559,7 @@ mimry brief "<user task>" --agent <role>
 ```
 
 4. Open the suggested source/test files directly and verify against real code.
+   Where a file lists `Read first: lines X-Y`, read those lines (for example with an offset and a limit) before the rest of the file.
 
 5. After meaningful verified work, record feedback so future rankings improve:
 
@@ -663,6 +667,7 @@ Rules:
 - For an exact string you already know, use `rg` (or `git grep`) directly; never plain `grep -r`.
 - Use `mimry brief "<task>" --agent <role>` or `mimry_brief` for delegation/handoff.
 - Read `.mimry/mimry-out/context/latest.md` or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
+- Where a file lists `Read first: lines X-Y`, read those lines before the rest of the file.
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
