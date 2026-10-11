@@ -12,6 +12,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from mimry import __version__
 from mimry.adapters import list_adapters
 from mimry.commands import (
     _write_context_pack,
@@ -58,7 +59,18 @@ from mimry.state import (
 )
 from mimry.storage import RootIdentityError, active_index_pointer, load_pointer
 
-mcp = FastMCP("MIMRY")
+# Sent to the agent when it connects, so it knows when to reach for
+# MIMRY instead of grep without reading the skill first.
+INSTRUCTIONS = (
+    "MIMRY is a local index of this repository: files, symbols and how they connect."
+    " Start a repository task with mimry_preflight and the task in your own words, then read"
+    " the context pack it names before opening files; it ranks the files the task likely"
+    " touches and says why. Use mimry_find for a focused search and mimry_symbol for a"
+    " function or class by name. For an exact string you already know, use rg or git grep"
+    " instead. Results are navigation, not proof: check the source before relying on them."
+)
+
+mcp = FastMCP("MIMRY", instructions=INSTRUCTIONS, version=__version__)
 
 
 def _schema_upgrade_error_payload(
