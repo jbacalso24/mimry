@@ -263,11 +263,10 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 
 Use `mimry --root /path/to/repo <command>` to target another repo.
 
-`mimry doctor` never initializes, indexes, repairs, installs, contacts the network, or probes
-write access. It reports package/code mismatches, missing direct dependencies, parser readiness,
-and root/index/cache integrity. Repair guidance is scoped to the failed check rather than treating
-every parser fault as an install problem. Exit code 0 is healthy, 1 means incomplete or stale
-local state, and 2 means an install, parser, root, or index error.
+`mimry doctor` checks that the installed code matches its package, that its dependencies and parsers work, and that the repo's index and caches are intact.
+It only reads: it never sets up, indexes, repairs or installs anything, and it uses no network.
+Each problem comes with the command that fixes it.
+It exits 0 when everything is healthy, 1 when the repo is not set up or its index is out of date, and 2 when the install, a parser, the root or the index is broken.
 
 Keeping an index current:
 
