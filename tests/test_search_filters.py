@@ -169,7 +169,7 @@ def _patch_ranking_dependencies(monkeypatch):
     monkeypatch.setattr(search, "apply_feedback_to_rows", lambda rows, *_args, **_kwargs: rows)
 
 
-def test_default_graph_search_preserves_legacy_candidate_limit_and_order(tmp_path, monkeypatch):
+def test_default_graph_search_ranks_every_graph_match_before_the_cut(tmp_path, monkeypatch):
     idx, files = _ranking_index(tmp_path)
     _patch_ranking_dependencies(monkeypatch)
     requested_limits = []
@@ -186,7 +186,8 @@ def test_default_graph_search_preserves_legacy_candidate_limit_and_order(tmp_pat
     monkeypatch.setattr(search, "graph_rows", graph_rows)
     rows = find_rows(idx, "query", limit=3, root=tmp_path)
 
-    assert requested_limits == [3]
+    # Each graph match gets its content score before the cut.
+    assert requested_limits == [None]
     assert [(row["path"], row["score"]) for row in rows] == [
         ("f01.py", 150),
         ("f02.py", 149),
@@ -238,7 +239,7 @@ def test_filtered_or_paginated_search_expands_candidates_before_slicing(tmp_path
     monkeypatch.setattr(search, "graph_rows", graph_rows)
     page = find_rows(idx, "query", limit=1, offset=1, root=tmp_path)
 
-    assert requested_limits == [len(files)]
+    assert requested_limits == [None]
     assert page == find_rows(idx, "query", limit=len(files), offset=0, root=tmp_path)[1:2]
 
 
@@ -267,7 +268,8 @@ def test_explicit_graph_pagination_uses_one_expanded_ranking_from_page_one(tmp_p
         *find_rows(idx, "query", limit=3, offset=6, root=tmp_path),
     ]
 
-    assert [(row["path"], row["score"]) for row in legacy] == [("f01.py", 150)]
+    # f11.py leads once ranked before the cut, paged or not.
+    assert legacy == expanded[:1]
     assert [(row["path"], row["score"]) for row in expanded[:2]] == [
         ("f11.py", 240),
         ("f01.py", 150),
