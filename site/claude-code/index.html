@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up MIMRY for Claude Code</title>
+<meta name="description" content="Install MIMRY for Claude Code, register its local MCP server, add the project workflow skill and hooks, verify the setup, and start a repo task.">
+<link rel="canonical" href="https://jbacalso24.github.io/mimry/claude-code/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="MIMRY">
+<meta property="og:title" content="Set up MIMRY for Claude Code">
+<meta property="og:description" content="A source-verified setup guide for MIMRY's MCP server, project skill, hooks, status check, and first Claude Code task.">
+<meta property="og:url" content="https://jbacalso24.github.io/mimry/claude-code/">
+<meta property="og:image" content="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314223A'/%3E%3Crect x='7' y='9' width='18' height='4' rx='1' fill='%23F4D35E'/%3E%3Crect x='7' y='16' width='13' height='3' rx='1' fill='%23F5F7F6'/%3E%3Crect x='7' y='22' width='9' height='3' rx='1' fill='%23F5F7F6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../guide.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Set up MIMRY for Claude Code","description":"Install MIMRY, connect its local MCP server to Claude Code, install project workflow instructions, and verify the setup.","url":"https://jbacalso24.github.io/mimry/claude-code/","mainEntityOfPage":"https://jbacalso24.github.io/mimry/claude-code/","author":{"@type":"Person","name":"Judison Bacalso","url":"https://github.com/jbacalso24"},"publisher":{"@type":"Organization","name":"MIMRY","url":"https://jbacalso24.github.io/mimry/"}}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap top"><a class="brand" href="../">MIMRY</a><nav aria-label="Main"><a href="../claude-code/" aria-current="page">Claude Code</a><a href="../codex/">Codex</a><a href="../context-retrieval/">Context retrieval</a><a href="https://github.com/jbacalso24/mimry">GitHub</a></nav></header>
+<main class="wrap" id="main">
+<p class="breadcrumb"><a href="../">MIMRY</a> / Claude Code setup</p>
+<h1>Set up MIMRY for Claude Code</h1>
+<p class="lede">Give Claude Code a local repository map before it edits: a callable MCP server plus project instructions that require focused preflight, source inspection, and real verification.</p>
+<section>
+<h2>Install and connect</h2>
+<ol class="steps">
+<li><h3>Install MIMRY</h3><pre><code>uv tool install mimry
+mimry --version</code></pre><p>Python 3.11 or newer is required. <code>pipx install mimry</code> is also supported.</p></li>
+<li><h3>Register the MCP server</h3><pre><code>claude mcp add --scope user mimry -- mimry-mcp
+claude mcp get mimry</code></pre><p>This is the same Claude Code CLI registration used by MIMRY's integration smoke test. It runs the installed <code>mimry-mcp</code> stdio server locally.</p></li>
+<li><h3>Install the project workflow</h3><pre><code>cd /path/to/your/repo
+mimry install --project --platform claude-code --always-on --hooks
+mimry install --project --platform claude-code --status</code></pre><p>The project install writes the MIMRY skill under <code>.claude/skills/mimry/</code>. <code>--always-on</code> adds a bounded MIMRY block to <code>CLAUDE.md</code>; <code>--hooks</code> adds the supported first-search reminder. Review generated files before committing them.</p></li>
+<li><h3>Start a real task</h3><pre><code>mimry preflight "fix the login redirect bug"
+# Read .mimry/mimry-out/context/latest.md</code></pre><p>Use a specific task, not a generic word such as “frontend.” Preflight sets up and refreshes the index when needed, then writes the context pack and prints the first files to inspect.</p></li>
+</ol>
+</section>
+<section>
+<h2>Project or user scope?</h2>
+<div class="cards"><article class="card"><h3>Project scope</h3><p>Use <code>--project</code> when the workflow rules should travel with one repository. This writes project files that a team can review.</p></article><article class="card"><h3>User scope</h3><p>Omit <code>--project</code> to install the MIMRY skill for your user account. MCP registration is user-scoped for Claude Code.</p></article></div>
+<p class="note"><strong>Removing it:</strong> run <code>mimry uninstall --project --platform claude-code --always-on --hooks</code> for the matching project install. Run <code>claude mcp remove --scope user mimry</code> only if you also want to remove the MCP registration.</p>
+</section>
+<section>
+<h2>What Claude Code should do next</h2>
+<ul><li>Read <code>.mimry/mimry-out/context/latest.md</code> before opening unrelated files.</li><li>Use <code>mimry find</code>, <code>mimry symbol</code>, <code>mimry related</code>, <code>mimry why</code>, or the equivalent MCP tools for follow-up navigation.</li><li>Open the selected source and repo rules. MIMRY rankings are navigation evidence, not proof.</li><li>Run the repository's real tests or build, then record useful ranking feedback.</li></ul>
+<p>See <a href="../context-retrieval/">how MIMRY retrieves context</a>, or use the <a href="../codex/">Codex setup guide</a> for that client.</p>
+</section>
+</main>
+<footer><div class="wrap"><span>MIMRY is local, open-source software.</span><nav aria-label="Project"><a href="../">Home</a><a href="https://github.com/jbacalso24/mimry/blob/main/README.md">Full documentation</a><a href="../llms.txt">llms.txt</a></nav></div></footer>
+</body>
+</html>
