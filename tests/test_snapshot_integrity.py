@@ -236,14 +236,14 @@ def test_bounded_retry_then_fail_closed():
         test_file = root / "test.py"
         test_file.write_bytes(b"content")
 
-        # Mock path.stat to always return different values
+        # Mock path.lstat to always return different values
         call_count = [0]
-        original_stat = Path.stat
+        original_lstat = Path.lstat
 
-        def changing_stat(self, *args, **kwargs):
+        def changing_lstat(self, *args, **kwargs):
             call_count[0] += 1
             # Make it look like the file is changing
-            result = original_stat(self, *args, **kwargs)
+            result = original_lstat(self, *args, **kwargs)
             if call_count[0] % 2 == 0:
                 # Return a different st_mtime_ns on even calls
                 class ChangingResult:
@@ -259,10 +259,10 @@ def test_bounded_retry_then_fail_closed():
                 return ChangingResult(result)
             return result
 
-        with patch.object(Path, "stat", changing_stat), pytest.raises(FileChangedError):
+        with patch.object(Path, "lstat", changing_lstat), pytest.raises(FileChangedError):
             read_snapshot(test_file)
 
-        assert call_count[0] == 6, "three attempts must perform exactly two path-stat checks each"
+        assert call_count[0] == 6, "three attempts must perform exactly two path-lstat checks each"
 
 
 def test_oversized_unreadable_and_deleted_files_still_skipped():
