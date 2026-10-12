@@ -280,7 +280,7 @@ mimry install --project --platform claude-code --always-on --hooks
 
 - `--project` installs into this repo only; omit it to install for every project.
 - `--always-on` adds a short rules block to the agent's always-read file, such as `AGENTS.md`.
-- `--hooks` adds a hook that reminds the agent once per session, on its first search, that MIMRY is available.
+- `--hooks` adds a hook that, when an agent starts a broad search with grep, rg or a `**` glob, names the `mimry find` command to run instead; exact-string searches stay quiet.
 
 Supported platforms: `claude-code`, `codex`, `opencode`, `kilo`, `aider`, `copilot`, `claw`, `droid`, `trae`, `trae-cn`, `hermes`, `kiro`, `gemini`, `agents`, `amp`, `devin`, `antigravity`, `kimi`, `pi`, `codebuddy`.
 Run `mimry install --list-platforms` for aliases, `mimry install --project --platform <name> --status` to check an install, and `mimry uninstall --project --platform <name> --always-on --hooks` to remove it.
