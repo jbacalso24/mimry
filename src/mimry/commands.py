@@ -340,14 +340,24 @@ def _totals(files: int, symbols: int, links: int) -> str:
     return ui.facts(ui.count(files, "file"), ui.count(symbols, "symbol"), ui.count(links, "link"))
 
 
+def _install_channel() -> str | None:
+    """The install channel: "uv tool", "pipx", or None."""
+    if (Path(sys.prefix) / "uv-receipt.toml").is_file():
+        return "uv tool"
+    if "pipx" in Path(sys.prefix).parts:
+        return "pipx"
+    return None
+
+
 def _repair_command() -> str:
     """The command that reinstalls MIMRY with all its dependencies."""
-    if (Path(sys.prefix) / "uv-receipt.toml").is_file():
+    channel = _install_channel()
+    if channel == "uv tool":
         # Syncs the tool environment in place, editable installs
         # included. `uv tool install --force` deletes it first instead,
         # which fails halfway on Windows while mimry-mcp is running.
         return "uv tool upgrade mimry"
-    if "pipx" in Path(sys.prefix).parts:
+    if channel == "pipx":
         return "pipx reinstall mimry"
     return "python -m pip install --upgrade mimry"
 
