@@ -103,7 +103,7 @@ Five versions are compared, each developed against the dev set only.
 | holdout2, 44 tasks | retrieval fixes | 39.6% | 28 / 31 | 46.2% | 35.7% (25 tasks) |
 | holdout2, 44 tasks | credential fixes | 40.2% | 28 / 31 | 46.4% | 37.3% (25 tasks) |
 | holdout2, 44 tasks | 0.3.0 | 39.9% | 28 / 31 | 46.0% | 36.7% (25 tasks) |
-| holdout2, 44 tasks | 0.4.0 | 31.2% | 28 / 33 | 45.4% | 33.5% (25 tasks) |
+| holdout2, 44 tasks | main, d7fec0e | 31.2% | 28 / 33 | 45.4% | 33.5% (25 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 57.8% | 21 / 32 | 69.6% | 69.4% (19 tasks) |
 
 At the baseline MIMRY read more tokens than grep and fully located fewer tasks.
@@ -131,12 +131,12 @@ holdout3 was run with whole-file reads after its line-range run, with no change 
 MIMRY read 57.8% fewer tokens than grep, 2,388,654 against 5,660,661, and located 32 tasks to grep's 21.
 By repository it saves from 29.5% (rich) to 76.7% (Polly), and it locates more tasks than grep in five of the six repositories; in guzzle it locates 3 to grep's 4.
 
-holdout2 was run once for 0.4.0 (commit d7fec0e), in each read mode, after all work on dev.
-0.4.0 locates 33 tasks to 0.3.0's 31, but with whole-file reads it saves 31.2% against 0.3.0's 39.9%.
+holdout2 was also run once on unreleased code, main at commit d7fec0e, in each read mode, after all work on dev; the next release still gets its own run.
+d7fec0e locates 33 tasks to 0.3.0's 31, but with whole-file reads it saves 31.2% against 0.3.0's 39.9%.
 Nearly all of the difference is one task neither version locates, retrofit#4764: its ten reads cost 268,863 tokens against 0.3.0's 12,767, because they land on very large files.
-Without that task, 0.4.0 saves 41.9% and 0.3.0 39.7%.
+Without that task, d7fec0e saves 41.9% and 0.3.0 39.7%.
 The task was not inspected, since holdout2 is never used to tune; on dev, the same failure mode, where a task MIMRY does not locate spends its whole budget, is [#41](https://github.com/jbacalso24/mimry/issues/41).
-By repository, 0.4.0 saves from 30.1% (typer) to 69.8% (uvicorn), and retrofit reads 176.4% more than grep.
+By repository, d7fec0e saves from 30.1% (typer) to 69.8% (uvicorn), and retrofit reads 176.4% more than grep.
 With line-range reads it saves 63.6%, against 68.6% on holdout3, and 66.5% without retrofit#4764.
 Per-task numbers are in [results.holdout2.json](results.holdout2.json), [results.holdout2.sed.json](results.holdout2.sed.json) and [results.holdout2.ranges.json](results.holdout2.ranges.json).
 
@@ -166,7 +166,7 @@ With `--reads sed`:
 | dev, 40 tasks | 0.3.0 | 28.0% | 27 / 29 | 23.0% | 45.2% (24 tasks) |
 | holdout2, 44 tasks | credential fixes | 37.2% | 27 / 29 | 46.1% | 42.9% (24 tasks) |
 | holdout2, 44 tasks | 0.3.0 | 36.9% | 27 / 29 | 45.5% | 42.1% (24 tasks) |
-| holdout2, 44 tasks | 0.4.0 | 27.3% | 27 / 31 | 45.5% | 39.8% (24 tasks) |
+| holdout2, 44 tasks | main, d7fec0e | 27.3% | 27 / 31 | 45.5% | 39.8% (24 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 54.1% | 19 / 30 | 62.4% | 71.7% (17 tasks) |
 
 On holdout2, 0.3.0 still reads 37% fewer tokens than grep, against 40% with whole-file reads, and its per-task median barely moves.
@@ -203,7 +203,7 @@ For the rebase-merged tasks above, a gold file the last commit does not touch co
 | dev, 40 tasks | line ranges, without the rank fix | 64.2% | 30 / 32 | 56.5% | 63.6% (27 tasks) |
 | dev, 40 tasks | line ranges, with the rank fix | 68.4% | 30 / 34 | 62.4% | 67.7% (29 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 68.6% | 21 / 32 | 81.1% | 83.3% (19 tasks) |
-| holdout2, 44 tasks | 0.4.0 | 63.6% | 28 / 33 | 74.9% | 58.4% (25 tasks) |
+| holdout2, 44 tasks | main, d7fec0e | 63.6% | 28 / 33 | 74.9% | 58.4% (25 tasks) |
 
 On dev, reading the listed ranges halves what MIMRY reads: 677,799 tokens against 0.3.0's 1,285,495 with whole-file reads, while grep reads 1,894,477.
 It locates one task fewer than with whole-file reads (32 against 33): in ripgrep#3472 the ranges missed the change in several of the four gold files, and the second reads used up the budget.
