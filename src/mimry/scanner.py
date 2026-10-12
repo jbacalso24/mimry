@@ -9,10 +9,11 @@ import stat
 import subprocess
 import unicodedata
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from . import __version__
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
-from .constants import SCHEMA_VERSION
+from .constants import SCHEMA_VERSION, SETTINGS_FILE
 from .core.documents import (
     DOCUMENT_ADAPTERS,
     DOCUMENT_EXTENSIONS,
@@ -44,6 +45,10 @@ from .security import (
 from .state import scoped
 from .ts_ast_adapter import TS_EXTENSIONS, parse_ts_like
 from .xcode import extract_xcode_targets, parse_pbxproj
+
+if TYPE_CHECKING:
+    # A runtime import would cycle back through pieces.py.
+    from .settings import IndexSettings
 
 SCANNER_FILE_SIZE_LIMIT = 1_000_000
 
@@ -116,10 +121,16 @@ def markdown_heading_symbols(file_id: str, text: str) -> tuple[list[dict], list[
     return symbols, edges
 
 
-def size_limit(path) -> int:
-    """Largest file size, in bytes, the scanner reads for this path."""
+def size_limit(path, settings: IndexSettings | None = None) -> int:
+    """Largest file size, in bytes, the scanner reads for this path.
+
+    Documents keep their own cap; ``max_file_bytes`` replaces the
+    default for every other file.
+    """
     if Path(path).suffix.lower() in DOCUMENT_EXTENSIONS:
         return MAX_DOCUMENT_FILE_BYTES
+    if settings is not None and settings.max_file_bytes is not None:
+        return settings.max_file_bytes
     return SCANNER_FILE_SIZE_LIMIT
 
 
@@ -174,7 +185,7 @@ def _real_root(root) -> str:
     )
 
 
-def read_snapshot(path, limit=None, *, root=None):
+def read_snapshot(path, limit=None, *, root=None, settings: IndexSettings | None = None):
     """Read a file once and prove it did not change underneath us.
 
     Returns ``(data, stat_result)``. A file can change between stat,
@@ -193,7 +204,7 @@ def read_snapshot(path, limit=None, *, root=None):
     """
     path = Path(path)
     if limit is None:
-        limit = size_limit(path)
+        limit = size_limit(path, settings)
     approved_root = None
     if root is not None:
         # Resolved once per read scope (freshness reads every indexed
@@ -427,11 +438,11 @@ def _status_paths(status: bytes) -> list[bytes]:
 def worktree_fingerprint(root: Path) -> str | None:
     """sha256 of the working tree as git sees it, or None.
 
-    Hashes the MIMRY version and build, the repo config, the top-level
-    and HEAD, and each dirty path with its size and mtime. Equal
-    fingerprints mean git reports the same tree, so no walk is needed.
-    None when git cannot answer: no repo, no commit, git missing, or a
-    failed command.
+    Hashes the MIMRY version and build, the repo config and index
+    settings, the top-level and HEAD, and each dirty path with its size
+    and mtime. Equal fingerprints mean git reports the same tree, so no
+    walk is needed. None when git cannot answer: no repo, no commit, git
+    missing, or a failed command.
     """
     root = Path(root)
     head = _git_output(root, "rev-parse", "--show-toplevel", "HEAD")
@@ -452,11 +463,14 @@ def worktree_fingerprint(root: Path) -> str | None:
         return None
     top = Path(os.fsdecode(head.splitlines()[0]))
     config = root / ".mimry" / "config.toml"
+    settings = root / SETTINGS_FILE
     digest = hashlib.sha256()
     digest.update(__version__.encode())
     digest.update(code_fingerprint().encode())
     try:
         digest.update(config.read_bytes() if config.is_file() else b"")
+        # Git may ignore mimry.toml, so it never shows in the status.
+        digest.update(settings.read_bytes() if settings.is_file() else b"")
     except OSError:
         return None
     digest.update(head)
@@ -472,14 +486,17 @@ def worktree_fingerprint(root: Path) -> str | None:
     return digest.hexdigest()
 
 
-def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.stat_result]]:
+def scan_stats(
+    root, *, probe_open: bool = True, settings: IndexSettings | None = None
+) -> list[tuple[str, Path, os.stat_result]]:
     """Return ``(canonical_rel_path, native_path, lstat)`` for every
     indexable candidate.
 
     ``probe_open`` skips files that cannot be opened (locked or
     ACL-protected), which indexing needs. Freshness passes False: it
     opens each file itself and already treats an unreadable file as
-    changed or skipped.
+    changed or skipped. ``settings`` applies the include, exclude and
+    size rules of ``mimry.toml``.
     """
     safe_root(root)
     root = Path(root)
@@ -508,11 +525,16 @@ def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.sta
                 or is_sensitive(path)
             ):
                 continue
+            native_rel = f"{rel_dir}/{name}" if rel_dir else name
+            if settings is not None and not settings.admits(
+                unicodedata.normalize("NFC", native_rel)
+            ):
+                continue
             try:
                 # One lstat answers regular-file, not-a-symlink, and
                 # size.
                 info = os.lstat(path)
-                if not stat.S_ISREG(info.st_mode) or info.st_size > size_limit(path):
+                if not stat.S_ISREG(info.st_mode) or info.st_size > size_limit(path, settings):
                     continue
                 if probe_open:
                     # Windows/macOS can expose locked or ACL-protected
@@ -524,7 +546,6 @@ def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.sta
                         pass
             except OSError:
                 continue
-            native_rel = f"{rel_dir}/{name}" if rel_dir else name
             entries.append((unicodedata.normalize("NFC", native_rel), native_rel, path, info))
     entries.sort(key=lambda entry: (entry[0], entry[1]))
     # Distinct native names may normalize to one canonical path/file ID.

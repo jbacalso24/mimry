@@ -9,6 +9,7 @@ from .intent import query_terms, term_matches_token, text_terms
 from .paths import canonical_cached_rel_path
 from .scanner import read_snapshot
 from .security import has_sensitive_content, is_sensitive, is_text
+from .settings import index_settings
 
 DEFAULT_LINES = 8
 DEFAULT_CHARS = 800
@@ -61,6 +62,7 @@ def with_source_snippets(
     # against the indexed hash below, so re-hashing the whole repository
     # on each search would only add cost.
     freshness = index_freshness(root, pointer)
+    settings = index_settings(root)
     changed = set(freshness["changed"])
     allowed = {record["rel_path"]: record for record in freshness["files"]}
     native_paths = freshness.get("native_paths", {})
@@ -83,7 +85,7 @@ def with_source_snippets(
             try:
                 if is_sensitive(path) or not is_text(path):
                     raise ValueError("sensitive path")
-                data, _ = read_snapshot(path, root=root)
+                data, _ = read_snapshot(path, root=root, settings=settings)
                 if has_sensitive_content(path, data=data):
                     raise ValueError("sensitive content")
                 expected_hash = freshness["verified_hashes"].get(rel) or allowed[rel].get("hash")

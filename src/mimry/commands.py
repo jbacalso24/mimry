@@ -494,6 +494,8 @@ def _stale_summary(fresh: dict) -> str:
             (fresh["policy_excluded_count"], "now ignored"),
         )
     )
+    if fresh.get("settings_changed"):
+        summary = ", ".join(filter(None, (summary, "mimry.toml changed")))
     if fresh.get("outdated_build"):
         return ", ".join(filter(None, (summary, "indexed by a different MIMRY version")))
     return summary

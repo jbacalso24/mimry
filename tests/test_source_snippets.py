@@ -183,10 +183,10 @@ def test_snippet_reader_detects_change_between_freshness_and_read(tmp_path, monk
     target = repo / "src/auth/session.py"
     original_read = source_snippets.read_snapshot
 
-    def changed_read(path, *, root):
+    def changed_read(path, *, root, settings=None):
         if Path(path) == target:
             target.write_text("replacement safe text\n", encoding="utf-8")
-        return original_read(path, root=root)
+        return original_read(path, root=root, settings=settings)
 
     monkeypatch.setattr(source_snippets, "read_snapshot", changed_read)
     enriched = with_source_snippets(
