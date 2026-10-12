@@ -26,7 +26,7 @@
   ·
   <a href="#results"><strong>Results</strong></a>
   ·
-  <a href="#for-ai-agents"><strong>For AI agents</strong></a>
+  <a href="#workflow"><strong>Workflow</strong></a>
   ·
   <a href="#connect-mimry-to-your-agent"><strong>Connect your agent</strong></a>
   ·
@@ -148,42 +148,31 @@ mimry preflight "fix the login redirect bug"
 
 `preflight` also sets MIMRY up and builds the index on first use, so in practice it is the only command an agent needs to start a task.
 
-## For AI agents
+## Workflow
 
-This section is written for an AI coding agent working in a repository where MIMRY is installed.
-
-### When to use MIMRY
-
-Start every task with MIMRY.
-It replaces exploring the repository by grep: guessing search terms, then reading files to see whether they matter.
-Run it whenever you need to find where something lives, what a task touches, or how two parts of the code connect.
-For an exact string you already know, such as an identifier or an error message, use `rg` directly, or `git grep` when `rg` is not installed.
-
-### The workflow
+Start each task with MIMRY instead of exploring the repository by keyword search.
+For an exact string you already know, such as an identifier or an error message, `rg` or `git grep` is still the right tool.
 
 1. **Start the task:** `mimry preflight "<task in plain words>"`.
-2. **Read the context pack:** `.mimry/mimry-out/context/latest.md`.
-   It lists ranked files with reasons, key symbols, relationships, risky paths, and verification commands.
-   Where a file's functions, classes or sections match the task, it names their lines (`Read first: lines 120-168`), so the agent reads those before the rest of the file.
+2. **Read the context pack** at `.mimry/mimry-out/context/latest.md`.
+   It lists the ranked files with reasons, key symbols, relationships, risky paths and verification commands.
+   Where a file's functions, classes or sections match the task, it names their lines (`Read first: lines 120-168`), so those are read before the rest of the file.
 3. **Navigate with focused queries** instead of scanning the tree:
    `mimry find "<query>"`, `mimry symbol <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`.
 4. **Verify against the source.**
-   MIMRY output is navigation, not proof.
-   Open the files, run the tests, and trust the build output over any ranking.
+   MIMRY output is navigation, not proof: the files, the tests and the build output decide.
 5. **Record what helped:**
    `mimry feedback --query "<task>" --opened <files> --changed <files> --verification "<command and result>" --outcome passed`.
-   Future searches for similar tasks rank those files higher.
+   Similar tasks then rank those files higher.
 
-### Rules
+The index keeps itself current:
 
-- `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related` and `semantic` reindex first when files changed or MIMRY was upgraded, so they never answer from a stale index.
-  When git reports the same working tree as the last index, that check is skipped.
+- `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related` and `semantic` reindex first when files changed or MIMRY was upgraded, and skip that check when git reports the same working tree as the last index.
 - In a new git worktree of a repository where MIMRY is set up, the first of those commands sets MIMRY up and builds the worktree's own index.
-- If another lookup, such as `explain` or `why`, says the index is out of date, run `mimry reindex` (fast: it only re-reads changed files).
-- Treat `.mimry/`, caches, and generated files as support artifacts, never as the place to fix a bug.
-- Never paste secret values into context or reports; MIMRY skips secret-looking files and redacts feedback.
-- Output is plain ASCII when piped (`OK`, `!`, `x` marks), and exit codes are meaningful: `0` ok, `1` not set up, `2` stale or an error.
-  `mimry route "<task>" --json` returns structured data.
+- When another lookup, such as `explain` or `why`, reports the index as out of date, `mimry reindex` updates it by re-reading only the changed files.
+
+Output is plain ASCII when piped (`OK`, `!`, `x` marks), and exit codes are meaningful: `0` ok, `1` not set up, `2` stale or an error.
+`mimry route "<task>" --json` returns structured data.
 
 ## Connect MIMRY to your agent
 
@@ -191,7 +180,8 @@ MIMRY is a CLI first: any agent that can run a shell command can run `mimry pref
 It also ships an MCP server, so agents that support MCP can call it as a tool (stdio transport, command `mimry-mcp`).
 Each agent starts its own `mimry-mcp` when a session begins and stops it when the session ends.
 You never run `mimry-mcp` yourself: after `mimry install --platform <agent>`, the agent takes care of it.
-`mimry install --platform <agent>` registers it for you at user scope, so every project gets it: through the agent's own CLI for Claude Code, Codex, Gemini CLI, Factory Droid, Kimi, Copilot CLI, Amp and Devin, and in the config file for Kiro and OpenCode.
+`mimry install --platform <agent>` registers it for you at user scope, so every project gets it: through the agent's own CLI for Claude Code, Codex, Gemini CLI, Factory Droid, Kimi, Copilot CLI, Amp and Devin, and in the config file for Kiro and OpenCode (`~/.config/opencode/opencode.json`).
+For Kilo Code it installs the skill only, at `~/.config/kilo/skills/mimry/SKILL.md`, and leaves the MCP configuration alone.
 For other agents it prints the snippet to add in their MCP settings.
 Pass `--no-mcp`, or set `MIMRY_NO_MCP_REGISTRATION=1`, to skip it; a global `mimry uninstall --platform <agent>` removes it.
 
@@ -239,36 +229,6 @@ The server works on its current directory by default, and every tool accepts a `
 | `mimry_status` / `mimry_refresh` / `mimry_reindex` / `mimry_init` | Index health and maintenance |
 | `mimry_feedback` | Record which files helped a task |
 | `mimry_list_adapters`, `mimry_digest`, `mimry_plan_*` | Adapters, canonical index digest, read-only plan trees |
-
-### OpenCode
-
-Install MIMRY for OpenCode with:
-
-```bash
-mimry install --platform opencode
-```
-
-This installs the MIMRY skill at `~/.config/opencode/skills/mimry/SKILL.md` and adds the local MCP server to `~/.config/opencode/opencode.json`.
-Check the result with:
-
-```bash
-mimry install --platform opencode --status
-```
-
-### Kilo Code
-
-Install the MIMRY skill for Kilo Code with:
-
-```bash
-mimry install --platform kilo
-```
-
-The command writes the skill to `~/.config/kilo/skills/mimry/SKILL.md`; it does not modify a Kilo MCP configuration.
-Check the skill installation with:
-
-```bash
-mimry install --platform kilo --status
-```
 
 ### Teach your agent to use it
 
@@ -372,7 +332,7 @@ See [platform details](docs/how-it-works.md#platform-details) for the cross-plat
 
 ## Support and releases
 
-CI runs on every pull request and every push to `main`: lint, tests, an end-to-end determinism matrix, an unlocked extracted-sdist parser suite, and a clean-wheel smoke test on each platform, plus the retrieval benchmark gate on Linux.
+CI runs lint, the full test suite, a smoke test of the built package and the retrieval benchmark on every pull request and every push to `main`, on Windows, Linux and macOS.
 A separate workflow audits the locked runtime dependencies for known vulnerabilities whenever they change, and weekly.
 Releases are cut by pushing a `vX.Y.Z` tag, which builds reproducible artifacts and publishes them to PyPI and GitHub Releases.
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the release checks.
