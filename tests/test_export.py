@@ -681,7 +681,7 @@ def test_obsidian_filename_collisions(tmp_path: Path):
     assert len(notes2) == 2, f"Should have exactly 2 notes, got {len(notes2)}"
 
 
-def test_obsidian_scale(tmp_path: Path):
+def test_obsidian_scale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Obsidian export handles 4k files and 40k edges efficiently."""
     import time
 
@@ -712,10 +712,15 @@ def test_obsidian_scale(tmp_path: Path):
 
     graph = {"nodes": nodes, "edges": edges}
 
+    # Keep the notes in memory: disk and antivirus time is charged
+    # to this process too, and a slow disk is not a complexity bug.
+    written: dict[Path, str] = {}
+    monkeypatch.setattr(Path, "write_text", lambda self, text, **_: written.setdefault(self, text))
+
     output = tmp_path / "vault"
     start = time.process_time()
     export_obsidian(graph, tmp_path, output)
     elapsed = time.process_time() - start
-    # CPU time, not wall time: a busy machine is not a complexity bug.
 
+    assert len(written) == num_files + 2  # the notes, the index and the marker
     assert elapsed < 10, f"Export took {elapsed:.1f}s, should be under 10s"

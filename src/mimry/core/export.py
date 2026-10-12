@@ -484,6 +484,7 @@ def export_obsidian(graph: dict, root: Path, output_path: Path, force: bool = Fa
 
     # Pass 1: assign note paths and check validity
     notes = {}  # source_file -> (node, rel_path)
+    vault = output_path.resolve()  # once: resolve() costs syscalls per call
     taken = set()  # rel_path.casefold() to detect case-only collisions
     for node_id in sorted(file_nodes.keys()):
         node = file_nodes[node_id]
@@ -503,7 +504,7 @@ def export_obsidian(graph: dict, root: Path, output_path: Path, force: bool = Fa
 
         # Check it resolves inside vault BEFORE mkdir
         try:
-            note_path.resolve().relative_to(output_path.resolve())
+            note_path.resolve().relative_to(vault)
         except ValueError:
             continue
 
@@ -518,9 +519,12 @@ def export_obsidian(graph: dict, root: Path, output_path: Path, force: bool = Fa
     note_rel_by_file = {f: rel for f, (_, rel) in notes.items()}
 
     # Pass 2: write notes using precomputed data
+    made_dirs = set()
     for source_file, (node, rel_path) in notes.items():
         note_path = output_path / (rel_path + ".md")
-        note_path.parent.mkdir(parents=True, exist_ok=True)
+        if note_path.parent not in made_dirs:
+            note_path.parent.mkdir(parents=True, exist_ok=True)
+            made_dirs.add(note_path.parent)
 
         # Gather symbols and links from precomputed data
         file_symbols = symbols_by_file.get(source_file, [])
