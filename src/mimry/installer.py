@@ -505,13 +505,13 @@ def skill_body(platform_key: str) -> str:
     platform_notes = {
         "claude-code": (
             "Claude Code: use this skill with project `.claude/skills/mimry/` installs."
-            " Optional hooks remind the agent once per session, on its first search,"
-            " that MIMRY is available."
+            " Optional hooks name the `mimry find` command when the agent starts a broad"
+            " search, and stay quiet for exact-string searches."
         ),
         "codex": (
             "Codex: invoke as `$mimry` when command-style skill invocation is available."
-            " Optional `.codex/hooks.json` reminds the agent once per session, on its"
-            " first shell search, that MIMRY is available."
+            " Optional `.codex/hooks.json` names the `mimry find` command when the agent"
+            " starts a broad shell search, and stays quiet for exact-string searches."
         ),
         "hermes": (
             "Hermes: this skill is installed under `.hermes/skills/mimry/` or the Hermes profile"
@@ -1125,8 +1125,7 @@ def install_skill(
     hook_target = _install_hooks(root, cfg, dry_run=True) if hooks else None
     if hook_target:
         extras.append(
-            f"a hook in {cfg.hook_path.as_posix()} that reminds agents"
-            " once per session that MIMRY is available"
+            f"a hook in {cfg.hook_path.as_posix()} that names `mimry find` for broad searches"
         )
     if dry_run:
         print("Dry run - nothing was written")

@@ -518,21 +518,44 @@ def test_claude_skill_body_is_platform_specific(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("payload", "query"),
     [
-        pytest.param({"tool_input": {"command": "rg auth"}}, id="bash-shelled-rg"),
+        pytest.param(
+            {"tool_input": {"command": 'rg "auth|session"'}},
+            "auth session",
+            id="bash-rg-alternation",
+        ),
+        pytest.param(
+            {"tool_input": {"command": 'grep -rn "login.*redirect" .'}},
+            "login redirect",
+            id="bash-grep-recursive-dot-star",
+        ),
         # A native search tool carries no "grep" in its payload -- the
         # pattern is the caller's regex. Identified by tool_name or it
         # is missed entirely.
         pytest.param(
-            {"tool_name": "Grep", "tool_input": {"pattern": "resolve_imports"}}, id="grep-tool"
+            {"tool_name": "Grep", "tool_input": {"pattern": "auth|session"}},
+            "auth session",
+            id="grep-tool-regex",
         ),
         pytest.param(
-            {"tool_name": "Glob", "tool_input": {"pattern": "src/**"}}, id="glob-tool-no-extension"
+            {"tool_name": "Grep", "tool_input": {"pattern": "session", "-i": True}},
+            "session",
+            id="grep-tool-ignore-case",
+        ),
+        pytest.param(
+            {"tool_name": "Glob", "tool_input": {"pattern": "src/**"}},
+            "src",
+            id="glob-tool-no-extension",
+        ),
+        pytest.param(
+            {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}},
+            "<what you are looking for>",
+            id="glob-tool-star",
         ),
     ],
 )
-def test_hook_check_emits_nudge_when_mimry_exists(tmp_path, payload):
+def test_hook_check_emits_nudge_when_mimry_exists(tmp_path, payload, query):
     repo = copy_fixture(tmp_path)
     (repo / ".mimry").mkdir()
     (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
@@ -548,18 +571,62 @@ def test_hook_check_emits_nudge_when_mimry_exists(tmp_path, payload):
         check=False,
     )
     assert res.returncode == 0, res.stderr
-    assert "MIMRY is available" in res.stdout
+    context = json.loads(res.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "MIMRY can answer this" in context
+    assert f'mimry find "{query}"' in context
 
 
-def test_hook_check_reminds_once_per_session(tmp_path):
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"tool_input": {"command": "rg resolve_imports"}}, id="bash-rg-identifier"),
+        pytest.param(
+            {"tool_input": {"command": 'git grep "connection refused"'}}, id="bash-git-grep-phrase"
+        ),
+        pytest.param(
+            {"tool_name": "Grep", "tool_input": {"pattern": "Foo\\.bar"}},
+            id="grep-tool-escaped-dot",
+        ),
+        pytest.param(
+            {"tool_name": "Glob", "tool_input": {"pattern": "**/session.py"}},
+            id="glob-tool-one-file",
+        ),
+        pytest.param({"tool_input": {"command": "cat src/app.py"}}, id="bash-cat"),
+        pytest.param({"tool_input": {"command": "find . -name x"}}, id="bash-find"),
+    ],
+)
+def test_hook_check_stays_quiet_for_exact_searches(tmp_path, payload):
+    repo = copy_fixture(tmp_path)
+    (repo / ".mimry").mkdir()
+    (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    res = subprocess.run(
+        [sys.executable, "-m", "mimry.cli", "--root", str(repo), "hook-check"],
+        cwd=repo,
+        env=env,
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    assert res.stdout == ""
+
+
+def test_hook_check_reminds_once_per_session_and_query(tmp_path):
     repo = copy_fixture(tmp_path)
     (repo / ".mimry").mkdir()
     (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
 
-    def hook(session_id: str) -> subprocess.CompletedProcess:
-        payload = {"tool_name": "Grep", "tool_input": {"pattern": "x"}, "session_id": session_id}
+    def hook(session_id: str, pattern: str) -> subprocess.CompletedProcess:
+        payload = {
+            "tool_name": "Grep",
+            "tool_input": {"pattern": pattern},
+            "session_id": session_id,
+        }
         return subprocess.run(
             [sys.executable, "-m", "mimry.cli", "--root", str(repo), "hook-check"],
             cwd=repo,
@@ -570,15 +637,23 @@ def test_hook_check_reminds_once_per_session(tmp_path):
             check=False,
         )
 
-    res1 = hook("s1")
+    def context(res: subprocess.CompletedProcess) -> str:
+        if not res.stdout:
+            return ""
+        return json.loads(res.stdout)["hookSpecificOutput"]["additionalContext"]
+
+    res1 = hook("s1", "auth|session")
     assert res1.returncode == 0, res1.stderr
-    assert "MIMRY is available" in res1.stdout
-    res2 = hook("s1")
+    assert 'mimry find "auth session"' in context(res1)
+    res2 = hook("s1", "auth|session")
     assert res2.returncode == 0, res2.stderr
-    assert res2.stdout == ""
-    res3 = hook("s2")
+    assert res2.stdout == "", "same session and same query stay silent"
+    res3 = hook("s1", "login|redirect")
     assert res3.returncode == 0, res3.stderr
-    assert "MIMRY is available" in res3.stdout
+    assert 'mimry find "login redirect"' in context(res3), "a new query prints again"
+    res4 = hook("s2", "auth|session")
+    assert res4.returncode == 0, res4.stderr
+    assert 'mimry find "auth session"' in context(res4), "a new session prints again"
 
 
 def test_hook_check_ignores_reads(tmp_path):
@@ -619,7 +694,7 @@ def test_hook_check_honors_root_and_never_fails(tmp_path):
     (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
-    grep = json.dumps({"tool_name": "Grep", "tool_input": {"pattern": "x"}}).encode()
+    grep = json.dumps({"tool_name": "Grep", "tool_input": {"pattern": "x|y"}}).encode()
 
     def hook(*root_args: str, payload: bytes = grep) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -631,8 +706,8 @@ def test_hook_check_honors_root_and_never_fails(tmp_path):
             check=False,
         )
 
-    assert b"MIMRY is available" in hook("--root", str(repo)).stdout
-    assert b"MIMRY is available" in hook(f"--root={repo}").stdout
+    assert b"mimry find" in hook("--root", str(repo)).stdout
+    assert b"mimry find" in hook(f"--root={repo}").stdout
     assert hook().stdout == b"", "without --root the hook looks at the working directory only"
     for payload in (
         b"\xff\xfe not json",
