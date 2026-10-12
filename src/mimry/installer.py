@@ -68,6 +68,8 @@ _PLATFORM_ALIASES = {
     "kilo": "kilo",
     "aider": "aider",
     "copilot": "copilot",
+    "vscode": "vscode",
+    "copilot-vscode": "vscode",
     "claw": "claw",
     "openclaw": "claw",
     "droid": "droid",
@@ -247,6 +249,17 @@ def _antigravity_global_path() -> Path:
     return _home() / ".gemini" / "config" / "skills" / "mimry" / "SKILL.md"
 
 
+def _vscode_user_dir() -> Path:
+    # VS Code keeps the user-level mcp.json in its profile folder.
+    if sys.platform == "win32":
+        appdata = Path(os.environ.get("APPDATA") or (_home() / "AppData" / "Roaming"))
+        return appdata / "Code" / "User"
+    if sys.platform == "darwin":
+        return _home() / "Library" / "Application Support" / "Code" / "User"
+    config_home = os.environ.get("XDG_CONFIG_HOME") or (_home() / ".config")
+    return Path(config_home) / "Code" / "User"
+
+
 def platforms() -> dict[str, MimryPlatform]:
     home = _home()
 
@@ -319,6 +332,19 @@ def platforms() -> dict[str, MimryPlatform]:
                 "copilot",
                 ("mcp", "add", "mimry", "--", "{server}"),
                 ("mcp", "remove", "mimry"),
+            ),
+        ),
+        "vscode": MimryPlatform(
+            key="vscode",
+            label="GitHub Copilot in VS Code",
+            project_path=skill(".github"),
+            global_path=home / ".copilot" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path(".github") / "copilot-instructions.md",
+            aliases=("copilot-vscode",),
+            mcp=McpJson(
+                _vscode_user_dir() / "mcp.json",
+                "servers",
+                lambda server: {"type": "stdio", "command": server, "args": []},
             ),
         ),
         "claw": MimryPlatform(

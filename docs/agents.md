@@ -16,7 +16,7 @@ Add `--project` to any of these to work on the current repository only.
 | Agent | Registration |
 |---|---|
 | Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Factory Droid, Kimi, Amp, Devin | Through the agent's own CLI, at user scope |
-| Cursor, Kiro, OpenCode | In the agent's config file |
+| Cursor, Kiro, OpenCode, VS Code | In the agent's config file |
 | Kilo Code | Not registered; the skill only |
 | Any other agent | `mimry install` prints the snippet to add to its MCP settings |
 
@@ -68,4 +68,23 @@ Check the result with:
 
 ```bash
 mimry install --platform cursor --status
+```
+
+## GitHub Copilot in VS Code
+
+Install MIMRY for GitHub Copilot in VS Code with:
+
+```bash
+mimry install --platform vscode
+```
+
+This installs the MIMRY skill at `~/.copilot/skills/mimry/SKILL.md` and adds the local MCP server to the `servers` section of your VS Code user `mcp.json`.
+That file is at `%APPDATA%\Code\User\mcp.json` on Windows, `~/Library/Application Support/Code/User/mcp.json` on macOS, and `$XDG_CONFIG_HOME/Code/User/mcp.json` (default `~/.config/Code/User/mcp.json`) on Linux.
+The skill path is shared with GitHub Copilot CLI, so uninstalling either one removes the skill for both.
+Add `--project` to install the skill at `.github/skills/mimry/` in the current repository instead.
+Add `--always-on` with `--project` to write the MIMRY section to `.github/copilot-instructions.md`, which Copilot reads.
+Check the result with:
+
+```bash
+mimry install --platform vscode --status
 ```

@@ -483,3 +483,147 @@ def test_cursor_installed_skill_frontmatter(mcp_test_fixture):
             fields[key] = value
     assert fields["name"] == skill.parent.name == "mimry"
     assert fields["description"].strip()
+
+
+@pytest.fixture
+def vscode_profile(mcp_test_fixture, monkeypatch):
+    """Point VS Code's user profile folder into the fake home."""
+    profile = mcp_test_fixture["fake_home"] / "AppData" / "Roaming" / "Code" / "User"
+    monkeypatch.setattr(installer, "_vscode_user_dir", lambda: profile)
+    return profile
+
+
+def test_vscode_global_install_writes_skill_and_keeps_other_servers(
+    mcp_test_fixture, vscode_profile
+):
+    """VS Code global install: writes the skill at ~/.copilot and
+    servers.mimry in the profile mcp.json, keeping other servers and
+    unrelated keys."""
+    fixture = mcp_test_fixture
+    fake_home = fixture["fake_home"]
+    fake_mcp_server = fixture["fake_mcp_server"]
+
+    mcp_path = vscode_profile / "mcp.json"
+    mcp_path.parent.mkdir(parents=True, exist_ok=True)
+    mcp_path.write_text(
+        json.dumps({"servers": {"other": {"command": "other-mcp"}}, "someOtherKey": "value"})
+        + "\n"
+    )
+
+    installer.install_skill("vscode", project=False, root=fixture["tmp_path"])
+
+    assert (fake_home / ".copilot" / "skills" / "mimry" / "SKILL.md").is_file()
+    data = json.loads(mcp_path.read_text())
+    assert data["servers"]["mimry"] == {
+        "type": "stdio",
+        "command": str(fake_mcp_server),
+        "args": [],
+    }
+    assert data["servers"]["other"] == {"command": "other-mcp"}
+    assert data["someOtherKey"] == "value"
+
+
+def test_vscode_uninstall_removes_only_mimry_server(mcp_test_fixture, vscode_profile):
+    """VS Code global uninstall: removes servers.mimry and leaves the
+    other servers in the profile mcp.json."""
+    fixture = mcp_test_fixture
+
+    mcp_path = vscode_profile / "mcp.json"
+    mcp_path.parent.mkdir(parents=True, exist_ok=True)
+    mcp_path.write_text(json.dumps({"servers": {"other": {"command": "other-mcp"}}}) + "\n")
+
+    installer.install_skill("vscode", project=False, root=fixture["tmp_path"])
+    installer.uninstall_skill("vscode", project=False, root=fixture["tmp_path"])
+
+    data = json.loads(mcp_path.read_text())
+    assert "mimry" not in data["servers"]
+    assert data["servers"] == {"other": {"command": "other-mcp"}}
+
+
+def test_install_status_for_vscode_after_install_and_uninstall(mcp_test_fixture, vscode_profile):
+    """VS Code install status: mcp True after install, False after
+    global uninstall."""
+    root = mcp_test_fixture["tmp_path"]
+
+    installer.install_skill("vscode", project=False, root=root)
+    assert installer.install_status("vscode", project=False, root=root)["mcp"] is True
+
+    installer.uninstall_skill("vscode", project=False, root=root)
+    assert installer.install_status("vscode", project=False, root=root)["mcp"] is False
+
+
+def test_vscode_project_always_on_writes_and_removes_copilot_instructions(
+    mcp_test_fixture, vscode_profile
+):
+    """VS Code --project --always-on: writes the project skill and a
+    MIMRY section in .github/copilot-instructions.md, creating .github.
+    Uninstall with --always-on removes only that section, and removes
+    the file when nothing else is left in it."""
+    root = mcp_test_fixture["tmp_path"]
+    repo = root / "repo"
+    repo.mkdir()
+    instructions = repo / ".github" / "copilot-instructions.md"
+
+    installer.install_skill("vscode", project=True, root=repo, always_on=True)
+
+    assert (repo / ".github" / "skills" / "mimry" / "SKILL.md").is_file()
+    assert "## MIMRY" in instructions.read_text(encoding="utf-8")
+    assert installer._has_always_on(repo, installer.platforms()["vscode"])
+
+    installer.uninstall_skill("vscode", project=True, root=repo, always_on=True)
+
+    assert not (repo / ".github" / "skills" / "mimry" / "SKILL.md").exists()
+    assert not instructions.exists()
+
+    # A repo with its own instructions keeps them when the section goes.
+    instructions.parent.mkdir(exist_ok=True)
+    team_rules = "# Team rules\n\nUse tabs.\n"
+    instructions.write_text(team_rules, encoding="utf-8")
+    installer.install_skill("vscode", project=True, root=repo, always_on=True)
+    installer.uninstall_skill("vscode", project=True, root=repo, always_on=True)
+
+    assert instructions.read_text(encoding="utf-8") == team_rules
+    assert not installer._has_always_on(repo, installer.platforms()["vscode"])
+
+
+def test_vscode_mcp_json_with_comment_is_left_untouched(mcp_test_fixture, vscode_profile, capsys):
+    """VS Code mcp.json that is not plain JSON (it has a // comment):
+    file bytes unchanged, the snippet is printed instead."""
+    fixture = mcp_test_fixture
+
+    mcp_path = vscode_profile / "mcp.json"
+    mcp_path.parent.mkdir(parents=True, exist_ok=True)
+    mcp_path.write_text('// user servers\n{"servers": {}}\n', encoding="utf-8")
+    original_bytes = mcp_path.read_bytes()
+
+    installer.install_skill("vscode", project=False, root=fixture["tmp_path"])
+
+    assert mcp_path.read_bytes() == original_bytes
+    out = capsys.readouterr().out
+    assert '"servers"' in out
+    assert '"mimry"' in out
+    assert '"type": "stdio"' in out
+
+
+def test_vscode_user_dir_per_os(mcp_test_fixture, monkeypatch):
+    """VS Code profile folder: AppData on Windows, Library on macOS and
+    ~/.config (or XDG_CONFIG_HOME) on Linux."""
+    fake_home = mcp_test_fixture["fake_home"]
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    monkeypatch.setattr(installer.sys, "platform", "win32")
+    assert installer._vscode_user_dir() == fake_home / "AppData" / "Roaming" / "Code" / "User"
+    monkeypatch.setenv("APPDATA", str(fake_home / "Roaming"))
+    assert installer._vscode_user_dir() == fake_home / "Roaming" / "Code" / "User"
+
+    monkeypatch.setattr(installer.sys, "platform", "darwin")
+    assert (
+        installer._vscode_user_dir()
+        == fake_home / "Library" / "Application Support" / "Code" / "User"
+    )
+
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    assert installer._vscode_user_dir() == fake_home / ".config" / "Code" / "User"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(fake_home / "xdg"))
+    assert installer._vscode_user_dir() == fake_home / "xdg" / "Code" / "User"
