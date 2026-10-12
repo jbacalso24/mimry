@@ -205,10 +205,10 @@ Structural agreement alone is not enough. The digest can match while the ranking
 an agent actually reads, or the pack it is handed, has moved — so rankings and
 context are compared as first-class fields, not folded into one opaque hash.
 
-CI runs the matrix on Linux, macOS, and Windows across Python 3.11–3.13. Each of
-the 9 cells uploads its full evidence, and `determinism-aggregate` requires an
-artifact from **every** expected cell before comparing: a platform that produced
-nothing is a failure, not silent agreement. Divergence prints the first
+CI runs the matrix on Linux, macOS, and Windows with Python 3.11, plus Python 3.13
+on Linux. Each cell must equal the committed golden values, so every cell agrees
+with every other, and each cell is a required check: a platform that did not run
+blocks the merge rather than reading as agreement. A mismatch prints the first
 differing field (`rankings[2].reason`, `contextLines[41]`, …) rather than two
 hashes.
 

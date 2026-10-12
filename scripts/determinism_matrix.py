@@ -141,9 +141,8 @@ def run_worker(root: str, out: str) -> int:
         "rankings": rankings,
         "contextLines": context_lines,
     }
-    # Per-field digests travel to the aggregate CI job so a divergence
-    # names the field that moved instead of only reporting "the hash
-    # differs".
+    # Per-field digests let a divergence name the field that moved
+    # instead of only reporting "the hash differs".
     payload["rankingsDigest"] = _digest_of(rankings)
     payload["contextDigest"] = _digest_of(context_lines)
     Path(out).write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
@@ -254,9 +253,6 @@ def main() -> int:
     parser.add_argument(
         "--update-golden", action="store_true", help="Rewrite the committed golden digest"
     )
-    parser.add_argument(
-        "--emit", help="Also write this platform's digest to a JSON file for CI aggregation"
-    )
     args = parser.parse_args()
 
     if args.worker:
@@ -291,25 +287,6 @@ def main() -> int:
         print(f"context digest    {canonical['contextDigest']}")
         print(f"permutations      {len(PERMUTATIONS)} identical")
         print(f"platform          {sys.platform} / python {sys.version.split()[0]}")
-
-        if args.emit:
-            # Carry the full evidence, not just the hashes: the
-            # aggregate job needs the raw values to print a field-level
-            # diff when a platform disagrees.
-            Path(args.emit).write_text(
-                json.dumps(
-                    {
-                        "platform": sys.platform,
-                        "python": sys.version.split()[0],
-                        **canonical,
-                        "rankings": baseline["rankings"],
-                        "contextLines": baseline["contextLines"],
-                    },
-                    indent=2,
-                    sort_keys=True,
-                ),
-                encoding="utf-8",
-            )
 
         if args.update_golden:
             GOLDEN.write_text(

@@ -89,7 +89,7 @@ Install the built wheel into a clean environment and smoke-test `mimry --help`. 
    uv run python scripts/agent_usefulness_benchmark.py --validate-report benchmarks/result.core.json
    ```
 
-   The committed report records a hash of the source, so any source edit, even a comment, fails `tests/test_benchmark_quality_gate.py` and the `benchmark-gate` CI job until it is regenerated.
+   The committed report records a hash of the source, so any source edit, even a comment, fails `tests/test_benchmark_quality_gate.py` and the benchmark step in CI until it is regenerated.
    It can be generated on any platform.
    Run `git diff benchmarks/result.core.json` before committing: unless your change is meant to affect retrieval, only `retrieval_source_sha256` and timings should change.
    If rankings or quality metrics moved, say so in the pull request and why.
@@ -114,7 +114,7 @@ Install the built wheel into a clean environment and smoke-test `mimry --help`. 
    - documentation updates for user-facing changes.
 
 9. CI must be green before review is complete.
-   It runs lint, the tests and the determinism matrix on Linux, macOS and Windows with Python 3.11–3.13, plus the benchmark gate.
+   It runs lint, the tests and the determinism matrix on Linux, macOS and Windows with Python 3.11, plus Python 3.13 on Linux, and the benchmark gate.
    A green matrix does not replace review.
    To pick up newer `main` commits, rebase and update your branch:
 
