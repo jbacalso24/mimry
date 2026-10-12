@@ -1,7 +1,42 @@
 # Commands in detail
 
-The [README](../README.md#commands) lists every command.
-This page covers filters, pagination, diagnostics and plan trees.
+Every command, then the details of filters, pagination, diagnostics and plan trees.
+
+## All commands
+
+Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons.
+
+| Command | Use it to |
+|---|---|
+| `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
+| `mimry find "<query>"` | Rank files in the current indexed directory and its descendants; `--everywhere` searches the whole repository and explicit `--path-glob` overrides the default scope. Repeat `--language`, `--path-glob`, or `--exclude-glob`, and page with `--offset`/`--limit` (`--semantic` blends fuzzy matches; `--snippets` adds bounded, live-source excerpts) |
+| `mimry related "<query>"` | Find files connected through the graph |
+| `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
+| `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |
+| `mimry context "<task>"` | Write a context pack without the preflight checks |
+| `mimry explain "<task>"` | Files, key symbols, and how they connect |
+| `mimry path <a> <b>` | Shortest relationship path between two files or symbols |
+| `mimry why <file> --query "<task>"` | Why a file ranks for a query |
+| `mimry route "<task>"` | Recommend an agent role (`--json` for tools) |
+| `mimry brief "<task>" --agent <role>` | Write a role-specific brief |
+| `mimry init` / `mimry index` | Set up a repo and build the index |
+| `mimry reindex` / `mimry refresh` | Update the index (`--full` re-parses everything) |
+| `mimry status` | Is the index current? (`--verify` re-hashes every file) |
+| `mimry doctor` | Read-only install, parser, index, and cache diagnostics (`--json` for tools) |
+| `mimry watch` | Poll for changes and refresh when they settle |
+| `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`) |
+| `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back |
+| `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
+| `mimry plan ...` | Store and render explicit plan trees |
+| `mimry mcp` | Run the MCP server (same as `mimry-mcp`) |
+| `mimry adapters` | List the file-type adapters |
+| `mimry install` / `mimry uninstall` | Manage agent skills |
+| `mimry digest` | Print a canonical digest of the index |
+| `mimry report` | Print the graph report, with its Suggested Questions |
+| `mimry export --format {html,graphml,cypher,obsidian}` | Write the graph as an HTML viewer, GraphML, Cypher, or an Obsidian vault |
+| `mimry cache wipe --current` | Delete this repo's cached index |
+
+Use `mimry --root /path/to/repo <command>` to target another repo.
 
 ## Filtering and paging `find`
 

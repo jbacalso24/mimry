@@ -14,7 +14,7 @@ MIMRY is an early public alpha. Focused bug fixes, portability improvements, pri
 
 Requirements:
 
-- Python 3.11–3.13
+- Python 3.11 to 3.14
 - [`uv`](https://docs.astral.sh/uv/)
 - Git
 
@@ -24,6 +24,18 @@ cd mimry
 uv sync --locked
 uv run pre-commit install
 ```
+
+Install the CLI from your checkout so edits take effect immediately:
+
+```bash
+uv tool install --editable .
+```
+
+An editable install picks up code changes, but not dependency changes.
+After a pull that changes the dependencies in `pyproject.toml`, run `uv tool upgrade mimry`; `mimry status` names any that are missing.
+Do not reinstall with `uv tool install --force` instead: on Windows, while any `mimry-mcp` is running, it stops at the first locked file and leaves a half-removed install.
+
+`uv run mimry-integration-smoke` runs a real MCP stdio round trip plus isolated Claude Code and Codex registration checks, without touching your normal agent configuration.
 
 Run the local release floor before submitting:
 
