@@ -224,18 +224,12 @@ def _digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def benchmark_input_digests(
-    cases_path: Path, fixture: Path, *, source_root: Path | None = None
-) -> dict[str, str]:
-    """Bind evidence to fixture, cases and retrieval source bytes."""
-    source_root = Path(__file__).resolve().parent if source_root is None else source_root
-    source = hashlib.sha256()
-    for path in sorted(source_root.rglob("*.py")):
-        source.update(path.relative_to(source_root).as_posix().encode("utf-8"))
-        # Git may materialize text with native line endings. Provenance
-        # is about source content, not checkout EOL policy, so hash
-        # normalized text.
-        source.update(path.read_text(encoding="utf-8").encode("utf-8"))
+def benchmark_input_digests(cases_path: Path, fixture: Path) -> dict[str, str]:
+    """Bind evidence to the fixture and cases.
+
+    Not to the source: CI reruns the benchmark on every change and
+    compares its scores with the committed report.
+    """
     cases = json.loads(cases_path.read_text(encoding="utf-8"))
     return {
         "fixture_sha256": _digest(fixture),
@@ -244,7 +238,6 @@ def benchmark_input_digests(
                 "utf-8"
             )
         ).hexdigest(),
-        "retrieval_source_sha256": source.hexdigest(),
     }
 
 
@@ -501,7 +494,6 @@ def deterministic_projection(report: dict[str, Any]) -> dict[str, Any]:
         "claim_boundary",
         "fixture_sha256",
         "cases_sha256",
-        "retrieval_source_sha256",
         "repeat",
         "thresholds",
         "state",

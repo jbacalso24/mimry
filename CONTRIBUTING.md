@@ -82,17 +82,17 @@ Install the built wheel into a clean environment and smoke-test `mimry --help`. 
 4. Run the [release floor](#development-setup).
    At minimum, `ruff format --check`, `ruff check` and `pytest -q` must pass.
 
-5. If you changed any file under `src/mimry/`, regenerate the benchmark evidence and commit it with your change:
+5. If your change moves retrieval scores, regenerate the benchmark evidence and commit it with your change:
 
    ```bash
    uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph --out benchmarks/result.core.json
    uv run python scripts/agent_usefulness_benchmark.py --validate-report benchmarks/result.core.json
    ```
 
-   The committed report records a hash of the source, so any source edit, even a comment, fails `tests/test_benchmark_quality_gate.py` and the benchmark step in CI until it is regenerated.
+   CI reruns the benchmark on every pull request and fails if its scores differ from the committed report, so you only need this when that step fails.
+   A change that leaves every score the same needs no report update.
    It can be generated on any platform.
-   Run `git diff benchmarks/result.core.json` before committing: unless your change is meant to affect retrieval, only `retrieval_source_sha256` and timings should change.
-   If rankings or quality metrics moved, say so in the pull request and why.
+   Say in the pull request which rankings or quality metrics moved, and why.
 
 6. If the determinism gate fails because your change intentionally changes canonical output, update the golden values with `uv run python scripts/determinism_matrix.py --update-golden` and explain the semantic change in the pull request.
    Never update them only to make a red gate pass (see [`docs/determinism.md`](docs/determinism.md)).
