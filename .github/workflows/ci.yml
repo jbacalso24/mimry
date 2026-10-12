@@ -120,8 +120,7 @@ jobs:
 
       # Too slow for every cell, so it runs once, but it is not informational:
       # a ranking or context-pack regression that clears the determinism gate
-      # still has to fail here. It runs on 3.13 because Python 3.12 made float
-      # sum() compensated, so 3.11 differs from the baseline in the last digit.
+      # still has to fail here.
       - name: Run the benchmark and require PASS
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         run: |

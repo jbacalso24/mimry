@@ -45,9 +45,9 @@ def token_proxy(text: str) -> int:
 
 def ndcg_at_k(paths: list[str], grades: dict[str, int], k: int = 5) -> float:
     gains = [grades.get(path, 0) for path in paths[:k]]
-    dcg = sum((2**grade - 1) / math.log2(rank + 2) for rank, grade in enumerate(gains))
+    dcg = math.fsum((2**grade - 1) / math.log2(rank + 2) for rank, grade in enumerate(gains))
     ideal = sorted(grades.values(), reverse=True)[:k]
-    idcg = sum((2**grade - 1) / math.log2(rank + 2) for rank, grade in enumerate(ideal))
+    idcg = math.fsum((2**grade - 1) / math.log2(rank + 2) for rank, grade in enumerate(ideal))
     return dcg / idcg if idcg else 1.0
 
 
@@ -335,8 +335,8 @@ def evaluate(
     abstention = [case for case in case_reports if case["expect_empty"]]
     retrieved_slots = sum(min(5, len(case["paths"])) for case in positive)
     aggregates = {
-        "ndcg_at_5": sum(c["ndcg_at_5"] for c in positive) / len(positive),
-        "recall_at_5": sum(c["recall_at_5"] for c in positive) / len(positive),
+        "ndcg_at_5": math.fsum(c["ndcg_at_5"] for c in positive) / len(positive),
+        "recall_at_5": math.fsum(c["recall_at_5"] for c in positive) / len(positive),
         "primary_hit_at_3": sum(c["primary_hit_at_3"] for c in positive) / len(positive),
         "decoy_rate_at_5": sum(c["decoys_at_5"] for c in positive) / max(1, retrieved_slots),
         "abstention_accuracy": sum(bool(c["abstained"]) for c in abstention)
@@ -454,8 +454,8 @@ def validate_report(report: dict[str, Any], cases_path: Path, fixture: Path) -> 
     abstention = [case for case in stored_cases if case["expect_empty"]]
     retrieved_slots = sum(min(5, len(case["paths"])) for case in positive)
     recomputed_aggregates = {
-        "ndcg_at_5": sum(case["ndcg_at_5"] for case in positive) / len(positive),
-        "recall_at_5": sum(case["recall_at_5"] for case in positive) / len(positive),
+        "ndcg_at_5": math.fsum(case["ndcg_at_5"] for case in positive) / len(positive),
+        "recall_at_5": math.fsum(case["recall_at_5"] for case in positive) / len(positive),
         "primary_hit_at_3": sum(case["primary_hit_at_3"] for case in positive) / len(positive),
         "decoy_rate_at_5": sum(case["decoys_at_5"] for case in positive) / max(1, retrieved_slots),
         "abstention_accuracy": sum(bool(case["abstained"]) for case in abstention)
