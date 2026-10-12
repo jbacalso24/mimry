@@ -46,6 +46,7 @@ from .scanner import (
     body_terms,
     read_snapshot,
     scan_stats,
+    worktree_fingerprint,
 )
 from .security import is_text, sanitize_data
 from .semantic import build_semantic_index, file_semantic_chunks
@@ -799,6 +800,10 @@ def write_index(root, ptr, *, full: bool = False):
             ptr = {**ptr, "indexPath": str(base), "lastIndexedAt": None}
             ptr.pop("generationId", None)
 
+        # Read before any file is scanned: a change made during the scan
+        # then differs from this fingerprint and forces the next check
+        # to walk the tree.
+        fingerprint = worktree_fingerprint(root)
         _cleanup_generations(root, base, ptr)
         previous = None if full or not ptr.get("generationId") else Path(ptr["indexPath"])
         record: dict = {}
@@ -828,6 +833,12 @@ def write_index(root, ptr, *, full: bool = False):
             unread = sum(f.get("parse_status") == MISSING_DEPENDENCY for f in files)
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
+                # Nothing to publish, but the tree git sees may have
+                # changed, so record its fingerprint for the fast path.
+                unchanged = {**ptr, "worktreeFingerprint": fingerprint}
+                if fingerprint is None:
+                    unchanged.pop("worktreeFingerprint")
+                save_pointer(root, unchanged)
                 return {
                     **kept,
                     "changes": changes,
@@ -977,7 +988,11 @@ def write_index(root, ptr, *, full: bool = False):
                 "generationId": generation_id,
                 "lastIndexedAt": indexed_at,
                 "schemaVersion": SCHEMA_VERSION,
+                "worktreeFingerprint": fingerprint,
             }
+            if fingerprint is None:
+                # ptr may carry the previous generation's fingerprint.
+                published.pop("worktreeFingerprint")
             save_pointer(root, published)
             register_root(published)
             _cleanup_generations(root, base, published)

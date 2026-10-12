@@ -1333,7 +1333,7 @@ def test_context_reindexes_a_stale_index_first(tmp_path):
     assert "Reindexed first - 1 file changed" in res.stdout
 
 
-def test_find_on_a_stale_index_does_not_reindex(tmp_path):
+def test_find_on_a_stale_index_reindexes_first(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
@@ -1348,8 +1348,27 @@ def test_find_on_a_stale_index_does_not_reindex(tmp_path):
     res = run_cli(repo, cache, "find", "find marker auth session")
 
     assert res.returncode == 0
-    assert "Reindexed first" not in res.stdout
-    assert run_cli(repo, cache, "status").returncode == 2
+    assert "Reindexed first" in res.stdout
+    assert run_cli(repo, cache, "status").returncode == 0
+
+
+def test_find_from_a_subfolder_reindexes_the_repo_first(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graph_artifacts(repo)
+    target = repo / "src" / "auth" / "session.py"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\ndef find_marker():\n    return True\n",
+        encoding="utf-8",
+    )
+
+    res = run_cli_from_cwd(repo / "src" / "auth", cache, "find", "find marker auth session")
+
+    assert res.returncode == 0, res.stderr
+    assert "Reindexed first" in res.stdout
+    assert run_cli(repo, cache, "status").returncode == 0
 
 
 def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):

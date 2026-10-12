@@ -63,6 +63,7 @@ from .plan import (
     write_plan_output,
 )
 from .routing import route_payload, verification_commands, write_brief
+from .scanner import worktree_fingerprint
 from .search import find_rows
 from .security import (
     filter_index_records,
@@ -651,10 +652,16 @@ def refresh_if_stale(root: Path) -> dict | None:
 
     Returns the index stats, or None when the index was current or
     MIMRY is not set up. Call it before taking the shared reader lock:
-    indexing takes the lock exclusively.
+    indexing takes the lock exclusively. When git sees the same tree
+    the index recorded, the full walk is skipped.
     """
     with active_index_pointer(root) as active:
-        if active is None or index_freshness(root, active)["state"] != "stale":
+        if active is None:
+            return None
+        recorded = active.get("worktreeFingerprint")
+        if recorded and recorded == worktree_fingerprint(root):
+            return None  # git sees the same tree that was indexed
+        if index_freshness(root, active)["state"] != "stale":
             return None
     return write_index(root, require(root, validate=False))
 
@@ -671,13 +678,21 @@ def _change_summary(stats: dict) -> str:
     return counted or "nothing changed"
 
 
+def _indexed_root(start: Path) -> Path:
+    """The nearest folder at or above start that has an index."""
+    return next(
+        (folder for folder in (start, *start.parents) if pointer_file(folder).is_file()),
+        start,
+    )
+
+
 def _fresh_index(command):
     """Reindex first when files changed since the last index."""
 
     @wraps(command)
     def guarded(a):
         started = time.perf_counter()
-        stats = refresh_if_stale(Path(a.root).resolve())
+        stats = refresh_if_stale(_indexed_root(Path(a.root).resolve()))
         if stats is not None and not getattr(a, "json", False):
             ui.ok(
                 f"Reindexed first - {_change_summary(stats)}"
@@ -1411,6 +1426,7 @@ def _print_search(heading: str, query: str, rows: list[dict], *, verbose: bool) 
     _print_results(rows, verbose=verbose)
 
 
+@_fresh_index
 def cmd_semantic(a):
     root = Path(a.root).resolve()
     query = sanitize_query(getattr(a, "query", None) or "")
@@ -1446,12 +1462,10 @@ def cmd_semantic(a):
         return 0
 
 
+@_fresh_index
 def cmd_find(a):
     start = Path(getattr(a, "find_directory", a.root)).resolve()
-    root = next(
-        (folder for folder in (start, *start.parents) if pointer_file(folder).is_file()),
-        start,
-    )
+    root = _indexed_root(start)
     # Pin the owning generation, not an unindexed child directory.
     # Keep the original scope when main retries after a schema rebuild.
     a.find_directory = start
@@ -1526,6 +1540,7 @@ def _find_in_directory(a, root, start):
     return 0
 
 
+@_fresh_index
 @_index_reader
 def cmd_related(a):
     root = Path(a.root).resolve()
@@ -1897,6 +1912,7 @@ def symbol_matches(ptr: dict, name: str) -> list[dict]:
     ]
 
 
+@_fresh_index
 @_index_reader
 def cmd_symbol(a):
     ptr = require(Path(a.root).resolve())
