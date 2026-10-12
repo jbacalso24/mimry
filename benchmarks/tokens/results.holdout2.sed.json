@@ -4,17 +4,17 @@
     "read_budget": 10,
     "success": {
       "grep": 27,
-      "mimry": 29
+      "mimry": 31
     },
     "tokens_total": {
       "grep": 2445558,
-      "mimry": 1543388
+      "mimry": 1777520
     },
-    "savings_vs_grep_pct": 36.9,
+    "savings_vs_grep_pct": 27.3,
     "both_succeeded": 24,
-    "savings_vs_grep_pct_both_succeeded": 42.1,
+    "savings_vs_grep_pct_both_succeeded": 39.8,
     "median_task_savings_vs_grep_pct": 45.5,
-    "median_x_fewer_than_reading_whole_repo": 20.2,
+    "median_x_fewer_than_reading_whole_repo": 16.7,
     "reads": "sed",
     "window": 100
   },
@@ -36,13 +36,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 56141,
-        "search_tokens": 1709,
+        "tokens": 50438,
+        "search_tokens": 1674,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 8763,
+        "preflight_ms": 2697
       }
     },
     {
@@ -62,13 +64,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 43029,
-        "search_tokens": 1535,
+        "tokens": 43258,
+        "search_tokens": 1764,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 5416,
+        "preflight_ms": 2242
       }
     },
     {
@@ -88,13 +92,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 3798,
-        "search_tokens": 1774,
+        "tokens": 4123,
+        "search_tokens": 2099,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 8868,
+        "preflight_ms": 2324
       }
     },
     {
@@ -114,13 +120,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 91871,
-        "search_tokens": 1765,
+        "tokens": 104533,
+        "search_tokens": 1813,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 4283,
+        "preflight_ms": 2374
       }
     },
     {
@@ -140,13 +148,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 23254,
-        "search_tokens": 1580,
+        "tokens": 23551,
+        "search_tokens": 1877,
         "reads": 6,
         "first_gold_read": 6,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 4135,
+        "preflight_ms": 2420
       }
     },
     {
@@ -166,13 +176,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 97724,
-        "search_tokens": 1872,
+        "tokens": 91695,
+        "search_tokens": 1956,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 4527,
+        "preflight_ms": 3483
       }
     },
     {
@@ -192,13 +204,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 2972,
-        "search_tokens": 1582,
+        "tokens": 3116,
+        "search_tokens": 1726,
         "reads": 2,
         "first_gold_read": 2,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 4479,
+        "preflight_ms": 2315
       }
     },
     {
@@ -218,13 +232,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 42876,
-        "search_tokens": 1577,
-        "reads": 10,
-        "first_gold_read": null,
-        "gold_found": 0,
-        "success": false,
-        "gold_missed": 0
+        "tokens": 7857,
+        "search_tokens": 1930,
+        "reads": 5,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 4914,
+        "preflight_ms": 2194
       }
     },
     {
@@ -244,13 +260,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 9928,
-        "search_tokens": 1791,
+        "tokens": 10209,
+        "search_tokens": 2072,
         "reads": 2,
         "first_gold_read": 2,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 4019,
+        "preflight_ms": 1623
       }
     },
     {
@@ -271,13 +289,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 53294,
-        "search_tokens": 1829,
+        "tokens": 53553,
+        "search_tokens": 2088,
         "reads": 10,
         "first_gold_read": 4,
         "gold_found": 1,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2583,
+        "preflight_ms": 1791
       }
     },
     {
@@ -298,13 +318,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 17305,
-        "search_tokens": 1649,
+        "tokens": 17705,
+        "search_tokens": 2049,
         "reads": 4,
         "first_gold_read": 2,
         "gold_found": 2,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2811,
+        "preflight_ms": 1624
       }
     },
     {
@@ -325,13 +347,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 29935,
-        "search_tokens": 1924,
+        "tokens": 30322,
+        "search_tokens": 2311,
         "reads": 5,
         "first_gold_read": 4,
         "gold_found": 2,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 3288,
+        "preflight_ms": 1546
       }
     },
     {
@@ -351,13 +375,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 15493,
-        "search_tokens": 1722,
+        "tokens": 15782,
+        "search_tokens": 2011,
         "reads": 8,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2645,
+        "preflight_ms": 1520
       }
     },
     {
@@ -378,13 +404,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 20300,
-        "search_tokens": 2056,
+        "tokens": 20609,
+        "search_tokens": 2365,
         "reads": 3,
         "first_gold_read": 2,
         "gold_found": 2,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2926,
+        "preflight_ms": 1868
       }
     },
     {
@@ -405,13 +433,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 42855,
-        "search_tokens": 1783,
+        "tokens": 43151,
+        "search_tokens": 2079,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2748,
+        "preflight_ms": 1696
       }
     },
     {
@@ -431,13 +461,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 6220,
-        "search_tokens": 2090,
+        "tokens": 6424,
+        "search_tokens": 2294,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 3141,
+        "preflight_ms": 1639
       }
     },
     {
@@ -457,13 +489,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 1161,
-        "search_tokens": 1079,
+        "tokens": 1522,
+        "search_tokens": 1440,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2516,
+        "preflight_ms": 2133
       }
     },
     {
@@ -483,13 +517,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 19923,
-        "search_tokens": 1290,
+        "tokens": 20191,
+        "search_tokens": 1558,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 1
+        "gold_missed": 1,
+        "index_ms": 1992,
+        "preflight_ms": 1516
       }
     },
     {
@@ -510,13 +546,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 19017,
-        "search_tokens": 1227,
+        "tokens": 19082,
+        "search_tokens": 1548,
         "reads": 5,
         "first_gold_read": 4,
         "gold_found": 2,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2780,
+        "preflight_ms": 1747
       }
     },
     {
@@ -536,13 +574,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 13512,
-        "search_tokens": 1237,
+        "tokens": 13832,
+        "search_tokens": 1557,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2701,
+        "preflight_ms": 3625
       }
     },
     {
@@ -562,13 +602,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 18196,
-        "search_tokens": 1237,
+        "tokens": 18484,
+        "search_tokens": 1525,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2814,
+        "preflight_ms": 1723
       }
     },
     {
@@ -588,13 +630,15 @@
         "gold_missed": 1
       },
       "mimry": {
-        "tokens": 44780,
-        "search_tokens": 1320,
+        "tokens": 45106,
+        "search_tokens": 1646,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 1
+        "gold_missed": 1,
+        "index_ms": 4779,
+        "preflight_ms": 1724
       }
     },
     {
@@ -614,13 +658,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 19929,
-        "search_tokens": 1328,
+        "tokens": 20126,
+        "search_tokens": 1525,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2476,
+        "preflight_ms": 2588
       }
     },
     {
@@ -640,13 +686,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 8802,
-        "search_tokens": 1263,
+        "tokens": 9061,
+        "search_tokens": 1522,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 2588,
+        "preflight_ms": 1835
       }
     },
     {
@@ -666,13 +714,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 27922,
-        "search_tokens": 1514,
-        "reads": 10,
-        "first_gold_read": null,
-        "gold_found": 0,
-        "success": false,
-        "gold_missed": 0
+        "tokens": 6298,
+        "search_tokens": 1904,
+        "reads": 6,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 12595,
+        "preflight_ms": 2348
       }
     },
     {
@@ -692,13 +742,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 5571,
-        "search_tokens": 1781,
+        "tokens": 5800,
+        "search_tokens": 2010,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 6218,
+        "preflight_ms": 2622
       }
     },
     {
@@ -718,13 +770,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 3434,
-        "search_tokens": 1533,
+        "tokens": 3692,
+        "search_tokens": 1791,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 6100,
+        "preflight_ms": 2524
       }
     },
     {
@@ -746,13 +800,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 2388,
-        "search_tokens": 1521,
+        "tokens": 2499,
+        "search_tokens": 1632,
         "reads": 6,
         "first_gold_read": 1,
         "gold_found": 3,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 6557,
+        "preflight_ms": 2505
       }
     },
     {
@@ -772,13 +828,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 9570,
-        "search_tokens": 1768,
+        "tokens": 10188,
+        "search_tokens": 1964,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 11427,
+        "preflight_ms": 4169
       }
     },
     {
@@ -798,13 +856,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 44372,
-        "search_tokens": 1635,
+        "tokens": 65094,
+        "search_tokens": 1789,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 10040,
+        "preflight_ms": 3515
       }
     },
     {
@@ -824,13 +884,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 11103,
-        "search_tokens": 1808,
+        "tokens": 11240,
+        "search_tokens": 1945,
         "reads": 3,
         "first_gold_read": 3,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 10347,
+        "preflight_ms": 2558
       }
     },
     {
@@ -850,13 +912,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 8994,
-        "search_tokens": 1715,
+        "tokens": 9243,
+        "search_tokens": 1964,
         "reads": 2,
         "first_gold_read": 2,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 5900,
+        "preflight_ms": 2706
       }
     },
     {
@@ -876,13 +940,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 27070,
-        "search_tokens": 1418,
+        "tokens": 27434,
+        "search_tokens": 1782,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 5889,
+        "preflight_ms": 2193
       }
     },
     {
@@ -902,13 +968,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 37585,
-        "search_tokens": 1395,
+        "tokens": 37894,
+        "search_tokens": 1704,
         "reads": 3,
         "first_gold_read": 3,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 4342,
+        "preflight_ms": 1987
       }
     },
     {
@@ -928,13 +996,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 134877,
-        "search_tokens": 1434,
+        "tokens": 135202,
+        "search_tokens": 1759,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 4418,
+        "preflight_ms": 2095
       }
     },
     {
@@ -954,13 +1024,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 11948,
-        "search_tokens": 1481,
+        "tokens": 12932,
+        "search_tokens": 1762,
         "reads": 2,
         "first_gold_read": 2,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 4557,
+        "preflight_ms": 2319
       }
     },
     {
@@ -980,13 +1052,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 16381,
-        "search_tokens": 1415,
+        "tokens": 16681,
+        "search_tokens": 1715,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 3764,
+        "preflight_ms": 3113
       }
     },
     {
@@ -1006,13 +1080,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 4762,
-        "search_tokens": 1435,
+        "tokens": 5041,
+        "search_tokens": 1714,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 3533,
+        "preflight_ms": 2343
       }
     },
     {
@@ -1034,13 +1110,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 106464,
-        "search_tokens": 1289,
+        "tokens": 106766,
+        "search_tokens": 1591,
         "reads": 10,
         "first_gold_read": 1,
         "gold_found": 2,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 3531,
+        "preflight_ms": 2130
       }
     },
     {
@@ -1062,13 +1140,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 35405,
-        "search_tokens": 1386,
+        "tokens": 35683,
+        "search_tokens": 1664,
         "reads": 8,
         "first_gold_read": 1,
         "gold_found": 3,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 5327,
+        "preflight_ms": 2224
       }
     },
     {
@@ -1089,13 +1169,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 14576,
-        "search_tokens": 1890,
+        "tokens": 270771,
+        "search_tokens": 1819,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 14405,
+        "preflight_ms": 3212
       }
     },
     {
@@ -1116,13 +1198,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 284366,
-        "search_tokens": 2019,
+        "tokens": 284480,
+        "search_tokens": 2133,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 9770,
+        "preflight_ms": 3270
       }
     },
     {
@@ -1143,13 +1227,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 49091,
-        "search_tokens": 1591,
+        "tokens": 49116,
+        "search_tokens": 1616,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
         "success": false,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 11030,
+        "preflight_ms": 4171
       }
     },
     {
@@ -1170,13 +1256,15 @@
         "gold_missed": 0
       },
       "mimry": {
-        "tokens": 5194,
-        "search_tokens": 1809,
-        "reads": 4,
+        "tokens": 7736,
+        "search_tokens": 1784,
+        "reads": 5,
         "first_gold_read": 1,
         "gold_found": 2,
         "success": true,
-        "gold_missed": 0
+        "gold_missed": 0,
+        "index_ms": 13549,
+        "preflight_ms": 2488
       }
     }
   ]

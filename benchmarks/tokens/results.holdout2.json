@@ -4,17 +4,17 @@
     "read_budget": 10,
     "success": {
       "grep": 28,
-      "mimry": 31
+      "mimry": 33
     },
     "tokens_total": {
       "grep": 2358844,
-      "mimry": 1417787
+      "mimry": 1622047
     },
-    "savings_vs_grep_pct": 39.9,
+    "savings_vs_grep_pct": 31.2,
     "both_succeeded": 25,
-    "savings_vs_grep_pct_both_succeeded": 36.7,
-    "median_task_savings_vs_grep_pct": 46.0,
-    "median_x_fewer_than_reading_whole_repo": 22.2
+    "savings_vs_grep_pct_both_succeeded": 33.5,
+    "median_task_savings_vs_grep_pct": 45.4,
+    "median_x_fewer_than_reading_whole_repo": 20.6
   },
   "tasks": [
     {
@@ -33,12 +33,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 70273,
-        "search_tokens": 1709,
+        "tokens": 63552,
+        "search_tokens": 1674,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
-        "success": false
+        "success": false,
+        "index_ms": 7025,
+        "preflight_ms": 1708
       }
     },
     {
@@ -57,12 +59,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 54147,
-        "search_tokens": 1535,
+        "tokens": 54376,
+        "search_tokens": 1764,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 3162,
+        "preflight_ms": 1617
       }
     },
     {
@@ -81,12 +85,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 3616,
-        "search_tokens": 1774,
+        "tokens": 3941,
+        "search_tokens": 2099,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 5800,
+        "preflight_ms": 2089
       }
     },
     {
@@ -105,12 +111,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 87794,
-        "search_tokens": 1765,
+        "tokens": 89991,
+        "search_tokens": 1813,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
-        "success": false
+        "success": false,
+        "index_ms": 5111,
+        "preflight_ms": 2146
       }
     },
     {
@@ -129,12 +137,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 23654,
-        "search_tokens": 1580,
+        "tokens": 23951,
+        "search_tokens": 1877,
         "reads": 6,
         "first_gold_read": 6,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 3563,
+        "preflight_ms": 1750
       }
     },
     {
@@ -153,12 +163,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 88116,
-        "search_tokens": 1872,
+        "tokens": 81404,
+        "search_tokens": 1956,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 3315,
+        "preflight_ms": 1771
       }
     },
     {
@@ -177,12 +189,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 2972,
-        "search_tokens": 1582,
+        "tokens": 3116,
+        "search_tokens": 1726,
         "reads": 2,
         "first_gold_read": 2,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 3046,
+        "preflight_ms": 1704
       }
     },
     {
@@ -201,12 +215,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 69673,
-        "search_tokens": 1577,
-        "reads": 10,
-        "first_gold_read": null,
-        "gold_found": 0,
-        "success": false
+        "tokens": 14472,
+        "search_tokens": 1930,
+        "reads": 5,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": true,
+        "index_ms": 2986,
+        "preflight_ms": 1601
       }
     },
     {
@@ -225,12 +241,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 7884,
-        "search_tokens": 1791,
+        "tokens": 8165,
+        "search_tokens": 2072,
         "reads": 2,
         "first_gold_read": 2,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 5548,
+        "preflight_ms": 1558
       }
     },
     {
@@ -250,12 +268,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 41509,
-        "search_tokens": 1829,
+        "tokens": 41768,
+        "search_tokens": 2088,
         "reads": 10,
         "first_gold_read": 4,
         "gold_found": 1,
-        "success": false
+        "success": false,
+        "index_ms": 4008,
+        "preflight_ms": 1600
       }
     },
     {
@@ -275,12 +295,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 19311,
-        "search_tokens": 1649,
+        "tokens": 19711,
+        "search_tokens": 2049,
         "reads": 4,
         "first_gold_read": 2,
         "gold_found": 2,
-        "success": true
+        "success": true,
+        "index_ms": 2579,
+        "preflight_ms": 1412
       }
     },
     {
@@ -300,12 +322,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 23479,
-        "search_tokens": 1924,
+        "tokens": 23866,
+        "search_tokens": 2311,
         "reads": 5,
         "first_gold_read": 4,
         "gold_found": 2,
-        "success": true
+        "success": true,
+        "index_ms": 3146,
+        "preflight_ms": 1488
       }
     },
     {
@@ -324,12 +348,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 29168,
-        "search_tokens": 1722,
+        "tokens": 29457,
+        "search_tokens": 2011,
         "reads": 8,
         "first_gold_read": null,
         "gold_found": 0,
-        "success": false
+        "success": false,
+        "index_ms": 3243,
+        "preflight_ms": 1505
       }
     },
     {
@@ -349,12 +375,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 15203,
-        "search_tokens": 2056,
+        "tokens": 15512,
+        "search_tokens": 2365,
         "reads": 3,
         "first_gold_read": 2,
         "gold_found": 2,
-        "success": true
+        "success": true,
+        "index_ms": 2556,
+        "preflight_ms": 1398
       }
     },
     {
@@ -374,12 +402,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 33686,
-        "search_tokens": 1783,
+        "tokens": 33982,
+        "search_tokens": 2079,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
-        "success": false
+        "success": false,
+        "index_ms": 2560,
+        "preflight_ms": 1430
       }
     },
     {
@@ -398,12 +428,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 7010,
-        "search_tokens": 2090,
+        "tokens": 7214,
+        "search_tokens": 2294,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 2857,
+        "preflight_ms": 1463
       }
     },
     {
@@ -422,12 +454,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 1161,
-        "search_tokens": 1079,
+        "tokens": 1522,
+        "search_tokens": 1440,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 2189,
+        "preflight_ms": 1413
       }
     },
     {
@@ -446,12 +480,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 4270,
-        "search_tokens": 1290,
+        "tokens": 4538,
+        "search_tokens": 1558,
         "reads": 6,
         "first_gold_read": 6,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 1672,
+        "preflight_ms": 1280
       }
     },
     {
@@ -471,12 +507,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 20765,
-        "search_tokens": 1227,
+        "tokens": 21086,
+        "search_tokens": 1548,
         "reads": 5,
         "first_gold_read": 4,
         "gold_found": 2,
-        "success": true
+        "success": true,
+        "index_ms": 2569,
+        "preflight_ms": 1275
       }
     },
     {
@@ -495,12 +533,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16065,
-        "search_tokens": 1237,
+        "tokens": 16385,
+        "search_tokens": 1557,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 1825,
+        "preflight_ms": 1429
       }
     },
     {
@@ -519,12 +559,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16071,
-        "search_tokens": 1237,
+        "tokens": 16359,
+        "search_tokens": 1525,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 1841,
+        "preflight_ms": 1468
       }
     },
     {
@@ -543,12 +585,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16138,
-        "search_tokens": 1320,
+        "tokens": 16464,
+        "search_tokens": 1646,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 1741,
+        "preflight_ms": 1387
       }
     },
     {
@@ -567,12 +611,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16119,
-        "search_tokens": 1328,
+        "tokens": 16316,
+        "search_tokens": 1525,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 1838,
+        "preflight_ms": 1313
       }
     },
     {
@@ -591,12 +637,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16160,
-        "search_tokens": 1263,
+        "tokens": 16419,
+        "search_tokens": 1522,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 1989,
+        "preflight_ms": 1348
       }
     },
     {
@@ -615,12 +663,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 35238,
-        "search_tokens": 1514,
-        "reads": 10,
-        "first_gold_read": null,
-        "gold_found": 0,
-        "success": false
+        "tokens": 8554,
+        "search_tokens": 1904,
+        "reads": 6,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": true,
+        "index_ms": 11946,
+        "preflight_ms": 2264
       }
     },
     {
@@ -639,12 +689,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 5571,
-        "search_tokens": 1781,
+        "tokens": 5800,
+        "search_tokens": 2010,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 4327,
+        "preflight_ms": 1874
       }
     },
     {
@@ -663,12 +715,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 2510,
-        "search_tokens": 1533,
+        "tokens": 2768,
+        "search_tokens": 1791,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 6505,
+        "preflight_ms": 2239
       }
     },
     {
@@ -689,12 +743,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 2370,
-        "search_tokens": 1521,
+        "tokens": 2481,
+        "search_tokens": 1632,
         "reads": 6,
         "first_gold_read": 1,
         "gold_found": 3,
-        "success": true
+        "success": true,
+        "index_ms": 4581,
+        "preflight_ms": 2064
       }
     },
     {
@@ -713,12 +769,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 9797,
-        "search_tokens": 1768,
+        "tokens": 10527,
+        "search_tokens": 1964,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
-        "success": false
+        "success": false,
+        "index_ms": 7040,
+        "preflight_ms": 1919
       }
     },
     {
@@ -737,12 +795,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 35180,
-        "search_tokens": 1635,
+        "tokens": 60185,
+        "search_tokens": 1789,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 7199,
+        "preflight_ms": 3325
       }
     },
     {
@@ -761,12 +821,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 9242,
-        "search_tokens": 1808,
+        "tokens": 9379,
+        "search_tokens": 1945,
         "reads": 3,
         "first_gold_read": 3,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 10068,
+        "preflight_ms": 2373
       }
     },
     {
@@ -785,12 +847,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 7589,
-        "search_tokens": 1715,
+        "tokens": 7838,
+        "search_tokens": 1964,
         "reads": 2,
         "first_gold_read": 2,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 5459,
+        "preflight_ms": 2063
       }
     },
     {
@@ -809,12 +873,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 16796,
-        "search_tokens": 1418,
+        "tokens": 17160,
+        "search_tokens": 1782,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 5385,
+        "preflight_ms": 1653
       }
     },
     {
@@ -833,12 +899,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 24954,
-        "search_tokens": 1395,
+        "tokens": 25263,
+        "search_tokens": 1704,
         "reads": 3,
         "first_gold_read": 3,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 2580,
+        "preflight_ms": 1476
       }
     },
     {
@@ -857,12 +925,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 101103,
-        "search_tokens": 1434,
+        "tokens": 101428,
+        "search_tokens": 1759,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
-        "success": false
+        "success": false,
+        "index_ms": 2774,
+        "preflight_ms": 1793
       }
     },
     {
@@ -881,12 +951,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 10427,
-        "search_tokens": 1481,
+        "tokens": 10708,
+        "search_tokens": 1762,
         "reads": 2,
         "first_gold_read": 2,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 3658,
+        "preflight_ms": 1709
       }
     },
     {
@@ -905,12 +977,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 12393,
-        "search_tokens": 1415,
+        "tokens": 12693,
+        "search_tokens": 1715,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 2905,
+        "preflight_ms": 2023
       }
     },
     {
@@ -929,12 +1003,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 4010,
-        "search_tokens": 1435,
+        "tokens": 4289,
+        "search_tokens": 1714,
         "reads": 1,
         "first_gold_read": 1,
         "gold_found": 1,
-        "success": true
+        "success": true,
+        "index_ms": 3214,
+        "preflight_ms": 1810
       }
     },
     {
@@ -955,12 +1031,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 62764,
-        "search_tokens": 1289,
+        "tokens": 63066,
+        "search_tokens": 1591,
         "reads": 10,
         "first_gold_read": 1,
         "gold_found": 2,
-        "success": false
+        "success": false,
+        "index_ms": 3067,
+        "preflight_ms": 1715
       }
     },
     {
@@ -981,12 +1059,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 43583,
-        "search_tokens": 1386,
+        "tokens": 43861,
+        "search_tokens": 1664,
         "reads": 8,
         "first_gold_read": 1,
         "gold_found": 3,
-        "success": true
+        "success": true,
+        "index_ms": 4014,
+        "preflight_ms": 1525
       }
     },
     {
@@ -1006,12 +1086,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 12767,
-        "search_tokens": 1890,
+        "tokens": 268863,
+        "search_tokens": 1819,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
-        "success": false
+        "success": false,
+        "index_ms": 145227,
+        "preflight_ms": 2370
       }
     },
     {
@@ -1031,12 +1113,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 291982,
-        "search_tokens": 2019,
+        "tokens": 292096,
+        "search_tokens": 2133,
         "reads": 10,
         "first_gold_read": null,
         "gold_found": 0,
-        "success": false
+        "success": false,
+        "index_ms": 6731,
+        "preflight_ms": 2382
       }
     },
     {
@@ -1056,12 +1140,14 @@
         "success": true
       },
       "mimry": {
-        "tokens": 34795,
-        "search_tokens": 1591,
+        "tokens": 34820,
+        "search_tokens": 1616,
         "reads": 10,
         "first_gold_read": 10,
         "gold_found": 1,
-        "success": false
+        "success": false,
+        "index_ms": 7141,
+        "preflight_ms": 2221
       }
     },
     {
@@ -1081,12 +1167,14 @@
         "success": false
       },
       "mimry": {
-        "tokens": 10472,
-        "search_tokens": 1809,
-        "reads": 4,
+        "tokens": 16701,
+        "search_tokens": 1784,
+        "reads": 5,
         "first_gold_read": 1,
         "gold_found": 2,
-        "success": true
+        "success": true,
+        "index_ms": 10157,
+        "preflight_ms": 2231
       }
     }
   ]
