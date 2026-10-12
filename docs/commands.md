@@ -25,7 +25,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry doctor` | Read-only install, parser, index, and cache diagnostics (`--json` for tools) |
 | `mimry watch` | Poll for changes and refresh when they settle |
 | `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`); the post-commit hook also records feedback from the commit, and re-running `mimry git-hooks` upgrades existing hooks |
-| `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back; `--from-commit [REV]` records a commit's changed files against the last preflight before it |
+| `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back; `feedback stats` also shows, for the last 30 days, how many preflights ran, how many commits had a preflight first, and how many of those held a changed file in the preflight's top five; `--from-commit [REV]` records a commit's changed files against the last preflight before it |
 | `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
 | `mimry plan ...` | Store and render explicit plan trees |
 | `mimry mcp` | Run the MCP server (same as `mimry-mcp`) |

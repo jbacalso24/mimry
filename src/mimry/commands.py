@@ -88,6 +88,7 @@ from .storage import (
     register_root,
     save_pointer,
 )
+from .usage import log_preflight, usage_stats
 
 
 def _git_toplevel(root: Path) -> Path | None:
@@ -1233,6 +1234,7 @@ def _write_context_pack(
     atomic_write_text(context_file(root), text)
     _write_legacy_context_redirect(root)
     _prune_task_packs(root, keep=pack_path)
+    log_preflight(root, rows)
     return rows, pack_path
 
 
@@ -1395,11 +1397,55 @@ def _cmd_feedback_from_commit(root: Path, rev: str) -> int:
     return 0
 
 
+USAGE_DAYS = 30
+
+
+def _percent(part: int, whole: int) -> int:
+    """Whole percent, halves rounding up."""
+    return (100 * part + whole // 2) // whole
+
+
+def _print_usage(root: Path) -> None:
+    usage = usage_stats(root, days=USAGE_DAYS)
+    commits = usage["commits"]
+    matched = usage["commits_with_preflight"]
+    hits = usage["top_five_hits"]
+    rows = [("Preflights", f"{usage['preflights']:,}")]
+    reasons = []
+    if matched is None:
+        reasons.append("Not a git repository.")
+    elif not commits:
+        reasons.append(f"No commits in the last {USAGE_DAYS} days.")
+    else:
+        rows.append(
+            (
+                "Commits",
+                f"{matched:,} of {commits:,} had a preflight first"
+                f" ({_percent(matched, commits)}%)",
+            )
+        )
+        if matched:
+            rows.append(
+                (
+                    "Top five",
+                    f"held a changed file in {hits:,} of {matched:,} ({_percent(hits, matched)}%)",
+                )
+            )
+        else:
+            reasons.append("No commit had a preflight first.")
+    ui.title(f"Last {usage['days']} days")
+    ui.table(rows)
+    for reason in reasons:
+        ui.detail(reason)
+
+
 def _cmd_feedback_active(a, root: Path, ptr: dict, action: str | None):
     idx = Path(ptr["indexPath"])
     verbose = getattr(a, "verbose", False)
 
     if action == "stats":
+        _print_usage(root)
+        print()
         stats = feedback_stats(idx, ptr["rootId"])
         if not stats["records"]:
             print("No feedback recorded yet.")
