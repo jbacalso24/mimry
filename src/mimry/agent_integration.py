@@ -94,6 +94,7 @@ def _client_env(sandbox: Path, *, client: str) -> dict[str, str]:
 
 
 async def _protocol_smoke(repo: Path, cache: Path, server_command: list[str]) -> dict[str, Any]:
+    repo = repo.resolve()
     try:
         from fastmcp import Client
         from fastmcp.client.transports import StdioTransport
@@ -235,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     with tempfile.TemporaryDirectory(prefix="mimry-agent-integration-") as raw_sandbox:
-        sandbox = Path(raw_sandbox)
+        sandbox = Path(raw_sandbox).resolve()
         repo = sandbox / "repo"
         source = repo / "src" / "entrypoint.py"
         source.parent.mkdir(parents=True)

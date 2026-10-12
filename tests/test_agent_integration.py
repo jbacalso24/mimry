@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from mimry.agent_integration import _client_env, _herdr_status, _protocol_smoke
 
 
@@ -24,6 +26,35 @@ def test_real_mcp_stdio_protocol_round_trip_is_home_isolated(tmp_path: Path, mon
     assert result["state"] == "PASS"
     assert result["find_paths"][0] == "src/entrypoint.py"
     assert not list(operator_home.rglob("*"))
+
+
+def test_protocol_smoke_accepts_a_windows_short_path(tmp_path: Path):
+    if sys.platform != "win32":
+        pytest.skip("8.3 short path names exist only on Windows")
+
+    import asyncio
+    import ctypes
+
+    long_repo = tmp_path / "long-directory-name" / "repo"
+    source = long_repo / "src" / "entrypoint.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("def daily_agent_entrypoint():\n    return 'ready'\n", encoding="utf-8")
+    (long_repo / "README.md").write_text("# MCP short path fixture\n", encoding="utf-8")
+
+    buffer = ctypes.create_unicode_buffer(260)
+    ctypes.windll.kernel32.GetShortPathNameW(str(long_repo), buffer, 260)
+    short = buffer.value
+    if not short or short == str(long_repo):
+        pytest.skip("8.3 short names are disabled on this volume")
+    assert "~" in short
+
+    result = asyncio.run(
+        _protocol_smoke(
+            Path(short), tmp_path / "cache", [sys.executable, "-m", "mimry.mcp_server"]
+        )
+    )
+    assert result["state"] == "PASS"
+    assert Path(result["context"]) == Path(".mimry/mimry-out/context/latest.md")
 
 
 def test_external_client_environment_is_credential_free_and_sandboxed(tmp_path: Path, monkeypatch):
