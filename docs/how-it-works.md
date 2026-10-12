@@ -24,7 +24,7 @@ It is a generated artifact, not a source of truth.
 
 A context pack contains the query and index freshness, ranked files with reasons and the line ranges to read first, symbol hints, relationships, a suggested reading order, likely edit surfaces versus support files, risk notes for generated or sensitive paths, verification commands from the project's manifests and docs, and a final-report checklist.
 It uses relative paths and never includes full source or secret values.
-See [`docs/context-packs.md`](docs/context-packs.md) for the contract.
+See [`context-packs.md`](context-packs.md) for the contract.
 
 ### Graph exports
 

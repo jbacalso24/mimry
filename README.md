@@ -40,7 +40,7 @@ It works with Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, OpenCode and a
 On 48 real pull requests from six open-source projects, a scripted agent that started with MIMRY read **58% to 69% fewer tokens** than the same agent searching the code by keyword, and found every file the change needed in **32 tasks instead of 21**.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="mimry preflight in a terminal: it ranks the Flask files for a session cookie bug and names the lines to read first" width="100%">
+  <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/demo.gif" alt="mimry preflight in a terminal: it ranks the Flask files for a session cookie bug and names the lines to read first" width="100%">
 </p>
 
 ## Why coding agents need it
@@ -89,7 +89,7 @@ Each task is a real merged pull request, and the task text is its title.
 Two scripted agents get the same task and the same budget of 10 file reads, and the count stops once the agent has read every source file the pull request changed.
 "Without MIMRY" searches the code for the task's keywords and reads the files that match most; "with MIMRY" reads in the order the context pack gives.
 
-| How the agent reads a file | Tokens without MIMRY | Tokens with MIMRY | Fewer tokens | Tasks located without | Tasks located with |
+| How the agent reads a file | Tokens, without MIMRY | Tokens, with MIMRY | Saved | Located, without | Located, with |
 |---|---|---|---|---|---|
 | The whole file | 5,660,661 | **2,388,654** | **57.8%** | 21 / 48 | **32 / 48** |
 | `grep -n`, then a `sed` window around each match | 7,592,841 | **3,482,674** | **54.1%** | 19 / 48 | **30 / 48** |
