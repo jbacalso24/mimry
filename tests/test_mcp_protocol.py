@@ -50,10 +50,10 @@ def registry(monkeypatch):
     return fresh
 
 
-def _exchange(messages: list[dict]) -> list[dict]:
+def _exchange(messages: list[dict], selection=None) -> list[dict]:
     stdin = io.BytesIO("".join(json.dumps(m) + "\n" for m in messages).encode("utf-8"))
     stdout = io.BytesIO()
-    serve(INFO, lambda: None, stdin=stdin, stdout=stdout)
+    serve(INFO, lambda: None, stdin=stdin, stdout=stdout, selection=selection)
     return [json.loads(line) for line in stdout.getvalue().splitlines() if line]
 
 
@@ -151,6 +151,55 @@ def test_tools_call_fills_defaults_and_returns_structured_content(registry):
     assert result["structuredContent"] == {"echoed": "hi"}
     assert json.loads(result["content"][0]["text"]) == {"echoed": "hi"}
     assert "isError" not in result
+
+
+def _two_tools(registry):
+    @tool
+    def alpha(text: str) -> dict:
+        """First tool."""
+        return {"alpha": text}
+
+    @tool
+    def beta(text: str) -> dict:
+        """Second tool."""
+        return {"beta": text}
+
+
+def test_serve_without_a_selection_lists_every_registered_tool(registry):
+    _two_tools(registry)
+    replies = _exchange(
+        [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        ]
+    )
+    assert [tool["name"] for tool in replies[1]["result"]["tools"]] == ["alpha", "beta"]
+
+
+def test_a_registered_tool_outside_the_selection_is_an_unknown_tool(registry):
+    _two_tools(registry)
+    replies = _exchange(
+        [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "beta", "arguments": {"text": "x"}},
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "alpha", "arguments": {"text": "x"}},
+            },
+        ],
+        selection=lambda: ["alpha"],
+    )
+    assert [tool["name"] for tool in replies[1]["result"]["tools"]] == ["alpha"]
+    assert replies[2]["error"] == {"code": -32602, "message": "Unknown tool: beta"}
+    assert json.loads(replies[3]["result"]["content"][0]["text"]) == {"alpha": "x"}
 
 
 def test_tool_exceptions_become_error_results(registry):

@@ -107,6 +107,8 @@ async def _protocol_smoke(repo: Path, cache: Path, server_command: list[str]) ->
         raise SystemExit(2) from None
     env = _client_env(cache.parent, client="protocol")
     env["MIMRY_CACHE_HOME"] = str(cache)
+    # The smoke calls mimry_init and mimry_context, which are not core.
+    env["MIMRY_MCP_TOOLS"] = "all"
     transport = StdioTransport(server_command[0], server_command[1:], cwd=str(repo), env=env)
     async with Client(transport, timeout=30) as client:
         tools = await client.list_tools()

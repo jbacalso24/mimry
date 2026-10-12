@@ -106,4 +106,4 @@ Ship feature [node-...]
 `split` works on leaves only, and repeated `--child` arguments set sibling order.
 Trees are canonical versioned JSON under `.mimry/plans/`, written atomically.
 IDs, projections, and the semantic SHA-256 from `mimry plan digest` exclude paths, timestamps, locale, and formatting.
-MCP exposes read-only parity (`mimry_plan_tree`, `mimry_plan_check`, `mimry_plan_digest`, `mimry_plan_list`); changing a plan is CLI-only.
+With `MIMRY_MCP_TOOLS=all` (see the README's MCP setup), MCP exposes read-only parity (`mimry_plan_tree`, `mimry_plan_check`, `mimry_plan_digest`, `mimry_plan_list`); changing a plan is CLI-only.

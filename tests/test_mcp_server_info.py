@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 
@@ -20,7 +21,18 @@ from mimry.mcp_server import INSTRUCTIONS
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN_ADAPTERS = ROOT / "tests" / "fixtures" / "mcp_list_adapters_active.json"
 
-TOOL_NAMES = [
+CORE_TOOL_NAMES = [
+    "mimry_status",
+    "mimry_preflight",
+    "mimry_find",
+    "mimry_related",
+    "mimry_symbol",
+    "mimry_path",
+    "mimry_why",
+    "mimry_feedback",
+]
+
+ALL_TOOL_NAMES = [
     "mimry_list_adapters",
     "mimry_status",
     "mimry_reindex",
@@ -76,12 +88,19 @@ FIND_SCHEMA = {
 }
 
 
-def _env() -> dict[str, str]:
-    return {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+def _env(tools: str | None = None) -> dict[str, str]:
+    # An operator's MIMRY_MCP_TOOLS must not change these tests.
+    env = {key: value for key, value in os.environ.items() if key != "MIMRY_MCP_TOOLS"}
+    env["PYTHONPATH"] = str(ROOT / "src")
+    if tools is not None:
+        env["MIMRY_MCP_TOOLS"] = tools
+    return env
 
 
-def _transport() -> StdioTransport:
-    return StdioTransport(sys.executable, ["-m", "mimry.mcp_server"], cwd=str(ROOT), env=_env())
+def _transport(tools: str | None = None) -> StdioTransport:
+    return StdioTransport(
+        sys.executable, ["-m", "mimry.mcp_server"], cwd=str(ROOT), env=_env(tools)
+    )
 
 
 def _assert_mimry(name, version, instructions):
@@ -111,18 +130,27 @@ def test_discovery_names_mimry_its_version_and_when_to_use_it():
     _assert_mimry(info.name, info.version, instructions)
 
 
-def test_list_tools_returns_the_same_tools_in_the_same_order():
+def test_list_tools_lists_the_core_tools_by_default():
     async def listing():
         async with Client(_transport()) as client:
             return await client.list_tools()
 
     tools = asyncio.run(listing())
-    assert [tool.name for tool in tools] == TOOL_NAMES
+    assert [tool.name for tool in tools] == CORE_TOOL_NAMES
+
+
+def test_list_tools_with_all_returns_every_tool_in_the_same_order():
+    async def listing():
+        async with Client(_transport("all")) as client:
+            return await client.list_tools()
+
+    tools = asyncio.run(listing())
+    assert [tool.name for tool in tools] == ALL_TOOL_NAMES
 
 
 def test_find_input_schema_is_unchanged():
     async def listing():
-        async with Client(_transport()) as client:
+        async with Client(_transport("all")) as client:
             return await client.list_tools()
 
     tools = {tool.name: tool for tool in asyncio.run(listing())}
@@ -131,7 +159,7 @@ def test_find_input_schema_is_unchanged():
 
 def test_list_adapters_returns_the_same_structured_data():
     async def call():
-        async with Client(_transport()) as client:
+        async with Client(_transport("all")) as client:
             return await client.call_tool("mimry_list_adapters", {"active_only": True})
 
     result = asyncio.run(call())
@@ -150,7 +178,7 @@ def test_wrong_argument_type_is_a_tool_error_naming_the_argument():
     assert "query" in result.content[0].text
 
 
-def _exchange(messages: list) -> list[dict]:
+def _exchange_with_stderr(messages: list, tools: str | None = None) -> tuple[list[dict], str]:
     payload = b"".join(
         m if isinstance(m, bytes) else json.dumps(m).encode("utf-8") + b"\n" for m in messages
     )
@@ -159,12 +187,17 @@ def _exchange(messages: list) -> list[dict]:
         input=payload,
         capture_output=True,
         cwd=ROOT,
-        env=_env(),
+        env=_env(tools),
         timeout=180,
         check=False,
     )
     assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
-    return [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+    replies = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+    return replies, proc.stderr.decode("utf-8", "replace")
+
+
+def _exchange(messages: list, tools: str | None = None) -> list[dict]:
+    return _exchange_with_stderr(messages, tools)[0]
 
 
 def _init(version: str, request_id: int = 1) -> dict:
@@ -225,7 +258,8 @@ def test_a_2024_client_gets_no_structured_fields():
                 "method": "tools/call",
                 "params": {"name": "mimry_list_adapters", "arguments": {"active_only": True}},
             },
-        ]
+        ],
+        tools="all",
     )
     assert replies[0]["result"]["protocolVersion"] == "2024-11-05"
     tools = replies[1]["result"]["tools"]
@@ -233,6 +267,76 @@ def test_a_2024_client_gets_no_structured_fields():
     result = replies[2]["result"]
     assert "structuredContent" not in result
     assert "isError" not in result
+
+
+def _tools_listed(replies: list[dict]) -> list[str]:
+    return [tool["name"] for tool in replies[1]["result"]["tools"]]
+
+
+def test_a_tool_that_is_not_listed_by_default_is_an_unknown_tool():
+    replies = _exchange(
+        [
+            _init("2025-06-18"),
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "mimry_list_adapters", "arguments": {}},
+            },
+        ]
+    )
+    assert replies[1]["error"] == {"code": -32602, "message": "Unknown tool: mimry_list_adapters"}
+
+
+def test_mimry_mcp_tools_lists_exactly_the_named_tools():
+    replies = _exchange(
+        [_init("2025-06-18"), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}],
+        tools="mimry_find, mimry_path",
+    )
+    # Registration order, whatever order the names were given in.
+    assert _tools_listed(replies) == ["mimry_find", "mimry_path"]
+
+
+def test_an_unknown_name_in_mimry_mcp_tools_lists_the_core_tools_and_says_so():
+    replies, stderr = _exchange_with_stderr(
+        [_init("2025-06-18"), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}],
+        tools="mimry_find, mimry_nope",
+    )
+    assert _tools_listed(replies) == CORE_TOOL_NAMES
+    lines = [line for line in stderr.splitlines() if line.strip()]
+    assert len(lines) == 1, stderr
+    assert "mimry_nope" in lines[0]
+    assert "mimry_list_adapters" in lines[0]
+
+
+@pytest.mark.parametrize("keyword", ["all", "ALL", "All", " all "])
+def test_mimry_mcp_tools_all_is_case_insensitive(keyword):
+    replies = _exchange(
+        [_init("2025-06-18"), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}],
+        tools=keyword,
+    )
+    assert _tools_listed(replies) == ALL_TOOL_NAMES
+
+
+@pytest.mark.parametrize("keyword", ["core", "CORE", "Core"])
+def test_mimry_mcp_tools_core_is_case_insensitive(keyword):
+    replies = _exchange(
+        [_init("2025-06-18"), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}],
+        tools=keyword,
+    )
+    assert _tools_listed(replies) == CORE_TOOL_NAMES
+
+
+def test_the_default_tool_listing_is_under_half_the_size_of_the_full_one():
+    # Pins the cut without tiktoken: characters stand in for tokens.
+    def listing(tools: str | None) -> str:
+        replies = _exchange(
+            [_init("2025-06-18"), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}],
+            tools=tools,
+        )
+        return json.dumps(replies[1]["result"])
+
+    assert len(listing(None)) < len(listing("all")) / 2
 
 
 def test_importing_the_server_keeps_the_heavy_stack_out():

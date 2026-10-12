@@ -35,7 +35,7 @@ uv run mimry adapters
 uv run mimry adapters --active-only
 ```
 
-MCP tool:
+MCP tool (with `MIMRY_MCP_TOOLS=all`; the CLI is `mimry adapters --active-only`):
 
 ```text
 mimry_list_adapters(active_only?: bool)
@@ -90,4 +90,4 @@ Coding agents should use adapter info like a route table:
 - Setup/build question → include active `config-manifest` operating context alongside graph results.
 - Product/spec question → prefer `markdown-docs`.
 
-The MCP surface makes this visible to agents before they decide whether to call `mimry_find`, `mimry_context`, or fall back to direct file inspection.
+The MCP surface makes this visible to agents before they decide whether to call `mimry_find`, `mimry_context` (with `MIMRY_MCP_TOOLS=all`), or fall back to direct file inspection.

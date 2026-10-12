@@ -13,7 +13,7 @@ import sys
 import traceback
 import types
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any, NamedTuple
 
 # Newest first. The server answers with the client's version when it is
@@ -197,11 +197,30 @@ def _dumps(message: Any) -> str:
     return json.dumps(message, ensure_ascii=False, separators=(",", ":"))
 
 
+def registered_names() -> list[str]:
+    """Every registered tool name, in registration order."""
+    return list(_REGISTRY)
+
+
 class _Session:
-    def __init__(self, info: dict[str, Any], load_tools: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        info: dict[str, Any],
+        load_tools: Callable[[], None],
+        selection: Callable[[], Collection[str] | None] | None = None,
+    ) -> None:
         self.info = info
         self.load_tools = load_tools
+        self.selection = selection
         self.version = SUPPORTED_VERSIONS[0]
+
+    def _listed(self) -> dict[str, _Tool]:
+        """The tools this session lists and calls."""
+        self.load_tools()
+        chosen = self.selection() if self.selection is not None else None
+        return {
+            name: entry for name, entry in _REGISTRY.items() if chosen is None or name in chosen
+        }
 
     @property
     def structured(self) -> bool:
@@ -223,8 +242,9 @@ class _Session:
         if method == "ping":
             return {}
         if method == "tools/list":
-            self.load_tools()
-            return {"tools": [self._describe(name, entry) for name, entry in _REGISTRY.items()]}
+            return {
+                "tools": [self._describe(name, entry) for name, entry in self._listed().items()]
+            }
         if method == "tools/call":
             return self._call(params)
         raise _RpcError(METHOD_NOT_FOUND, f"Method not found: {method}")
@@ -240,16 +260,17 @@ class _Session:
         return described
 
     def _call(self, params: dict[str, Any]) -> dict[str, Any]:
-        self.load_tools()
+        listed = self._listed()
         name = params.get("name")
         arguments = params.get("arguments")
         if arguments is None:
             arguments = {}
         if not isinstance(arguments, dict):
             raise _RpcError(INVALID_PARAMS, "Invalid params: arguments must be an object")
-        if not isinstance(name, str) or name not in _REGISTRY:
+        # Not listed here means unknown, the same as unregistered.
+        if not isinstance(name, str) or name not in listed:
             raise _RpcError(INVALID_PARAMS, f"Unknown tool: {name}")
-        entry = _REGISTRY[name]
+        entry = listed[name]
         problem = validate(entry.schema, arguments)
         if problem:
             # A tool-level error, so the model can fix its arguments.
@@ -307,20 +328,26 @@ def serve(
     load_tools: Callable[[], None],
     stdin=None,
     stdout=None,
+    selection: Callable[[], Collection[str] | None] | None = None,
 ) -> None:
     """Answer requests from stdin until EOF.
 
-    `info` holds name, version and instructions. `load_tools` is called
-    before tools/list and tools/call and may block until the tools are
-    ready. With no streams given, sys.stdout is pointed at sys.stderr so
-    a stray print cannot corrupt the protocol.
+    `info` holds name, version and instructions.
+    `load_tools` is called before tools/list and tools/call and may
+    block until the tools are ready.
+    `selection` is called after that and returns the names of the tools
+    this session lists and calls. None, or no selection at all, means
+    every registered tool. It is a callable rather than a list because
+    the valid names are only known once `load_tools` has run.
+    With no streams given, sys.stdout goes to sys.stderr, so a stray
+    print cannot corrupt the protocol.
     """
     if stdin is None:
         stdin = sys.stdin.buffer
     if stdout is None:
         stdout = sys.stdout.buffer
         sys.stdout = sys.stderr
-    session = _Session(info, load_tools)
+    session = _Session(info, load_tools, selection)
     try:
         for raw in stdin:
             if not raw.strip():

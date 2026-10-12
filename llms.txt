@@ -14,7 +14,8 @@ Agent workflow in a repo:
 
 `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related` and `semantic` reindex first when files changed or MIMRY was upgraded; if another lookup reports the index is out of date, run `mimry reindex`. Piped output uses ASCII marks (`OK`, `!`, `x`); exit code 0 is ok, 1 is not set up, 2 is stale or an error. `mimry route "<task>" --json` returns structured data.
 
-Connect as an MCP server: `claude mcp add --scope user mimry -- mimry-mcp` (Claude Code), `codex mcp add mimry -- mimry-mcp` (Codex), or `{"mcpServers": {"mimry": {"command": "mimry-mcp"}}}` for other clients. Tools include `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_semantic`, `mimry_symbol`, `mimry_context`, `mimry_explain`, `mimry_path`, `mimry_why`, `mimry_route`, `mimry_brief`, `mimry_status`, `mimry_reindex`, and `mimry_feedback`; each accepts an optional `root`.
+Connect as an MCP server: `claude mcp add --scope user mimry -- mimry-mcp` (Claude Code), `codex mcp add mimry -- mimry-mcp` (Codex), or `{"mcpServers": {"mimry": {"command": "mimry-mcp"}}}` for other clients. By default the server lists 8 tools: `mimry_preflight`, `mimry_find`, `mimry_symbol`, `mimry_related`, `mimry_why`, `mimry_path`, `mimry_status` and `mimry_feedback`; each accepts an optional `root`.
+Set `MIMRY_MCP_TOOLS=all` to list every command as a tool, or give a comma-separated list of tool names. The other commands, such as `mimry route`, `mimry brief`, `mimry context` and `mimry reindex`, are CLI commands.
 
 ## Docs
 

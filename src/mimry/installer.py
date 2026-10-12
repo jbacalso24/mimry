@@ -143,20 +143,13 @@ _REFERENCES: dict[str, str] = {
         """Primary workflow tools:\n"""
         """\n"""
         """- `mimry_status(root?)`\n"""
-        """- `mimry_init(root?, root_type?, skip_graph?)`\n"""
-        """- `mimry_refresh(root?)`\n"""
         """- `mimry_preflight(query, root?, force_refresh?)`\n"""
-        """- `mimry_route(query, root?, limit?)`\n"""
-        """- `mimry_brief(query, agent, root?, limit?)`\n"""
-        """- `mimry_context(query, root?, semantic?)`\n"""
         """\n"""
         """Navigation and explanation tools:\n"""
         """\n"""
         """- `mimry_find(query, root?, limit?, semantic?)`\n"""
         """- `mimry_related(query, root?, limit?)`\n"""
         """- `mimry_symbol(name, root?)`\n"""
-        """- `mimry_semantic(query, root?, limit?)`\n"""
-        """- `mimry_explain(query, root?, limit?)`\n"""
         """- `mimry_path(source, target, root?)`\n"""
         """- `mimry_why(surface, query, root?, limit?)`\n"""
         """\n"""
@@ -164,7 +157,17 @@ _REFERENCES: dict[str, str] = {
         """\n"""
         """- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, """
         """ignored?, verification?, outcome?, notes?)`\n"""
-        """- `mimry_list_adapters(active_only?)`\n"""
+        """\n"""
+        """CLI commands (not MCP tools by default):\n"""
+        """\n"""
+        """- `mimry init`\n"""
+        """- `mimry refresh`\n"""
+        """- `mimry route "<task>"`\n"""
+        """- `mimry brief "<task>" --agent <role>`\n"""
+        """- `mimry context "<task>"`\n"""
+        """- `mimry semantic "<query>"`\n"""
+        """- `mimry explain "<task>"`\n"""
+        """- `mimry adapters --active-only`\n"""
         """\n"""
         """Rules:\n"""
         """\n"""
@@ -173,7 +176,8 @@ _REFERENCES: dict[str, str] = {
         """- Read the context pack preflight names (`context_path` over MCP) before editing.\n"""
         """- Where a result lists `ranges` or `Read first: lines X-Y`, read those lines (for"""
         """ example with an offset and a limit) before the rest of the file.\n"""
-        """- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n"""
+        """- Use `mimry_why`, or `mimry explain "<task>"` on the CLI,"""
+        """ when a ranking is surprising.\n"""
         """- Use `mimry_path` only as graph evidence; if no path is found, do not invent one.\n"""
         """- Use CLI fallback when MCP is unavailable or the agent host has not loaded the """
         """server.\n"""
@@ -650,21 +654,18 @@ Prefer precise queries: `auth session refresh expiry` beats `bug`; `Next.js app 
 If MCP tools are loaded, prefer them over shell for lookup/context/workflow:
 
 - `mimry_status`
-- `mimry_init`
-- `mimry_refresh`
 - `mimry_preflight`
-- `mimry_route`
-- `mimry_brief`
-- `mimry_context`
 - `mimry_find`
 - `mimry_related`
 - `mimry_symbol`
-- `mimry_semantic`
-- `mimry_explain`
 - `mimry_path`
 - `mimry_why`
 - `mimry_feedback`
-- `mimry_list_adapters`
+
+These are CLI commands, not MCP tools by default: `mimry init`, `mimry refresh`, `mimry route "<task>"`, `mimry brief "<task>" --agent <role>`, `mimry context "<task>"`, `mimry semantic "<query>"`, `mimry explain "<task>"`, `mimry adapters --active-only`.
+
+The MCP server lists 8 core tools by default: `mimry_status`, `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_path`, `mimry_why` and `mimry_feedback`.
+Set `MIMRY_MCP_TOOLS=all` in the server's environment to list every command as a tool.
 
 CLI fallback is fine when MCP is unavailable.
 
@@ -714,7 +715,7 @@ This project can use MIMRY local repo memory.
 Rules:
 - Start every task with `mimry preflight "<task>"` (or `mimry_preflight` when MCP tools are available) instead of exploring with grep or guessing where code lives.
 - For an exact string you already know, use `rg` (or `git grep`) directly; never plain `grep -r`.
-- Use `mimry brief "<task>" --agent <role>` or `mimry_brief` for delegation/handoff.
+- Use `mimry brief "<task>" --agent <role>` for delegation/handoff.
 - Read the context pack that preflight names (`context_path` over MCP) or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
 - Where a file lists `Read first: lines X-Y`, read those lines before the rest of the file.
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.

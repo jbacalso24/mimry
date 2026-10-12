@@ -242,8 +242,9 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     assert "mimry preflight" in body
     assert "mimry route" in body
     assert "mimry brief" in body
-    assert "mimry_context" in body
-    assert "mimry_route" in body
+    assert 'mimry context "<task>"' in body
+    assert 'mimry route "<task>"' in body
+    assert "MIMRY_MCP_TOOLS=all" in body
     assert "references/workflow.md" in body
     assert "$mimry" in body
     agents = repo / "AGENTS.md"
