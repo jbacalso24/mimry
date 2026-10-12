@@ -331,7 +331,7 @@ Filters, pagination, `doctor`, and plan trees are covered in [`docs/commands.md`
    For a task, it combines name, path, content, graph and symbol matches, and says why each file ranked.
    Imports it cannot resolve are dropped rather than guessed, so every relationship it shows is real.
 3. **Stay fresh.**
-   Like git, it trusts unchanged file metadata, so a reindex re-reads only the files that changed, and `preflight` reindexes first when anything did.
+   Like git, it trusts unchanged file metadata, so a reindex re-reads only the files that changed, and `preflight` and the lookups reindex first when anything did.
 4. **Learn.**
    `mimry feedback` records which files an agent actually used, and similar future tasks rank them higher.
 
