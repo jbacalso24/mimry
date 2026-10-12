@@ -37,7 +37,7 @@
 
 MIMRY is a command-line tool that indexes a code repository on your machine and tells an AI coding agent which files to read for a task, and which lines in them to read first.
 It works with Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, OpenCode and any other agent that can run a command, and agents that speak MCP can also reach it through its built-in MCP server.
-On 48 real pull requests from six open-source projects, a scripted agent that started with MIMRY read **58% to 69% fewer tokens** than the same agent searching the code by keyword, and found every file the change needed in **32 tasks instead of 21**.
+On 92 real pull requests from 12 open-source projects, a scripted agent that started with MIMRY read **48% to 67% fewer tokens** than the same agent searching the code by keyword, and found every file the change needed in **65 tasks instead of 49**.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/demo.gif" alt="mimry preflight in a terminal: it ranks the Flask files for a session cookie bug and names the lines to read first" width="100%">
@@ -91,17 +91,17 @@ Two scripted agents get the same task and the same budget of 10 file reads, and 
 
 | How the agent reads a file | Tokens, without MIMRY | Tokens, with MIMRY | Saved | Located, without | Located, with |
 |---|---|---|---|---|---|
-| The whole file | 5,660,661 | **2,388,654** | **57.8%** | 21 / 48 | **32 / 48** |
-| `grep -n`, then a `sed` window around each match | 7,592,841 | **3,482,674** | **54.1%** | 19 / 48 | **30 / 48** |
-| The lines MIMRY lists first, then the whole file if needed | 5,660,661 | **1,777,105** | **68.6%** | 21 / 48 | **32 / 48** |
+| The whole file | 8,019,505 | **4,010,701** | **50.0%** | 49 / 92 | **65 / 92** |
+| `grep -n`, then a `sed` window around each match | 10,038,399 | **5,260,194** | **47.6%** | 46 / 92 | **61 / 92** |
+| The lines MIMRY lists first, then the whole file if needed | 8,019,505 | **2,635,374** | **67.1%** | 49 / 92 | **65 / 92** |
 
-- The 48 tasks come from rich, echo, axios, clap, Polly and guzzle (Python, Go, JavaScript, Rust, C# and PHP), picked by a fixed rule before any run.
-- MIMRY was never tuned on them: each read mode was run once.
+- The 92 tasks are two frozen sets, picked by a fixed rule before any run: 44 from typer, uvicorn, viper, hono, hyper and retrofit, and 48 from rich, echo, axios, clap, Polly and guzzle, in Python, Go, TypeScript, JavaScript, Rust, Java, C# and PHP.
+- MIMRY was never tuned on them: each set is run once per version and read mode.
 - Tokens are counted with tiktoken's `o200k_base` encoding; indexing is not charged, because it uses no model tokens.
 - The agents are scripted, not language models, so the numbers measure where each search points, and a rerun gives the same counts.
-- guzzle is the weak spot: there MIMRY located fewer tasks than keyword search.
+- MIMRY does not win everywhere: in guzzle it located fewer tasks than keyword search, and in retrofit it read more tokens.
 
-Reproduce it (it clones the six repositories into the work directory):
+Reproduce a set (it clones that set's six repositories into the work directory; use `--set holdout2` for the other one):
 
 ```bash
 git clone https://github.com/jbacalso24/mimry.git
