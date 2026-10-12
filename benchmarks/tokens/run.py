@@ -41,7 +41,7 @@ repo root:
 
     uv run --with tiktoken python benchmarks/tokens/run.py \\
         --work C:/tmp/mimry-tokens \\
-        [--set dev|holdout|holdout2] [--reads full|sed|ranges]
+        [--set dev|holdout|holdout2|holdout3] [--reads full|sed|ranges]
 """
 
 from __future__ import annotations
@@ -53,6 +53,7 @@ import re
 import statistics
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import tiktoken
@@ -309,8 +310,12 @@ def mimry_agent(
     changed: dict[str, set[int]] | None = None,
 ) -> dict[str, object]:
     cli = [sys.executable, "-m", "mimry.cli", "--root", str(repo)]
+    started = time.perf_counter_ns()
     run([*cli, "index"], repo, env)
+    index_ms = (time.perf_counter_ns() - started) / 1_000_000
+    started = time.perf_counter_ns()
     printed = run([*cli, "preflight", task["task"]], repo, env)
+    preflight_ms = (time.perf_counter_ns() - started) / 1_000_000
     pack = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     order = re.findall(r"^### \d+\. `([^`]+)`", pack, flags=re.M)
     symbols: dict[str, list[int]] = {}
@@ -326,7 +331,7 @@ def mimry_agent(
                 return read_cost(repo, path), True
             return range_read(repo, path, listed[path], changed.get(path))
 
-    return walk(
+    result = walk(
         repo,
         task["gold"],
         tokens(printed) + tokens(pack),
@@ -335,6 +340,7 @@ def mimry_agent(
         read=read,
         then_whole=changed is not None,
     )
+    return result | {"index_ms": round(index_ms), "preflight_ms": round(preflight_ms)}
 
 
 def summarize(results: list[dict]) -> dict[str, object]:
@@ -377,7 +383,10 @@ def main() -> int:
         "--work", type=Path, required=True, help="Scratch directory for clones and the MIMRY cache"
     )
     parser.add_argument(
-        "--set", default="dev", choices=["dev", "holdout", "holdout2"], help="Task set to run"
+        "--set",
+        default="dev",
+        choices=["dev", "holdout", "holdout2", "holdout3"],
+        help="Task set to run",
     )
     parser.add_argument("--only", help="Run only task ids containing this text")
     parser.add_argument(

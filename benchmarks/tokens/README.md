@@ -34,7 +34,7 @@ A model-driven agent would choose its reads differently, so these numbers compar
 Tasks come from real merged pull requests, selected by the mechanical rule in [select_tasks.py](select_tasks.py), fixed before any result was seen:
 
 - newest merged pull requests first, scanning at most 300 per repository
-- only pull requests merged into the default branch, because one merged into another branch can lose its base commit when that branch is deleted
+- only pull requests whose merge commit is on the default branch, because one merged into a branch that was later deleted can lose its base commit
 - skip bot authors and housekeeping titles (bump, release, revert, docs, and similar)
 - the task text is the pull request title only, because the body often names the files outright
 - the gold set is the non-test source files the pull request modified, between 1 and 4 of them (added files cannot be found before they exist)
@@ -45,8 +45,11 @@ Before the first run, it started skipping tooling-only titles (lint, formatter, 
 When holdout2 was first run, one of its tasks could not be checked out: its pull request had been merged into a Dependabot branch that was since deleted, so its base commit no longer existed.
 The rule then started requiring the default branch, which replaced five of the 44 holdout2 tasks.
 The only holdout2 results seen by then were typer's, and no typer task changed.
+Selecting holdout3 then found no tasks in rich or clap and one in guzzle, because their older pull requests name a branch that is no longer the default: rich and clap renamed `master` to `main`, and guzzle merges into release branches that it merges forward.
+The rule now requires the pull request's merge commit to be on the default branch, which is what it was meant to check, and holdout3 was selected again before any run ([#34](https://github.com/jbacalso24/mimry/issues/34)).
+The earlier task files were selected with the old rule and are unchanged.
 
-There are three task sets, each from different repositories:
+There are four task sets, each from different repositories:
 
 - **dev**: 40 tasks from flask, httpx, cobra, zod and ripgrep.
   This set may be inspected while improving MIMRY.
@@ -55,6 +58,8 @@ There are three task sets, each from different repositories:
   It is now retired: it measured two versions, and its got tasks were then inspected to find the weakness the credential fixes address, so its numbers for the credential fixes are for reference only.
 - **holdout2**: 44 tasks from typer, uvicorn, viper, hono, hyper and retrofit (retrofit has only 4 qualifying pull requests among its newest 300).
   It was frozen before the credential fixes were measured and is run once per version, never to tune.
+- **holdout3**: 48 tasks from rich, echo, axios, clap, Polly and guzzle, the first set with C# and PHP.
+  The repositories were chosen and the tasks selected before any run, and it was run once, with MIMRY 0.3.1 and line-range reads.
 
 ## Results
 
@@ -173,6 +178,7 @@ For the rebase-merged tasks above, a gold file the last commit does not touch co
 |---|---|---|---|---|---|
 | dev, 40 tasks | line ranges, without the rank fix | 64.2% | 30 / 32 | 56.5% | 63.6% (27 tasks) |
 | dev, 40 tasks | line ranges, with the rank fix | 68.4% | 30 / 34 | 62.4% | 67.7% (29 tasks) |
+| holdout3, 48 tasks | 0.3.1 | 68.6% | 21 / 32 | 81.1% | 83.3% (19 tasks) |
 
 On dev, reading the listed ranges halves what MIMRY reads: 677,799 tokens against 0.3.0's 1,285,495 with whole-file reads, while grep reads 1,894,477.
 It locates one task fewer than with whole-file reads (32 against 33): in ripgrep#3472 the ranges missed the change in several of the four gold files, and the second reads used up the budget.
@@ -184,6 +190,10 @@ With whole-file reads this version saves 31.6% on dev and locates 33 tasks, agai
 holdout2 was not run for this change; it is run once per version, at release.
 With the rank fix above, MIMRY locates 34 tasks and reads 598,419 tokens, 68.4% fewer than grep.
 Per-task numbers for that run are in [results.dev.ranges.json](results.dev.ranges.json).
+
+On holdout3, never used to tune, MIMRY saves as much as on dev: 68.6% against 68.4%.
+It locates more tasks than grep in five of the six repositories, and fewer in guzzle (3 against 4).
+Per-task numbers are in [results.holdout3.ranges.json](results.holdout3.ranges.json).
 
 ## Whole-repository ratio
 

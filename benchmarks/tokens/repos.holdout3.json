@@ -1,0 +1,11 @@
+{
+  "tasks_per_repo": 8,
+  "repos": [
+    "Textualize/rich",
+    "labstack/echo",
+    "axios/axios",
+    "clap-rs/clap",
+    "App-vNext/Polly",
+    "guzzle/guzzle"
+  ]
+}

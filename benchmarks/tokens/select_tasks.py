@@ -4,8 +4,9 @@ The rule is mechanical and fixed before any result is seen, so tasks
 cannot be cherry-picked for MIMRY:
 
 - newest merged PRs first, scanning at most SCAN_LIMIT per repository
-- only PRs merged into the default branch; a PR merged into another
-  branch may have no surviving base commit
+- only PRs whose merge commit is on the default branch; a PR merged
+  into a branch that was deleted may have no surviving base commit
+  (a renamed default branch or a release branch merged forward counts)
 - skip bot authors and housekeeping titles (bump, release, revert, docs,
   ...), plus tooling-only titles (lint, formatter, codespell, cleanup)
   whose diffs touch files no task description could point to
@@ -17,7 +18,8 @@ cannot be cherry-picked for MIMRY:
   was before the change
 
 Requires an authenticated `gh` CLI. Usage: select_tasks.py
-[dev|holdout|holdout2]. Writes benchmarks/tokens/tasks.<set>.json.
+[dev|holdout|holdout2|holdout3]. Writes
+benchmarks/tokens/tasks.<set>.json.
 """
 
 from __future__ import annotations
@@ -51,6 +53,14 @@ def gh(path: str) -> object:
     return json.loads(out)
 
 
+def on_branch(repo: str, sha: str, branch: str) -> bool:
+    try:
+        status = gh(f"repos/{repo}/compare/{sha}...{branch}?per_page=1")["status"]
+    except subprocess.CalledProcessError:  # the commit no longer exists
+        return False
+    return status in {"ahead", "identical"}
+
+
 def is_source(path: str) -> bool:
     return Path(path).suffix in SOURCE_EXTENSIONS and not TEST_PATH.search(path)
 
@@ -68,11 +78,11 @@ def select(repo: str, per_repo: int) -> list[dict[str, object]]:
             title = pr["title"].strip()
             if not pr.get("merged_at") or not pr.get("merge_commit_sha"):
                 continue
-            if pr["base"]["ref"] != default_branch:
-                continue
             if pr["user"]["type"] == "Bot" or pr["user"]["login"].endswith("[bot]"):
                 continue
             if SKIP_TITLE.search(title) or len(re.findall(r"[A-Za-z]{2,}", title)) < 3:
+                continue
+            if not on_branch(repo, pr["merge_commit_sha"], default_branch):
                 continue
             files = gh(f"repos/{repo}/pulls/{pr['number']}/files?per_page=100")
             gold = sorted(

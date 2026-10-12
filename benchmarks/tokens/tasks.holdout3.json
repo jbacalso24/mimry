@@ -1,0 +1,508 @@
+[
+  {
+    "id": "Textualize/rich#4079",
+    "repo": "Textualize/rich",
+    "pr": 4079,
+    "task": "Inline table code",
+    "base": "19c67b9a3479841e9133bea94607c89ee931d3fc",
+    "gold": [
+      "rich/markdown.py"
+    ]
+  },
+  {
+    "id": "Textualize/rich#4075",
+    "repo": "Textualize/rich",
+    "pr": 4075,
+    "task": "empty with end",
+    "base": "1fc7cb210ae52eb099df39818ddb9569e5b14c7b",
+    "gold": [
+      "rich/console.py"
+    ]
+  },
+  {
+    "id": "Textualize/rich#4006",
+    "repo": "Textualize/rich",
+    "pr": 4006,
+    "task": "fix for infinite loop in split_graphemes",
+    "base": "27701029082052c6541031b6f139097230253900",
+    "gold": [
+      "rich/cells.py"
+    ]
+  },
+  {
+    "id": "Textualize/rich#3953",
+    "repo": "Textualize/rich",
+    "pr": 3953,
+    "task": "Fix ZWJ and edge cases",
+    "base": "1d402e0c59f8765e420a5a4440eb2fca7465d1ae",
+    "gold": [
+      "rich/cells.py"
+    ]
+  },
+  {
+    "id": "Textualize/rich#3942",
+    "repo": "Textualize/rich",
+    "pr": 3942,
+    "task": "Update to markdown styles",
+    "base": "c595fa95068dd2c5095d25446b2f0571bc0b3995",
+    "gold": [
+      "rich/default_styles.py",
+      "rich/markdown.py"
+    ]
+  },
+  {
+    "id": "Textualize/rich#3941",
+    "repo": "Textualize/rich",
+    "pr": 3941,
+    "task": "Fix typing for save_html, save_text, save_svg to accept PathLike",
+    "base": "a9c4aaba7ead5599d969aa4c8f3c6dae5549cef4",
+    "gold": [
+      "rich/console.py"
+    ]
+  },
+  {
+    "id": "Textualize/rich#3938",
+    "repo": "Textualize/rich",
+    "pr": 3938,
+    "task": "fix background style with soft wrap",
+    "base": "05ff970926cbd0b5d0acb6fc18cdbd1fc971e582",
+    "gold": [
+      "rich/console.py",
+      "rich/segment.py"
+    ]
+  },
+  {
+    "id": "Textualize/rich#3937",
+    "repo": "Textualize/rich",
+    "pr": 3937,
+    "task": "don't strip whitespace when soft_wrap is True",
+    "base": "05a6b9b17a7c778756187f15d6d4bf693db6345f",
+    "gold": [
+      "rich/text.py"
+    ]
+  },
+  {
+    "id": "labstack/echo#3160",
+    "repo": "labstack/echo",
+    "pr": 3160,
+    "task": "fix(router): removing a route with a custom method panics",
+    "base": "4f7bea5d2ad253d2d0fddb1382ae25be040a3d8b",
+    "gold": [
+      "router.go"
+    ]
+  },
+  {
+    "id": "labstack/echo#3157",
+    "repo": "labstack/echo",
+    "pr": 3157,
+    "task": "fix(router): grow PathValues for contexts created before a route with more params",
+    "base": "40c22f4bc57d4ea6aa323928c037c947890fe81c",
+    "gold": [
+      "router.go"
+    ]
+  },
+  {
+    "id": "labstack/echo#3133",
+    "repo": "labstack/echo",
+    "pr": 3133,
+    "task": "fix(router): share route syntax across routing operations",
+    "base": "eadbef28df3b293a7e7b39977ac949c5907fa559",
+    "gold": [
+      "route.go",
+      "router.go"
+    ]
+  },
+  {
+    "id": "labstack/echo#3129",
+    "repo": "labstack/echo",
+    "pr": 3129,
+    "task": "static: harden dot-segment check for backslashes, test non-validating custom fs.FS",
+    "base": "ba97b3f4a978f855b5b4a9c66cc69ea7e6fdb4d2",
+    "gold": [
+      "echo.go",
+      "middleware/static.go"
+    ]
+  },
+  {
+    "id": "labstack/echo#3113",
+    "repo": "labstack/echo",
+    "pr": 3113,
+    "task": "fix(router): keep escaped colon and parameter routes reachable",
+    "base": "b59b347c95f78066152782c21e3c315088b49c79",
+    "gold": [
+      "router.go"
+    ]
+  },
+  {
+    "id": "labstack/echo#3094",
+    "repo": "labstack/echo",
+    "pr": 3094,
+    "task": "fix(rfc9457): do not mutate a shared ProblemError",
+    "base": "90702e71a7cde342da70b1f97e8e6420c509f939",
+    "gold": [
+      "rfc9457.go"
+    ]
+  },
+  {
+    "id": "labstack/echo#3087",
+    "repo": "labstack/echo",
+    "pr": 3087,
+    "task": "fix(middleware): prevent BodyLimit bypass with contract-compliant readers",
+    "base": "bc4028f1d7cc373823de8b6eb057cd4a9d5fc85c",
+    "gold": [
+      "bind.go",
+      "json.go",
+      "middleware/body_limit.go"
+    ]
+  },
+  {
+    "id": "labstack/echo#3076",
+    "repo": "labstack/echo",
+    "pr": 3076,
+    "task": "refactor(middleware): clamp remaining tokens with max",
+    "base": "e552b4de75b640bc622411fe01eed33f7704c8a0",
+    "gold": [
+      "middleware/rate_limiter.go"
+    ]
+  },
+  {
+    "id": "axios/axios#11294",
+    "repo": "axios/axios",
+    "pr": 11294,
+    "task": "fix(http): decode percent-encoded Base64 data URLs",
+    "base": "28e9b84ac59c034260c1927f4a0b7c022b6b0071",
+    "gold": [
+      "lib/helpers/estimateDataURLDecodedBytes.js",
+      "lib/helpers/fromDataURI.js"
+    ]
+  },
+  {
+    "id": "axios/axios#11194",
+    "repo": "axios/axios",
+    "pr": 11194,
+    "task": "fix(fetch): apply the default cache mode only where the runtime accepts it",
+    "base": "18e7dfedf30c96e58652887f930642ae82e0130c",
+    "gold": [
+      "lib/adapters/fetch.js"
+    ]
+  },
+  {
+    "id": "axios/axios#11179",
+    "repo": "axios/axios",
+    "pr": 11179,
+    "task": "fix(fetch): preserve response size errors across runtime wrappers",
+    "base": "fbe2e8260c86961ff2319da8450f170ca4ae3866",
+    "gold": [
+      "index.d.ts",
+      "lib/adapters/fetch.js"
+    ]
+  },
+  {
+    "id": "axios/axios#11163",
+    "repo": "axios/axios",
+    "pr": 11163,
+    "task": "fix: normalize parsed protocols to lowercase",
+    "base": "6576f5753e26444d8d04b0a7c0b4d9d0a83bdaa0",
+    "gold": [
+      "lib/helpers/estimateDataURLDecodedBytes.js",
+      "lib/helpers/parseProtocol.js"
+    ]
+  },
+  {
+    "id": "axios/axios#11142",
+    "repo": "axios/axios",
+    "pr": 11142,
+    "task": "fix(AxiosError): inline the wrapped error stack for cause-unaware tooling",
+    "base": "a07c81a53c18684f72c5a47a5fc970c11797314f",
+    "gold": [
+      "lib/core/Axios.js",
+      "lib/core/AxiosError.js"
+    ]
+  },
+  {
+    "id": "axios/axios#11139",
+    "repo": "axios/axios",
+    "pr": 11139,
+    "task": "fix(interceptors): restore numeric-string interceptor IDs",
+    "base": "1a94bdbdf0518f3adbeada510b747aff80847ed7",
+    "gold": [
+      "lib/core/InterceptorManager.js"
+    ]
+  },
+  {
+    "id": "axios/axios#11138",
+    "repo": "axios/axios",
+    "pr": 11138,
+    "task": "fix(fromDataURI): accept case-insensitive base64 tokens",
+    "base": "057930bdb839201f2f99885c1626159f16890430",
+    "gold": [
+      "lib/helpers/estimateDataURLDecodedBytes.js",
+      "lib/helpers/fromDataURI.js"
+    ]
+  },
+  {
+    "id": "axios/axios#11134",
+    "repo": "axios/axios",
+    "pr": 11134,
+    "task": "fix(AxiosHeaders): store a header named __proto__ instead of writing through Object.prototype",
+    "base": "c4303eeb601d3d5914a0f425cc7539616fdc7ea7",
+    "gold": [
+      "lib/core/AxiosHeaders.js",
+      "lib/helpers/parseHeaders.js"
+    ]
+  },
+  {
+    "id": "clap-rs/clap#6526",
+    "repo": "clap-rs/clap",
+    "pr": 6526,
+    "task": "fix(clap_complete): Fix value escape in zsh completion",
+    "base": "e6adcc21a6b4ea285bd646e977884c8d653841b7",
+    "gold": [
+      "clap_complete/src/aot/shells/zsh.rs"
+    ]
+  },
+  {
+    "id": "clap-rs/clap#6519",
+    "repo": "clap-rs/clap",
+    "pr": 6519,
+    "task": "fix(complete): Make it easier to debug",
+    "base": "af3044228bd76a87a3f46a3c7c3343563c059527",
+    "gold": [
+      "clap_complete/src/engine/complete.rs"
+    ]
+  },
+  {
+    "id": "clap-rs/clap#6482",
+    "repo": "clap-rs/clap",
+    "pr": 6482,
+    "task": "fix(mangen): Hide hidden positionals from the SYNOPSIS",
+    "base": "8e50ec891e30cd2af4f9a62a405a5b7ee31aac4f",
+    "gold": [
+      "clap_mangen/src/render.rs"
+    ]
+  },
+  {
+    "id": "clap-rs/clap#6477",
+    "repo": "clap-rs/clap",
+    "pr": 6477,
+    "task": "fix(clap_complete_nushell): Set argument type to `directory` for `ValueHint::DirPath`",
+    "base": "4a622b4340d5e1fffff60c0ecefdc6882f738159",
+    "gold": [
+      "clap_complete_nushell/src/lib.rs"
+    ]
+  },
+  {
+    "id": "clap-rs/clap#6468",
+    "repo": "clap-rs/clap",
+    "pr": 6468,
+    "task": "fix(complete): Name the bash completion function after fn_name",
+    "base": "526c81906357cae595259d46cea2fd4675489331",
+    "gold": [
+      "clap_complete/src/aot/shells/bash.rs"
+    ]
+  },
+  {
+    "id": "clap-rs/clap#6467",
+    "repo": "clap-rs/clap",
+    "pr": 6467,
+    "task": "clap_mangen: SYNOPSIS ignores Command::override_usage",
+    "base": "715b812f3b72ebca1d5ce257e0495e1e76aea56f",
+    "gold": [
+      "clap_builder/src/builder/command.rs",
+      "clap_builder/src/output/usage.rs",
+      "clap_mangen/src/render.rs"
+    ]
+  },
+  {
+    "id": "clap-rs/clap#6465",
+    "repo": "clap-rs/clap",
+    "pr": 6465,
+    "task": "refactor(builder): Rename internal blacklist field to conflicts",
+    "base": "ccc92c3b1171c00a6ef610bfa0018fa59c8510f9",
+    "gold": [
+      "clap_builder/src/builder/arg.rs",
+      "clap_builder/src/builder/command.rs",
+      "clap_builder/src/builder/debug_asserts.rs",
+      "clap_builder/src/parser/validator.rs"
+    ]
+  },
+  {
+    "id": "clap-rs/clap#6457",
+    "repo": "clap-rs/clap",
+    "pr": 6457,
+    "task": "fix(clap_mangen): Show required markers for options in required ArgGroups",
+    "base": "8a3127be7f8bb39cd06dc1ae67700cac2fa0d6ee",
+    "gold": [
+      "clap_mangen/src/render.rs"
+    ]
+  },
+  {
+    "id": "App-vNext/Polly#3247",
+    "repo": "App-vNext/Polly",
+    "pr": 3247,
+    "task": "Add Copilot code review skill",
+    "base": "dc933fd172cbfae51b4ebc419014f4fed695cbb6",
+    "gold": [
+      "bench/Polly.Core.Benchmarks/CreationBenchmark.cs"
+    ]
+  },
+  {
+    "id": "App-vNext/Polly#3231",
+    "repo": "App-vNext/Polly",
+    "pr": 3231,
+    "task": "Fix flaky test",
+    "base": "9d289ab10f7f7a925a95e9b7614534f3af9b8b71",
+    "gold": [
+      "src/Polly.Core/Utils/CancellationTokenSourcePool.Pooled.cs"
+    ]
+  },
+  {
+    "id": "App-vNext/Polly#3220",
+    "repo": "App-vNext/Polly",
+    "pr": 3220,
+    "task": "Return null from FaultGenerator when no fault is generated",
+    "base": "a057350b3a0cbf4f457104ed6981f97db71b94e1",
+    "gold": [
+      "src/Polly.Core/Simmy/Fault/FaultGenerator.cs"
+    ]
+  },
+  {
+    "id": "App-vNext/Polly#3201",
+    "repo": "App-vNext/Polly",
+    "pr": 3201,
+    "task": "Fix XML doc comment on PipelineExecutedArguments",
+    "base": "a603169f460df708206ecf907096848f584c9003",
+    "gold": [
+      "src/Polly.Core/Telemetry/PipelineExecutedArguments.cs"
+    ]
+  },
+  {
+    "id": "App-vNext/Polly#3140",
+    "repo": "App-vNext/Polly",
+    "pr": 3140,
+    "task": "feat(extensions): add EnableReloads overload accepting custom IOptionsMonitor",
+    "base": "6cc79edccae5d6f236fd011a69fb12e8f913be80",
+    "gold": [
+      "src/Polly.Extensions/DependencyInjection/AddResiliencePipelineContext.cs"
+    ]
+  },
+  {
+    "id": "App-vNext/Polly#3134",
+    "repo": "App-vNext/Polly",
+    "pr": 3134,
+    "task": "Avoid test flakiness",
+    "base": "2a0cdd05486b418945250a5fbe21cc019f8a0a3b",
+    "gold": [
+      "src/Polly.Core/Utils/ObjectPool.cs"
+    ]
+  },
+  {
+    "id": "App-vNext/Polly#3094",
+    "repo": "App-vNext/Polly",
+    "pr": 3094,
+    "task": "Adds caller cancellation token propagation in hedging and timeout strategies",
+    "base": "27eb2bbb4d45a9570bc35c5ee70419fff4376b25",
+    "gold": [
+      "src/Polly.Core/Hedging/HedgingResilienceStrategy.cs",
+      "src/Polly.Core/Timeout/TimeoutResilienceStrategy.cs"
+    ]
+  },
+  {
+    "id": "App-vNext/Polly#2986",
+    "repo": "App-vNext/Polly",
+    "pr": 2986,
+    "task": "Remove unused constant",
+    "base": "b87f20347af528b6f7c6ff1f9e6c1bc02f97856c",
+    "gold": [
+      "src/Polly.Extensions/Telemetry/TelemetryUtil.cs"
+    ]
+  },
+  {
+    "id": "guzzle/guzzle#3925",
+    "repo": "guzzle/guzzle",
+    "pr": 3925,
+    "task": "Treat a deferred resolved with a pending retry promise as wait progress",
+    "base": "a43bf7988f057f671a6f38049a68c49d05651baf",
+    "gold": [
+      "src/Handler/CurlMultiHandler.php",
+      "src/Handler/EasyHandle.php"
+    ]
+  },
+  {
+    "id": "guzzle/guzzle#3919",
+    "repo": "guzzle/guzzle",
+    "pr": 3919,
+    "task": "Harden cURL handler bookkeeping against native handle ID reuse",
+    "base": "fe93979912005beefe57eca934d70349aaefcac1",
+    "gold": [
+      "src/Handler/CurlFactory.php",
+      "src/Handler/CurlMultiHandler.php"
+    ]
+  },
+  {
+    "id": "guzzle/guzzle#3918",
+    "repo": "guzzle/guzzle",
+    "pr": 3918,
+    "task": "Settle cURL multi transfers displaced by native handle ID reuse",
+    "base": "9b200fc5805036b331d6031199880dadecae0275",
+    "gold": [
+      "src/Handler/CurlMultiHandler.php"
+    ]
+  },
+  {
+    "id": "guzzle/guzzle#3916",
+    "repo": "guzzle/guzzle",
+    "pr": 3916,
+    "task": "Harden automatic URI diagnostics",
+    "base": "6c48c8f061296f8fb7b777da31b3632b865f4f01",
+    "gold": [
+      "src/Exception/RequestException.php",
+      "src/Handler/CurlFactory.php",
+      "src/Handler/StreamHandler.php",
+      "src/RedirectMiddleware.php"
+    ]
+  },
+  {
+    "id": "guzzle/guzzle#3914",
+    "repo": "guzzle/guzzle",
+    "pr": 3914,
+    "task": "Report stream open failures against the caller's request",
+    "base": "7918637d4fa6aba49e0cce3f03def3db6bda4689",
+    "gold": [
+      "src/Handler/StreamHandler.php"
+    ]
+  },
+  {
+    "id": "guzzle/guzzle#3913",
+    "repo": "guzzle/guzzle",
+    "pr": 3913,
+    "task": "Match no_proxy rules against numeric IPv4 shorthand hosts",
+    "base": "5088a56eb366ef0a3ebda6cf68ec67bf51a4e6d1",
+    "gold": [
+      "src/ProxyOptions.php",
+      "src/RequestOptions.php"
+    ]
+  },
+  {
+    "id": "guzzle/guzzle#3912",
+    "repo": "guzzle/guzzle",
+    "pr": 3912,
+    "task": "Reject waits on transfers the cURL multi handler stopped tracking",
+    "base": "3aeea0406aab88cbbd86531313d7cebf8ae149a4",
+    "gold": [
+      "src/Handler/CurlMultiHandler.php"
+    ]
+  },
+  {
+    "id": "guzzle/guzzle#3910",
+    "repo": "guzzle/guzzle",
+    "pr": 3910,
+    "task": "Fold numeric IPv4 hosts in the stream handler",
+    "base": "302f798ac4d746c9ca864c27a9176c45d8c11daa",
+    "gold": [
+      "src/Handler/HostValidator.php",
+      "src/Handler/StreamHandler.php",
+      "src/HostIdentity.php"
+    ]
+  }
+]
