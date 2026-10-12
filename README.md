@@ -2,7 +2,13 @@
   <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/banner.png" alt="MIMRY - Local repo memory for coding agents" width="100%">
 </p>
 
+<h1 align="center">MIMRY</h1>
+
 <!-- mcp-name: io.github.jbacalso24/mimry -->
+
+<p align="center">
+  A local code index that tells AI coding agents which files, and which lines, to read for a task.
+</p>
 
 <p align="center">
   <a href="https://pypi.org/project/mimry/"><img alt="PyPI" src="https://img.shields.io/pypi/v/mimry"></a>
@@ -12,35 +18,33 @@
   <a href="https://jbacalso24.github.io/mimry/"><img alt="Website" src="https://img.shields.io/badge/website-mimry-0b7285"></a>
 </p>
 
-<p align="center">
-  <b>Cut the tokens your coding agent spends reading code by 48% to 67%.</b> <a href="#benchmark">See the benchmark</a>
-</p>
-
-MIMRY indexes your repository on your machine and tells your AI coding agent which files to read for a task, and which lines in them to read first.
-Instead of opening ten files to find the right one, your agent goes straight to `sessions.py`, lines 233-247.
-
-- **Local and deterministic.** Code is parsed with tree-sitter. No LLM, no API key, and nothing leaves your machine.
-- **Works with any agent.** It's a CLI, so anything that can run a command can use it. It also ships an MCP server.
-- **Gets better with use.** `mimry feedback` records which files helped, and similar tasks rank them higher.
+MIMRY is a command-line tool.
+It parses a repository into symbols and a dependency graph, keeps the index on your machine, and ranks the files that matter for a task described in plain words.
+Agents call it from the shell or through its MCP server.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/demo.gif" alt="mimry preflight in a terminal: it ranks the Flask files for a session cookie bug and names the lines to read first" width="100%">
 </p>
 
-**Get started** (1 minute):
+## Installation
 
 ```bash
-uv tool install mimry                   # install the CLI (or: pipx install mimry)
-mimry install --platform claude-code    # teach your agent to use it
+uv tool install mimry
 ```
 
-Then, in your project:
+Requires Python 3.11 or newer on Windows, Linux or macOS.
+`pipx install mimry` and `pip install mimry` also work.
+
+## Quick start
+
+Run `mimry preflight` in your project with a task description.
+The first run builds the index.
 
 ```bash
 mimry preflight "Fix session cookie not refreshed when SESSION_REFRESH_EACH_REQUEST is set"
 ```
 
-That's it. The first run builds the index, and your agent gets the files to read, why each one ranked, and where to start:
+Output on the Flask repository:
 
 ```text
 Start with
@@ -50,66 +54,66 @@ Start with
    2  src/flask/ctx.py
       name matches · connected to other matches
       read first: lines 154-206 (copy_current_request_context), 395-403 (session)
+   3  src/flask/testing.py
+      name matches · connected to other matches
+      read first: lines 135-183 (session_transaction), 193-202 (_request_from_builder_args)
 ```
 
-The full context pack lands in `.mimry/mimry-out/context/latest.md`: matched symbols, how the files connect, likely edit points, and the project's test commands.
+The same result is written to `.mimry/mimry-out/context/latest.md` as a context pack for the agent, with the matched symbols, related files and the project's test commands.
 
-**Works in** Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, OpenCode, Kiro, Amp and more. [Pick your agent](#connect-your-agent)
-
----
-
-## Commands
+To have your agent use MIMRY on its own, install it for that agent:
 
 ```bash
-mimry preflight "<task>"            # start a task: files and lines to read first
-mimry find "<query>"                # rank files for a query
-mimry symbol <name>                 # where a function, class or heading is defined
-mimry related "<query>"             # files connected through imports and calls
-mimry explain "<task>"              # files, key symbols, and how they connect
-mimry why <file> --query "<task>"   # why a file ranked
-mimry feedback ...                  # record which files helped
-mimry status                        # is the index up to date?
-mimry doctor                        # check the install and the index
+mimry install --platform claude-code
 ```
 
-Lookups reindex changed files on their own, so answers are never stale.
-Every command and flag: [docs/commands.md](docs/commands.md).
+## Features
 
-## Benchmark
-
-We replayed 92 real pull requests from 12 open-source projects and counted the tokens an agent read to find the code each one changed.
-
-| How the agent reads files | Tokens saved with MIMRY |
+| Feature | Description |
 |---|---|
-| Whole files | **50%** |
-| `grep -n` plus a few lines around each match | **48%** |
-| Only the lines MIMRY points to first | **67%** |
+| Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
+| Line ranges | Names the functions, classes or sections to read first in each file |
+| Code graph | Imports, calls and inheritance across 16 languages, parsed with tree-sitter |
+| Documents | Markdown, text, PDF, Word and Excel files are indexed alongside code |
+| Incremental indexing | Re-reads only changed files, and the main lookups refresh the index before answering |
+| Feedback | Files recorded as useful rank higher for similar tasks |
+| MCP server | Every lookup is also available as an MCP tool |
+| Local | No LLM, API key or telemetry, and your code never leaves your machine |
 
-Method, per-task results and how to reproduce it: [benchmarks/tokens](benchmarks/tokens/README.md).
+## Supported agents
 
-## Connect your agent
+`mimry install --platform <name>` installs a skill that teaches the agent when to use MIMRY, and registers the MCP server where the agent supports it.
 
-```bash
-mimry install --platform <agent>    # skill + MCP server, for every project
-mimry install --list-platforms      # claude-code, codex, opencode, kilo, gemini, copilot, kiro, amp, devin, ...
-```
-
-| Flag | What it does |
+| Agent | Platform name |
 |---|---|
-| `--project` | Install into this repo only |
-| `--always-on` | Add a short rules block to `AGENTS.md` or the agent's equivalent |
-| `--hooks` | Point the agent to `mimry find` when it starts a broad grep |
+| Claude Code | `claude-code` |
+| Codex | `codex` |
+| GitHub Copilot CLI | `copilot` |
+| Gemini CLI | `gemini` |
+| OpenCode | `opencode` |
+| Kilo Code | `kilo` |
+| Kiro | `kiro` |
+| Amp | `amp` |
+| Devin | `devin` |
+| Factory Droid | `droid` |
+| Aider, Antigravity, CodeBuddy, Hermes, Kimi, OpenClaw, Pi Agent, Trae | see `mimry install --list-platforms` |
+
+| Option | Effect |
+|---|---|
+| `--project` | Install into the current repository instead of for every project |
+| `--always-on` | Add a short rules block to the agent's always-read file, such as `AGENTS.md` |
+| `--hooks` | Suggest `mimry find` when the agent starts a broad grep |
 | `--no-mcp` | Install the skill without registering the MCP server |
 
 <details>
-<summary>Register the MCP server by hand</summary>
+<summary>Manual MCP setup</summary>
 
 ```bash
 claude mcp add --scope user mimry -- mimry-mcp   # Claude Code
 codex mcp add mimry -- mimry-mcp                 # Codex
 ```
 
-Any other MCP client:
+Other MCP clients:
 
 ```json
 {
@@ -119,39 +123,69 @@ Any other MCP client:
 }
 ```
 
-`uvx mimry mcp` runs the server straight from PyPI.
-MIMRY is in the [official MCP Registry](https://registry.modelcontextprotocol.io/) as `io.github.jbacalso24/mimry`.
-The tools mirror the commands: `mimry_preflight`, `mimry_find`, `mimry_symbol`, `mimry_related`, `mimry_explain`, `mimry_why`, `mimry_feedback` and more.
+`uvx mimry mcp` runs the server without installing it.
+MIMRY is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/) as `io.github.jbacalso24/mimry`.
 
 </details>
 
+## Usage
+
+```bash
+mimry preflight "<task>"            # files and lines to read first, plus a context pack
+mimry find "<query>"                # rank files for a query
+mimry symbol <name>                 # find where a function, class or heading is defined
+mimry related "<query>"             # files connected through imports and calls
+mimry explain "<task>"              # key files and symbols, and how they connect
+mimry why <file> --query "<task>"   # explain why a file ranked
+mimry feedback ...                  # record which files helped
+mimry status                        # check whether the index is current
+mimry doctor                        # diagnose the install and the index
+```
+
+See [docs/commands.md](docs/commands.md) for every command and option.
+
 ## Configuration
 
-Commit a `mimry.toml` so your whole team indexes the same files:
+A `mimry.toml` at the repository root controls which files are indexed.
+Commit it so everyone on the team gets the same index.
 
 ```toml
 [index]
-include = ["src/**", "docs/**"]            # only these paths
-exclude = ["**/fixtures/**", "legacy/**"]  # never these
-max_file_bytes = 2_000_000                 # default is 1 MB
+include = ["src/**", "docs/**"]            # index only these paths
+exclude = ["**/fixtures/**", "legacy/**"]  # never index these paths
+max_file_bytes = 2_000_000                 # size limit per file (default 1 MB)
 ```
+
+## Benchmarks
+
+Tokens an agent read before it found the code each pull request changed, measured on 92 merged pull requests from 12 open-source projects.
+
+| How the agent reads files | Tokens saved with MIMRY |
+|---|---|
+| Whole files | **50%** |
+| `grep -n`, then a few lines around each match | **48%** |
+| The line ranges MIMRY names first | **67%** |
+
+See [benchmarks/tokens](benchmarks/tokens/README.md) for the method, per-project results and how to reproduce them.
 
 ## How it works
 
-MIMRY parses 16 languages, plus Markdown and office documents, into symbols and a graph of imports, calls and inheritance.
-For a task it ranks files by name, path, content, symbol and graph matches.
-Imports it can't resolve are dropped, never guessed.
-More in [docs/how-it-works.md](docs/how-it-works.md).
+1. **Index.** Each file is parsed into symbols and edges for imports, calls and inheritance. The index is stored in your user cache directory, outside the repository.
+2. **Rank.** A task is matched against file names, paths, content, symbols and the graph. Imports that cannot be resolved are dropped rather than guessed.
+3. **Refresh.** Like git, MIMRY compares file metadata and re-reads only files that changed.
+
+See [docs/how-it-works.md](docs/how-it-works.md) for details.
 
 ## Privacy
 
-Everything runs locally, and the index lives in your user cache directory, outside the repo.
-Credential files are skipped, secret-looking values are redacted from feedback, and untracked files your `.gitignore` names are never indexed.
+Indexing and search run locally.
+Credential files are skipped, secret-looking values are redacted from feedback, and untracked files named in `.gitignore` are not indexed.
 
 ## Contributing
 
-Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
-MIMRY is in public alpha, so interfaces may change before 1.0.
+Bug reports and pull requests are welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks.
+MIMRY is in public alpha, and its interfaces may change before 1.0.
 
 ## License
 
