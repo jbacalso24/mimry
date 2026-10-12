@@ -6,12 +6,14 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from shutil import which
 
 from . import ui
+from .state import replace_path
 
 
 @dataclass(frozen=True)
@@ -686,20 +688,43 @@ def _atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(content, encoding="utf-8")
-    os.replace(tmp, path)
+    replace_path(tmp, path)
+
+
+def _remove_tree(path: Path, *, attempts: int = 12, delay: float = 0.05) -> None:
+    """``shutil.rmtree`` that rides out Windows' transient sharing
+    violations, like ``replace_path``."""
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
 
 
 def _install_references(skill_dir: Path) -> None:
     refs = skill_dir / "references"
     staged = skill_dir / "references.tmp"
-    if staged.exists():
-        shutil.rmtree(staged)
+    old = skill_dir / "references.old"
+    for leftover in (staged, old):
+        _remove_tree(leftover)
     staged.mkdir(parents=True, exist_ok=True)
     for name, content in _REFERENCES.items():
         _atomic_write(staged / name, content)
+    # Move the old tree aside instead of deleting it first: on Windows
+    # a scanner or an agent reading a file can block deletion for a
+    # moment, and the next install removes a leftover references.old.
     if refs.exists():
-        shutil.rmtree(refs)
-    os.replace(staged, refs)
+        replace_path(refs, old)
+    replace_path(staged, refs)
+    try:
+        _remove_tree(old)
+    except OSError:
+        pass
 
 
 def _replace_or_append_section(content: str, marker: str, section: str) -> str:
@@ -1162,7 +1187,7 @@ def uninstall_skill(
             removed.append(path)
     refs = dst.parent / "references"
     if refs.exists():
-        shutil.rmtree(refs)
+        _remove_tree(refs)
         removed.append(refs)
     if always_on and project and (path := _remove_always_on(root, cfg)):
         removed.append(path)

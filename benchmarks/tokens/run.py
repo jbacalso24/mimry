@@ -85,7 +85,8 @@ def run(cmd: list[str], cwd: Path, env: dict[str, str] | None = None) -> str:
     out = subprocess.run(
         cmd, cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace"
     )
-    if out.returncode not in (0, 1):  # git grep exits 1 when nothing matches
+    # git grep exits 1 when nothing matches; nothing else may fail.
+    if out.returncode not in ((0, 1) if cmd[:2] == ["git", "grep"] else (0,)):
         raise RuntimeError(f"{cmd} failed ({out.returncode}): {out.stderr.strip()}")
     return out.stdout
 
@@ -310,6 +311,8 @@ def mimry_agent(
     changed: dict[str, set[int]] | None = None,
 ) -> dict[str, object]:
     cli = [sys.executable, "-m", "mimry.cli", "--root", str(repo)]
+    if not (repo / ".mimry" / "config.toml").exists():
+        run([*cli, "init", "--skip-graph"], repo, env)
     started = time.perf_counter_ns()
     run([*cli, "index"], repo, env)
     index_ms = (time.perf_counter_ns() - started) / 1_000_000
