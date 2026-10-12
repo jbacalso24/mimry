@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from mimry import mcp_server
+from mimry.commands import refresh_if_stale
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.mcp_server import (
@@ -30,6 +32,7 @@ from mimry.mcp_server import (
     mimry_why,
 )
 from mimry.paths import idx_path
+from mimry.scanner import worktree_fingerprint
 from mimry.state import GENERATION_SCHEMA_VERSION
 from mimry.storage import load_pointer, save_pointer
 
@@ -575,9 +578,17 @@ def _manifest_schema(repo: Path) -> str:
     return json.loads(manifest_path.read_text(encoding="utf-8"))["schemaVersion"]
 
 
-def _indexed_repo(tmp_path: Path, monkeypatch) -> Path:
+def _indexed_repo(tmp_path: Path, monkeypatch, *, git: bool = False) -> Path:
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
+    if git:
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"],
+            cwd=repo,
+            check=True,
+        )
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
     root_id = str(uuid.uuid4())
     ptr = {
@@ -755,3 +766,88 @@ def test_mimry_mcp_subcommand_runs_the_stdio_server_in_the_root(tmp_path: Path, 
 
     assert cli.main(["--root", str(repo), "mcp"]) == 0
     assert started == [([], str(repo))]
+
+
+ZEBRA = "def zebra():\n    return 'zebraquokka'\n"
+
+
+def test_git_repo_index_records_a_worktree_fingerprint(tmp_path: Path, monkeypatch):
+    repo = _indexed_repo(tmp_path, monkeypatch, git=True)
+
+    assert re.fullmatch(r"[0-9a-f]{64}", load_pointer(repo)["worktreeFingerprint"])
+
+
+def test_find_reindexes_a_file_added_since_the_last_index(tmp_path: Path, monkeypatch):
+    repo = _indexed_repo(tmp_path, monkeypatch, git=True)
+    (repo / "src" / "zebra.py").write_text(ZEBRA, encoding="utf-8")
+
+    payload = mimry_find("zebraquokka", str(repo))
+
+    assert "src/zebra.py" in json.dumps(payload["results"])
+    assert "reindexed" in payload
+    assert "reindexed" not in mimry_find("zebraquokka", str(repo))
+
+
+def test_cli_find_reindexes_a_file_added_since_the_last_index(tmp_path: Path, monkeypatch):
+    from mimry.cli import main as cli_main
+
+    repo = _indexed_repo(tmp_path, monkeypatch, git=True)
+    (repo / "src" / "zebra.py").write_text(ZEBRA, encoding="utf-8")
+
+    buf_out = io.StringIO()
+    with contextlib.redirect_stdout(buf_out):
+        code = cli_main(["--root", str(repo), "find", "zebraquokka"])
+
+    assert code == 0
+    assert "src/zebra.py" in buf_out.getvalue()
+
+
+def test_refresh_if_stale_skips_the_walk_when_git_sees_the_indexed_tree(
+    tmp_path: Path, monkeypatch
+):
+    from mimry import commands
+
+    repo = _indexed_repo(tmp_path, monkeypatch, git=True)
+
+    def walk_must_not_run(*args, **kwargs):
+        raise AssertionError("full freshness walk ran")
+
+    monkeypatch.setattr(commands, "index_freshness", walk_must_not_run)
+
+    assert refresh_if_stale(repo) is None
+
+
+def test_non_git_root_has_no_fingerprint_and_still_reindexes(tmp_path: Path, monkeypatch):
+    repo = _indexed_repo(tmp_path, monkeypatch)
+    assert worktree_fingerprint(repo) is None
+    assert "worktreeFingerprint" not in load_pointer(repo)
+    (repo / "src" / "zebra.py").write_text(ZEBRA, encoding="utf-8")
+
+    payload = mimry_find("zebraquokka", str(repo))
+
+    assert "src/zebra.py" in json.dumps(payload["results"])
+    assert "reindexed" in payload
+
+
+def test_no_op_reindex_records_the_current_fingerprint(tmp_path: Path, monkeypatch):
+    """A reindex that publishes nothing still refreshes the fingerprint.
+
+    The stale value stands for a tree that moved on since the last
+    publish while the indexed content stayed the same.
+    """
+    from mimry import commands
+
+    repo = _indexed_repo(tmp_path, monkeypatch, git=True)
+    current = load_pointer(repo)["worktreeFingerprint"]
+    save_pointer(repo, {**load_pointer(repo), "worktreeFingerprint": "0" * 64})
+
+    stats = write_index(repo, load_pointer(repo))
+
+    assert stats["unchanged"] is True
+    assert load_pointer(repo)["worktreeFingerprint"] == current
+
+    def walk_must_not_run(*args, **kwargs):
+        raise AssertionError("full freshness walk ran")
+
+    monkeypatch.setattr(commands, "index_freshness", walk_must_not_run)
+    assert refresh_if_stale(repo) is None

@@ -1,0 +1,1393 @@
+{
+  "summary": {
+    "tasks": 48,
+    "read_budget": 10,
+    "success": {
+      "grep": 19,
+      "mimry": 30
+    },
+    "tokens_total": {
+      "grep": 7592841,
+      "mimry": 3482674
+    },
+    "savings_vs_grep_pct": 54.1,
+    "both_succeeded": 17,
+    "savings_vs_grep_pct_both_succeeded": 71.7,
+    "median_task_savings_vs_grep_pct": 62.4,
+    "median_x_fewer_than_reading_whole_repo": 28.7,
+    "reads": "sed",
+    "window": 100
+  },
+  "tasks": [
+    {
+      "id": "Textualize/rich#4079",
+      "task": "Inline table code",
+      "gold": [
+        "rich/markdown.py"
+      ],
+      "repo_tokens": 2199252,
+      "grep": {
+        "tokens": 94061,
+        "search_tokens": 12825,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 8671,
+        "search_tokens": 1767,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 4071,
+        "preflight_ms": 1936
+      }
+    },
+    {
+      "id": "Textualize/rich#4075",
+      "task": "empty with end",
+      "gold": [
+        "rich/console.py"
+      ],
+      "repo_tokens": 2198768,
+      "grep": {
+        "tokens": 190206,
+        "search_tokens": 6502,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 20947,
+        "search_tokens": 1702,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 4153,
+        "preflight_ms": 2055
+      }
+    },
+    {
+      "id": "Textualize/rich#4006",
+      "task": "fix for infinite loop in split_graphemes",
+      "gold": [
+        "rich/cells.py"
+      ],
+      "repo_tokens": 2197606,
+      "grep": {
+        "tokens": 55771,
+        "search_tokens": 216,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 3932,
+        "search_tokens": 1817,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 5110,
+        "preflight_ms": 2326
+      }
+    },
+    {
+      "id": "Textualize/rich#3953",
+      "task": "Fix ZWJ and edge cases",
+      "gold": [
+        "rich/cells.py"
+      ],
+      "repo_tokens": 2197270,
+      "grep": {
+        "tokens": 1290320,
+        "search_tokens": 202,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 1282810,
+        "search_tokens": 1686,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 4734,
+        "preflight_ms": 2325
+      }
+    },
+    {
+      "id": "Textualize/rich#3942",
+      "task": "Update to markdown styles",
+      "gold": [
+        "rich/default_styles.py",
+        "rich/markdown.py"
+      ],
+      "repo_tokens": 2196331,
+      "grep": {
+        "tokens": 33972,
+        "search_tokens": 6362,
+        "reads": 3,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 11629,
+        "search_tokens": 1719,
+        "reads": 2,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 4386,
+        "preflight_ms": 2664
+      }
+    },
+    {
+      "id": "Textualize/rich#3941",
+      "task": "Fix typing for save_html, save_text, save_svg to accept PathLike",
+      "gold": [
+        "rich/console.py"
+      ],
+      "repo_tokens": 2198729,
+      "grep": {
+        "tokens": 13873,
+        "search_tokens": 918,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 7109,
+        "search_tokens": 1799,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 4140,
+        "preflight_ms": 1765
+      }
+    },
+    {
+      "id": "Textualize/rich#3938",
+      "task": "fix background style with soft wrap",
+      "gold": [
+        "rich/console.py",
+        "rich/segment.py"
+      ],
+      "repo_tokens": 2195073,
+      "grep": {
+        "tokens": 150705,
+        "search_tokens": 12818,
+        "reads": 10,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 93253,
+        "search_tokens": 1689,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 1,
+        "index_ms": 5224,
+        "preflight_ms": 1998
+      }
+    },
+    {
+      "id": "Textualize/rich#3937",
+      "task": "don't strip whitespace when soft_wrap is True",
+      "gold": [
+        "rich/text.py"
+      ],
+      "repo_tokens": 2194908,
+      "grep": {
+        "tokens": 107291,
+        "search_tokens": 1722,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 13404,
+        "search_tokens": 1814,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3233,
+        "preflight_ms": 1686
+      }
+    },
+    {
+      "id": "labstack/echo#3160",
+      "task": "fix(router): removing a route with a custom method panics",
+      "gold": [
+        "router.go"
+      ],
+      "repo_tokens": 410443,
+      "grep": {
+        "tokens": 123207,
+        "search_tokens": 1640,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 13810,
+        "search_tokens": 1629,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3104,
+        "preflight_ms": 1321
+      }
+    },
+    {
+      "id": "labstack/echo#3157",
+      "task": "fix(router): grow PathValues for contexts created before a route with more params",
+      "gold": [
+        "router.go"
+      ],
+      "repo_tokens": 409510,
+      "grep": {
+        "tokens": 50003,
+        "search_tokens": 1119,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 15949,
+        "search_tokens": 1784,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 2233,
+        "preflight_ms": 1361
+      }
+    },
+    {
+      "id": "labstack/echo#3133",
+      "task": "fix(router): share route syntax across routing operations",
+      "gold": [
+        "route.go",
+        "router.go"
+      ],
+      "repo_tokens": 398950,
+      "grep": {
+        "tokens": 113126,
+        "search_tokens": 738,
+        "reads": 10,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 16911,
+        "search_tokens": 1606,
+        "reads": 2,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3445,
+        "preflight_ms": 1306
+      }
+    },
+    {
+      "id": "labstack/echo#3129",
+      "task": "static: harden dot-segment check for backslashes, test non-validating custom fs.FS",
+      "gold": [
+        "echo.go",
+        "middleware/static.go"
+      ],
+      "repo_tokens": 394192,
+      "grep": {
+        "tokens": 123380,
+        "search_tokens": 1845,
+        "reads": 8,
+        "first_gold_read": 5,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 103693,
+        "search_tokens": 1885,
+        "reads": 10,
+        "first_gold_read": 3,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 2274,
+        "preflight_ms": 1338
+      }
+    },
+    {
+      "id": "labstack/echo#3113",
+      "task": "fix(router): keep escaped colon and parameter routes reachable",
+      "gold": [
+        "router.go"
+      ],
+      "repo_tokens": 397992,
+      "grep": {
+        "tokens": 83257,
+        "search_tokens": 704,
+        "reads": 6,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 14446,
+        "search_tokens": 1638,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 2512,
+        "preflight_ms": 2877
+      }
+    },
+    {
+      "id": "labstack/echo#3094",
+      "task": "fix(rfc9457): do not mutate a shared ProblemError",
+      "gold": [
+        "rfc9457.go"
+      ],
+      "repo_tokens": 378411,
+      "grep": {
+        "tokens": 1557,
+        "search_tokens": 38,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 3198,
+        "search_tokens": 1679,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3189,
+        "preflight_ms": 1682
+      }
+    },
+    {
+      "id": "labstack/echo#3087",
+      "task": "fix(middleware): prevent BodyLimit bypass with contract-compliant readers",
+      "gold": [
+        "bind.go",
+        "json.go",
+        "middleware/body_limit.go"
+      ],
+      "repo_tokens": 396265,
+      "grep": {
+        "tokens": 67729,
+        "search_tokens": 808,
+        "reads": 10,
+        "first_gold_read": 8,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 49559,
+        "search_tokens": 1728,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 3667,
+        "preflight_ms": 1593
+      }
+    },
+    {
+      "id": "labstack/echo#3076",
+      "task": "refactor(middleware): clamp remaining tokens with max",
+      "gold": [
+        "middleware/rate_limiter.go"
+      ],
+      "repo_tokens": 378421,
+      "grep": {
+        "tokens": 3909,
+        "search_tokens": 868,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 5461,
+        "search_tokens": 1605,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3338,
+        "preflight_ms": 1730
+      }
+    },
+    {
+      "id": "axios/axios#11294",
+      "task": "fix(http): decode percent-encoded Base64 data URLs",
+      "gold": [
+        "lib/helpers/estimateDataURLDecodedBytes.js",
+        "lib/helpers/fromDataURI.js"
+      ],
+      "repo_tokens": 963927,
+      "grep": {
+        "tokens": 133639,
+        "search_tokens": 7745,
+        "reads": 10,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 85477,
+        "search_tokens": 1776,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 3808,
+        "preflight_ms": 2107
+      }
+    },
+    {
+      "id": "axios/axios#11194",
+      "task": "fix(fetch): apply the default cache mode only where the runtime accepts it",
+      "gold": [
+        "lib/adapters/fetch.js"
+      ],
+      "repo_tokens": 1022058,
+      "grep": {
+        "tokens": 201247,
+        "search_tokens": 5883,
+        "reads": 6,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 82270,
+        "search_tokens": 1635,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 5973,
+        "preflight_ms": 2573
+      }
+    },
+    {
+      "id": "axios/axios#11179",
+      "task": "fix(fetch): preserve response size errors across runtime wrappers",
+      "gold": [
+        "index.d.ts",
+        "lib/adapters/fetch.js"
+      ],
+      "repo_tokens": 1025708,
+      "grep": {
+        "tokens": 279502,
+        "search_tokens": 5051,
+        "reads": 10,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 92540,
+        "search_tokens": 1689,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 3357,
+        "preflight_ms": 1547
+      }
+    },
+    {
+      "id": "axios/axios#11163",
+      "task": "fix: normalize parsed protocols to lowercase",
+      "gold": [
+        "lib/helpers/estimateDataURLDecodedBytes.js",
+        "lib/helpers/parseProtocol.js"
+      ],
+      "repo_tokens": 963041,
+      "grep": {
+        "tokens": 67122,
+        "search_tokens": 879,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 39421,
+        "search_tokens": 1809,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 6454,
+        "preflight_ms": 1691
+      }
+    },
+    {
+      "id": "axios/axios#11142",
+      "task": "fix(AxiosError): inline the wrapped error stack for cause-unaware tooling",
+      "gold": [
+        "lib/core/Axios.js",
+        "lib/core/AxiosError.js"
+      ],
+      "repo_tokens": 966631,
+      "grep": {
+        "tokens": 164725,
+        "search_tokens": 4886,
+        "reads": 10,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 18875,
+        "search_tokens": 1868,
+        "reads": 5,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3481,
+        "preflight_ms": 1667
+      }
+    },
+    {
+      "id": "axios/axios#11139",
+      "task": "fix(interceptors): restore numeric-string interceptor IDs",
+      "gold": [
+        "lib/core/InterceptorManager.js"
+      ],
+      "repo_tokens": 965167,
+      "grep": {
+        "tokens": 151834,
+        "search_tokens": 4454,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 3024,
+        "search_tokens": 1822,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3346,
+        "preflight_ms": 1820
+      }
+    },
+    {
+      "id": "axios/axios#11138",
+      "task": "fix(fromDataURI): accept case-insensitive base64 tokens",
+      "gold": [
+        "lib/helpers/estimateDataURLDecodedBytes.js",
+        "lib/helpers/fromDataURI.js"
+      ],
+      "repo_tokens": 961732,
+      "grep": {
+        "tokens": 105839,
+        "search_tokens": 1705,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 5758,
+        "search_tokens": 1857,
+        "reads": 3,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3270,
+        "preflight_ms": 1755
+      }
+    },
+    {
+      "id": "axios/axios#11134",
+      "task": "fix(AxiosHeaders): store a header named __proto__ instead of writing through Object.prototype",
+      "gold": [
+        "lib/core/AxiosHeaders.js",
+        "lib/helpers/parseHeaders.js"
+      ],
+      "repo_tokens": 959374,
+      "grep": {
+        "tokens": 158599,
+        "search_tokens": 6720,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 41793,
+        "search_tokens": 1783,
+        "reads": 8,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3245,
+        "preflight_ms": 1658
+      }
+    },
+    {
+      "id": "clap-rs/clap#6526",
+      "task": "fix(clap_complete): Fix value escape in zsh completion",
+      "gold": [
+        "clap_complete/src/aot/shells/zsh.rs"
+      ],
+      "repo_tokens": 934769,
+      "grep": {
+        "tokens": 101679,
+        "search_tokens": 6260,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 8946,
+        "search_tokens": 1861,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 6920,
+        "preflight_ms": 1921
+      }
+    },
+    {
+      "id": "clap-rs/clap#6519",
+      "task": "fix(complete): Make it easier to debug",
+      "gold": [
+        "clap_complete/src/engine/complete.rs"
+      ],
+      "repo_tokens": 929032,
+      "grep": {
+        "tokens": 121258,
+        "search_tokens": 4055,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 8371,
+        "search_tokens": 1751,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 6846,
+        "preflight_ms": 1659
+      }
+    },
+    {
+      "id": "clap-rs/clap#6482",
+      "task": "fix(mangen): Hide hidden positionals from the SYNOPSIS",
+      "gold": [
+        "clap_mangen/src/render.rs"
+      ],
+      "repo_tokens": 928684,
+      "grep": {
+        "tokens": 137180,
+        "search_tokens": 1759,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 6150,
+        "search_tokens": 1810,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 2880,
+        "preflight_ms": 1756
+      }
+    },
+    {
+      "id": "clap-rs/clap#6477",
+      "task": "fix(clap_complete_nushell): Set argument type to `directory` for `ValueHint::DirPath`",
+      "gold": [
+        "clap_complete_nushell/src/lib.rs"
+      ],
+      "repo_tokens": 928753,
+      "grep": {
+        "tokens": 11983,
+        "search_tokens": 7739,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 6231,
+        "search_tokens": 1987,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3719,
+        "preflight_ms": 1862
+      }
+    },
+    {
+      "id": "clap-rs/clap#6468",
+      "task": "fix(complete): Name the bash completion function after fn_name",
+      "gold": [
+        "clap_complete/src/aot/shells/bash.rs"
+      ],
+      "repo_tokens": 927114,
+      "grep": {
+        "tokens": 222888,
+        "search_tokens": 8666,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 4383,
+        "search_tokens": 1861,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3746,
+        "preflight_ms": 1767
+      }
+    },
+    {
+      "id": "clap-rs/clap#6467",
+      "task": "clap_mangen: SYNOPSIS ignores Command::override_usage",
+      "gold": [
+        "clap_builder/src/builder/command.rs",
+        "clap_builder/src/output/usage.rs",
+        "clap_mangen/src/render.rs"
+      ],
+      "repo_tokens": 927661,
+      "grep": {
+        "tokens": 147795,
+        "search_tokens": 3927,
+        "reads": 10,
+        "first_gold_read": 6,
+        "gold_found": 2,
+        "success": false,
+        "gold_missed": 1
+      },
+      "mimry": {
+        "tokens": 199222,
+        "search_tokens": 1800,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": false,
+        "gold_missed": 1,
+        "index_ms": 2990,
+        "preflight_ms": 3605
+      }
+    },
+    {
+      "id": "clap-rs/clap#6465",
+      "task": "refactor(builder): Rename internal blacklist field to conflicts",
+      "gold": [
+        "clap_builder/src/builder/arg.rs",
+        "clap_builder/src/builder/command.rs",
+        "clap_builder/src/builder/debug_asserts.rs",
+        "clap_builder/src/parser/validator.rs"
+      ],
+      "repo_tokens": 924269,
+      "grep": {
+        "tokens": 158749,
+        "search_tokens": 2434,
+        "reads": 5,
+        "first_gold_read": 1,
+        "gold_found": 4,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 188251,
+        "search_tokens": 1785,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 4,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3934,
+        "preflight_ms": 1859
+      }
+    },
+    {
+      "id": "clap-rs/clap#6457",
+      "task": "fix(clap_mangen): Show required markers for options in required ArgGroups",
+      "gold": [
+        "clap_mangen/src/render.rs"
+      ],
+      "repo_tokens": 924277,
+      "grep": {
+        "tokens": 229135,
+        "search_tokens": 4265,
+        "reads": 8,
+        "first_gold_read": 8,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 11316,
+        "search_tokens": 1795,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 4103,
+        "preflight_ms": 1971
+      }
+    },
+    {
+      "id": "App-vNext/Polly#3247",
+      "task": "Add Copilot code review skill",
+      "gold": [
+        "bench/Polly.Core.Benchmarks/CreationBenchmark.cs"
+      ],
+      "repo_tokens": 1402102,
+      "grep": {
+        "tokens": 136406,
+        "search_tokens": 2309,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 65391,
+        "search_tokens": 1879,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 7332,
+        "preflight_ms": 2119
+      }
+    },
+    {
+      "id": "App-vNext/Polly#3231",
+      "task": "Fix flaky test",
+      "gold": [
+        "src/Polly.Core/Utils/CancellationTokenSourcePool.Pooled.cs"
+      ],
+      "repo_tokens": 1401886,
+      "grep": {
+        "tokens": 173010,
+        "search_tokens": 4049,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 87934,
+        "search_tokens": 2061,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 4415,
+        "preflight_ms": 2253
+      }
+    },
+    {
+      "id": "App-vNext/Polly#3220",
+      "task": "Return null from FaultGenerator when no fault is generated",
+      "gold": [
+        "src/Polly.Core/Simmy/Fault/FaultGenerator.cs"
+      ],
+      "repo_tokens": 1388593,
+      "grep": {
+        "tokens": 198022,
+        "search_tokens": 11495,
+        "reads": 9,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 3700,
+        "search_tokens": 2086,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 6367,
+        "preflight_ms": 2457
+      }
+    },
+    {
+      "id": "App-vNext/Polly#3201",
+      "task": "Fix XML doc comment on PipelineExecutedArguments",
+      "gold": [
+        "src/Polly.Core/Telemetry/PipelineExecutedArguments.cs"
+      ],
+      "repo_tokens": 1388584,
+      "grep": {
+        "tokens": 314244,
+        "search_tokens": 2047,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 2091,
+        "search_tokens": 1855,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 5000,
+        "preflight_ms": 3136
+      }
+    },
+    {
+      "id": "App-vNext/Polly#3140",
+      "task": "feat(extensions): add EnableReloads overload accepting custom IOptionsMonitor",
+      "gold": [
+        "src/Polly.Extensions/DependencyInjection/AddResiliencePipelineContext.cs"
+      ],
+      "repo_tokens": 1387100,
+      "grep": {
+        "tokens": 136892,
+        "search_tokens": 5072,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 2477,
+        "search_tokens": 1637,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 4845,
+        "preflight_ms": 2321
+      }
+    },
+    {
+      "id": "App-vNext/Polly#3134",
+      "task": "Avoid test flakiness",
+      "gold": [
+        "src/Polly.Core/Utils/ObjectPool.cs"
+      ],
+      "repo_tokens": 1386847,
+      "grep": {
+        "tokens": 206378,
+        "search_tokens": 4617,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 121351,
+        "search_tokens": 1943,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 4984,
+        "preflight_ms": 2896
+      }
+    },
+    {
+      "id": "App-vNext/Polly#3094",
+      "task": "Adds caller cancellation token propagation in hedging and timeout strategies",
+      "gold": [
+        "src/Polly.Core/Hedging/HedgingResilienceStrategy.cs",
+        "src/Polly.Core/Timeout/TimeoutResilienceStrategy.cs"
+      ],
+      "repo_tokens": 1383605,
+      "grep": {
+        "tokens": 88110,
+        "search_tokens": 12227,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 8151,
+        "search_tokens": 1843,
+        "reads": 6,
+        "first_gold_read": 4,
+        "gold_found": 2,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 8083,
+        "preflight_ms": 2522
+      }
+    },
+    {
+      "id": "App-vNext/Polly#2986",
+      "task": "Remove unused constant",
+      "gold": [
+        "src/Polly.Extensions/Telemetry/TelemetryUtil.cs"
+      ],
+      "repo_tokens": 1382720,
+      "grep": {
+        "tokens": 105645,
+        "search_tokens": 2179,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 48906,
+        "search_tokens": 1583,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 7175,
+        "preflight_ms": 2057
+      }
+    },
+    {
+      "id": "guzzle/guzzle#3925",
+      "task": "Treat a deferred resolved with a pending retry promise as wait progress",
+      "gold": [
+        "src/Handler/CurlMultiHandler.php",
+        "src/Handler/EasyHandle.php"
+      ],
+      "repo_tokens": 661565,
+      "grep": {
+        "tokens": 223015,
+        "search_tokens": 1421,
+        "reads": 10,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 129617,
+        "search_tokens": 1610,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 3781,
+        "preflight_ms": 1517
+      }
+    },
+    {
+      "id": "guzzle/guzzle#3919",
+      "task": "Harden cURL handler bookkeeping against native handle ID reuse",
+      "gold": [
+        "src/Handler/CurlFactory.php",
+        "src/Handler/CurlMultiHandler.php"
+      ],
+      "repo_tokens": 659843,
+      "grep": {
+        "tokens": 187004,
+        "search_tokens": 2034,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 1
+      },
+      "mimry": {
+        "tokens": 127078,
+        "search_tokens": 1860,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 1,
+        "index_ms": 3776,
+        "preflight_ms": 1565
+      }
+    },
+    {
+      "id": "guzzle/guzzle#3918",
+      "task": "Settle cURL multi transfers displaced by native handle ID reuse",
+      "gold": [
+        "src/Handler/CurlMultiHandler.php"
+      ],
+      "repo_tokens": 626046,
+      "grep": {
+        "tokens": 39732,
+        "search_tokens": 1478,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 21453,
+        "search_tokens": 1907,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 3767,
+        "preflight_ms": 1558
+      }
+    },
+    {
+      "id": "guzzle/guzzle#3916",
+      "task": "Harden automatic URI diagnostics",
+      "gold": [
+        "src/Exception/RequestException.php",
+        "src/Handler/CurlFactory.php",
+        "src/Handler/StreamHandler.php",
+        "src/RedirectMiddleware.php"
+      ],
+      "repo_tokens": 660743,
+      "grep": {
+        "tokens": 235479,
+        "search_tokens": 848,
+        "reads": 10,
+        "first_gold_read": 4,
+        "gold_found": 2,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 109311,
+        "search_tokens": 1593,
+        "reads": 10,
+        "first_gold_read": 3,
+        "gold_found": 2,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 3362,
+        "preflight_ms": 1680
+      }
+    },
+    {
+      "id": "guzzle/guzzle#3914",
+      "task": "Report stream open failures against the caller's request",
+      "gold": [
+        "src/Handler/StreamHandler.php"
+      ],
+      "repo_tokens": 629281,
+      "grep": {
+        "tokens": 157959,
+        "search_tokens": 2351,
+        "reads": 6,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 104023,
+        "search_tokens": 1668,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 3623,
+        "preflight_ms": 1465
+      }
+    },
+    {
+      "id": "guzzle/guzzle#3913",
+      "task": "Match no_proxy rules against numeric IPv4 shorthand hosts",
+      "gold": [
+        "src/ProxyOptions.php",
+        "src/RequestOptions.php"
+      ],
+      "repo_tokens": 628436,
+      "grep": {
+        "tokens": 144447,
+        "search_tokens": 1305,
+        "reads": 10,
+        "first_gold_read": 9,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 66006,
+        "search_tokens": 1763,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 2833,
+        "preflight_ms": 1496
+      }
+    },
+    {
+      "id": "guzzle/guzzle#3912",
+      "task": "Reject waits on transfers the cURL multi handler stopped tracking",
+      "gold": [
+        "src/Handler/CurlMultiHandler.php"
+      ],
+      "repo_tokens": 620801,
+      "grep": {
+        "tokens": 116335,
+        "search_tokens": 2406,
+        "reads": 6,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 20937,
+        "search_tokens": 1895,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "gold_missed": 0,
+        "index_ms": 2984,
+        "preflight_ms": 1668
+      }
+    },
+    {
+      "id": "guzzle/guzzle#3910",
+      "task": "Fold numeric IPv4 hosts in the stream handler",
+      "gold": [
+        "src/Handler/HostValidator.php",
+        "src/Handler/StreamHandler.php",
+        "src/HostIdentity.php"
+      ],
+      "repo_tokens": 623576,
+      "grep": {
+        "tokens": 234622,
+        "search_tokens": 1846,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": false,
+        "gold_missed": 0
+      },
+      "mimry": {
+        "tokens": 97438,
+        "search_tokens": 1878,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": false,
+        "gold_missed": 0,
+        "index_ms": 3916,
+        "preflight_ms": 2081
+      }
+    }
+  ]
+}

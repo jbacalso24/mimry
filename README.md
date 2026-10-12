@@ -176,8 +176,9 @@ For an exact string you already know, such as an identifier or an error message,
 
 ### Rules
 
-- `preflight`, `context`, `brief` and `route` reindex first when files changed or MIMRY was upgraded, so a task never starts from a stale index.
-- If a quick lookup such as `find` or `symbol` says the index is out of date, run `mimry reindex` (fast: it only re-reads changed files).
+- `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related` and `semantic` reindex first when files changed or MIMRY was upgraded, so they never answer from a stale index.
+  When git reports the same working tree as the last index, that check is skipped.
+- If another lookup, such as `explain` or `why`, says the index is out of date, run `mimry reindex` (fast: it only re-reads changed files).
 - Treat `.mimry/`, caches, and generated files as support artifacts, never as the place to fix a bug.
 - Never paste secret values into context or reports; MIMRY skips secret-looking files and redacts feedback.
 - Output is plain ASCII when piped (`OK`, `!`, `x` marks), and exit codes are meaningful: `0` ok, `1` not set up, `2` stale or an error.
@@ -238,6 +239,36 @@ The server works on its current directory by default, and every tool accepts a `
 | `mimry_feedback` | Record which files helped a task |
 | `mimry_list_adapters`, `mimry_digest`, `mimry_plan_*` | Adapters, canonical index digest, read-only plan trees |
 
+### OpenCode
+
+Install MIMRY for OpenCode with:
+
+```bash
+mimry install --platform opencode
+```
+
+This installs the MIMRY skill at `~/.config/opencode/skills/mimry/SKILL.md` and adds the local MCP server to `~/.config/opencode/opencode.json`.
+Check the result with:
+
+```bash
+mimry install --platform opencode --status
+```
+
+### Kilo Code
+
+Install the MIMRY skill for Kilo Code with:
+
+```bash
+mimry install --platform kilo
+```
+
+The command writes the skill to `~/.config/kilo/skills/mimry/SKILL.md`; it does not modify a Kilo MCP configuration.
+Check the skill installation with:
+
+```bash
+mimry install --platform kilo --status
+```
+
 ### Teach your agent to use it
 
 MIMRY can install a skill (instruction bundle) that teaches an agent the workflow above:
@@ -260,7 +291,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | Command | Use it to |
 |---|---|
 | `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
-| `mimry find "<query>"` | Rank files, with the lines to read first; repeat `--language`, `--path-glob`, or `--exclude-glob`, and page with `--offset`/`--limit` (`--semantic` blends fuzzy matches; `--snippets` adds bounded, live-source excerpts) |
+| `mimry find "<query>"` | Rank files in the current indexed directory and its descendants; `--everywhere` searches the whole repository and explicit `--path-glob` overrides the default scope. Repeat `--language`, `--path-glob`, or `--exclude-glob`, and page with `--offset`/`--limit` (`--semantic` blends fuzzy matches; `--snippets` adds bounded, live-source excerpts) |
 | `mimry related "<query>"` | Find files connected through the graph |
 | `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |
 | `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |

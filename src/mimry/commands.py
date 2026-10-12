@@ -51,6 +51,7 @@ from .paths import (
     mdir,
     now,
     output_dir,
+    pointer_file,
 )
 from .plan import (
     PlanStore,
@@ -62,6 +63,7 @@ from .plan import (
     write_plan_output,
 )
 from .routing import route_payload, verification_commands, write_brief
+from .scanner import worktree_fingerprint
 from .search import find_rows
 from .security import (
     filter_index_records,
@@ -650,10 +652,16 @@ def refresh_if_stale(root: Path) -> dict | None:
 
     Returns the index stats, or None when the index was current or
     MIMRY is not set up. Call it before taking the shared reader lock:
-    indexing takes the lock exclusively.
+    indexing takes the lock exclusively. When git sees the same tree
+    the index recorded, the full walk is skipped.
     """
     with active_index_pointer(root) as active:
-        if active is None or index_freshness(root, active)["state"] != "stale":
+        if active is None:
+            return None
+        recorded = active.get("worktreeFingerprint")
+        if recorded and recorded == worktree_fingerprint(root):
+            return None  # git sees the same tree that was indexed
+        if index_freshness(root, active)["state"] != "stale":
             return None
     return write_index(root, require(root, validate=False))
 
@@ -670,13 +678,21 @@ def _change_summary(stats: dict) -> str:
     return counted or "nothing changed"
 
 
+def _indexed_root(start: Path) -> Path:
+    """The nearest folder at or above start that has an index."""
+    return next(
+        (folder for folder in (start, *start.parents) if pointer_file(folder).is_file()),
+        start,
+    )
+
+
 def _fresh_index(command):
     """Reindex first when files changed since the last index."""
 
     @wraps(command)
     def guarded(a):
         started = time.perf_counter()
-        stats = refresh_if_stale(Path(a.root).resolve())
+        stats = refresh_if_stale(_indexed_root(Path(a.root).resolve()))
         if stats is not None and not getattr(a, "json", False):
             ui.ok(
                 f"Reindexed first - {_change_summary(stats)}"
@@ -1182,6 +1198,7 @@ def _write_legacy_context_redirect(root: Path) -> None:
 
 
 def cmd_preflight(a):
+    started_all = time.perf_counter()
     root = Path(a.root).resolve()
     safe_root(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -1197,10 +1214,11 @@ def cmd_preflight(a):
             return init_status
 
     try:
-        with active_index_pointer(root) as active:
-            assert active is not None
-            ptr = active
-            fresh, graph = _index_and_graph_health(root, ptr)
+        with ui.working("Checking the index"):
+            with active_index_pointer(root) as active:
+                assert active is not None
+                ptr = active
+                fresh, graph = _index_and_graph_health(root, ptr)
     except IndexOutsideCacheError:
         # MIMRY_CACHE_HOME changed since the last index; indexing
         # builds a new one in the current cache and leaves the old one.
@@ -1215,14 +1233,16 @@ def cmd_preflight(a):
         stats = write_index(root, ptr)
         elapsed = time.perf_counter() - started
 
-    with active_index_pointer(root) as active:
-        assert active is not None
-        ptr = active
-        if stats is not None:
-            fresh, graph = _index_and_graph_health(root, ptr)
-        rows = _write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
+    with ui.working("Finding the files for this task"):
+        with active_index_pointer(root) as active:
+            assert active is not None
+            ptr = active
+            if stats is not None:
+                fresh, graph = _index_and_graph_health(root, ptr)
+            rows = _write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
 
-    ui.ok(f"Context ready for {ui.quote(sanitize_query(a.task))}")
+    total = ui.took(time.perf_counter() - started_all)
+    ui.ok(f"Context ready for {ui.quote(sanitize_query(a.task))} ({total})")
     totals = ui.count(len(fresh["files"]), "file")
     if stats is not None:
         action = "Set up MIMRY and built the index" if init_ran else "Built the index"
@@ -1410,6 +1430,7 @@ def _print_search(heading: str, query: str, rows: list[dict], *, verbose: bool) 
     _print_results(rows, verbose=verbose)
 
 
+@_fresh_index
 def cmd_semantic(a):
     root = Path(a.root).resolve()
     query = sanitize_query(getattr(a, "query", None) or "")
@@ -1445,9 +1466,19 @@ def cmd_semantic(a):
         return 0
 
 
-@_index_reader
+@_fresh_index
 def cmd_find(a):
-    root = Path(a.root).resolve()
+    start = Path(getattr(a, "find_directory", a.root)).resolve()
+    root = _indexed_root(start)
+    # Pin the owning generation, not an unindexed child directory.
+    # Keep the original scope when main retries after a schema rebuild.
+    a.find_directory = start
+    a.root = str(root)
+    with active_index_pointer(root):
+        return _find_in_directory(a, root, start)
+
+
+def _find_in_directory(a, root, start):
     ptr = require(root)
     idx = Path(ptr["indexPath"])
     semantic = getattr(a, "semantic", False)
@@ -1456,6 +1487,15 @@ def cmd_find(a):
     query = sanitize_query(a.query)
     languages = getattr(a, "language", [])
     path_globs = getattr(a, "path_glob", [])
+    if not path_globs and not getattr(a, "everywhere", False) and start != root:
+        relative = start.relative_to(root).as_posix()
+        # The directory is literal, not a user-supplied glob.
+        # Escape special characters before applying recursive scope.
+        literal = "".join(
+            "[[]" if char == "[" else f"[{char}]" if char in "*?" or char.isspace() else char
+            for char in relative
+        )
+        path_globs = [literal + "/**"]
     exclude_globs = getattr(a, "exclude_glob", [])
     offset = getattr(a, "offset", None)
     try:
@@ -1504,6 +1544,7 @@ def cmd_find(a):
     return 0
 
 
+@_fresh_index
 @_index_reader
 def cmd_related(a):
     root = Path(a.root).resolve()
@@ -1875,6 +1916,7 @@ def symbol_matches(ptr: dict, name: str) -> list[dict]:
     ]
 
 
+@_fresh_index
 @_index_reader
 def cmd_symbol(a):
     ptr = require(Path(a.root).resolve())

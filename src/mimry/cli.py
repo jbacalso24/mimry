@@ -162,6 +162,7 @@ def build_parser():
     s.add_argument("--active-only", action="store_true")
     s.set_defaults(func=cmd_adapters)
     s = sub.add_parser("find")
+    s.add_argument("--everywhere", action="store_true", help="Search the whole indexed repository")
     s.add_argument("query")
     s.add_argument(
         "--limit", type=_positive_int, default=10, help="Results per page (default: 10)"

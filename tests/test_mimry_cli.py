@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -883,6 +884,44 @@ def test_status_find_symbol_related_context_loop(tmp_path):
     assert "## Suggested Verification" in text
 
 
+def test_find_defaults_to_subdirectory_and_can_search_everywhere(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    nested = repo / "src" / "auth"
+    scoped = run_cli_from_cwd(nested, cache, "find", "auth session", "--limit", "20")
+    assert scoped.returncode == 0, scoped.stderr
+    paths = _result_paths(scoped.stdout)
+    assert paths
+    assert all(path.startswith("src/auth/") for path in paths)
+    whole = run_cli_from_cwd(
+        nested, cache, "find", "auth session", "--everywhere", "--limit", "20"
+    )
+    root = run_cli(repo, cache, "find", "auth session", "--limit", "20")
+    assert whole.returncode == 0, whole.stderr
+    assert _result_paths(whole.stdout) == _result_paths(root.stdout)
+    assert any(not path.startswith("src/auth/") for path in _result_paths(whole.stdout))
+    explicit = run_cli_from_cwd(nested, cache, "find", "auth session", "--path-glob", "src/*.ts")
+    assert explicit.returncode == 0, explicit.stderr
+    assert _result_paths(explicit.stdout) == ["src/app.ts"]
+
+
+@pytest.mark.parametrize("directory", ["[auth]", " auth"])
+def test_find_treats_subdirectory_names_as_literal_paths(tmp_path, directory):
+    repo = copy_fixture(tmp_path)
+    shutil.copytree(repo / "src" / "auth", repo / directory)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    result = run_cli_from_cwd(repo / directory, cache, "find", "auth session", "--limit", "20")
+    assert result.returncode == 0, result.stderr
+    # Check numbered rows directly: the parser splits on whitespace.
+    rows = [line for line in result.stdout.splitlines() if line.strip()[:1].isdigit()]
+    assert rows
+    assert all(directory + "/" in line for line in rows)
+
+
 def test_route_recommends_backend_for_fastapi_auth_not_tooly(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
@@ -1140,6 +1179,7 @@ def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
 
     assert res.returncode == 0, res.stderr
     assert "OK Context ready for" in res.stdout
+    assert re.search(r"Context ready for .*\(\d+\.\d+s\)", res.stdout)
     assert "Index is up to date" in res.stdout
     assert "Reindexed first" not in res.stdout and "Built the index" not in res.stdout
     assert "Start with" in res.stdout
@@ -1295,7 +1335,7 @@ def test_context_reindexes_a_stale_index_first(tmp_path):
     assert "Reindexed first - 1 file changed" in res.stdout
 
 
-def test_find_on_a_stale_index_does_not_reindex(tmp_path):
+def test_find_on_a_stale_index_reindexes_first(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
@@ -1310,8 +1350,27 @@ def test_find_on_a_stale_index_does_not_reindex(tmp_path):
     res = run_cli(repo, cache, "find", "find marker auth session")
 
     assert res.returncode == 0
-    assert "Reindexed first" not in res.stdout
-    assert run_cli(repo, cache, "status").returncode == 2
+    assert "Reindexed first" in res.stdout
+    assert run_cli(repo, cache, "status").returncode == 0
+
+
+def test_find_from_a_subfolder_reindexes_the_repo_first(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graph_artifacts(repo)
+    target = repo / "src" / "auth" / "session.py"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\ndef find_marker():\n    return True\n",
+        encoding="utf-8",
+    )
+
+    res = run_cli_from_cwd(repo / "src" / "auth", cache, "find", "find marker auth session")
+
+    assert res.returncode == 0, res.stderr
+    assert "Reindexed first" in res.stdout
+    assert run_cli(repo, cache, "status").returncode == 0
 
 
 def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):

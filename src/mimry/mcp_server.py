@@ -17,6 +17,7 @@ from mimry.adapters import list_adapters
 from mimry.cache_safety import IndexOutsideCacheError
 from mimry.commands import (
     INDEX_REBUILT_NOTE,
+    _change_summary,
     _write_context_pack,
     cmd_explain,
     cmd_init,
@@ -276,10 +277,12 @@ def _index_operation(*, exclusive: bool = False, refresh: bool = False):
         def guarded(*args, **kwargs):
             bound = func_signature.bind_partial(*args, **kwargs)
             root_path = _root(bound.arguments.get("root"))
-            if refresh:
-                refresh_if_stale(root_path)
+            stats = refresh_if_stale(root_path) if refresh else None
             with active_index_pointer(root_path, exclusive=exclusive):
-                return func(*args, **kwargs)
+                result = func(*args, **kwargs)
+            if stats is not None and isinstance(result, dict):
+                result["reindexed"] = _change_summary(stats)
+            return result
 
         return guarded
 
@@ -427,7 +430,7 @@ def mimry_preflight(
 
 @mcp.tool
 @_state_guard
-@_index_operation()
+@_index_operation(refresh=True)
 def mimry_find(
     query: str,
     root: str | None = None,
@@ -505,7 +508,7 @@ def mimry_find(
 
 @mcp.tool
 @_state_guard
-@_index_operation()
+@_index_operation(refresh=True)
 def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Local-only semantic search over bounded MIMRY chunks."""
     root_path = _root(root)
@@ -523,7 +526,7 @@ def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict
 
 @mcp.tool
 @_state_guard
-@_index_operation()
+@_index_operation(refresh=True)
 def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Return files related to a query by graph-aware ranking."""
     root_path = _root(root)
@@ -577,7 +580,7 @@ def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8)
 
 @mcp.tool
 @_state_guard
-@_index_operation()
+@_index_operation(refresh=True)
 def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
     """Search indexed symbols by name, falling back to file names."""
     root_path = _root(root)

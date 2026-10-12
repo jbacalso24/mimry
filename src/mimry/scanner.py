@@ -10,6 +10,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
+from . import __version__
 from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
 from .constants import SCHEMA_VERSION
 from .core.documents import (
@@ -29,6 +30,7 @@ from .framework_adapters import (
 )
 from .intent import CAMEL_BOUNDARY_RE, STOPWORDS, TOKEN_RE
 from .paths import canonical_rel_path, stable_id
+from .reuse import code_fingerprint
 from .security import (
     _has_heavy_ignore,
     contains_sensitive_data,
@@ -384,6 +386,90 @@ def git_ignored(root: str) -> tuple[frozenset[str], frozenset[str]]:
         return frozenset(), frozenset()
     dirs = frozenset(p for p in paths if p.endswith("/"))
     return frozenset(p for p in paths if not p.endswith("/")), dirs
+
+
+def _git_output(root: Path, *args: str) -> bytes | None:
+    """Stdout of ``git -C root args``, or None when git fails."""
+    try:
+        res = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            check=False,
+            # Never inherit stdin: under the MCP stdio server it is the
+            # JSON-RPC channel.
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError:
+        return None
+    return res.stdout if res.returncode == 0 else None
+
+
+def _status_paths(status: bytes) -> list[bytes]:
+    """Paths named by ``status --porcelain=v1 -z``, in output order.
+
+    Entries are NUL-terminated ``XY path``. A rename or copy is followed
+    by its original path as a field of its own, which is skipped.
+    """
+    fields = status.split(b"\0")
+    paths = []
+    index = 0
+    while index < len(fields):
+        entry = fields[index]
+        index += 1
+        if not entry:
+            continue
+        paths.append(entry[3:])
+        if entry[0:1] in (b"R", b"C") or entry[1:2] in (b"R", b"C"):
+            index += 1
+    return paths
+
+
+def worktree_fingerprint(root: Path) -> str | None:
+    """sha256 of the working tree as git sees it, or None.
+
+    Hashes the MIMRY version and build, the repo config, the top-level
+    and HEAD, and each dirty path with its size and mtime. Equal
+    fingerprints mean git reports the same tree, so no walk is needed.
+    None when git cannot answer: no repo, no commit, git missing, or a
+    failed command.
+    """
+    root = Path(root)
+    head = _git_output(root, "rev-parse", "--show-toplevel", "HEAD")
+    if head is None:
+        return None
+    status = _git_output(
+        root,
+        "--no-optional-locks",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "-uall",
+        "--",
+        ".",
+        ":(exclude).mimry",
+    )
+    if status is None:
+        return None
+    top = Path(os.fsdecode(head.splitlines()[0]))
+    config = root / ".mimry" / "config.toml"
+    digest = hashlib.sha256()
+    digest.update(__version__.encode())
+    digest.update(code_fingerprint().encode())
+    try:
+        digest.update(config.read_bytes() if config.is_file() else b"")
+    except OSError:
+        return None
+    digest.update(head)
+    digest.update(status)
+    for path in _status_paths(status):
+        digest.update(path + b"\0")
+        try:
+            st = os.lstat(top / os.fsdecode(path))
+        except OSError:
+            digest.update(b"missing\0")
+        else:
+            digest.update(f"{st.st_size}:{st.st_mtime_ns}\0".encode())
+    return digest.hexdigest()
 
 
 def scan_stats(root, *, probe_open: bool = True) -> list[tuple[str, Path, os.stat_result]]:
