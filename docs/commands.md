@@ -1,6 +1,6 @@
 # Commands in detail
 
-Every command, then the details of filters, pagination, diagnostics and plan trees.
+This page lists every command, then covers filters, pagination, diagnostics and plan trees.
 
 ## All commands
 
