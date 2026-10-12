@@ -185,7 +185,7 @@ def _adapt_file(
     """
     try:
         snapshot = read_snapshot(path, root=root, settings=settings)
-        output = adapt(path, root, snapshot)
+        output = adapt(path, root, snapshot, settings=settings)
     except UnopenableFileError:
         # Locked or ACL-protected: skipped like ignored files, not
         # refused.
@@ -273,7 +273,7 @@ def _collect(
     settings = IndexSettings() if settings is None else settings
     progress = progress or _Progress(False)
     stat_cache = load_stat_cache(previous) if previous is not None else None
-    adapt_cache = load_adapt_cache(previous, root) if stat_cache is not None else None
+    adapt_cache = load_adapt_cache(previous, root, settings) if stat_cache is not None else None
     stat_entries: dict[str, list] = {}
     # Serialized as each file is adapted, before anything downstream can
     # touch the records, so a later reuse replays exactly what adapt()
@@ -620,17 +620,29 @@ def _finalize_graph(graph) -> dict:
     return graph
 
 
-def _build_core_graph(files, symbols, edges, imports, exports, calls, symbols_by_file, references):
+def _build_core_graph(
+    files,
+    symbols,
+    edges,
+    imports,
+    exports,
+    calls,
+    symbols_by_file,
+    references,
+    settings: IndexSettings | None = None,
+):
     """Assemble the relationship graph.
 
-    defines + imports + calls + inherits + references.
+    defines + imports + calls + inherits + references. ``settings``
+    supplies the mimry.toml language overrides for import resolution.
     """
     graph = GraphEngine().build_graph(files, symbols, edges, imports=imports, exports=exports)
 
     rel_paths = {f["rel_path"] for f in files}
     file_id_of = {f["rel_path"]: f["file_id"] for f in files}
     symbol_ids = _symbol_ids_by_path_name(files, symbols)
-    import_edges = resolve_imports(imports, rel_paths)
+    overrides = settings.language_overrides() if settings is not None else None
+    import_edges = resolve_imports(imports, rel_paths, overrides)
     split_refs = _split_references(references)
 
     graph["edges"] += _import_graph_edges(import_edges, file_id_of)
@@ -870,7 +882,15 @@ def write_index(root, ptr, *, full: bool = False):
                 }
             progress("MIMRY: building graph", force=True)
             graph = _build_core_graph(
-                files, symbols, edges, imports, exports, calls, symbols_by_file, references
+                files,
+                symbols,
+                edges,
+                imports,
+                exports,
+                calls,
+                symbols_by_file,
+                references,
+                settings,
             )
         finally:
             progress.done()
@@ -979,7 +999,7 @@ def write_index(root, ptr, *, full: bool = False):
             atomic_write_text(
                 staging / STAT_CACHE, json.dumps(stat_cache, separators=(",", ":"), sort_keys=True)
             )
-            header = json.dumps(adapt_cache_header(root), sort_keys=True)
+            header = json.dumps(adapt_cache_header(root, settings), sort_keys=True)
             atomic_write_text(
                 staging / ADAPT_CACHE,
                 "".join(f"{line}\n" for line in [header, *record["adapt_lines"]]),

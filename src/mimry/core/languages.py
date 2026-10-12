@@ -234,11 +234,17 @@ NODE_TYPES = {
 }
 
 
-def language_for(path: str | Path) -> str | None:
-    """Grammar name for a path's extension, or None if unsupported."""
+def language_for(path: str | Path, overrides: dict[str, str] | None = None) -> str | None:
+    """Grammar name for a path's extension, or None if unsupported.
+
+    ``overrides`` maps lowercased extensions to language names and wins
+    over the built-in table.
+    """
     if isinstance(path, str):
         path = Path(path)
     ext = path.suffix.lower()
+    if overrides and ext in overrides:
+        return overrides[ext]
     return EXTENSION_LANGUAGE.get(ext)
 
 
@@ -782,12 +788,15 @@ def _captures(query: Any, root_node: Any) -> list[tuple[Any, str]]:
     return ordered
 
 
-def extract(path: str | Path, source: str) -> dict:
-    """Parse and return definitions, imports, calls with status."""
+def extract(path: str | Path, source: str, language: str | None = None) -> dict:
+    """Parse and return definitions, imports, calls with status.
+
+    ``language`` replaces the one ``language_for(path)`` would pick.
+    """
     if isinstance(path, str):
         path = Path(path)
 
-    lang = language_for(path)
+    lang = language if language is not None else language_for(path)
     if lang is None:
         return {
             "definitions": [],

@@ -9,13 +9,13 @@ SYMBOL_KIND_PRIORITY = {"class": 0, "interface": 1, "function": 2, "method": 3, 
 _JS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
 
 
-def _is_c_family(path: str) -> bool:
-    return language_for(path) in ("c", "cpp")
+def _is_c_family(path: str, overrides: dict[str, str] | None = None) -> bool:
+    return language_for(path, overrides) in ("c", "cpp")
 
 
-def _relative_suffixes(importer: str) -> tuple[str, ...]:
+def _relative_suffixes(importer: str, overrides: dict[str, str] | None = None) -> tuple[str, ...]:
     """Extensions a relative import may omit, by importer language."""
-    language = language_for(importer)
+    language = language_for(importer, overrides)
     if language == "ruby":
         return ("", ".rb")
     if language in ("c", "cpp"):
@@ -41,13 +41,19 @@ def symbol_selection_key(symbol, rel_path=""):
     )
 
 
-def resolve_imports(imports: dict[str, list[str]], rel_paths: set[str]) -> list[dict]:
+def resolve_imports(
+    imports: dict[str, list[str]],
+    rel_paths: set[str],
+    overrides: dict[str, str] | None = None,
+) -> list[dict]:
     """Resolve import strings to repo-relative target files.
 
     Args:
         imports: Dict mapping importer rel_path to list of module
             strings
         rel_paths: Set of all repo-relative file paths that exist
+        overrides: Extension-to-language map from mimry.toml, used to
+            pick each importer's language
 
     Returns:
         Sorted list of {"importer": str, "target": str,
@@ -63,13 +69,15 @@ def resolve_imports(imports: dict[str, list[str]], rel_paths: set[str]) -> list[
     # Check if any importer is C-family; if so, build exact lookup
     exact_lookup = {}
     for importer in imports.keys():
-        if _is_c_family(importer):
+        if _is_c_family(importer, overrides):
             exact_lookup = _build_suffix_lookup(rel_paths, keep_extension=True)
             break
 
     for importer, module_list in imports.items():
         for module in module_list:
-            target = _resolve_import(importer, module, rel_paths, suffix_lookup, exact_lookup)
+            target = _resolve_import(
+                importer, module, rel_paths, suffix_lookup, exact_lookup, overrides
+            )
             if target:
                 results.append(
                     {
@@ -90,6 +98,7 @@ def _resolve_import(
     rel_paths: set[str],
     suffix_lookup: dict,
     exact_lookup: dict | None = None,
+    overrides: dict[str, str] | None = None,
 ) -> dict | None:
     """Try to resolve a single import against available paths.
 
@@ -110,11 +119,11 @@ def _resolve_import(
 
     # Rule 1: Relative specifier (JS/TS/C/C++) - starts with ./ or ../
     if module.startswith("./") or module.startswith("../"):
-        result = _rule1_relative(importer, module, rel_paths)
+        result = _rule1_relative(importer, module, rel_paths, overrides)
         if result:
             return result
         # For C-family, also try exact match after rule 1 fails
-        if _is_c_family(importer):
+        if _is_c_family(importer, overrides):
             return _exact_suffix_match(module, exact_lookup)
         return None
 
@@ -140,7 +149,7 @@ def _resolve_import(
         return result
 
     # Rule 4: Suffix match
-    return _rule4_suffix_match(module, rel_paths, suffix_lookup, importer)
+    return _rule4_suffix_match(module, rel_paths, suffix_lookup, importer, overrides)
 
 
 def _exact_suffix_match(path: str, exact_lookup: dict) -> dict | None:
@@ -160,7 +169,9 @@ def _exact_suffix_match(path: str, exact_lookup: dict) -> dict | None:
     return None
 
 
-def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> dict | None:
+def _rule1_relative(
+    importer: str, module: str, rel_paths: set[str], overrides: dict[str, str] | None = None
+) -> dict | None:
     """Rule 1: Relative specifier (JS/TS/C/C++/Ruby).
 
     Base = importer's directory
@@ -173,7 +184,7 @@ def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> dict | N
     # Join and normalize
     candidate = posixpath.normpath(posixpath.join(importer_dir, module))
 
-    suffixes = _relative_suffixes(importer)
+    suffixes = _relative_suffixes(importer, overrides)
 
     # Probe: exact path and with suffixes
     for suffix in suffixes:
@@ -182,7 +193,7 @@ def _rule1_relative(importer: str, module: str, rel_paths: set[str]) -> dict | N
             return {"path": with_suffix, "confidence": "EXTRACTED"}
 
     # Probe: /index with JS extensions only when not Ruby/C-family
-    language = language_for(importer)
+    language = language_for(importer, overrides)
     if language not in ("ruby", "c", "cpp"):
         index_base = posixpath.join(candidate, "index")
         for ext in _JS_EXTENSIONS:
@@ -263,7 +274,11 @@ def _rule3_relative_to_package(importer: str, module: str, rel_paths: set[str]) 
 
 
 def _rule4_suffix_match(
-    module: str, rel_paths: set[str], suffix_lookup: dict, importer: str = ""
+    module: str,
+    rel_paths: set[str],
+    suffix_lookup: dict,
+    importer: str = "",
+    overrides: dict[str, str] | None = None,
 ) -> dict | None:
     r"""Rule 4: Suffix match (Go, Rust, C#, bare JS specifiers, Ruby).
 
@@ -283,7 +298,7 @@ def _rule4_suffix_match(
     matches = suffix_lookup.get(normalized, [])
 
     # For Ruby importers, keep only matches ending in .rb
-    if importer and language_for(importer) == "ruby":
+    if importer and language_for(importer, overrides) == "ruby":
         matches = [m for m in matches if m.endswith(".rb")]
 
     if len(matches) == 1:

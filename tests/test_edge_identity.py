@@ -182,9 +182,9 @@ class TestEdgeIdentityThroughRealPipeline:
 
         real_adapt = scanner_module.adapt
 
-        def conflicting_adapt(path, root, snapshot=None):
+        def conflicting_adapt(path, root, snapshot=None, settings=None):
             f, symbols, edges, imports, exports, calls, references = real_adapt(
-                path, root, snapshot
+                path, root, snapshot, settings=settings
             )
             # Both files now claim the same edge identity but point at
             # different targets -- exactly the ambiguity that used to be
@@ -216,9 +216,9 @@ class TestEdgeIdentityThroughRealPipeline:
 
         real_adapt = scanner_module.adapt
 
-        def empty_edge_adapt(path, root, snapshot=None):
+        def empty_edge_adapt(path, root, snapshot=None, settings=None):
             f, symbols, edges, imports, exports, calls, references = real_adapt(
-                path, root, snapshot
+                path, root, snapshot, settings=settings
             )
             if edges:
                 edges[0]["edge_id"] = "  "
@@ -237,9 +237,9 @@ class TestEdgeIdentityThroughRealPipeline:
 
         real_adapt = scanner_module.adapt
 
-        def conflicting_adapt(path, root, snapshot=None):
+        def conflicting_adapt(path, root, snapshot=None, settings=None):
             f, symbols, _edges, imports, exports, calls, references = real_adapt(
-                path, root, snapshot
+                path, root, snapshot, settings=settings
             )
             edges = [
                 {
@@ -274,9 +274,9 @@ class TestEdgeIdentityThroughRealPipeline:
 
         real_adapt = scanner_module.adapt
 
-        def duplicating_adapt(path, root, snapshot=None):
+        def duplicating_adapt(path, root, snapshot=None, settings=None):
             f, symbols, edges, imports, exports, calls, references = real_adapt(
-                path, root, snapshot
+                path, root, snapshot, settings=settings
             )
             return f, symbols, edges + list(edges), imports, exports, calls, references
 

@@ -11,12 +11,12 @@ from .security import is_text
 TS_EXTENSIONS = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 
 
-def _language_for(path: Path) -> str:
-    if path.suffix.lower() == ".tsx":
+def _language_for(extension: str) -> str:
+    if extension == ".tsx":
         return "tsx"
-    if path.suffix.lower() == ".jsx":
+    if extension == ".jsx":
         return "javascript"
-    if path.suffix.lower() in (".ts", ".mts", ".cts"):
+    if extension in (".ts", ".mts", ".cts"):
         return "typescript"
     return "javascript"
 
@@ -91,7 +91,7 @@ def _fallback_imports_exports(source: str) -> tuple[list[str], list[str]]:
 
 
 def _fallback_symbols_regex(
-    source: str, file_record: dict[str, Any], path: Path
+    source: str, file_record: dict[str, Any], path: Path, extension: str | None = None
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Extract symbols using regex when tree-sitter fails.
 
@@ -103,7 +103,8 @@ def _fallback_symbols_regex(
     edges: list[dict[str, Any]] = []
     seen: set[tuple[str, str, int]] = set()
     # Match tree-sitter path which stores the raw suffix lowercased
-    lang = path.suffix.lower().lstrip(".")
+    ext = extension if extension is not None else path.suffix.lower()
+    lang = ext.lstrip(".")
 
     patterns = [
         (r"^export\s+default\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", "function"),
@@ -154,19 +155,25 @@ def _fallback_symbols_regex(
 
 
 def parse_ts_like(
-    path: Path, root: Path, file_record: dict[str, Any], source: str | None = None
+    path: Path,
+    root: Path,
+    file_record: dict[str, Any],
+    source: str | None = None,
+    extension: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str], str, str]:
     """Parse JS/TS/JSX/TSX with tree-sitter and return
     symbols/edges/imports/exports/status/adapter_name.
 
     Pass `source` (decoded text) to avoid reopening the file during
     indexing. If source is None, will read from path (for non-indexing
-    use).
+    use). `extension` (lowercased, with the dot) picks the grammar in
+    place of the path's own suffix.
     """
     if not is_text(path):
         return [], [], [], [], "parse_error:non_text", "typescript-ast"
     if source is None:
         source = path.read_text(encoding="utf-8", errors="ignore")
+    ext = extension if extension is not None else path.suffix.lower()
     imports, exports = _fallback_imports_exports(source)
     symbols: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
@@ -175,16 +182,20 @@ def parse_ts_like(
     try:
         from tree_sitter_language_pack import get_parser
 
-        parser = get_parser(_language_for(path))
+        parser = get_parser(_language_for(ext))
         tree = parser.parse(source)
         root_node = tree.root_node()
     except Exception:
-        fallback_symbols, fallback_edges = _fallback_symbols_regex(source, file_record, path)
+        fallback_symbols, fallback_edges = _fallback_symbols_regex(
+            source, file_record, path, extension=ext
+        )
         return fallback_symbols, fallback_edges, imports, exports, "ok", "js-ts-regex"
 
     # The regex fallback above needed str; everything below indexes by
     # byte offset.
     source = source.encode("utf-8")
+
+    language = ext.lstrip(".")
 
     def add_symbol(
         name: str | None, kind: str, node: Any, exported: bool = False, confidence: float = 0.95
@@ -202,7 +213,7 @@ def parse_ts_like(
                 "file_id": file_record["file_id"],
                 "name": name,
                 "kind": kind,
-                "language": path.suffix.lower().lstrip("."),
+                "language": language,
                 "exported": exported,
                 "line_start": _line(node),
                 "line_end": _end_line(node),

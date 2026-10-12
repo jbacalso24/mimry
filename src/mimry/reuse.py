@@ -17,10 +17,13 @@ import json
 import sys
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .constants import SCHEMA_VERSION
 from .state import GENERATION_MANIFEST, sha256_file
+
+if TYPE_CHECKING:
+    from .settings import IndexSettings
 
 STAT_CACHE = "stat-cache.json"
 ADAPT_CACHE = "adapt-cache.jsonl"
@@ -102,10 +105,12 @@ def load_stat_cache(idx: Path) -> StatCache | None:
         return None
 
 
-def load_adapt_cache(idx: Path, root: Path) -> dict[str, tuple[str, dict]] | None:
+def load_adapt_cache(
+    idx: Path, root: Path, settings: IndexSettings
+) -> dict[str, tuple[str, dict]] | None:
     """Per-file ``(cache line, parsed row)`` by rel path.
 
-    Only if built by this code for this root.
+    Only if built by this code for this root and these settings.
     """
     data = _verified_bytes(idx, ADAPT_CACHE)
     if data is None:
@@ -114,16 +119,21 @@ def load_adapt_cache(idx: Path, root: Path) -> dict[str, tuple[str, dict]] | Non
         rows = [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]
     except ValueError:
         return None
-    if not rows or rows[0] != adapt_cache_header(root):
+    if not rows or rows[0] != adapt_cache_header(root, settings):
         return None
     lines = [line for line in data.decode("utf-8").splitlines() if line.strip()]
     return {row["rel_path"]: (line, row) for line, row in zip(lines[1:], rows[1:], strict=True)}
 
 
-def adapt_cache_header(root: Path) -> dict[str, str]:
+def adapt_cache_header(root: Path, settings: IndexSettings) -> dict[str, str]:
     # Records embed the absolute path, so a moved checkout must not
-    # reuse them.
-    return {"fingerprint": code_fingerprint(), "root": str(root)}
+    # reuse them. The settings digest covers mimry.toml, whose language
+    # overrides change how files parse.
+    return {
+        "fingerprint": code_fingerprint(),
+        "root": str(root),
+        "settings": settings.digest or "",
+    }
 
 
 _FINGERPRINT: str | None = None

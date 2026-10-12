@@ -161,6 +161,10 @@ Commit it so everyone on the team gets the same index.
 include = ["src/**", "docs/**"]            # index only these paths
 exclude = ["**/fixtures/**", "legacy/**"]  # never index these paths
 max_file_bytes = 2_000_000                 # size limit per file (default 1 MB)
+
+[index.languages]
+".inc" = "php"                             # parse .inc files as PHP
+".h" = "cpp"                               # parse .h headers as C++ instead of C
 ```
 
 ## Benchmarks

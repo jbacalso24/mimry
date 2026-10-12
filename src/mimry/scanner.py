@@ -21,8 +21,8 @@ from .core.documents import (
     extract_document_text,
     is_document,
 )
+from .core.languages import EXTENSION_LANGUAGE
 from .core.languages import extract as extract_language
-from .core.languages import language_for
 from .framework_adapters import (
     alembic_migration,
     enrich_framework_facts,
@@ -686,8 +686,10 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     }
 
 
-def adapt(path, root, snapshot=None):
-    ext = path.suffix.lower()
+def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
+    # The extension picks the parser, so a mimry.toml override applies.
+    # Manifests and documents keep their checks on the real path.
+    ext = settings.extension(path) if settings else path.suffix.lower()
     # One read for the whole adapter chain. Everything below derives
     # from these bytes, and verify_unchanged() at the end proves nothing
     # shifted meanwhile. Callers that record the snapshot's stat
@@ -773,9 +775,9 @@ def adapt(path, root, snapshot=None):
         f = file_record(path, root, "typescript-ast", "ok", hint, snapshot)
         source = data.decode("utf-8", errors="ignore")
         symbols, edges, imports, exports, status, adapter = parse_ts_like(
-            path, root, f, source=source
+            path, root, f, source=source, extension=ext
         )
-        result = extract_language(path, source)
+        result = extract_language(path, source, language=EXTENSION_LANGUAGE[ext])
         calls = result.get("calls", [])
         inherits = result.get("inherits", [])
         f = file_record(path, root, adapter, status, hint, snapshot)
@@ -797,11 +799,11 @@ def adapt(path, root, snapshot=None):
                 references["table_refs"] = table_refs
     else:
         # Go/Rust/C# via core.languages
-        language = language_for(path)
+        language = EXTENSION_LANGUAGE.get(ext)
         if language and ext != ".py" and ext not in TS_EXTENSIONS:
             try:
                 source = data.decode("utf-8", errors="ignore")
-                result = extract_language(path, source)
+                result = extract_language(path, source, language=language)
                 if result.get("status") == "ok":
                     f = file_record(path, root, f"tree-sitter-{language}", "ok", hint, snapshot)
                     for d in result.get("definitions", []):
