@@ -466,7 +466,7 @@ Run `mimry adapters --verbose` to see what each extracts.
 
 ## Supported platforms
 
-MIMRY targets Windows, Linux, and macOS on Python 3.11 to 3.13, and CI runs the full suite on all nine combinations.
+MIMRY targets Windows, Linux, and macOS on Python 3.11 to 3.13, and CI runs the full suite on all three operating systems with Python 3.11, plus Python 3.13 on Linux.
 Paths are handled POSIX-style internally, and platform-specific system calls are capability-guarded rather than assumed.
 Handled explicitly, because each was a real bug:
 
@@ -478,7 +478,7 @@ Handled explicitly, because each was a real bug:
 
 ## Support and releases
 
-CI runs on every push and pull request: lint, tests, an end-to-end determinism matrix, an unlocked extracted-sdist parser suite, and a clean-wheel smoke test on each platform, plus jobs that compare determinism evidence across platforms and gate the retrieval benchmark.
+CI runs on every pull request and every push to `main`: lint, tests, an end-to-end determinism matrix, an unlocked extracted-sdist parser suite, and a clean-wheel smoke test on each platform, plus the retrieval benchmark gate on Linux.
 A separate workflow audits the locked runtime dependencies for known vulnerabilities whenever they change, and weekly.
 Releases are cut by pushing a `vX.Y.Z` tag, which builds reproducible artifacts and publishes them to PyPI and GitHub Releases.
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`RELEASING.md`](RELEASING.md) for the release checks.

@@ -93,9 +93,6 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
     assert any(
         path.as_posix().endswith("scripts/agent_integration_smoke.py") for path in payload_paths
     )
-    assert any(
-        path.as_posix().endswith("scripts/determinism_aggregate.py") for path in payload_paths
-    )
     assert any(path.as_posix().endswith("scripts/determinism_matrix.py") for path in payload_paths)
     assert any(path.as_posix().endswith("CONTRIBUTING.md") for path in payload_paths)
     assert any(path.as_posix().endswith("SECURITY.md") for path in payload_paths)

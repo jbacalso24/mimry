@@ -1,9 +1,9 @@
 # Releasing MIMRY
 
 MIMRY targets CPython 3.11–3.13 on Windows, Linux, and macOS. That matrix is committed
-in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every push and pull
-request: 3 operating systems x 3 Python versions, plus two aggregate jobs. All dependencies
-resolve from a standard index; MIMRY no longer pins any dependency to a Git commit.
+in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every pull request
+and every push to `main`: 3 operating systems on Python 3.11, plus Python 3.13 on Linux. All
+dependencies resolve from a standard index; MIMRY no longer pins any dependency to a Git commit.
 
 A green CI run is **required** for a release, and it is **not a substitute for review**. CI
 proves the checks that are automated; it says nothing about whether the change is the right
@@ -14,9 +14,8 @@ what they encode.
 
 | Job | Runs on | What it proves |
 | --- | --- | --- |
-| `release-floor` | 3 OS x Python 3.11/3.12/3.13 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix, unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
-| `determinism-aggregate` | ubuntu-latest, needs `release-floor` | Every one of the 9 matrix cells emitted evidence, and all of them agree with each other and with the committed golden values on the canonical digest, the retrieval rankings, and the context pack |
-| `benchmark-gate` | ubuntu-latest, locked env | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
+| `release-floor` | 3 OS x Python 3.11, plus ubuntu-latest x Python 3.13 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix (every cell must equal the committed golden canonical digest, retrieval rankings, and context pack, so all cells agree with each other), unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
+| benchmark steps | ubuntu-latest x Python 3.11 cell only | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
 
 A separate [`audit.yml`](.github/workflows/audit.yml) workflow runs `pip-audit` against the exact locked runtime dependencies whenever `uv.lock` or `pyproject.toml` changes, and weekly.
 It is not a required check, so a newly published advisory never blocks unrelated pull requests; a red run means the lock needs an upgrade.
@@ -92,7 +91,7 @@ uv pip install --python /tmp/mimry-wheel-venv/bin/python dist/*.whl
 ```
 
 The packaging tests verify the wheel's `Requires-Dist` entries and the sdist allow-list,
-including both determinism matrix and aggregate scripts.
+including the determinism matrix script.
 
 CI additionally extracts the sdist and, with an empty uv cache and no lockfile use, installs
 its dependencies and runs the full parser and determinism surface against that unlocked

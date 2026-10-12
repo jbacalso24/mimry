@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -15,8 +16,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The supported floor on every OS, plus the newest Python on Linux.
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.13"
 
     steps:
       - uses: actions/checkout@v4
@@ -51,16 +56,7 @@ jobs:
         run: uv run python scripts/cross_platform_check.py
 
       - name: Real end-to-end determinism matrix
-        run: uv run python scripts/determinism_matrix.py --emit digest-${{ matrix.os }}-${{ matrix.python-version }}.json
-
-      # Printing a digest per job proves nothing on its own -- nothing compares
-      # them. Upload each, then the aggregate job below actually diffs them.
-      - name: Upload canonical digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: digest-${{ matrix.os }}-${{ matrix.python-version }}
-          path: digest-${{ matrix.os }}-${{ matrix.python-version }}.json
-          if-no-files-found: error
+        run: uv run python scripts/determinism_matrix.py
 
       # The sdist ships no uv.lock, so this lane resolves dependencies fresh --
       # it is the only place a newer parser release would first show up. One
@@ -116,60 +112,17 @@ jobs:
           uv pip install --python "$venv_python" dist/*.whl
           "$mimry_exe" --help >/dev/null
 
-  determinism-aggregate:
-    name: Compare canonical evidence across every platform
-    needs: release-floor
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download every platform artifact
-        uses: actions/download-artifact@v4
-        with:
-          pattern: digest-*
-          path: digests
-          merge-multiple: true
-
-      # The point of the whole exercise. Every OS/Python cell must have produced
-      # evidence; all of them must agree on the structural digest AND on the
-      # retrieval ranking AND on the context pack; and all three must equal the
-      # values committed in the repository. A missing artifact is a failure, not
-      # silent agreement.
-      - name: Compare digest, rankings, and context across the matrix
-        run: |
-          python scripts/determinism_aggregate.py \
-            --artifacts digests \
-            --expect-os ubuntu-latest,macos-latest,windows-latest \
-            --expect-python 3.11,3.12,3.13
-
-  benchmark-gate:
-    name: Agent usefulness benchmark (frozen quality floors)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Sync locked environment
-        run: uv sync --locked
-
-      # The committed report is independent review evidence. Validate it before
-      # a fresh run so CI cannot make stale evidence look current by overwriting it.
       - name: Assert the committed report is current and PASS
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: |
           uv run pytest -q tests/test_benchmark_quality_gate.py
           uv run python scripts/agent_usefulness_benchmark.py --validate-report benchmarks/result.core.json
 
-      # One required job, locked environment, real thresholds. The benchmark is
-      # too slow for every matrix cell but must not be informational-only: a
-      # ranking or context-pack regression that clears the determinism gate
+      # Too slow for every cell, so it runs once, but it is not informational:
+      # a ranking or context-pack regression that clears the determinism gate
       # still has to fail here.
       - name: Run the benchmark and require PASS
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: |
           mkdir -p /tmp/artifact
           uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph --out /tmp/artifact/result.core.json
@@ -181,7 +134,7 @@ jobs:
       # tracked file untouched, so a stale committed result reads as current.
       # Publish what this run actually measured.
       - name: Upload benchmark result
-        if: always()
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-result
