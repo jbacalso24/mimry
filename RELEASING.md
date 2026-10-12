@@ -15,7 +15,7 @@ what they encode.
 | Job | Runs on | What it proves |
 | --- | --- | --- |
 | `release-floor` | 3 OS x Python 3.11, plus ubuntu-latest x Python 3.13 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix (every cell must equal the committed golden canonical digest, retrieval rankings, and context pack, so all cells agree with each other), unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
-| benchmark steps | ubuntu-latest x Python 3.11 cell only | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
+| benchmark steps | ubuntu-latest x Python 3.13 cell only | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
 
 A separate [`audit.yml`](.github/workflows/audit.yml) workflow runs `pip-audit` against the exact locked runtime dependencies whenever `uv.lock` or `pyproject.toml` changes, and weekly.
 It is not a required check, so a newly published advisory never blocks unrelated pull requests; a red run means the lock needs an upgrade.

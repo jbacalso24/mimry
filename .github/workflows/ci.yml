@@ -113,16 +113,17 @@ jobs:
           "$mimry_exe" --help >/dev/null
 
       - name: Assert the committed report is current and PASS
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         run: |
           uv run pytest -q tests/test_benchmark_quality_gate.py
           uv run python scripts/agent_usefulness_benchmark.py --validate-report benchmarks/result.core.json
 
       # Too slow for every cell, so it runs once, but it is not informational:
       # a ranking or context-pack regression that clears the determinism gate
-      # still has to fail here.
+      # still has to fail here. It runs on 3.13 because Python 3.12 made float
+      # sum() compensated, so 3.11 differs from the baseline in the last digit.
       - name: Run the benchmark and require PASS
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         run: |
           mkdir -p /tmp/artifact
           uv run python scripts/agent_usefulness_benchmark.py --repeat 3 --graph --out /tmp/artifact/result.core.json
@@ -134,7 +135,7 @@ jobs:
       # tracked file untouched, so a stale committed result reads as current.
       # Publish what this run actually measured.
       - name: Upload benchmark result
-        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-result
