@@ -105,6 +105,8 @@ mimry install --platform claude-code
 | Factory Droid | `droid` |
 | Aider, Antigravity, CodeBuddy, Hermes, Kimi, OpenClaw, Pi Agent, Trae | see `mimry install --list-platforms` |
 
+See [docs/agents.md](docs/agents.md) for where each agent's files go and how its MCP server is registered.
+
 | Option | Description |
 |---|---|
 | `--project` | Install into the current repository only, instead of for every repository |
