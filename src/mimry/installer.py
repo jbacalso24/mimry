@@ -232,6 +232,14 @@ def _claude_global_path() -> Path:
     return _home() / ".claude" / "skills" / "mimry" / "SKILL.md"
 
 
+def _codex_global_path() -> Path:
+    # Codex reads skills from $CODEX_HOME, which defaults to ~/.codex.
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home:
+        return Path(codex_home) / "skills" / "mimry" / "SKILL.md"
+    return _home() / ".codex" / "skills" / "mimry" / "SKILL.md"
+
+
 def _antigravity_global_path() -> Path:
     return _home() / ".gemini" / "config" / "skills" / "mimry" / "SKILL.md"
 
@@ -262,7 +270,7 @@ def platforms() -> dict[str, MimryPlatform]:
             key="codex",
             label="Codex",
             project_path=skill(".codex"),
-            global_path=home / ".codex" / "skills" / "mimry" / "SKILL.md",
+            global_path=_codex_global_path(),
             always_on_file=Path("AGENTS.md"),
             hook_path=Path(".codex") / "hooks.json",
             mcp=McpCli(

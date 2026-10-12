@@ -675,6 +675,31 @@ def test_install_global_rejects_always_on(tmp_path):
     assert "x --always-on only works with --project" in res.stderr
 
 
+def test_global_codex_install_follows_codex_home(tmp_path):
+    repo = copy_fixture(tmp_path)
+    home, codex_home = tmp_path / "home", tmp_path / "codex-home"
+    env = os.environ.copy()
+    env.update(
+        PYTHONPATH=str(ROOT / "src"),
+        MIMRY_CACHE_HOME=str(tmp_path / "cache"),
+        HOME=str(home),
+        USERPROFILE=str(home),
+        CODEX_HOME=str(codex_home),
+    )
+    res = subprocess.run(
+        [sys.executable, "-m", "mimry.cli", "--root", str(repo), "install"]
+        + ["--platform", "codex", "--no-mcp"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    assert (codex_home / "skills" / "mimry" / "SKILL.md").is_file()
+    assert not (home / ".codex").exists()
+
+
 def test_index_writes_cache_and_ignores_sensitive_files(tmp_path):
     repo = copy_fixture(tmp_path)
     ruff_cache = repo / ".ruff_cache" / "0.15.20"

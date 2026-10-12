@@ -24,7 +24,7 @@ classifiers = [
 ]
 authors = [{ name = "Judison Bacalso", email = "judisonbacalso24@gmail.com" }]
 dependencies = [
-    "fastmcp>=3.4.2",
+    "fastmcp>=4.1,<5",
     "pypdf>=6.19,<7",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
     # compiled against a specific core ABI; a 0.26 core can import cleanly and
