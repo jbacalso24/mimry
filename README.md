@@ -35,6 +35,10 @@ uv tool install mimry
 Requires Python 3.11 or newer on Windows, Linux or macOS.
 `pipx install mimry` and `pip install mimry` also work.
 
+> [!NOTE]
+> To upgrade, run `uv tool upgrade mimry`.
+> On Windows, close agent sessions that use MIMRY first, because a running `mimry-mcp` keeps its files locked.
+
 ## Quick start
 
 Run `mimry preflight` in your project with a task description.
@@ -66,6 +70,9 @@ To have your agent use MIMRY on its own, install it for that agent:
 ```bash
 mimry install --platform claude-code
 ```
+
+> [!TIP]
+> Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` whenever it starts a broad grep.
 
 ## Features
 
