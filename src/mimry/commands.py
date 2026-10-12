@@ -1198,6 +1198,7 @@ def _write_legacy_context_redirect(root: Path) -> None:
 
 
 def cmd_preflight(a):
+    started_all = time.perf_counter()
     root = Path(a.root).resolve()
     safe_root(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -1213,10 +1214,11 @@ def cmd_preflight(a):
             return init_status
 
     try:
-        with active_index_pointer(root) as active:
-            assert active is not None
-            ptr = active
-            fresh, graph = _index_and_graph_health(root, ptr)
+        with ui.working("Checking the index"):
+            with active_index_pointer(root) as active:
+                assert active is not None
+                ptr = active
+                fresh, graph = _index_and_graph_health(root, ptr)
     except IndexOutsideCacheError:
         # MIMRY_CACHE_HOME changed since the last index; indexing
         # builds a new one in the current cache and leaves the old one.
@@ -1231,14 +1233,16 @@ def cmd_preflight(a):
         stats = write_index(root, ptr)
         elapsed = time.perf_counter() - started
 
-    with active_index_pointer(root) as active:
-        assert active is not None
-        ptr = active
-        if stats is not None:
-            fresh, graph = _index_and_graph_health(root, ptr)
-        rows = _write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
+    with ui.working("Finding the files for this task"):
+        with active_index_pointer(root) as active:
+            assert active is not None
+            ptr = active
+            if stats is not None:
+                fresh, graph = _index_and_graph_health(root, ptr)
+            rows = _write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
 
-    ui.ok(f"Context ready for {ui.quote(sanitize_query(a.task))}")
+    total = ui.took(time.perf_counter() - started_all)
+    ui.ok(f"Context ready for {ui.quote(sanitize_query(a.task))} ({total})")
     totals = ui.count(len(fresh["files"]), "file")
     if stats is not None:
         action = "Set up MIMRY and built the index" if init_ran else "Built the index"
