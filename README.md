@@ -225,6 +225,10 @@ Run `mimry install --list-platforms` for aliases, `mimry install --project --pla
 - **It saves tokens.**
   On 44 held-out pull requests from six open-source repositories, a scripted agent using MIMRY read 40% fewer tokens than one using grep, and read every source file the change modified in 31 tasks to grep's 28 ([token benchmark](benchmarks/tokens/README.md)).
   When both agents read `sed` windows around `grep -n` matches instead of whole files, MIMRY read 37% fewer tokens and located 29 tasks to grep's 27.
+  On 48 more pull requests from six other repositories, where MIMRY's agent reads the line ranges it lists first, it read **69% fewer** tokens than grep and located **32** tasks to grep's 21.
+- **It beats other alternatives.**
+  On those 48 pull requests, another local code-search tool that ranks code with an embedding model located 23 tasks with its default model and 20 with a larger one, against **32** for MIMRY, and read **2.4 to 2.6 times** as many tokens.
+  Its first index took 1 to 30 minutes per repository, against **under 10 seconds** for MIMRY ([other alternatives](benchmarks/tokens/README.md#other-alternatives)).
   Results are compact summaries and relative paths, never full source dumps.
 
 ## Commands
