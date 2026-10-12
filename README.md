@@ -91,19 +91,26 @@ mimry install --platform claude-code
 
 `mimry install --platform <name>` installs a skill that teaches the agent when to use MIMRY, and registers the MCP server where the agent supports it.
 
-| Agent | Platform name |
-|---|---|
-| Claude Code | `claude-code` |
-| Codex | `codex` |
-| GitHub Copilot CLI | `copilot` |
-| Gemini CLI | `gemini` |
-| OpenCode | `opencode` |
-| Kilo Code | `kilo` |
-| Kiro | `kiro` |
-| Amp | `amp` |
-| Devin | `devin` |
-| Factory Droid | `droid` |
-| Aider, Antigravity, CodeBuddy, Hermes, Kimi, OpenClaw, Pi Agent, Trae | see `mimry install --list-platforms` |
+| Agent | Platform name | Skill | MCP server |
+|---|---|---|---|
+| Claude Code | `claude-code` | ✅ | ✅ |
+| Codex | `codex` | ✅ | ✅ |
+| GitHub Copilot CLI | `copilot` | ✅ | ✅ |
+| Gemini CLI | `gemini` | ✅ | ✅ |
+| OpenCode | `opencode` | ✅ | ✅ |
+| Kiro | `kiro` | ✅ | ✅ |
+| Amp | `amp` | ✅ | ✅ |
+| Devin | `devin` | ✅ | ✅ |
+| Factory Droid | `droid` | ✅ | ✅ |
+| Kimi | `kimi` | ✅ | ✅ |
+| Kilo Code | `kilo` | ✅ | [manual](#manual-mcp-setup) |
+| Aider, Antigravity, CodeBuddy, Hermes, OpenClaw, Pi Agent, Trae | see `mimry install --list-platforms` | ✅ | [manual](#manual-mcp-setup) |
+| Cursor | | 🚧 [#78](https://github.com/jbacalso24/mimry/issues/78) | 🚧 |
+| GitHub Copilot in VS Code | | 🚧 [#79](https://github.com/jbacalso24/mimry/issues/79) | 🚧 |
+| Windsurf, Cline, Roo Code, Zed, JetBrains | | 🚧 [#80](https://github.com/jbacalso24/mimry/issues/80) | 🚧 |
+| Grok | | 🚧 [#93](https://github.com/jbacalso24/mimry/issues/93) | 🚧 |
+
+✅ means `mimry install` sets it up, manual means you add the MCP server by hand, and 🚧 means support is in progress.
 
 See [docs/agents.md](docs/agents.md) for where each agent's files go and how its MCP server is registered.
 
@@ -114,6 +121,7 @@ See [docs/agents.md](docs/agents.md) for where each agent's files go and how its
 | `--hooks` | Suggest `mimry find` when the agent starts a broad grep |
 | `--no-mcp` | Install the skill without registering the MCP server |
 
+<a id="manual-mcp-setup"></a>
 <details>
 <summary>Manual MCP setup</summary>
 
