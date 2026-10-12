@@ -59,7 +59,8 @@ There are four task sets, each from different repositories:
 - **holdout2**: 44 tasks from typer, uvicorn, viper, hono, hyper and retrofit (retrofit has only 4 qualifying pull requests among its newest 300).
   It was frozen before the credential fixes were measured and is run once per version, never to tune.
 - **holdout3**: 48 tasks from rich, echo, axios, clap, Polly and guzzle, the first set with C# and PHP.
-  The repositories were chosen and the tasks selected before any run, and it was run once, with MIMRY 0.3.1 and line-range reads.
+  The repositories were chosen and the tasks selected before any run.
+  It was run once in each read mode with MIMRY 0.3.1: line ranges first, then whole files and sed windows.
 
 ## Results
 
@@ -102,6 +103,7 @@ Five versions are compared, each developed against the dev set only.
 | holdout2, 44 tasks | retrieval fixes | 39.6% | 28 / 31 | 46.2% | 35.7% (25 tasks) |
 | holdout2, 44 tasks | credential fixes | 40.2% | 28 / 31 | 46.4% | 37.3% (25 tasks) |
 | holdout2, 44 tasks | 0.3.0 | 39.9% | 28 / 31 | 46.0% | 36.7% (25 tasks) |
+| holdout3, 48 tasks | 0.3.1 | 57.8% | 21 / 32 | 69.6% | 69.4% (19 tasks) |
 
 At the baseline MIMRY read more tokens than grep and fully located fewer tasks.
 The ranking fixes made MIMRY read fewer tokens than grep on both sets and locate more tasks.
@@ -123,6 +125,10 @@ Against the credential fixes, 0.3.0 locates the same tasks on both sets; it chan
 The largest change is hono#5426: its gold file `src/adapter/lambda-edge/handler.ts` drops from second to third, below `src/adapter/aws-lambda/handler.ts`, and MIMRY reads 9,242 tokens instead of 4,275.
 That task accounts for 4,967 of the 6,205 extra tokens on holdout2, and it was not tuned, since holdout2 is never used to tune.
 The grep agent's results are identical in every run.
+
+holdout3 was run with whole-file reads after its line-range run, with no change to ranking in between (commit 7471be2).
+MIMRY read 57.8% fewer tokens than grep, 2,388,654 against 5,660,661, and located 32 tasks to grep's 21.
+By repository it saves from 29.5% (rich) to 76.7% (Polly), and it locates more tasks than grep in five of the six repositories; in guzzle it locates 3 to grep's 4.
 
 **Rank before the cut** fixes a bug in how graph and content matches combine.
 The graph's matches were cut to the result limit (8 for a context pack) before each file's content score was added, so a file the graph ranked ninth could never lead, however well its content matched.
@@ -150,6 +156,7 @@ With `--reads sed`:
 | dev, 40 tasks | 0.3.0 | 28.0% | 27 / 29 | 23.0% | 45.2% (24 tasks) |
 | holdout2, 44 tasks | credential fixes | 37.2% | 27 / 29 | 46.1% | 42.9% (24 tasks) |
 | holdout2, 44 tasks | 0.3.0 | 36.9% | 27 / 29 | 45.5% | 42.1% (24 tasks) |
+| holdout3, 48 tasks | 0.3.1 | 54.1% | 19 / 30 | 62.4% | 71.7% (17 tasks) |
 
 On holdout2, 0.3.0 still reads 37% fewer tokens than grep, against 40% with whole-file reads, and its per-task median barely moves.
 Both agents locate fewer tasks, because a window can miss the changed lines: on holdout2 it did for 1 gold file read by grep and 2 read by MIMRY, one per task the agent then failed to locate.
@@ -161,6 +168,12 @@ Against the credential fixes, 0.3.0 changes the same 7 holdout2 tasks as with wh
 Four tasks were merged by rebase: GitHub's merge commit is the pull request's last commit, so the task's base already holds its earlier commits (zod#6581, ripgrep#3487 and ripgrep#3472 in dev, viper#2027 in holdout2).
 In sed mode, a gold file that last commit does not touch counts as reached by any read, as in full mode.
 This affects both read modes, since those tasks run on code that already holds part of the change.
+
+On holdout3, MIMRY reads 54.1% fewer tokens than grep in sed mode, 3,482,674 against 7,592,841, and locates 30 tasks to grep's 19.
+By repository it saves from 25.5% (rich) to 75.0% (Polly); as with whole-file reads, guzzle is the one repository where grep locates more (3 against 2).
+The first sed run on holdout3 stopped with an error on a rich task: a matched line held a bare carriage return, which split one `grep -n` line in two ([#89](https://github.com/jbacalso24/mimry/issues/89)).
+The runner now reads line numbers only from `path:N:` lines, and the reported run is the first complete one.
+Per-task numbers are in [results.holdout3.json](results.holdout3.json) and [results.holdout3.sed.json](results.holdout3.sed.json).
 
 Per-task numbers for 0.3.0 are in [results.dev.sed.json](results.dev.sed.json) and [results.holdout2.sed.json](results.holdout2.sed.json), and the credential fixes' in [results.dev.sed.credential.json](results.dev.sed.credential.json) and [results.holdout2.sed.credential.json](results.holdout2.sed.credential.json).
 
@@ -228,7 +241,7 @@ uv run --with tiktoken python benchmarks/tokens/run.py --work <scratch-dir> --se
 ```
 
 The runner clones each repository into the scratch directory, checks out each task's base commit, and writes `results.<set>.json` next to this file.
-`--set` takes dev, holdout or holdout2.
+`--set` takes dev, holdout, holdout2 or holdout3.
 `--reads sed` charges `grep -n` and `sed -n` windows instead of whole-file reads and writes `results.<set>.sed.json`; `--window` sets the lines read on each side of a match (default 100).
 `--reads ranges` has the MIMRY agent read the line ranges its pack lists first and writes `results.<set>.ranges.json`.
 Selecting new tasks needs an authenticated `gh` CLI: `python benchmarks/tokens/select_tasks.py dev`.
