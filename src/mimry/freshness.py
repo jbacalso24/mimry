@@ -8,6 +8,7 @@ from . import security
 from .reuse import INDEXED, SENSITIVE, code_fingerprint, load_stat_cache
 from .scanner import read_snapshot, scan_stats, size_limit
 from .security import filter_index_records, path_has_ignored_part
+from .settings import index_settings
 from .state import (
     UNINDEXABLE_FILE,
     StateCorruptionError,
@@ -93,7 +94,11 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     # Resolve canonical identities back to their native filesystem
     # spellings. scan() also preserves the existing fail-closed NFC
     # collision check.
-    native = {canonical: (path, st) for canonical, path, st in scan_stats(root, probe_open=False)}
+    settings = index_settings(root)
+    native = {
+        canonical: (path, st)
+        for canonical, path, st in scan_stats(root, probe_open=False, settings=settings)
+    }
     built = load_stat_cache(idx)
     stat_cache = None if verify else built
     # An index built by other MIMRY code lacks what this code extracts.
@@ -106,10 +111,10 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     for f in files:
         rel_path = f["rel_path"]
         p, live = native.get(rel_path, (root / rel_path, None))
-        # Path policy must be applied before filesystem existence.
-        # Otherwise a deleted record from a newly excluded tree leaks
-        # through `missing`.
-        if path_has_ignored_part(rel_path):
+        # Path policy, including mimry.toml include and exclude, must
+        # apply before filesystem existence. Otherwise a deleted record
+        # from a newly excluded tree leaks through `missing`.
+        if path_has_ignored_part(rel_path) or not settings.admits(rel_path):
             policy_excluded.append(rel_path)
             continue
         # The scan already proved a regular, non-symlink, in-policy
@@ -142,7 +147,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
             policy_excluded.append(rel_path)
             continue
         try:
-            data, st = read_snapshot(p, root=root)
+            data, st = read_snapshot(p, root=root, settings=settings)
         except OSError:
             # Unreadable, non-regular, outside-root, and raced files are
             # stale and hidden from cached context until a safe refresh
@@ -151,7 +156,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
             live_excluded.append(rel_path)
             continue
         expected_hash = f.get("hash") or stored_hashes.get(rel_path, {}).get("hash")
-        is_oversized = st.st_size > size_limit(p)
+        is_oversized = st.st_size > size_limit(p, settings)
         size_changed = st.st_size != f.get("size")
         digest = None if is_oversized else hashlib.sha256(data).hexdigest()
         if digest is not None and p == root / rel_path:
@@ -200,7 +205,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
                 secret_skipped += 1
                 continue
             try:
-                data, _ = read_snapshot(p, root=root)
+                data, _ = read_snapshot(p, root=root, settings=settings)
             except OSError:
                 continue
             if security.has_sensitive_content(p, data=data):
@@ -210,10 +215,17 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
 
     changed = sorted(set(changed))
     missing = sorted(set(missing))
+    # The index was built from other settings. A file that mimry.toml
+    # now admits or refuses may not show as changed on disk.
+    settings_changed = settings.digest != ptr.get("indexSettings")
     state = (
         "missing"
         if not files_path.exists()
-        else ("stale" if changed or missing or policy_excluded or outdated_build else "current")
+        else (
+            "stale"
+            if changed or missing or policy_excluded or outdated_build or settings_changed
+            else "current"
+        )
     )
     graph_path = idx / "graph.json"
     graph, _ = load_json_state(graph_path, default={"nodes": [], "edges": []})
@@ -269,6 +281,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
         "unindexable_count": len(unindexable) + secret_skipped,
         "state": state,
         "outdated_build": outdated_build,
+        "settings_changed": settings_changed,
         "graph": visible_graph,
         "generation_id": ptr.get("generationId"),
         "layout": "generation" if ptr.get("generationId") else "legacy",

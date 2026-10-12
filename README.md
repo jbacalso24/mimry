@@ -338,6 +338,23 @@ Filters, pagination, `doctor`, and plan trees are covered in [`docs/commands.md`
 
 Details are in [`docs/how-it-works.md`](docs/how-it-works.md): what it writes, the graph engine, freshness, feedback, cache safety and adapters.
 
+## Choosing which files to index
+
+Put a `mimry.toml` at the root of the folder you index, and commit it so the whole team indexes the same files.
+
+```toml
+[index]
+include = ["src/**", "docs/**"]            # optional: index only paths matching one of these
+exclude = ["**/fixtures/**", "legacy/**"]  # optional: never index paths matching these
+max_file_bytes = 2_000_000                 # optional: size limit for files other than documents
+```
+
+- Patterns are repository-relative globs with the same meaning as `mimry find --path-glob`.
+- `exclude` wins when a path matches both lists.
+- `max_file_bytes` replaces the 1 MB limit for every file except documents, which keep their 20 MB limit.
+- Changing the file makes `mimry status` report the index as out of date until you run `mimry reindex`.
+- An invalid file fails the command with an error that names `mimry.toml`, so a bad setting is never ignored.
+
 ## Privacy
 
 - Everything runs locally: no code is uploaded and there is no telemetry.

@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 
 SCHEMA_VERSION = "0.2.0"
+# Index settings committed at the root of the indexed folder.
+SETTINGS_FILE = "mimry.toml"
 HEAVY_IGNORES = {
     # Tester-owned acceptance suites are intentionally outside ordinary
     # agent indexing. This is cooperative workflow isolation, not a

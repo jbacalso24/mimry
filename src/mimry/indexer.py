@@ -50,6 +50,7 @@ from .scanner import (
 )
 from .security import is_text, sanitize_data
 from .semantic import build_semantic_index, file_semantic_chunks
+from .settings import IndexSettings, index_settings
 from .state import (
     GENERATION_MANIFEST,
     UNINDEXABLE_FILE,
@@ -173,7 +174,9 @@ PARALLEL_MIN_FILES = 64
 _REFERENCE_KEYS = ("doc_links", "table_refs", "inherits", "alembic", "xcode")
 
 
-def _adapt_file(path: Path, root: Path, rel_path: str) -> tuple[str, list | None, str | None]:
+def _adapt_file(
+    path: Path, root: Path, rel_path: str, settings: IndexSettings
+) -> tuple[str, list | None, str | None]:
     """Adapt one file into ``(outcome, stat identity, cache line)``.
 
     Runs in worker processes, so it returns only picklable,
@@ -181,7 +184,7 @@ def _adapt_file(path: Path, root: Path, rel_path: str) -> tuple[str, list | None
     later replays.
     """
     try:
-        snapshot = read_snapshot(path, root=root)
+        snapshot = read_snapshot(path, root=root, settings=settings)
         output = adapt(path, root, snapshot)
     except UnopenableFileError:
         # Locked or ACL-protected: skipped like ignored files, not
@@ -217,7 +220,9 @@ def _index_workers(file_count: int) -> int:
     return max(1, min(os.cpu_count() or 1, 16))
 
 
-def _adapt_all(root: Path, todo: list[tuple[str, Path]], progress, total: int) -> list:
+def _adapt_all(
+    root: Path, todo: list[tuple[str, Path]], progress, total: int, settings: IndexSettings
+) -> list:
     """Adapt ``todo`` in order, across worker processes when large."""
     done_offset = total - len(todo)
     workers = _index_workers(len(todo))
@@ -231,6 +236,7 @@ def _adapt_all(root: Path, todo: list[tuple[str, Path]], progress, total: int) -
                     [p for _, p in todo],
                     [root] * len(todo),
                     [r for r, _ in todo],
+                    [settings] * len(todo),
                     chunksize=chunksize,
                 )
                 for number, result in enumerate(mapped, 1):
@@ -245,19 +251,26 @@ def _adapt_all(root: Path, todo: list[tuple[str, Path]], progress, total: int) -
     results = []
     for number, (rel_path, path) in enumerate(todo, 1):
         progress(f"MIMRY: indexing {done_offset + number}/{total} files")
-        results.append(_adapt_file(path, root, rel_path))
+        results.append(_adapt_file(path, root, rel_path, settings))
     return results
 
 
 def _collect(
-    root: Path, *, previous: Path | None = None, record: dict | None = None, progress=None
+    root: Path,
+    *,
+    previous: Path | None = None,
+    record: dict | None = None,
+    progress=None,
+    settings: IndexSettings | None = None,
 ):
     """Adapt every candidate file; reuse ``previous`` output for
     stat-unchanged ones.
 
     ``record``, when given, receives the new generation's stat
     identities and per-file adapter output for the next incremental run.
+    ``settings`` defaults to the defaults of an absent ``mimry.toml``.
     """
+    settings = IndexSettings() if settings is None else settings
     progress = progress or _Progress(False)
     stat_cache = load_stat_cache(previous) if previous is not None else None
     adapt_cache = load_adapt_cache(previous, root) if stat_cache is not None else None
@@ -292,7 +305,7 @@ def _collect(
     progress("MIMRY: scanning files", force=True)
     # No open probe here: the snapshot read opens each file once, and a
     # file that cannot be opened is skipped at that point instead.
-    candidates = scan_stats(root, probe_open=False)
+    candidates = scan_stats(root, probe_open=False, settings=settings)
     reused: dict[str, tuple[str, dict] | None] = {}
     chunks_by_file_id: dict[str, list] = {}
     fts_body_by_file_id: dict[str, str] = {}
@@ -314,7 +327,7 @@ def _collect(
     adapted = dict(
         zip(
             (rel for rel, _ in todo),
-            _adapt_all(root, todo, progress, len(candidates)),
+            _adapt_all(root, todo, progress, len(candidates), settings),
             strict=True,
         )
     )
@@ -804,6 +817,10 @@ def write_index(root, ptr, *, full: bool = False):
         # then differs from this fingerprint and forces the next check
         # to walk the tree.
         fingerprint = worktree_fingerprint(root)
+        # One read of mimry.toml for the whole scan, taken before any
+        # file is read, so the digest recorded below matches what was
+        # applied.
+        settings = index_settings(root)
         _cleanup_generations(root, base, ptr)
         previous = None if full or not ptr.get("generationId") else Path(ptr["indexPath"])
         record: dict = {}
@@ -822,7 +839,9 @@ def write_index(root, ptr, *, full: bool = False):
                 symbols_by_file,
                 references,
                 unindexable,
-            ) = _collect(root, previous=previous, record=record, progress=progress)
+            ) = _collect(
+                root, previous=previous, record=record, progress=progress, settings=settings
+            )
             changes = _changes(ptr, files)
             # Unrecorded as well as unindexable: report every file kept
             # out.
@@ -835,7 +854,11 @@ def write_index(root, ptr, *, full: bool = False):
             if kept is not None:
                 # Nothing to publish, but the tree git sees may have
                 # changed, so record its fingerprint for the fast path.
-                unchanged = {**ptr, "worktreeFingerprint": fingerprint}
+                unchanged = {
+                    **ptr,
+                    "worktreeFingerprint": fingerprint,
+                    "indexSettings": settings.digest,
+                }
                 if fingerprint is None:
                     unchanged.pop("worktreeFingerprint")
                 save_pointer(root, unchanged)
@@ -989,6 +1012,7 @@ def write_index(root, ptr, *, full: bool = False):
                 "lastIndexedAt": indexed_at,
                 "schemaVersion": SCHEMA_VERSION,
                 "worktreeFingerprint": fingerprint,
+                "indexSettings": settings.digest,
             }
             if fingerprint is None:
                 # ptr may carry the previous generation's fingerprint.

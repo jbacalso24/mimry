@@ -481,6 +481,7 @@ def main(argv=None):
     from .cache_safety import IndexOutsideCacheError
     from .commands import INDEX_REBUILT_NOTE, rebuild_outdated_index
     from .plan import PlanError
+    from .settings import IndexSettingsError
     from .state import (
         IndexSchemaMigrationError,
         StateCorruptionError,
@@ -517,6 +518,8 @@ def main(argv=None):
         ui.fail("This repo's index is in another MIMRY cache", str(exc))
     except PlanError as exc:
         ui.fail("Plan error", str(exc))
+    except IndexSettingsError as exc:
+        ui.fail("MIMRY could not read the index settings", str(exc))
     return 2
 
 
