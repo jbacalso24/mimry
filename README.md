@@ -137,6 +137,7 @@ For an exact string you already know, such as an identifier or an error message,
 
 - `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related` and `semantic` reindex first when files changed or MIMRY was upgraded, so they never answer from a stale index.
   When git reports the same working tree as the last index, that check is skipped.
+- In a new git worktree of a repository where MIMRY is set up, the first of those commands sets MIMRY up and builds the worktree's own index.
 - If another lookup, such as `explain` or `why`, says the index is out of date, run `mimry reindex` (fast: it only re-reads changed files).
 - Treat `.mimry/`, caches, and generated files as support artifacts, never as the place to fix a bug.
 - Never paste secret values into context or reports; MIMRY skips secret-looking files and redacts feedback.
