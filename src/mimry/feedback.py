@@ -85,7 +85,9 @@ def _normalize_path(root: Path, value: Any) -> str | None:
             return resolved.relative_to(root).as_posix()
         except (OSError, ValueError):
             return f"external:{raw[:480]}"
-    return normalized.as_posix().lstrip("./")[:500]
+    # lstrip("./") would also eat the dot of names like ".github".
+    text = normalized.as_posix().lstrip("/")[:500]
+    return text if text not in ("", ".") else None
 
 
 def normalize_paths(root: Path, values: Any) -> list[str]:
