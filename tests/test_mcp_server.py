@@ -31,7 +31,7 @@ from mimry.mcp_tools import (
     mimry_status,
     mimry_why,
 )
-from mimry.paths import idx_path
+from mimry.paths import idx_path, task_context_file
 from mimry.scanner import worktree_fingerprint
 from mimry.state import GENERATION_SCHEMA_VERSION
 from mimry.storage import load_pointer, save_pointer
@@ -197,7 +197,8 @@ def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, mon
 
     payload = mimry_context("fix auth session", str(repo))
 
-    assert payload["output"].replace("\\", "/").endswith("mimry-out/context/latest.md")
+    assert Path(payload["output"]).name == task_context_file(repo, "fix auth session").name
+    assert payload["latest_path"].replace("\\", "/").endswith("mimry-out/context/latest.md")
     assert payload["files"]
     text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     for section in (
@@ -279,9 +280,9 @@ def test_mcp_preflight_initializes_and_writes_context(tmp_path: Path, monkeypatc
     assert payload["returncode"] == 0
     assert payload["initialized"] is True
     assert payload["index_state"] == "current"
-    assert (
-        payload["context_path"].replace("\\", "/").endswith(".mimry/mimry-out/context/latest.md")
-    )
+    assert Path(payload["context_path"]).name == task_context_file(repo, "fix auth session").name
+    assert Path(payload["context_path"]).exists()
+    assert payload["latest_path"].replace("\\", "/").endswith(".mimry/mimry-out/context/latest.md")
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
     assert "OK Context ready for" in payload["stdout"]
 

@@ -264,7 +264,8 @@ def test_install_project_claude_alias_writes_claude_code_skill(tmp_path):
     assert skill.exists()
     body = skill.read_text(encoding="utf-8")
     assert "Invocation hint for this platform: MIMRY" in body
-    assert ".mimry/mimry-out/context/latest.md" in body
+    assert "the context pack that preflight names" in body
+    assert "mimry-out/context/latest.md" not in body
 
 
 def test_install_dry_run_does_not_write(tmp_path):

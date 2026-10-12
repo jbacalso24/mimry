@@ -44,6 +44,7 @@ from .freshness import index_freshness
 from .indexer import write_index
 from .intent import is_doc_or_plan, is_source_file, is_test_file
 from .paths import (
+    TASK_PACK_PATTERN,
     context_file,
     graph_output_dir,
     idx_path,
@@ -52,6 +53,7 @@ from .paths import (
     now,
     output_dir,
     pointer_file,
+    task_context_file,
 )
 from .plan import (
     PlanStore,
@@ -1094,7 +1096,7 @@ def _write_context_pack(
     semantic: bool = False,
     fresh: dict | None = None,
     graph: dict | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], Path]:
     query = sanitize_query(query)
     if fresh is None or graph is None:
         fresh, graph = _index_and_graph_health(root, ptr)
@@ -1234,10 +1236,51 @@ def _write_context_pack(
         "- Yellow marks/blockers, especially stale MIMRY graph/index data or risky paths.",
         "",
     ]
-    context_file(root).parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(context_file(root), "\n".join(lines))
+    pack_path = task_context_file(root, query)
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    text = "\n".join(lines)
+    atomic_write_text(pack_path, text)
+    # latest.md is a copy of the newest pack, for anything that reads it
+    # directly.
+    atomic_write_text(context_file(root), text)
     _write_legacy_context_redirect(root)
-    return rows
+    _prune_task_packs(root, keep=pack_path)
+    return rows, pack_path
+
+
+TASK_PACK_LIMIT = 20
+
+
+def _prune_task_packs(root: Path, *, keep: Path) -> None:
+    """Keep the newest TASK_PACK_LIMIT task packs, delete the rest.
+
+    Only files named like a task pack are candidates, so latest.md,
+    brief files and anything else in the folder are never touched.
+    The pack just written is always kept.
+    """
+    packs = []
+    for entry in output_dir(root).joinpath("context").iterdir():
+        if not TASK_PACK_PATTERN.match(entry.name):
+            continue
+        try:
+            packs.append((entry.stat().st_mtime, entry.name, entry))
+        except OSError:
+            # Pruning is best effort and never aborts a preflight:
+            # another process may have pruned the file already.
+            continue
+    packs.sort(key=lambda pack: (pack[0], pack[1]), reverse=True)
+    kept = {entry.name for _, _, entry in packs[:TASK_PACK_LIMIT]}
+    kept.add(keep.name)
+    for _, name, entry in packs:
+        if name in kept:
+            continue
+        try:
+            entry.unlink()
+        except OSError:
+            # On Windows a pack another process has open cannot be
+            # deleted yet. Leave it for a later run. Another process may
+            # also have pruned it already.
+            continue
 
 
 def _write_legacy_context_redirect(root: Path) -> None:
@@ -1307,7 +1350,7 @@ def cmd_preflight(a):
             ptr = active
             if stats is not None:
                 fresh, graph = _index_and_graph_health(root, ptr)
-            rows = _write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
+            rows, pack_path = _write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
 
     total = ui.took(time.perf_counter() - started_all)
     ui.ok(f"Context ready for {ui.quote(sanitize_query(a.task))} ({total})")
@@ -1319,11 +1362,11 @@ def cmd_preflight(a):
         ui.detail(f"{action} ({totals}, {ui.took(elapsed)})")
     elif fresh["state"] == "current" and graph["status"] == "current":
         ui.detail(f"Index is up to date ({totals}, indexed {ui.ago(ptr.get('lastIndexedAt'))})")
-    ui.detail(f"Context pack: {ui.display_path(context_file(root), root)}")
+    ui.detail(f"Context pack: {ui.display_path(pack_path, root)}")
     _print_index_note(fresh, graph)
     _print_results_section("Start with", rows[:5], verbose=getattr(a, "verbose", False))
     print()
-    print(f"Next: read {ui.display_path(context_file(root), root)} before opening files.")
+    print(f"Next: read {ui.display_path(pack_path, root)} before opening files.")
     return 0
 
 
@@ -2029,11 +2072,11 @@ def cmd_context(a):
     ptr = require(root)
     if getattr(a, "semantic", False):
         _print_semantic_degrade(Path(ptr["indexPath"]), ptr.get("rootId"))
-    rows = _write_context_pack(root, ptr, a.query, semantic=getattr(a, "semantic", False))
-    ui.ok(f"Wrote a context pack for {ui.quote(sanitize_query(a.query))}")
-    ui.detail(
-        ui.facts(ui.display_path(context_file(root), root), ui.count(len(rows), "relevant file"))
+    rows, pack_path = _write_context_pack(
+        root, ptr, a.query, semantic=getattr(a, "semantic", False)
     )
+    ui.ok(f"Wrote a context pack for {ui.quote(sanitize_query(a.query))}")
+    ui.detail(ui.facts(ui.display_path(pack_path, root), ui.count(len(rows), "relevant file")))
     return 0
 
 

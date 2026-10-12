@@ -9,7 +9,8 @@ For the commands themselves, see [commands.md](commands.md).
 project-root/
 ├─ .mimry/                  # local settings, gitignored
 │  └─ mimry-out/            # generated output for agents and humans
-│     ├─ context/latest.md  # latest context pack
+│     ├─ context/<task>-<hash>.md  # context pack per task
+│     ├─ context/latest.md  # copy of the newest pack
 │     ├─ graph/             # relationship graph artifacts
 │     └─ export/            # graph exports (optional)
 │        ├─ graph.html      # interactive viewer
@@ -90,7 +91,7 @@ It is stored in the repo's local cache, is not telemetry, and becomes a modest, 
 
 ```bash
 mimry feedback --query "fix board card click" \
-  --context .mimry/mimry-out/context/latest.md \
+  --context <context pack path> \
   --opened src/features/boards/api.ts \
   --changed src/app/api/bridge/route.ts \
   --missed bridge/fastapi_app.py \

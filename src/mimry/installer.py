@@ -98,7 +98,7 @@ _REFERENCES: dict[str, str] = {
         """3. If current, ask a focused question with `mimry context \"<task>\"` or write a """
         """role brief with `mimry brief \"<task>\" --agent <role>`.\n"""
         """4. If stale/missing, run `mimry preflight \"<task>\"`.\n"""
-        """5. Read `.mimry/mimry-out/context/latest.md` or """
+        """5. Read the context pack that preflight names (printed as `Context pack:`) or """
         """`.mimry/mimry-out/context/brief-<agent>.md`.\n"""
         """6. Inspect source files directly before editing. Where a file lists `Read first: """
         """lines X-Y`, read those lines before the rest of the file.\n"""
@@ -167,7 +167,7 @@ _REFERENCES: dict[str, str] = {
         """\n"""
         """- Start a task with `mimry_preflight` instead of exploring by grep; for an exact"""
         """ string you already know, use `rg` or `git grep` directly.\n"""
-        """- Read the generated `.mimry/mimry-out/context/latest.md` before editing.\n"""
+        """- Read the context pack preflight names (`context_path` over MCP) before editing.\n"""
         """- Where a result lists `ranges` or `Read first: lines X-Y`, read those lines (for"""
         """ example with an offset and a limit) before the rest of the file.\n"""
         """- Use `mimry_explain`/`mimry_why` when a ranking is surprising.\n"""
@@ -182,7 +182,7 @@ _REFERENCES: dict[str, str] = {
         """\n"""
         """```bash\n"""
         """mimry feedback --query \"<task>\" \\\n"""
-        """  --context .mimry/mimry-out/context/latest.md \\\n"""
+        """  --context <context pack path> \\\n"""
         """  --opened \"<files opened>\" \\\n"""
         """  --changed \"<files changed>\" \\\n"""
         """  --missed \"<important missed files>\" \\\n"""
@@ -561,10 +561,10 @@ mimry preflight "<user task>"
 mimry brief "<user task>" --agent <role>
 ```
 
-3. Read the generated context pack or role brief before editing:
+3. Read the context pack that preflight names (its path is printed and returned as `context_path`), or the role brief, before editing:
 
 ```text
-.mimry/mimry-out/context/latest.md
+<context pack path>
 .mimry/mimry-out/context/brief-<agent>.md
 ```
 
@@ -574,7 +574,7 @@ mimry brief "<user task>" --agent <role>
 5. After meaningful verified work, record feedback so future rankings improve:
 
 ```bash
-mimry feedback --query "<task>" --context .mimry/mimry-out/context/latest.md --opened "<files opened>" --changed "<files changed>" --verification "<command/result>" --outcome passed
+mimry feedback --query "<task>" --context <context pack path> --opened "<files opened>" --changed "<files changed>" --verification "<command/result>" --outcome passed
 ```
 
 ## Stale/missing state rules
@@ -676,7 +676,7 @@ Rules:
 - Start every task with `mimry preflight "<task>"` (or `mimry_preflight` when MCP tools are available) instead of exploring with grep or guessing where code lives.
 - For an exact string you already know, use `rg` (or `git grep`) directly; never plain `grep -r`.
 - Use `mimry brief "<task>" --agent <role>` or `mimry_brief` for delegation/handoff.
-- Read `.mimry/mimry-out/context/latest.md` or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
+- Read the context pack that preflight names (`context_path` over MCP) or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
 - Where a file lists `Read first: lines X-Y`, read those lines before the rest of the file.
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.

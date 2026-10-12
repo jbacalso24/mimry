@@ -68,6 +68,34 @@ def context_file(root):
     return output_dir(root) / "context" / "latest.md"
 
 
+TASK_PACK_PATTERN = re.compile(r"^[a-z0-9-]+-[0-9a-f]{8}\.md$")
+_TASK_SLUG_LIMIT = 48
+
+
+def task_context_file(root, query: str) -> Path:
+    """The context pack file for one task, named from its query.
+
+    The same query always maps to the same file, so re-running a task
+    updates its own pack. Different queries map to different files.
+    """
+    digest = hashlib.sha256(query.encode("utf-8")).hexdigest()[:8]
+    return output_dir(root) / "context" / f"{_task_slug(query)}-{digest}.md"
+
+
+def _task_slug(query: str) -> str:
+    words = re.findall(r"[a-z0-9]+", query.lower())
+    slug = ""
+    for word in words:
+        candidate = f"{slug}-{word}" if slug else word
+        if len(candidate) > _TASK_SLUG_LIMIT:
+            break
+        slug = candidate
+    if not slug and words:
+        # One word longer than the limit has no boundary to cut at.
+        slug = words[0][:_TASK_SLUG_LIMIT]
+    return slug or "task"
+
+
 def legacy_context_file(root):
     return legacy_output_dir(root) / "context" / "latest.md"
 

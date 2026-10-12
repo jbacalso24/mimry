@@ -34,7 +34,7 @@ from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.mcp_protocol import tool
-from mimry.paths import context_file
+from mimry.paths import context_file, task_context_file
 from mimry.plan import (
     InvalidPlanError,
     PlanError,
@@ -409,7 +409,8 @@ def mimry_preflight(
         {
             "query": redact_sensitive_text(query),
             "root": str(root_path),
-            "context_path": str(context_file(root_path)),
+            "context_path": str(task_context_file(root_path, query)),
+            "latest_path": str(context_file(root_path)),
             "initialized": status.get("initialized"),
             "index_state": status.get("index_state"),
             "status": status,
@@ -591,12 +592,13 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows = _write_context_pack(root_path, ptr, query, semantic=semantic)
+    rows, pack_path = _write_context_pack(root_path, ptr, query, semantic=semantic)
     return sanitize_data(
         {
             "query": redact_sensitive_text(query),
             "root": str(root_path),
-            "output": str(context_file(root_path)),
+            "output": str(pack_path),
+            "latest_path": str(context_file(root_path)),
             "files": rows,
         }
     )

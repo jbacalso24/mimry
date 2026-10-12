@@ -258,7 +258,7 @@ def build_parser():
     f.add_argument("--query", help="Task query the agent worked on")
     f.add_argument(
         "--context",
-        help="Context pack path used for suggestions, usually .mimry/mimry-out/context/latest.md",
+        help="Context pack path used for suggestions, the one preflight printed",
     )
     f.add_argument(
         "--suggested",

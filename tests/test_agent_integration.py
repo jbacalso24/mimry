@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from mimry.agent_integration import _client_env, _herdr_status, _protocol_smoke
+from mimry.paths import TASK_PACK_PATTERN
 
 
 def test_real_mcp_stdio_protocol_round_trip_is_home_isolated(tmp_path: Path, monkeypatch):
@@ -54,7 +55,9 @@ def test_protocol_smoke_accepts_a_windows_short_path(tmp_path: Path):
         )
     )
     assert result["state"] == "PASS"
-    assert Path(result["context"]) == Path(".mimry/mimry-out/context/latest.md")
+    context = Path(result["context"])
+    assert context.parent == Path(".mimry/mimry-out/context")
+    assert TASK_PACK_PATTERN.match(context.name)
 
 
 def test_external_client_environment_is_credential_free_and_sandboxed(tmp_path: Path, monkeypatch):
