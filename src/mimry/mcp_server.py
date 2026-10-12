@@ -16,6 +16,7 @@ from mimry import __version__
 from mimry.adapters import list_adapters
 from mimry.cache_safety import IndexOutsideCacheError
 from mimry.commands import (
+    INDEX_REBUILT_NOTE,
     _write_context_pack,
     cmd_explain,
     cmd_init,
@@ -23,6 +24,7 @@ from mimry.commands import (
     cmd_preflight,
     cmd_refresh,
     cmd_why,
+    rebuild_outdated_index,
     refresh_if_stale,
     require,
     symbol_matches,
@@ -141,10 +143,15 @@ def _state_error_payload(exc: StateCorruptionError, *, root: Path | None = None)
 def _state_guard(func):
     """One structured corruption envelope for direct/protocol calls."""
 
-    @wraps(func)
-    def guarded(*args, **kwargs):
+    def run(args, kwargs, rebuild):
         try:
-            return sanitize_data(func(*args, **kwargs))
+            if rebuild:
+                root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
+                rebuild_outdated_index(_root(root if isinstance(root, str) else None))
+            result = func(*args, **kwargs)
+            if rebuild and isinstance(result, dict):
+                result["index_rebuilt"] = INDEX_REBUILT_NOTE
+            return sanitize_data(result)
         except UnsupportedIndexSchemaError as exc:
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
             return sanitize_data(
@@ -155,6 +162,9 @@ def _state_guard(func):
         except IndexSchemaMigrationError as exc:
             # Must catch before StateCorruptionError since it's a
             # subclass
+            if not rebuild:
+                # Rebuild once, then retry through this envelope.
+                return run(args, kwargs, rebuild=True)
             root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
             return sanitize_data(
                 _schema_upgrade_error_payload(
@@ -205,6 +215,10 @@ def _state_guard(func):
                 }
             )
 
+    @wraps(func)
+    def guarded(*args, **kwargs):
+        return run(args, kwargs, rebuild=False)
+
     return guarded
 
 
@@ -221,13 +235,10 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
             )
             payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
             return sanitize_data(payload)
-        except IndexSchemaMigrationError as exc:
-            # Must catch before StateCorruptionError since it's a
-            # subclass
-            print(f"MIMRY index schema outdated: {exc}", file=sys.stderr)
-            payload = _schema_upgrade_error_payload(exc, root=_root(getattr(args, "root", None)))
-            payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
-            return sanitize_data(payload)
+        except IndexSchemaMigrationError:
+            # Must stay before StateCorruptionError since it's a
+            # subclass. Re-raised so _state_guard rebuilds and retries.
+            raise
         except StateCorruptionError as exc:
             print(f"MIMRY state error: {exc}", file=sys.stderr)
             payload = _state_error_payload(exc, root=_root(getattr(args, "root", None)))
@@ -315,13 +326,10 @@ def _status_payload(root_path: Path, verify: bool = False) -> dict[str, Any]:
             return _status_payload_unchecked(root_path, verify)
     except UnsupportedIndexSchemaError as exc:
         return _unsupported_schema_error_payload(exc, root=root_path)
-    except IndexSchemaMigrationError as exc:
-        # Must precede StateCorruptionError: it is a subclass, and this
-        # inner handler runs before _state_guard ever sees the
-        # exception. Status is the tool agents call first, so
-        # misreporting a routine schema upgrade as corruption here is
-        # what sends them off preserving a healthy index.
-        return _schema_upgrade_error_payload(exc, root=root_path)
+    except IndexSchemaMigrationError:
+        # Must precede StateCorruptionError: it is a subclass. Re-raised
+        # so _state_guard rebuilds the index and retries the tool.
+        raise
     except StateCorruptionError as exc:
         return _state_error_payload(exc, root=root_path)
 
@@ -729,8 +737,9 @@ def _digest_payload(root_path: Path) -> dict[str, Any]:
             return _digest_payload_unchecked(root_path)
     except UnsupportedIndexSchemaError as exc:
         return _unsupported_schema_error_payload(exc, root=root_path)
-    except IndexSchemaMigrationError as exc:
-        return _schema_upgrade_error_payload(exc, root=root_path)
+    except IndexSchemaMigrationError:
+        # Re-raised so _state_guard can rebuild the index and retry.
+        raise
     except StateCorruptionError as exc:
         return _state_error_payload(exc, root=root_path)
 

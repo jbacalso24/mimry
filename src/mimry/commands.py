@@ -586,6 +586,17 @@ def cmd_index(a):
     return 0
 
 
+INDEX_REBUILT_NOTE = "Rebuilt the index: it was built by an older version of MIMRY."
+
+
+def rebuild_outdated_index(root: Path) -> dict:
+    """Rebuild an index an older MIMRY built.
+
+    Full: its IDs cannot be reused.
+    """
+    return write_index(root, require(root, validate=False), full=True)
+
+
 def cmd_refresh(a):
     """Index, then confirm everything MIMRY serves is current."""
     root = Path(a.root).resolve()

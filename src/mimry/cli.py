@@ -475,7 +475,10 @@ def main(argv=None):
         from .hook import cmd_hook_check
 
         return cmd_hook_check(SimpleNamespace(root=hook_root))
+    from pathlib import Path
+
     from .cache_safety import IndexOutsideCacheError
+    from .commands import INDEX_REBUILT_NOTE, rebuild_outdated_index
     from .plan import PlanError
     from .state import (
         IndexSchemaMigrationError,
@@ -490,7 +493,15 @@ def main(argv=None):
     from . import ui
 
     try:
-        return a.func(a)
+        try:
+            return a.func(a)
+        except IndexSchemaMigrationError:
+            if not hasattr(a, "root"):
+                raise
+            # Rebuild once, then retry the command.
+            rebuild_outdated_index(Path(a.root).resolve())
+            print(INDEX_REBUILT_NOTE, file=sys.stderr)
+            return a.func(a)
     except UnsupportedIndexSchemaError as exc:
         ui.fail("This index was built by a newer version of MIMRY", str(exc))
     except IndexSchemaMigrationError as exc:
