@@ -99,13 +99,13 @@ mimry install --platform claude-code
 | Gemini CLI | `gemini` | ✅ | ✅ |
 | OpenCode | `opencode` | ✅ | ✅ |
 | Kiro | `kiro` | ✅ | ✅ |
+| Cursor | `cursor` | ✅ | ✅ |
 | Amp | `amp` | ✅ | ✅ |
 | Devin | `devin` | ✅ | ✅ |
 | Factory Droid | `droid` | ✅ | ✅ |
 | Kimi | `kimi` | ✅ | ✅ |
 | Kilo Code | `kilo` | ✅ | [manual](#manual-mcp-setup) |
 | Aider, Antigravity, CodeBuddy, Hermes, OpenClaw, Pi Agent, Trae | see `mimry install --list-platforms` | ✅ | [manual](#manual-mcp-setup) |
-| Cursor | [#78](https://github.com/jbacalso24/mimry/issues/78) | 🚧 | 🚧 |
 | GitHub Copilot in VS Code | [#79](https://github.com/jbacalso24/mimry/issues/79) | 🚧 | 🚧 |
 | Windsurf, Cline, Roo Code, Zed, JetBrains | [#80](https://github.com/jbacalso24/mimry/issues/80) | 🚧 | 🚧 |
 | Grok | [#93](https://github.com/jbacalso24/mimry/issues/93) | 🚧 | 🚧 |

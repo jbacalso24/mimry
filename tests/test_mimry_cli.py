@@ -301,6 +301,7 @@ def test_install_lists_expanded_platforms(tmp_path):
         "droid",
         "trae",
         "kiro",
+        "cursor",
         "gemini",
         "amp",
         "devin",

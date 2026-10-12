@@ -387,3 +387,99 @@ def test_global_uninstall_kiro_only_no_skill(mcp_test_fixture, capsys):
     captured = capsys.readouterr()
     output = captured.out + captured.err
     assert "Removed" in output or True
+
+
+def test_cursor_global_install_writes_skill_and_keeps_other_servers(mcp_test_fixture):
+    """Cursor global install: writes the skill and mcpServers.mimry in
+    ~/.cursor/mcp.json, keeping other servers and unrelated keys."""
+    fixture = mcp_test_fixture
+    fake_home = fixture["fake_home"]
+    fake_mcp_server = fixture["fake_mcp_server"]
+
+    mcp_path = fake_home / ".cursor" / "mcp.json"
+    mcp_path.parent.mkdir(parents=True, exist_ok=True)
+    mcp_path.write_text(
+        json.dumps(
+            {"mcpServers": {"other": {"command": "other-mcp"}}, "someOtherKey": "value"}, indent=2
+        )
+        + "\n"
+    )
+
+    installer.install_skill("cursor", project=False, root=fixture["tmp_path"])
+
+    assert (fake_home / ".cursor" / "skills" / "mimry" / "SKILL.md").is_file()
+    data = json.loads(mcp_path.read_text())
+    assert data["mcpServers"]["mimry"] == {
+        "type": "stdio",
+        "command": str(fake_mcp_server),
+        "args": [],
+    }
+    assert data["mcpServers"]["other"] == {"command": "other-mcp"}
+    assert data["someOtherKey"] == "value"
+
+
+def test_cursor_uninstall_removes_mimry_entry_and_keeps_other_servers(mcp_test_fixture):
+    """Cursor global uninstall: removes mcpServers.mimry and leaves the
+    other servers in ~/.cursor/mcp.json."""
+    fixture = mcp_test_fixture
+    fake_home = fixture["fake_home"]
+
+    mcp_path = fake_home / ".cursor" / "mcp.json"
+    mcp_path.parent.mkdir(parents=True, exist_ok=True)
+    mcp_path.write_text(
+        json.dumps({"mcpServers": {"other": {"command": "other-mcp"}}}, indent=2) + "\n"
+    )
+
+    installer.install_skill("cursor", project=False, root=fixture["tmp_path"])
+    installer.uninstall_skill("cursor", project=False, root=fixture["tmp_path"])
+
+    data = json.loads(mcp_path.read_text())
+    assert "mimry" not in data["mcpServers"]
+    assert data["mcpServers"] == {"other": {"command": "other-mcp"}}
+
+
+def test_install_status_for_cursor_after_install_and_uninstall(mcp_test_fixture):
+    """Cursor install status: mcp True after install, False after
+    global uninstall."""
+    root = mcp_test_fixture["tmp_path"]
+
+    installer.install_skill("cursor", project=False, root=root)
+    assert installer.install_status("cursor", project=False, root=root)["mcp"] is True
+
+    installer.uninstall_skill("cursor", project=False, root=root)
+    assert installer.install_status("cursor", project=False, root=root)["mcp"] is False
+
+
+def test_cursor_project_always_on_writes_skill_and_agents_section(mcp_test_fixture):
+    """Cursor --project --always-on: writes the project skill and the
+    AGENTS.md section; MCP stays registered globally."""
+    fixture = mcp_test_fixture
+    repo = fixture["tmp_path"] / "repo"
+    repo.mkdir()
+
+    installer.install_skill("cursor", project=True, root=repo, always_on=True)
+
+    assert (repo / ".cursor" / "skills" / "mimry" / "SKILL.md").is_file()
+    assert "## MIMRY" in (repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert installer._has_always_on(repo, installer.platforms()["cursor"])
+    mcp_data = json.loads((fixture["fake_home"] / ".cursor" / "mcp.json").read_text())
+    assert "mimry" in mcp_data["mcpServers"]
+
+
+def test_cursor_installed_skill_frontmatter(mcp_test_fixture):
+    """Cursor SKILL.md: frontmatter names the skill after its folder and
+    has a non-empty description."""
+    fixture = mcp_test_fixture
+    installer.install_skill("cursor", project=False, root=fixture["tmp_path"])
+
+    skill = fixture["fake_home"] / ".cursor" / "skills" / "mimry" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+    assert text.startswith("---\n")
+    front = text.split("\n---\n", 1)[0].removeprefix("---\n")
+    fields = {}
+    for line in front.splitlines():
+        key, sep, value = line.partition(": ")
+        if sep:
+            fields[key] = value
+    assert fields["name"] == skill.parent.name == "mimry"
+    assert fields["description"].strip()

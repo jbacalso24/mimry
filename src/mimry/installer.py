@@ -75,6 +75,7 @@ _PLATFORM_ALIASES = {
     "trae": "trae",
     "trae-cn": "trae-cn",
     "kiro": "kiro",
+    "cursor": "cursor",
     "gemini": "gemini",
     "devin": "devin",
     "amp": "amp",
@@ -373,6 +374,18 @@ def platforms() -> dict[str, MimryPlatform]:
                 home / ".kiro" / "settings" / "mcp.json",
                 "mcpServers",
                 lambda server: {"command": server, "args": []},
+            ),
+        ),
+        "cursor": MimryPlatform(
+            key="cursor",
+            label="Cursor",
+            project_path=skill(".cursor"),
+            global_path=home / ".cursor" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+            mcp=McpJson(
+                home / ".cursor" / "mcp.json",
+                "mcpServers",
+                lambda server: {"type": "stdio", "command": server, "args": []},
             ),
         ),
         "gemini": MimryPlatform(
