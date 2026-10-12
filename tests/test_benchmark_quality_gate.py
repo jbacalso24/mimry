@@ -81,32 +81,24 @@ def test_ci_validates_committed_evidence_before_writing_fresh_artifact():
     assert "--deterministic-against benchmarks/result.core.json" in workflow
 
 
-def test_benchmark_provenance_changes_with_fixture_cases_and_source(tmp_path):
+def test_benchmark_provenance_changes_with_fixture_and_cases(tmp_path):
     project = Path(__file__).resolve().parents[1]
     fixture = tmp_path / "fixture"
     cases = tmp_path / "cases.json"
-    source = tmp_path / "source"
     shutil.copytree(project / "benchmarks" / "fixtures" / "agent_repo", fixture)
     shutil.copy2(project / "benchmarks" / "cases.v1.json", cases)
-    shutil.copytree(project / "src" / "mimry", source)
-    baseline = benchmark_input_digests(cases, fixture, source_root=source)
+    baseline = benchmark_input_digests(cases, fixture)
+    assert set(baseline) == {"fixture_sha256", "cases_sha256"}
 
     (fixture / "new.txt").write_text("changed fixture\n", encoding="utf-8")
-    fixture_changed = benchmark_input_digests(cases, fixture, source_root=source)
+    fixture_changed = benchmark_input_digests(cases, fixture)
     assert fixture_changed["fixture_sha256"] != baseline["fixture_sha256"]
 
     payload = json.loads(cases.read_text(encoding="utf-8"))
     payload["cases"][0]["query"] += " changed"
     cases.write_text(json.dumps(payload), encoding="utf-8")
-    cases_changed = benchmark_input_digests(cases, fixture, source_root=source)
+    cases_changed = benchmark_input_digests(cases, fixture)
     assert cases_changed["cases_sha256"] != fixture_changed["cases_sha256"]
-
-    benchmark_source = source / "benchmark.py"
-    benchmark_source.write_text(
-        benchmark_source.read_text(encoding="utf-8") + "\n", encoding="utf-8"
-    )
-    source_changed = benchmark_input_digests(cases, fixture, source_root=source)
-    assert source_changed["retrieval_source_sha256"] != cases_changed["retrieval_source_sha256"]
 
 
 def test_frozen_fixture_disables_checkout_eol_conversion():

@@ -14,6 +14,6 @@
 
 - [ ] Tests added or updated for behavior changes
 - [ ] `uv run ruff format --check .`, `uv run ruff check .` and `uv run pytest -q` pass
-- [ ] `benchmarks/result.core.json` regenerated if anything under `src/mimry/` changed (see CONTRIBUTING.md)
+- [ ] `benchmarks/result.core.json` regenerated if retrieval scores changed (see CONTRIBUTING.md)
 - [ ] Documentation updated for user-facing changes
 - [ ] No secrets, real usernames, home paths or private repository names in code, fixtures or docs
