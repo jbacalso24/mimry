@@ -14,6 +14,7 @@ from .state import exclusive_file_lock
 
 VALID_OUTCOMES = {"passed", "failed", "blocked", "partial", "unknown"}
 FEEDBACK_SCHEMA_VERSION = "0.1.0"
+COMMIT_NOTE_PREFIX = "Recorded from commit "
 SECRET_ASSIGNMENT_RE = re.compile(
     r"\b(?P<key>[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|credential)[A-Za-z0-9_.-]*)"
     r"(?P<sep>\s*(?:=|:)\s*)"
@@ -188,7 +189,10 @@ def feedback_payload_from_args(root: Path, args: Any) -> dict[str, Any]:
             "outcome": getattr(args, "outcome", "unknown") or "unknown",
             "notes": getattr(args, "notes", None),
         }
+    return feedback_payload(root, data)
 
+
+def feedback_payload(root: Path, data: dict[str, Any]) -> dict[str, Any]:
     context_path = data.get("context_path") or data.get("context")
     suggested = data.get("suggested") or data.get("suggested_paths")
     if not suggested and context_path:
@@ -331,14 +335,22 @@ def feedback_stats(idx: Path, root_id: str) -> dict[str, Any]:
     rows = list_feedback(idx, root_id, limit=1000)
     path_counts = {"suggested": 0, "opened": 0, "changed": 0, "missed": 0, "ignored": 0}
     outcomes: dict[str, int] = {}
+    from_commits = 0
     for row in rows:
         outcomes[row["outcome"]] = outcomes.get(row["outcome"], 0) + 1
+        if (row["notes"] or "").startswith(COMMIT_NOTE_PREFIX):
+            from_commits += 1
         path_counts["suggested"] += len(row["suggested_paths"])
         path_counts["opened"] += len(row["opened_paths"])
         path_counts["changed"] += len(row["changed_paths"])
         path_counts["missed"] += len(row["missed_paths"])
         path_counts["ignored"] += len(row["ignored_paths"])
-    return {"records": len(rows), "outcomes": outcomes, "path_counts": path_counts}
+    return {
+        "records": len(rows),
+        "from_commits": from_commits,
+        "outcomes": outcomes,
+        "path_counts": path_counts,
+    }
 
 
 def _similarity(query: str, past_query: str) -> float:

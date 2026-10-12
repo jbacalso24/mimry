@@ -21,6 +21,7 @@ from .cache_safety import (
     validated_cache_home,
     validated_current_root_cache_path,
 )
+from .commit_feedback import record_commit_feedback
 from .constants import SCHEMA_VERSION
 from .core.artifacts import (
     graph_health,
@@ -34,6 +35,7 @@ from .core.artifacts import (
 from .core.export import export_cypher, export_graphml, export_html, export_obsidian
 from .digest import canonical_digest, canonical_state
 from .feedback import (
+    COMMIT_NOTE_PREFIX,
     feedback_payload_from_args,
     feedback_stats,
     list_feedback,
@@ -76,7 +78,7 @@ from .security import (
 )
 from .semantic import semantic_health, semantic_rows
 from .source_snippets import with_source_snippets
-from .state import atomic_write_text
+from .state import StateLockTimeoutError, atomic_write_text
 from .storage import (
     active_index_pointer,
     load_jsonl,
@@ -1358,11 +1360,39 @@ def cmd_preflight(a):
 
 def cmd_feedback(a):
     root = Path(a.root).resolve()
+    if getattr(a, "from_commit", None):
+        return _cmd_feedback_from_commit(root, a.from_commit)
     action = getattr(a, "feedback_action", None)
     with active_index_pointer(root, exclusive=action not in {"stats", "list", "show"}) as ptr:
         if not ptr:
             raise SystemExit(_not_set_up(root))
         return _cmd_feedback_active(a, root, ptr, action)
+
+
+def _cmd_feedback_from_commit(root: Path, rev: str) -> int:
+    """Hook entry point: never fails for an expected reason."""
+    try:
+        with active_index_pointer(root, exclusive=True) as ptr:
+            if not ptr:
+                ui.detail("MIMRY is not set up here; no commit feedback recorded.")
+                return 0
+            row, reason = record_commit_feedback(root, Path(ptr["indexPath"]), ptr["rootId"], rev)
+    except StateLockTimeoutError:
+        ui.detail("Another MIMRY command is using this index; commit feedback skipped.")
+        return 0
+    if row is None:
+        ui.detail(reason)
+        return 0
+    commit = row["notes"].removeprefix(COMMIT_NOTE_PREFIX)
+    ui.ok(f"Saved feedback for {ui.quote(ui.shorten(row['query'], 70))}")
+    ui.detail(
+        ui.facts(
+            f"{len(row['changed_paths']):,} changed",
+            f"{len(row['missed_paths']):,} missed",
+            f"commit {commit}",
+        )
+    )
+    return 0
 
 
 def _cmd_feedback_active(a, root: Path, ptr: dict, action: str | None):
@@ -1387,6 +1417,13 @@ def _cmd_feedback_active(a, root: Path, ptr: dict, action: str | None):
                     "Files",
                     ui.facts(*(f"{n:,} {label}" for label, n in stats["path_counts"].items() if n))
                     or "none",
+                ),
+                (
+                    "Sources",
+                    ui.facts(
+                        f"{stats['from_commits']:,} from commits",
+                        f"{stats['records'] - stats['from_commits']:,} from agents",
+                    ),
                 ),
             ]
         )

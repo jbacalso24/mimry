@@ -154,6 +154,12 @@ def git_hooks_install(root: Path) -> int:
         f'\n{_BEGIN}\nif [ "$3" = "1" ]; then\n'
         f"  {exe} refresh >> {log_path_quoted} 2>&1 &\nfi\n{_END}\n"
     )
+    # Feedback runs first (it is quick) and both share one background
+    # group, so they never contend for the index lock.
+    block_post_commit = (
+        f"\n{_BEGIN}\n{{ {exe} feedback --from-commit HEAD; {exe} refresh; }}"
+        f" >> {log_path_quoted} 2>&1 &\n{_END}\n"
+    )
 
     installed_count = 0
     for hook_name in _HOOKS:
@@ -180,7 +186,10 @@ def git_hooks_install(root: Path) -> int:
                 ui.warn(f"Skipping {hook_name}: not a shell script")
                 continue
 
-        new_block = block_post_checkout if hook_name == "post-checkout" else block
+        new_block = {
+            "post-checkout": block_post_checkout,
+            "post-commit": block_post_commit,
+        }.get(hook_name, block)
         begin_idx = existing.find(_BEGIN)
         if begin_idx != -1:
             end_idx = existing.find(_END, begin_idx)

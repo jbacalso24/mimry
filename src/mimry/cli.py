@@ -278,6 +278,14 @@ def build_parser():
     )
     f.add_argument("--notes", help="Optional bounded note; no source contents or secrets")
     f.add_argument("--json", help="Read feedback payload JSON from a file")
+    f.add_argument(
+        "--from-commit",
+        nargs="?",
+        const="HEAD",
+        default=None,
+        help="Record feedback from a commit's changed files and the last preflight before it "
+        "(used by the post-commit hook)",
+    )
     f.add_argument("--limit", type=int, default=10, help="Limit for `mimry feedback list`")
     f.set_defaults(func=cmd_feedback)
     s = sub.add_parser(
