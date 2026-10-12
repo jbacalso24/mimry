@@ -1,8 +1,8 @@
 # Releasing MIMRY
 
-MIMRY targets CPython 3.11–3.13 on Windows, Linux, and macOS. That matrix is committed
+MIMRY targets CPython 3.11 to 3.14 on Windows, Linux, and macOS. That matrix is committed
 in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every pull request
-and every push to `main`: 3 operating systems on Python 3.11, plus Python 3.13 on Linux. All
+and every push to `main`: 3 operating systems on Python 3.11, plus Python 3.14 on Linux. All
 dependencies resolve from a standard index; MIMRY no longer pins any dependency to a Git commit.
 
 A green CI run is **required** for a release, and it is **not a substitute for review**. CI
@@ -14,8 +14,8 @@ what they encode.
 
 | Job | Runs on | What it proves |
 | --- | --- | --- |
-| `release-floor` | 3 OS x Python 3.11, plus ubuntu-latest x Python 3.13 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix (every cell must equal the committed golden canonical digest, retrieval rankings, and context pack, so all cells agree with each other), unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
-| benchmark steps | ubuntu-latest x Python 3.13 cell only | The committed PASS matches fixture, cases, retrieval source, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
+| `release-floor` | 3 OS x Python 3.11, plus ubuntu-latest x Python 3.14 | ruff format/check, `pytest -q`, in-memory graph identity, the real end-to-end determinism matrix (every cell must equal the committed golden canonical digest, retrieval rankings, and context pack, so all cells agree with each other), unlocked extracted-sdist parser + determinism suite, clean-wheel install and entrypoint smoke |
+| benchmark steps | ubuntu-latest x Python 3.14 cell only | The committed PASS matches fixture, cases, and exact thresholds before a fresh PASS is written only to `/tmp/artifact` and uploaded |
 
 A separate [`audit.yml`](.github/workflows/audit.yml) workflow runs `pip-audit` against the exact locked runtime dependencies whenever `uv.lock` or `pyproject.toml` changes, and weekly.
 It is not a required check, so a newly published advisory never blocks unrelated pull requests; a red run means the lock needs an upgrade.
@@ -107,5 +107,6 @@ evidence of parser compatibility, which is why `tree-sitter` carries an upper bo
 1. Update `version` in `pyproject.toml` and the matching changelog section.
 2. Re-run the unlocked-artifact parser and determinism lane before changing `tree-sitter` or `tree-sitter-language-pack`; keep both constrained in project metadata and regenerate `uv.lock`. Widening the `tree-sitter` upper bound requires that lane to pass and the golden determinism values to be re-confirmed, not regenerated to match.
 3. Run the complete release checks above on a clean checkout.
+   Run the [token benchmark](benchmarks/tokens/README.md) once on holdout2 for the new version, in each read mode, and publish the results; holdout2 is never run while developing.
 4. Build twice with the same `SOURCE_DATE_EPOCH`, compare SHA-256 checksums, and review wheel metadata and sdist contents before tagging.
 5. Merge the release pull request, then tag the merged commit and push the tag (`git tag -a vX.Y.Z <sha> -m "mimry X.Y.Z" && git push origin vX.Y.Z`); the release workflow publishes to PyPI and GitHub Releases.

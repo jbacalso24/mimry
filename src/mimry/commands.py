@@ -63,7 +63,7 @@ from .plan import (
     write_plan_output,
 )
 from .routing import route_payload, verification_commands, write_brief
-from .scanner import worktree_fingerprint
+from .scanner import _git_output, worktree_fingerprint
 from .search import find_rows
 from .security import (
     filter_index_records,
@@ -649,22 +649,62 @@ def _index_and_graph_health(root: Path, ptr: dict):
     return fresh, graph
 
 
+def _set_up_new_worktree(root: Path) -> dict | None:
+    """Set MIMRY up in a new git worktree of a set-up repository.
+
+    The index and .mimry/ are gitignored, so a fresh worktree has
+    neither. Initialize it, copy the main worktree's config.toml and
+    build the worktree's own index. Returns the index stats with
+    ``set_up_worktree`` set, or None when root is not such a worktree.
+    """
+    output = _git_output(root, "rev-parse", "--show-toplevel", "--git-common-dir")
+    if output is None:
+        return None
+    lines = output.decode("utf-8", "replace").splitlines()
+    if len(lines) != 2:
+        return None
+    top = Path(lines[0]).resolve()
+    common = Path(lines[1])
+    if not common.is_absolute():
+        common = root / common
+    common = common.resolve()
+    if common.name != ".git":
+        return None  # bare repository or another layout
+    main = common.parent
+    if main == top or pointer_file(top).is_file() or not pointer_file(main).is_file():
+        return None
+    init_status = cmd_init(
+        SimpleNamespace(root=str(top), root_type="repo", skip_graph=True, quiet=True)
+    )
+    if init_status != 0:
+        return None
+    main_config = mdir(main) / "config.toml"
+    if main_config.is_file():
+        shutil.copyfile(main_config, mdir(top) / "config.toml")
+    stats = write_index(top, require(top, validate=False), full=True)
+    stats["set_up_worktree"] = True
+    return stats
+
+
 def refresh_if_stale(root: Path) -> dict | None:
     """Reindex when files changed since the last index.
 
     Returns the index stats, or None when the index was current or
-    MIMRY is not set up. Call it before taking the shared reader lock:
-    indexing takes the lock exclusively. When git sees the same tree
-    the index recorded, the full walk is skipped.
+    MIMRY is not set up. In a new git worktree of a set-up repository
+    it sets MIMRY up instead, and the stats carry ``set_up_worktree``.
+    Call it before taking the shared reader lock: indexing takes the
+    lock exclusively. When git sees the same tree the index recorded,
+    the full walk is skipped.
     """
     with active_index_pointer(root) as active:
-        if active is None:
-            return None
-        recorded = active.get("worktreeFingerprint")
-        if recorded and recorded == worktree_fingerprint(root):
-            return None  # git sees the same tree that was indexed
-        if index_freshness(root, active)["state"] != "stale":
-            return None
+        if active is not None:
+            recorded = active.get("worktreeFingerprint")
+            if recorded and recorded == worktree_fingerprint(root):
+                return None  # git sees the same tree that was indexed
+            if index_freshness(root, active)["state"] != "stale":
+                return None
+    if active is None:
+        return _set_up_new_worktree(root)
     return write_index(root, require(root, validate=False))
 
 
@@ -680,12 +720,34 @@ def _change_summary(stats: dict) -> str:
     return counted or "nothing changed"
 
 
+def _linked_worktree_top(folder: Path) -> bool:
+    """True when folder is the top of a linked git worktree."""
+    marker = folder / ".git"
+    if not marker.is_file():
+        return False
+    try:
+        text = marker.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    # "gitdir: <common>/worktrees/<name>"; a submodule points into
+    # <common>/modules/ instead and stays part of its parent's index.
+    gitdir = text.strip().removeprefix("gitdir:").strip().replace("\\", "/")
+    return "/worktrees/" in f"/{gitdir}"
+
+
 def _indexed_root(start: Path) -> Path:
-    """The nearest folder at or above start that has an index."""
-    return next(
-        (folder for folder in (start, *start.parents) if pointer_file(folder).is_file()),
-        start,
-    )
+    """The nearest folder at or above start that has an index.
+
+    The walk stops at the top of a linked git worktree: a worktree
+    nested in its main checkout (Claude Code keeps them under
+    .claude/worktrees/) must not answer from the main checkout's index.
+    """
+    for folder in (start, *start.parents):
+        if pointer_file(folder).is_file():
+            return folder
+        if _linked_worktree_top(folder):
+            break
+    return start
 
 
 def _fresh_index(command):
@@ -696,10 +758,14 @@ def _fresh_index(command):
         started = time.perf_counter()
         stats = refresh_if_stale(_indexed_root(Path(a.root).resolve()))
         if stats is not None and not getattr(a, "json", False):
-            ui.ok(
-                f"Reindexed first - {_change_summary(stats)}"
-                f" ({ui.took(time.perf_counter() - started)})"
-            )
+            elapsed = ui.took(time.perf_counter() - started)
+            if stats.get("set_up_worktree"):
+                ui.ok(
+                    "Set up MIMRY for this worktree - indexed"
+                    f" {ui.count(stats['files'], 'file')} ({elapsed})"
+                )
+            else:
+                ui.ok(f"Reindexed first - {_change_summary(stats)} ({elapsed})")
         return command(a)
 
     return guarded

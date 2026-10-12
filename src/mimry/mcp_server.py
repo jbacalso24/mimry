@@ -281,7 +281,11 @@ def _index_operation(*, exclusive: bool = False, refresh: bool = False):
             with active_index_pointer(root_path, exclusive=exclusive):
                 result = func(*args, **kwargs)
             if stats is not None and isinstance(result, dict):
-                result["reindexed"] = _change_summary(stats)
+                if stats.get("set_up_worktree"):
+                    result["set_up_worktree"] = True
+                    result["reindexed"] = f"set up this worktree, indexed {stats['files']} files"
+                else:
+                    result["reindexed"] = _change_summary(stats)
             return result
 
         return guarded
