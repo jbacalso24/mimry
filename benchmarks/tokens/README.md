@@ -205,7 +205,7 @@ Before the run, MIMRY was to count as better only if it located at least as many
 
 | Agent | Located | Tokens | First index per repository |
 |---|---|---|---|
-| MIMRY 0.3.1 | 32 / 48 | 1,777,105 | 3.8 to 8.0 s |
+| MIMRY 0.3.1 | **32 / 48** | **1,777,105** | **3.8 to 8.0 s** |
 | other alternative, default model | 23 / 48 | 4,547,321 | 66 to 281 s |
 | other alternative, larger model | 20 / 48 | 4,285,524 | 10 to 30 min |
 | grep | 21 / 48 | 5,660,661 | none |
