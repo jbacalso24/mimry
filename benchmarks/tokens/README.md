@@ -195,6 +195,26 @@ On holdout3, never used to tune, MIMRY saves as much as on dev: 68.6% against 68
 It locates more tasks than grep in five of the six repositories, and fewer in guzzle (3 against 4).
 Per-task numbers are in [results.holdout3.ranges.json](results.holdout3.ranges.json).
 
+## Other alternatives
+
+holdout3 was also run with another local code-search tool, which splits files into chunks and ranks them with a local embedding model.
+It ran in two setups: its default model, and the larger model its documentation recommends for code on a CPU, each with the settings its own setup command writes.
+Its agent pays for the search output, which includes each result's code, and reaches a gold file for free when a printed chunk shows a line the pull request changed.
+It then reads the other result files whole, and falls back to the grep agent's search, with the same 10-read budget.
+Before the run, MIMRY was to count as better only if it located at least as many tasks and read fewer tokens, with a gap under 3 tasks counted as a tie.
+
+| Agent | Located | Tokens | First index per repository |
+|---|---|---|---|
+| MIMRY 0.3.1 | 32 / 48 | 1,777,105 | 3.8 to 8.0 s |
+| other alternative, default model | 23 / 48 | 4,547,321 | 66 to 281 s |
+| other alternative, larger model | 20 / 48 | 4,285,524 | 10 to 30 min |
+| grep | 21 / 48 | 5,660,661 | none |
+
+On the tasks both located, the other alternative read 3.3 times as many tokens as MIMRY with its default model (22 tasks) and 3.1 times with the larger model (18 tasks).
+Its searches answered faster from a warm background process: a median of 0.58 s, against 1.0 s for a MIMRY `preflight`, which starts a new process and writes the context pack.
+Like guzzle for MIMRY, every agent has repositories where it does worse, and these are scripted agents, not language models.
+The harness for other tools is not part of this repository.
+
 ## Whole-repository ratio
 
 Some tools report savings against reading every file in the repository.
