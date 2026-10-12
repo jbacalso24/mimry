@@ -486,7 +486,7 @@ def worktree_fingerprint(root: Path) -> str | None:
     return digest.hexdigest()
 
 
-def _linked_worktree(folder: Path) -> bool:
+def is_linked_worktree(folder: Path) -> bool:
     """A linked worktree has its own source tree, unlike a submodule."""
     try:
         if not (folder / ".git").is_file():
@@ -529,7 +529,7 @@ def scan_stats(
     for dirpath, dirnames, filenames in os.walk(root_str, followlinks=False):
         # The explicit root may itself be a worktree. Only nested
         # worktrees are separate checkouts, not part of this index.
-        if dirpath != root_str and _linked_worktree(Path(dirpath)):
+        if dirpath != root_str and is_linked_worktree(Path(dirpath)):
             dirnames[:] = []
             continue
         rel_dir = dirpath[len(root_str) :].lstrip(os.sep).replace(os.sep, "/")

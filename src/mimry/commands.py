@@ -63,7 +63,7 @@ from .plan import (
     write_plan_output,
 )
 from .routing import route_payload, verification_commands, write_brief
-from .scanner import _git_output, worktree_fingerprint
+from .scanner import _git_output, is_linked_worktree, worktree_fingerprint
 from .search import find_rows
 from .security import (
     filter_index_records,
@@ -720,32 +720,18 @@ def _change_summary(stats: dict) -> str:
     return counted or "nothing changed"
 
 
-def _linked_worktree_top(folder: Path) -> bool:
-    """True when folder is the top of a linked git worktree."""
-    marker = folder / ".git"
-    if not marker.is_file():
-        return False
-    try:
-        text = marker.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return False
-    # "gitdir: <common>/worktrees/<name>"; a submodule points into
-    # <common>/modules/ instead and stays part of its parent's index.
-    gitdir = text.strip().removeprefix("gitdir:").strip().replace("\\", "/")
-    return "/worktrees/" in f"/{gitdir}"
-
-
 def _indexed_root(start: Path) -> Path:
     """The nearest folder at or above start that has an index.
 
     The walk stops at the top of a linked git worktree: a worktree
     nested in its main checkout (Claude Code keeps them under
     .claude/worktrees/) must not answer from the main checkout's index.
+    A submodule is not a boundary, see is_linked_worktree.
     """
     for folder in (start, *start.parents):
         if pointer_file(folder).is_file():
             return folder
-        if _linked_worktree_top(folder):
+        if is_linked_worktree(folder):
             break
     return start
 

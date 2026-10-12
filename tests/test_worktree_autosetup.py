@@ -156,15 +156,46 @@ def test_find_from_a_subfolder_of_a_new_worktree(tmp_path):
 
 
 def test_submodule_git_file_is_not_a_worktree_boundary(tmp_path):
-    from mimry.commands import _linked_worktree_top
+    from mimry.scanner import is_linked_worktree
 
+    main = tmp_path / "main"
+    main.mkdir()
+    _git(main, "init", "-q")
+    _git(main, "config", "user.name", "MIMRY Test")
+    _git(main, "config", "user.email", "test@example.com")
+    _git(main, "commit", "-q", "--allow-empty", "-m", "Initial commit")
+    linked = tmp_path / "linked"
+    _git(main, "worktree", "add", "-q", "-b", "linked-branch", str(linked))
     sub = tmp_path / "sub"
     sub.mkdir()
     (sub / ".git").write_text("gitdir: ../.git/modules/sub\n", encoding="utf-8")
-    linked = tmp_path / "linked"
-    linked.mkdir()
-    (linked / ".git").write_text("gitdir: C:/repo/.git/worktrees/linked\n", encoding="utf-8")
 
-    assert not _linked_worktree_top(sub)
-    assert _linked_worktree_top(linked)
-    assert not _linked_worktree_top(tmp_path)
+    assert not is_linked_worktree(sub)
+    assert is_linked_worktree(linked)
+    assert not is_linked_worktree(tmp_path)
+
+
+def test_submodule_under_a_worktrees_path_uses_the_parent_index(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache, set_up=True)
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    _git(lib, "init", "-q")
+    _git(lib, "config", "user.name", "MIMRY Test")
+    _git(lib, "config", "user.email", "test@example.com")
+    (lib / "auth.py").write_text("def session(): return 1", encoding="utf-8")
+    _git(lib, "add", "-A")
+    _git(lib, "commit", "-q", "-m", "Initial commit")
+    rel = "worktrees/lib"
+    _git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(lib), rel)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "Add submodule under worktrees")
+    assert _mimry(repo, cache, "index").returncode == 0
+    sub = repo / "worktrees" / "lib"
+
+    res = _mimry(sub, cache, "find", "auth session")
+
+    assert res.returncode == 0, res.stderr
+    assert "worktrees/lib/auth.py" in res.stdout
+    assert SETUP_LINE not in res.stdout
+    assert not (sub / ".mimry").exists()
