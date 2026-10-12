@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -1140,6 +1141,7 @@ def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
 
     assert res.returncode == 0, res.stderr
     assert "OK Context ready for" in res.stdout
+    assert re.search(r"Context ready for .*\(\d+\.\d+s\)", res.stdout)
     assert "Index is up to date" in res.stdout
     assert "Reindexed first" not in res.stdout and "Built the index" not in res.stdout
     assert "Start with" in res.stdout

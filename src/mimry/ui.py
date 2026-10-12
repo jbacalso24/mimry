@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -117,6 +120,36 @@ def detail(text: str = "", indent: int = 2) -> None:
 
 def faint(text: str) -> str:
     return paint(text, "dim")
+
+
+@contextmanager
+def working(label: str):
+    """Show a live elapsed-time counter on stderr while the block runs.
+
+    Only on a terminal that colour is used on. The line is cleared
+    before anything after the block prints.
+    """
+    if not _color(sys.stderr):
+        yield
+        return
+    stop = threading.Event()
+    started = time.perf_counter()
+
+    def tick():
+        while not stop.wait(0.1):
+            elapsed = time.perf_counter() - started
+            sys.stderr.write(f"\r\x1b[K{paint(label, 'dim', sys.stderr)} {elapsed:.1f}s")
+            sys.stderr.flush()
+
+    thread = threading.Thread(target=tick, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
+        sys.stderr.write("\r\x1b[K")
+        sys.stderr.flush()
 
 
 def facts(*parts: str | None) -> str:
