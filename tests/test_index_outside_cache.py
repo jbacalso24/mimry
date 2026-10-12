@@ -9,7 +9,7 @@ from test_mimry_cli import copy_fixture, run_cli
 
 from mimry.cache_safety import IndexOutsideCacheError, UnsafeCachePathError
 from mimry.doctor import doctor_report
-from mimry.mcp_server import mimry_find
+from mimry.mcp_tools import mimry_find
 
 
 @pytest.fixture

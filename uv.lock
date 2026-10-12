@@ -736,7 +736,6 @@ name = "mimry"
 version = "0.3.1"
 source = { editable = "." }
 dependencies = [
-    { name = "fastmcp" },
     { name = "pypdf" },
     { name = "tree-sitter" },
     { name = "tree-sitter-language-pack" },
@@ -744,6 +743,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "fastmcp" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
@@ -751,7 +751,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp", specifier = ">=4.1,<5" },
     { name = "pypdf", specifier = ">=6.19,<7" },
     { name = "tree-sitter", specifier = ">=0.25.2,<0.26" },
     { name = "tree-sitter-language-pack", specifier = "==1.12.2" },
@@ -759,6 +758,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fastmcp", specifier = ">=4.1,<5" },
     { name = "pre-commit", specifier = ">=4.6.0" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.8" },

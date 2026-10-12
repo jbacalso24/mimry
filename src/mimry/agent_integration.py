@@ -13,9 +13,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastmcp import Client
-from fastmcp.client.transports import StdioTransport
-
 REQUIRED_TOOLS = {
     "mimry_context",
     "mimry_find",
@@ -97,6 +94,16 @@ def _client_env(sandbox: Path, *, client: str) -> dict[str, str]:
 
 
 async def _protocol_smoke(repo: Path, cache: Path, server_command: list[str]) -> dict[str, Any]:
+    try:
+        from fastmcp import Client
+        from fastmcp.client.transports import StdioTransport
+    except ImportError:
+        print(
+            "mimry-integration-smoke needs the development environment: "
+            "run it with uv run from a checkout",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from None
     env = _client_env(cache.parent, client="protocol")
     env["MIMRY_CACHE_HOME"] = str(cache)
     transport = StdioTransport(server_command[0], server_command[1:], cwd=str(repo), env=env)

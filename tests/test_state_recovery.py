@@ -20,7 +20,7 @@ from mimry import state
 from mimry.commands import cmd_cache_wipe, cmd_feedback
 from mimry.freshness import index_freshness
 from mimry.indexer import _cleanup_generations, write_index
-from mimry.mcp_server import mimry_find
+from mimry.mcp_tools import mimry_find
 from mimry.paths import idx_path
 from mimry.storage import (
     active_index_pointer,

@@ -8,7 +8,7 @@ from test_mimry_cli import copy_fixture, run_cli
 
 import mimry.source_snippets as source_snippets
 from mimry.indexer import write_index
-from mimry.mcp_server import mimry_find
+from mimry.mcp_tools import mimry_find
 from mimry.paths import idx_path
 from mimry.source_snippets import with_source_snippets
 from mimry.storage import load_pointer, save_pointer
@@ -125,7 +125,7 @@ def test_mcp_parity_caps_and_changed_deleted_fail_closed(tmp_path, monkeypatch):
 
     # Refresh is disabled to exercise the snippet guard: a reindex would
     # hide the edit from it.
-    monkeypatch.setattr("mimry.mcp_server.refresh_if_stale", lambda root: None)
+    monkeypatch.setattr("mimry.mcp_tools.refresh_if_stale", lambda root: None)
     target = repo / "src/auth/session.py"
     target.write_text(target.read_text() + "\n# changed\n", encoding="utf-8")
     changed = mimry_find("create_session", str(repo), limit=1, snippets=True)

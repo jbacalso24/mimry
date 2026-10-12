@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from mimry.core.documents import extract_document_text
-from mimry.mcp_server import (
+from mimry.mcp_tools import (
     mimry_brief,
     mimry_context,
     mimry_explain,

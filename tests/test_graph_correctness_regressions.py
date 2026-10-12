@@ -9,7 +9,7 @@ import pytest
 from mimry.commands import cmd_init
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
-from mimry.mcp_server import mimry_reindex
+from mimry.mcp_tools import mimry_reindex
 from mimry.scanner import adapt
 from mimry.state import UNINDEXABLE_FILE, StateCorruptionError
 from mimry.storage import load_pointer

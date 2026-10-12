@@ -17,7 +17,7 @@ from mimry import mcp_server
 from mimry.commands import refresh_if_stale
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
-from mimry.mcp_server import (
+from mimry.mcp_tools import (
     mimry_brief,
     mimry_context,
     mimry_explain,
@@ -41,10 +41,10 @@ FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"
 
 
 def test_mcp_server_imports_and_registers_tools():
-    assert mcp_server.mcp.name == "MIMRY"
-    # FastMCP stores tools internally, but import success and callable
-    # decorated functions are the minimum guard for
+    # The FastMCP object this used to check is gone; the server's own
+    # instructions and the callable decorated tools are the guard for
     # packaging/console-script regressions.
+    assert mcp_server.INSTRUCTIONS.startswith("MIMRY is a local index")
     assert callable(mimry_status)
     assert callable(mimry_find)
     assert callable(mimry_init)
@@ -58,6 +58,23 @@ def test_mcp_server_imports_and_registers_tools():
     assert callable(mimry_brief)
 
 
+def test_tool_import_that_exits_is_reported_by_load_tools(monkeypatch):
+    real_import = mcp_server.importlib.import_module
+
+    def exiting_import(name, *args, **kwargs):
+        if name == "mimry.mcp_tools":
+            raise SystemExit(3)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(mcp_server.importlib, "import_module", exiting_import)
+    load_tools = mcp_server._start_tool_import()
+    with pytest.raises(RuntimeError, match="could not load MIMRY tools: SystemExit: 3"):
+        load_tools()
+    # Later calls report the same failure instead of returning quietly.
+    with pytest.raises(RuntimeError, match="could not load MIMRY tools"):
+        load_tools()
+
+
 def test_mimry_mcp_help_does_not_start_server():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
@@ -69,9 +86,8 @@ def test_mimry_mcp_help_does_not_start_server():
         capture_output=True,
         # A safety net so a regression that starts the server hangs the
         # suite instead of the machine -- not a performance assertion.
-        # Importing fastmcp and tree-sitter-language-pack already costs
-        # ~9s on a cold Windows runner, so 10s flaked under parallel
-        # load.
+        # --help returns before any tool code is imported, so this
+        # only covers a cold interpreter start on a busy runner.
         timeout=60,
         check=False,
     )
@@ -391,7 +407,7 @@ def test_mcp_still_reports_real_corruption_as_corruption(tmp_path: Path, monkeyp
 
 def test_mcp_tool_list_is_backward_compatible(tmp_path: Path):
     """Every existing tool is still registered, plus the digest tool."""
-    from mimry.mcp_server import mimry_digest, mimry_semantic, mimry_symbol
+    from mimry.mcp_tools import mimry_digest, mimry_semantic, mimry_symbol
 
     assert callable(mimry_status)
     assert callable(mimry_find)
@@ -413,7 +429,7 @@ def test_mcp_tool_list_is_backward_compatible(tmp_path: Path):
 def test_mcp_digest_tool_matches_cli_digest(tmp_path: Path, monkeypatch):
     """MCP digest tool must return same digest as CLI 'mimry digest'."""
     from mimry.digest import canonical_digest
-    from mimry.mcp_server import mimry_digest
+    from mimry.mcp_tools import mimry_digest
 
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
@@ -443,7 +459,7 @@ def test_mcp_digest_tool_matches_cli_digest(tmp_path: Path, monkeypatch):
 
 def test_mcp_digest_tool_declares_canonical_and_operational_fields(tmp_path: Path, monkeypatch):
     """Digest tool clearly labels canonical vs operational fields."""
-    from mimry.mcp_server import mimry_digest
+    from mimry.mcp_tools import mimry_digest
 
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
@@ -477,7 +493,7 @@ def test_mcp_digest_tool_structured_errors(tmp_path: Path, monkeypatch):
 
     Covers missing, outdated, and corrupt indexes.
     """
-    from mimry.mcp_server import mimry_digest
+    from mimry.mcp_tools import mimry_digest
 
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE, repo)
@@ -728,7 +744,7 @@ def test_rebuild_that_does_not_help_is_retried_once(tmp_path: Path, monkeypatch)
         mcp_calls.append(root)
         return {}
 
-    monkeypatch.setattr("mimry.mcp_server.rebuild_outdated_index", mcp_noop)
+    monkeypatch.setattr("mimry.mcp_tools.rebuild_outdated_index", mcp_noop)
     payload = mimry_find("auth", str(repo))
 
     assert len(mcp_calls) == 1

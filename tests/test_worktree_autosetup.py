@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mimry.mcp_server import mimry_find
+from mimry.mcp_tools import mimry_find
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "simple_repo"

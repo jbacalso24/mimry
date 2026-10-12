@@ -398,7 +398,7 @@ def _tamper_child_id(plan: dict) -> None:
 def test_tampered_identity_fails_closed_across_cli_list_digest_and_mcp(
     tmp_path: Path, mutation, expected_code: str
 ):
-    from mimry import mcp_server
+    from mimry import mcp_tools as mcp_server
 
     root = initialized_repo(tmp_path)
     plan = create_plan("Root", "identity")
@@ -440,7 +440,7 @@ def test_tampered_identity_fails_closed_across_cli_list_digest_and_mcp(
 def test_strict_plan_json_rejects_duplicate_keys_and_unknown_fields_across_surfaces(
     tmp_path: Path, raw_plan: str | None, expected_code: str
 ):
-    from mimry import mcp_server
+    from mimry import mcp_tools as mcp_server
 
     root = initialized_repo(tmp_path)
     plan = create_plan("Root", "strict")
@@ -507,7 +507,7 @@ def test_normalization_is_nfc_and_rejects_blank_text():
 
 
 def test_read_only_mcp_parity_has_no_paths_or_mutations(tmp_path: Path):
-    from mimry import mcp_server
+    from mimry import mcp_tools as mcp_server
 
     root = initialized_repo(tmp_path)
     plan_id, root_id = new_plan(root)

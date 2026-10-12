@@ -12,7 +12,7 @@ from mimry.commands import cmd_context, cmd_find, cmd_init, cmd_symbol
 from mimry.core.artifacts import graph_health, graph_rows
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
-from mimry.mcp_server import mimry_context, mimry_find, mimry_semantic, mimry_status, mimry_symbol
+from mimry.mcp_tools import mimry_context, mimry_find, mimry_semantic, mimry_status, mimry_symbol
 from mimry.paths import graph_output_dir
 from mimry.scanner import scan
 from mimry.storage import load_pointer

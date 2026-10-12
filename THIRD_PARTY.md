@@ -23,10 +23,3 @@ TSX, Go, Rust and C# -- so adding a supported language costs a table entry in
 Used for extracting text from PDF files without external dependencies or network calls.
 
 - `pypdf` (BSD-3-Clause)
-
-## fastmcp
-
-Used for the MCP server entrypoint (`mimry-mcp`) that exposes MIMRY's tools to coding
-agents.
-
-- `fastmcp` (Apache-2.0)

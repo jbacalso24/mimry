@@ -25,7 +25,6 @@ classifiers = [
 ]
 authors = [{ name = "Judison Bacalso", email = "judisonbacalso24@gmail.com" }]
 dependencies = [
-    "fastmcp>=4.1,<5",
     "pypdf>=6.19,<7",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
     # compiled against a specific core ABI; a 0.26 core can import cleanly and
@@ -53,6 +52,7 @@ mimry-integration-smoke = "mimry.agent_integration:main"
 
 [dependency-groups]
 dev = [
+    "fastmcp>=4.1,<5",
     "pre-commit>=4.6.0",
     "pytest>=8",
     "ruff>=0.8",
@@ -79,6 +79,7 @@ include = [
     "/scripts/determinism_matrix.py",
     # The shipped focused test imports this opt-in harness directly.
     "/scripts/local_embedding_evaluation.py",
+    "/scripts/mcp_startup_time.py",
     "/benchmarks",
     "/docs",
     "/assets/banner.svg",

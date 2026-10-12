@@ -9,7 +9,7 @@ import pytest
 
 import mimry.search as search
 from mimry.indexer import write_index
-from mimry.mcp_server import mimry_find
+from mimry.mcp_tools import mimry_find
 from mimry.paths import idx_path
 from mimry.search import _path_glob_matches, _search_scope, find_rows
 from mimry.storage import load_pointer, save_pointer
