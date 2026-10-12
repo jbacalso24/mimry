@@ -1,22 +1,28 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
+import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
 from mimry.feedback import normalize_paths
 
 
-def test_normalize_keeps_leading_dots_and_drops_only_leading_slash_and_dot_slash(
-    tmp_path: Path,
-):
+def test_normalize_keeps_leading_dots_and_drops_dot_slash(tmp_path: Path):
     root = tmp_path.resolve()
     paths = normalize_paths(
         root,
-        [".github/workflows/ci.yml", ".env.example", "./src/a.py", "/src/b.py", ".", "./"],
+        [".github/workflows/ci.yml", ".env.example", "./src/a.py", ".", "./"],
     )
-    assert paths == [".github/workflows/ci.yml", ".env.example", "src/a.py", "src/b.py"]
+    assert paths == [".github/workflows/ci.yml", ".env.example", "src/a.py"]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a leading slash is relative only on Windows")
+def test_normalize_drops_a_leading_slash_on_windows(tmp_path: Path):
+    root = tmp_path.resolve()
+    assert normalize_paths(root, ["/src/b.py"]) == ["src/b.py"]
 
 
 def test_normalize_absolute_inside_root_is_relative_and_outside_is_external(tmp_path: Path):
