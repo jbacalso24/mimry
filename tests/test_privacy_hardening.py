@@ -542,6 +542,43 @@ def test_literal_credentials_in_source_code_stay_sensitive_and_redacted():
     assert contains_sensitive_text('password = "!@#$%^&*"\n', code=True)
 
 
+# Credential labels followed by a placeholder, as in comments and docs.
+# Built from parts so no secret scanner reads a token-shaped literal.
+LOW_ENTROPY_LIVE_KEY = "sk-live-" + "FAKECANARY" + ("0" * 12)
+
+
+@pytest.mark.parametrize(
+    ("line", "sensitive"),
+    [
+        ("# A label with a space in it (``api key: ...``) only occurs in", False),
+        ("# api key: ...", False),
+        ("# the api key: <your key here>", False),
+        ("# api key: <api key>", False),
+        ("# api key: ***", False),
+        ("# api key: ---", False),
+        ("# api key: ``", False),
+        ("x = 1  # password: ...", False),
+        ("# api key: abc", True),
+        (f"# api key: {LOW_ENTROPY_LIVE_KEY}", True),
+        ('# api key: "quoted-literal-value"', True),
+        ("# api key: Bearer abc.def", True),
+    ],
+)
+def test_placeholder_after_a_credential_label_is_not_a_secret(line: str, sensitive: bool):
+    # Labels with a space in them are judged as prose, in code and not.
+    assert contains_sensitive_text(line, code=True) is sensitive, line
+    assert contains_sensitive_text(line) is sensitive, line
+
+
+def test_redaction_keeps_placeholders_after_a_credential_label_and_redacts_the_rest():
+    for placeholder in (
+        "# api key: ...\n",
+        "# the api key: <your key here>\n",
+    ):
+        assert redact_sensitive_text(placeholder) == placeholder
+    assert redact_sensitive_text("# api key: abc\n") == "# api key: [REDACTED]\n"
+
+
 def test_configuration_literals_are_sensitive_and_redacted():
     for line, secret in LITERAL_CREDENTIALS_IN_CONFIGURATION:
         assert contains_sensitive_text(line), line
@@ -982,6 +1019,35 @@ def test_bare_secret_assignments_never_reach_index_or_graph(tmp_path: Path, monk
     assert VALUE_CANARY not in sqlite_dump(idx / "mimry.sqlite")
     indexed = (idx / "files.jsonl").read_text(encoding="utf-8")
     assert all(name not in indexed for name in assignments)
+
+
+def test_credential_label_placeholder_comment_keeps_source_indexed_and_a_literal_token_skips_it(
+    tmp_path: Path,
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "documented.py").write_text(
+        "# the api key: <your key here>\n# api key: ...\n\n\ndef helper():\n    return 1\n",
+        encoding="utf-8",
+    )
+    # Low-entropy canary, built at run time like CANARY above.
+    github_canary = "ghp_" + ("a" * 36)
+    (repo / "leaked.py").write_text(
+        f'def load():\n    api_key = "{github_canary}"\n    return api_key\n',
+        encoding="utf-8",
+    )
+    cache = tmp_path / "cache"
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    idx = Path(pointer["indexPath"])
+    indexed = (idx / "files.jsonl").read_text(encoding="utf-8")
+    symbols = (idx / "symbols.jsonl").read_text(encoding="utf-8")
+    assert "documented.py" in indexed
+    assert "helper" in symbols
+    assert "leaked.py" not in indexed
+    assert github_canary not in all_text_files(idx)
 
 
 def test_whole_file_streaming_detects_late_source_and_generated_canaries(tmp_path: Path):

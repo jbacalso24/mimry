@@ -153,7 +153,10 @@ SPACED_SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)(?P<label>\b(?:api[ \t_-]+key|client[ \t_-]+secret|private[ \t_-]+key|"
     r"access[ \t_-]+token|auth(?:entication|orization)?[ \t_-]+token|"
     r"service[ \t_-]+credentials?))(?P<separator>[ \t]*[:=][ \t]*)"
-    r"(?P<value>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|[^\s,;})]+)"
+    # A bracketed value is captured whole, so ``<your key here>`` is
+    # judged as one placeholder, not as its first word.
+    r"(?P<value>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|"
+    r"<[^<>\r\n]*>(?=[\s,;})]|\Z)|[^\s,;})]+)"
 )
 
 # Value shapes that are never a literal credential. Without them, any
@@ -193,6 +196,9 @@ _REFERENCE_RE = re.compile(
 )
 # Masks and placeholders: ``"********"``, ``"..."``, ``"<api-key>"``.
 _PLACEHOLDER_RE = re.compile(r"[*.xX]{3,}|<[^<>\r\n]+>")
+# An unquoted angle-bracket placeholder with a space in it, as in
+# ``<your key here>``.
+_SPACED_PLACEHOLDER_RE = re.compile(r"<[^<>]*\s[^<>]*>")
 # An environment lookup, up to the name it looks up.
 _ENV_LOOKUP_RE = re.compile(
     r"(?:process\.env|import\.meta\.env)\.[A-Za-z_]\w*"
@@ -421,6 +427,14 @@ def _value_is_credential(
         lowered in _NON_CREDENTIAL_WORDS
         or _NUMBER_RE.fullmatch(candidate)
         or _REFERENCE_RE.match(text, start)
+        # Punctuation alone (``...``, ``***``, ``---``) has no letter or
+        # digit to be a credential. A bracket or quote opens an
+        # expression (``API_KEY = (``), so it is not exempt.
+        or (
+            not any(char.isalnum() for char in candidate)
+            and not any(char in "([{\"'" for char in candidate)
+        )
+        or _SPACED_PLACEHOLDER_RE.fullmatch(candidate)
     ):
         return False
     if operator == ":":
