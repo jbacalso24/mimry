@@ -159,3 +159,39 @@ def test_python_from_dot_import_reaches_graph(tmp_path: Path) -> None:
     assert ("pkg/cli.py", "pkg/ui.py") in imports, (
         f"Python from . import edge missing; got imports: {sorted(p for p in imports if p[0])}"
     )
+
+
+def test_perl_use_parent_resolves_to_the_unique_package() -> None:
+    """A Perl `use parent` names a package. The repo owns it once, so
+    the base resolves even though `use parent` is not an import.
+    """
+    inherits = {"lib/Acme/Widget.pm": [{"type": "Acme::Widget", "base": "Acme::Base", "line": 2}]}
+    symbols = {
+        "lib/Acme/Widget.pm": [
+            {"name": "Acme::Widget", "kind": "module", "language": "perl", "line_start": 1}
+        ],
+        "lib/Acme/Base.pm": [
+            {"name": "Acme::Base", "kind": "module", "language": "perl", "line_start": 1}
+        ],
+    }
+
+    edges = resolve_inheritance(inherits, symbols, [])
+
+    assert [(e["base_file"], e["base_symbol"], e["confidence"]) for e in edges] == [
+        ("lib/Acme/Base.pm", "Acme::Base", "INFERRED")
+    ]
+
+
+def test_namespace_module_does_not_own_a_base_name() -> None:
+    """A non-Perl module symbol is a namespace, not a type, so it cannot
+    be the base a class names.
+    """
+    inherits = {"app/handler.cs": [{"type": "Handler", "base": "Shared", "line": 1}]}
+    symbols = {
+        "app/handler.cs": [{"name": "Handler", "kind": "class", "line_start": 1, "line_end": 2}],
+        "app/shared.cs": [
+            {"name": "Shared", "kind": "module", "language": "csharp", "line_start": 1}
+        ],
+    }
+
+    assert resolve_inheritance(inherits, symbols, []) == []

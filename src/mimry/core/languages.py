@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import re
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,13 @@ EXTENSION_LANGUAGE = {
     ".scala": "scala",
     ".sc": "scala",
     ".swift": "swift",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".ps1": "powershell",
+    ".psm1": "powershell",
+    ".lua": "lua",
+    ".pl": "perl",
+    ".pm": "perl",
 }
 
 # Display name for each EXTENSION_LANGUAGE value.
@@ -54,6 +62,10 @@ LANGUAGE_LABELS: dict[str, str] = {
     "kotlin": "Kotlin",
     "scala": "Scala",
     "swift": "Swift",
+    "bash": "Bash",
+    "powershell": "PowerShell",
+    "lua": "Lua",
+    "perl": "Perl",
 }
 
 NODE_TYPES = {
@@ -252,6 +264,36 @@ NODE_TYPES = {
         "calls": frozenset(["call_expression"]),
         "bases": frozenset(["inheritance_specifier"]),
     },
+    "bash": {
+        # `source x.sh` and `. x.sh` are commands, so imports
+        # ride on the command node and readers keep the file loads.
+        "definitions": frozenset(["function_definition"]),
+        "imports": frozenset(["command"]),
+        "calls": frozenset(["command"]),
+    },
+    "powershell": {
+        # Dot-sourcing, Import-Module and `using module` are commands.
+        # Classes inherit through bare simple_name children instead,
+        # read by _powershell_bases. Methods are class_method_definition
+        # nodes.
+        "definitions": frozenset(
+            ["function_statement", "class_statement", "class_method_definition"]
+        ),
+        "imports": frozenset(["command"]),
+        "calls": frozenset(["command"]),
+    },
+    "lua": {
+        "definitions": frozenset(["function_declaration"]),
+        "imports": frozenset(["function_call"]),  # require(...) is a call
+        "calls": frozenset(["function_call"]),
+    },
+    "perl": {
+        "definitions": frozenset(["subroutine_declaration_statement", "package_statement"]),
+        "imports": frozenset(["use_statement", "require_expression"]),
+        # `use parent`/`use base` are use_statements too; _perl_import
+        # declines them and they become inheritance edges instead.
+        "calls": frozenset(["function_call_expression", "method_call_expression"]),
+    },
 }
 
 
@@ -279,6 +321,10 @@ def supported_languages() -> list[tuple[str, list[str]]]:
 
 def symbol_kind(language: str, node_kind: str) -> str:
     """Map a tree-sitter node kind to MIMRY's symbol kind vocabulary."""
+    # A PowerShell method is named "class_..." by the grammar but is a
+    # function, not a class.
+    if node_kind == "class_method_definition":
+        return "function"
     if node_kind == "interface_declaration":
         return "interface"
     if node_kind == "protocol_declaration":
@@ -301,6 +347,7 @@ def symbol_kind(language: str, node_kind: str) -> str:
         "namespace_definition",
         "module",
         "mod_item",
+        "package_statement",
     ):
         return "module"
     if node_kind in ("type_declaration", "typedef_declaration"):
@@ -395,10 +442,25 @@ def _definition_name(node: Any, source: bytes) -> str | None:
     function_declarator to find it, then check for qualified_identifier
     (e.g. Widget::draw) and take only the final part.
     """
+    # PowerShell functions, classes and methods name themselves with a
+    # bare function_name or simple_name child, not a `name` field. A
+    # method's type literal holds type_identifier, not simple_name, so
+    # the first simple_name is always the method name.
+    if node.type in ("function_statement", "class_statement", "class_method_definition"):
+        for child in _children(node):
+            if child.type in ("function_name", "simple_name"):
+                return _text(source, child).strip() or None
+        return None
+
     try:
         named = node.child_by_field_name("name")
     except Exception:
         named = None
+    if named is not None and named.type in ("dot_index_expression", "method_index_expression"):
+        # Lua `function M.run` and `function M:step`: the name is the
+        # last segment, the field or method after the table.
+        parts = named.named_children
+        named = parts[-1] if parts else None
     if named is not None:
         text = _text(source, named).strip()
         if text:
@@ -593,6 +655,203 @@ def _swift_import(node: Any, source: bytes) -> str | None:
     return None
 
 
+def _unquote(text: str) -> str:
+    """Text without one pair of matching surrounding quotes."""
+    text = text.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        return text[1:-1]
+    return text
+
+
+def _bash_import(node: Any, source: bytes) -> str | None:
+    """Path a Bash `source` or `.` command loads, as written."""
+    name = node.child_by_field_name("name")
+    if name is None or _text(source, name) not in ("source", "."):
+        return None
+    argument = node.child_by_field_name("argument")
+    if argument is None:
+        return None
+    return _unquote(_text(source, argument)) or None
+
+
+def _bash_call(node: Any, source: bytes) -> str | None:
+    """The command name of a Bash simple command."""
+    name = node.child_by_field_name("name")
+    if name is None:
+        return None
+    return _text(source, name).strip() or None
+
+
+_POWERSHELL_ROOT = re.compile(r"^\$PSScriptRoot[/\\]")
+_POWERSHELL_COMMAND = re.compile(r"[A-Za-z_][\w-]*")
+
+
+def _powershell_path(text: str) -> str:
+    """A PowerShell path, unquoted, without its `$PSScriptRoot/`.
+
+    $PSScriptRoot is the importing script's own directory, so what is
+    left is relative to the importer, as the resolver expects.
+    """
+    return _POWERSHELL_ROOT.sub("", _unquote(text))
+
+
+def _powershell_dot_sourced(node: Any, source: bytes) -> bool:
+    """True for `. file.ps1`, the dot-sourcing form of a command."""
+    return any(
+        child.type == "command_invokation_operator" and _text(source, child) == "."
+        for child in _children(node)
+    )
+
+
+def _powershell_arguments(node: Any, source: bytes) -> list[str]:
+    """Texts of a command's positional arguments, parameters skipped."""
+    values = []
+    for child in _children(node):
+        if child.type != "command_elements":
+            continue
+        for element in _children(child):
+            if not element.is_named or element.type in (
+                "command_argument_sep",
+                "command_parameter",
+            ):
+                continue
+            values.append(_text(source, element).strip())
+    return values
+
+
+def _powershell_import(node: Any, source: bytes) -> str | None:
+    """Path or module name a PowerShell command loads.
+
+    Covers dot-sourcing, `Import-Module <name>` (or `-Name <name>`) and
+    `using module <name>`. A dot-sourced bare word is a command, not a
+    file, so it is not an import.
+    """
+    head = node.child_by_field_name("command_name")
+    if head is None:
+        return None
+    if _powershell_dot_sourced(node, source):
+        path = _powershell_path(_text(source, head))
+        if "/" in path or "\\" in path or path.lower().endswith(".ps1"):
+            return path or None
+        return None
+    word = _text(source, head).strip().lower()
+    args = _powershell_arguments(node, source)
+    if word == "import-module" and args:
+        return _powershell_path(args[0]) or None
+    if word == "using" and len(args) >= 2 and args[0].lower() == "module":
+        return _powershell_path(args[1]) or None
+    return None
+
+
+def _powershell_call(node: Any, source: bytes) -> str | None:
+    """A PowerShell command's name, when it is a bare command word."""
+    if _powershell_dot_sourced(node, source):
+        return None
+    head = node.child_by_field_name("command_name")
+    if head is None:
+        return None
+    name = _text(source, head).strip()
+    return name if _POWERSHELL_COMMAND.fullmatch(name) else None
+
+
+def _powershell_bases(node: Any, source: bytes) -> list[str]:
+    """Base types of a PowerShell class: the simple_name children after
+    the class's own name, which the grammar does not wrap.
+    """
+    names = [
+        _text(source, child).strip() for child in _children(node) if child.type == "simple_name"
+    ]
+    return names[1:]
+
+
+def _lua_require(node: Any, source: bytes) -> str | None:
+    """Module string from a Lua require call with a string literal."""
+    name = node.child_by_field_name("name")
+    if name is None or name.type != "identifier" or _text(source, name) != "require":
+        return None
+    arguments = node.child_by_field_name("arguments")
+    if arguments is None:
+        return None
+    for child in _children(arguments):
+        if child.type == "string":
+            for part in _children(child):
+                if part.type == "string_content":
+                    return _text(source, part) or None
+            return None
+    return None
+
+
+_PERL_PRAGMAS = frozenset(
+    ["strict", "warnings", "utf8", "lib", "parent", "base", "constant", "vars", "feature"]
+)
+_PERL_NAME = re.compile(r"[A-Za-z_]\w*")
+
+
+def _perl_import(node: Any, source: bytes) -> str | None:
+    """Package a Perl `use Foo::Bar` or `require Foo::Bar` loads.
+
+    Pragmas, version lines and `use parent`/`use base` are not imports.
+    """
+    if node.type == "require_expression":
+        for child in _children(node):
+            if child.type == "bareword":
+                return _text(source, child).strip() or None
+        return None
+    if node.type != "use_statement":
+        return None
+    module = node.child_by_field_name("module")
+    if module is None:
+        return None
+    name = _text(source, module).strip()
+    if name in _PERL_PRAGMAS or re.match(r"v?\d", name):
+        return None
+    return name or None
+
+
+def _perl_base_names(node: Any, source: bytes) -> list[str]:
+    """Base packages that `use parent` or `use base` names, in order.
+
+    Quoted and qw() words are string_content nodes. A flag such as
+    `-norequire` is an autoquoted_bareword and is never collected.
+    """
+    module = node.child_by_field_name("module")
+    if module is None or _text(source, module).strip() not in ("parent", "base"):
+        return []
+    names: list[str] = []
+    for child in _walk(node):
+        if child.type in ("string_content", "bareword"):
+            for word in _text(source, child).split():
+                if word not in names:
+                    names.append(word)
+    return names
+
+
+def _perl_packages(root_node: Any, source: bytes) -> list[tuple[int, str]]:
+    """(start byte, name) of each package statement, in order."""
+    packages = []
+    for node in _walk(root_node):
+        if node.type != "package_statement":
+            continue
+        name = node.child_by_field_name("name")
+        if name is not None and _text(source, name).strip():
+            packages.append((node.start_byte, _text(source, name).strip()))
+    return packages
+
+
+def _perl_package_at(packages: list[tuple[int, str]], offset: int) -> str | None:
+    """The package in force at a byte offset: the last one above it.
+
+    Approximates Perl's lexical package scope: a `package` inside a
+    block still counts from its declaration to the end of the file.
+    """
+    owner = None
+    for start, name in packages:
+        if start > offset:
+            break
+        owner = name
+    return owner
+
+
 def _generic_import_module(lang: str, node: Any, source: bytes) -> str | None:
     """Generic extraction: strings, identifiers, or regex parsing."""
     import_text = _text(source, node)
@@ -648,6 +907,10 @@ _IMPORT_READERS = {
     "kotlin": _kotlin_import,
     "scala": _scala_import,
     "swift": _swift_import,
+    "bash": _bash_import,
+    "powershell": _powershell_import,
+    "lua": _lua_require,
+    "perl": _perl_import,
 }
 
 
@@ -762,6 +1025,32 @@ def _callee_name(node: Any, source: bytes) -> str | None:
     return name
 
 
+def _perl_call(node: Any, source: bytes) -> str | None:
+    """Perl function or method name: the last segment of `Pkg::name`."""
+    callee = node.child_by_field_name("function")
+    if callee is None:
+        callee = node.child_by_field_name("method")
+    if callee is None:
+        return None
+    name = _text(source, callee).strip().rsplit("::", 1)[-1]
+    return name if _PERL_NAME.fullmatch(name) else None
+
+
+_CALL_READERS = {
+    "bash": _bash_call,
+    "powershell": _powershell_call,
+    "perl": _perl_call,
+}
+
+
+def _call_name(lang: str, node: Any, source: bytes) -> str | None:
+    """The name a call node invokes, by language."""
+    reader = _CALL_READERS.get(lang)
+    if reader is not None:
+        return reader(node, source)
+    return _callee_name(node, source)
+
+
 GRAMMAR_UNAVAILABLE = "parse_error:GrammarUnavailable"
 
 
@@ -822,6 +1111,19 @@ def _grammar(lang: str):
                 continue
             patterns.append(pattern)
     return Parser(language), (Query(language, "\n".join(patterns)) if patterns else None)
+
+
+def _parse_view(lang: str, source: bytes) -> bytes:
+    """The bytes the grammar parses, which may differ from ``source``.
+
+    The PowerShell grammar reads `$PSScriptRoot/x.ps1` as a division
+    and reports an error for the whole file, dropping every symbol
+    in it. Masking the `$` keeps the length, so node offsets still
+    point into the original source, where names and paths are read.
+    """
+    if lang == "powershell":
+        return source.replace(b"$PSScriptRoot/", b"_PSScriptRoot/")
+    return source
 
 
 def _depth(node: Any) -> int:
@@ -898,7 +1200,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
         # than at each _text call site -- one missed site is silent
         # corruption.
         source = source.encode("utf-8")
-        tree = parser.parse(source)
+        tree = parser.parse(_parse_view(lang, source))
         root_node = tree.root_node
     except GrammarUnavailableError:
         return {
@@ -927,6 +1229,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
         if query is not None
         else ((node, None) for node in _walk(root_node))
     )
+    perl_packages = _perl_packages(root_node, source) if lang == "perl" else []
     for node, category in facts:
         kind = node.type
 
@@ -955,6 +1258,9 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                         if child.type in base_kinds:
                             for base in _base_type_names(child, source):
                                 inherits.append({"type": name, "base": base, "line": line})
+                    if lang == "powershell" and kind == "class_statement":
+                        for base in _powershell_bases(node, source):
+                            inherits.append({"type": name, "base": base, "line": line})
 
         # Imports
         if category in (None, "imports") and kind in node_types["imports"]:
@@ -966,10 +1272,16 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                         "line": _line(node),
                     }
                 )
+            elif lang == "perl":
+                # `use parent X` makes X a base of the package above it.
+                owner = _perl_package_at(perl_packages, node.start_byte)
+                if owner:
+                    for base in _perl_base_names(node, source):
+                        inherits.append({"type": owner, "base": base, "line": _line(node)})
 
         # Calls
         if category in (None, "calls") and kind in node_types["calls"]:
-            call_name = _callee_name(node, source)
+            call_name = _call_name(lang, node, source)
             if call_name:
                 calls.append(
                     {

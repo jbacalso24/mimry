@@ -357,9 +357,12 @@ def _is_sensitive_label(label: str) -> bool:
 def is_code_path(path: str | Path) -> bool:
     """Whether a file is parsed source.
 
-    In parsed source, an unquoted value is an expression.
+    In parsed source, an unquoted value is an expression. Shell is not
+    one: `export TOKEN=abc` binds the literal word abc, so a shell
+    script is judged as text, as it was before shell was parsed.
     """
-    return Path(path).suffix.lower() in EXTENSION_LANGUAGE
+    ext = Path(path).suffix.lower()
+    return ext in EXTENSION_LANGUAGE and EXTENSION_LANGUAGE[ext] != "bash"
 
 
 def _value_is_credential(

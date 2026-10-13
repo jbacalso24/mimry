@@ -66,10 +66,13 @@ def resolve_imports(
     # Precompute suffix lookup for rule 4 efficiency
     suffix_lookup = _build_suffix_lookup(rel_paths)
 
-    # Check if any importer is C-family; if so, build exact lookup
+    # Importers matching whole path suffixes (C headers, Lua and Perl
+    # modules, PowerShell module names) share one exact lookup.
     exact_lookup = {}
     for importer in imports.keys():
-        if _is_c_family(importer, overrides):
+        if _is_c_family(importer, overrides) or (
+            language_for(importer, overrides) in _SUFFIX_INDEX_LANGUAGES
+        ):
             exact_lookup = _build_suffix_lookup(rel_paths, keep_extension=True)
             break
 
@@ -113,6 +116,11 @@ def _resolve_import(
     if not module or module in (".", ".."):
         return None
 
+    # Shell, PowerShell, Lua and Perl imports follow their own rules.
+    language = language_for(importer, overrides)
+    if language in _SCRIPT_RESOLVERS:
+        return _SCRIPT_RESOLVERS[language](importer, module, rel_paths, exact_lookup)
+
     # System include (C/C++): <path/to/file.h>
     if module.startswith("<") and module.endswith(">"):
         return _exact_suffix_match(module[1:-1], exact_lookup)
@@ -150,6 +158,90 @@ def _resolve_import(
 
     # Rule 4: Suffix match
     return _rule4_suffix_match(module, rel_paths, suffix_lookup, importer, overrides)
+
+
+_SUFFIX_INDEX_LANGUAGES = frozenset(("lua", "perl", "powershell"))
+
+
+def _resolve_script_path(importer: str, path: str, rel_paths: set[str]) -> dict | None:
+    """A Bash or PowerShell path, relative to the importing file.
+
+    The file must exist exactly there: no extension probing and no
+    search by basename. An unexpanded `$variable` means we cannot know
+    where the path points, so it resolves to nothing.
+    """
+    path = path.replace("\\", "/")
+    if not path or "$" in path:
+        return None
+    candidate = posixpath.normpath(posixpath.join(posixpath.dirname(importer), path))
+    if candidate in rel_paths:
+        return {"path": candidate, "confidence": "EXTRACTED"}
+    return None
+
+
+def _resolve_bash(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    return _resolve_script_path(importer, module, rel_paths)
+
+
+def _resolve_powershell(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """Dot-sourced files and Import-Module / `using module` arguments.
+
+    A path (contains a separator or ends in a PowerShell extension) is
+    relative to the importer. A bare name resolves only when exactly one
+    repo file is `<Name>.psm1` or `<Name>/<Name>.psm1` as a path suffix.
+    """
+    if "/" in module or "\\" in module or module.lower().endswith((".psm1", ".psd1", ".ps1")):
+        return _resolve_script_path(importer, module, rel_paths)
+    if "$" in module:
+        return None
+    matches = exact_lookup.get(f"{module}.psm1", [])
+    if len(matches) == 1:
+        return {"path": matches[0], "confidence": "INFERRED"}
+    return None
+
+
+def _resolve_lua(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """Lua `a.b` is `a/b.lua` or `a/b/init.lua` as a unique path suffix.
+
+    A unique match under the importer's top-level directory wins over a
+    match elsewhere; otherwise an ambiguous name resolves to nothing.
+    """
+    base = module.replace(".", "/")
+    candidates = sorted(
+        {*exact_lookup.get(f"{base}.lua", []), *exact_lookup.get(f"{base}/init.lua", [])}
+    )
+    if "/" in importer:
+        top = importer.split("/", 1)[0] + "/"
+        local = [path for path in candidates if path.startswith(top)]
+        if len(local) == 1:
+            return {"path": local[0], "confidence": "INFERRED"}
+    if len(candidates) == 1:
+        return {"path": candidates[0], "confidence": "INFERRED"}
+    return None
+
+
+def _resolve_perl(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """Perl `Foo::Bar` is `Foo/Bar.pm` as a unique path suffix."""
+    matches = exact_lookup.get(module.replace("::", "/") + ".pm", [])
+    if len(matches) == 1:
+        return {"path": matches[0], "confidence": "INFERRED"}
+    return None
+
+
+_SCRIPT_RESOLVERS = {
+    "bash": _resolve_bash,
+    "powershell": _resolve_powershell,
+    "lua": _resolve_lua,
+    "perl": _resolve_perl,
+}
 
 
 def _exact_suffix_match(path: str, exact_lookup: dict) -> dict | None:
@@ -563,7 +655,11 @@ def resolve_inheritance(
     type_owners: dict[str, set] = {}
     for file_path, symbols in symbols_by_file.items():
         for symbol in symbols:
-            if symbol.get("kind") in ("class", "interface", "enum"):
+            # A Perl package is its language's class, but it has the
+            # module kind. Elsewhere that kind is only a namespace, so
+            # just Perl's module symbols count as type owners.
+            is_perl_package = symbol.get("kind") == "module" and symbol.get("language") == "perl"
+            if symbol.get("kind") in ("class", "interface", "enum") or is_perl_package:
                 name = symbol.get("name")
                 if name:
                     type_owners.setdefault(name, set()).add(file_path)

@@ -107,7 +107,7 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 14 languages with tree-sitter |
+| Code graph | Maps imports, calls and inheritance across 18 languages with tree-sitter |
 | Documents | Indexes Markdown, text, PDF, Word and Excel files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
 | Feedback | Ranks files recorded as useful higher for similar tasks |
@@ -134,6 +134,10 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 | Kotlin | `.kt`, `.kts` |
 | Scala | `.sc`, `.scala` |
 | Swift | `.swift` |
+| Bash | `.bash`, `.sh` |
+| PowerShell | `.ps1`, `.psm1` |
+| Lua | `.lua` |
+| Perl | `.pl`, `.pm` |
 
 MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Word and Excel files.
 
@@ -144,7 +148,6 @@ Other extensions can be mapped to a supported language in `mimry.toml`, see [Con
 We're adding these next; progress is tracked in [#47](https://github.com/jbacalso24/mimry/issues/47), where you can ask for yours.
 
 - [ ] Web and markup: HTML, CSS, SCSS, Vue, Svelte
-- [ ] Scripting and shells: Bash, PowerShell, Lua, Perl
 - [ ] Data and config: SQL, JSON, YAML, TOML, XML, Terraform (HCL)
 - [ ] Apps and systems: Dart, Objective-C, Zig, Groovy
 - [ ] Functional and scientific: Elixir, Haskell, OCaml, R, Julia

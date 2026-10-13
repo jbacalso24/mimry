@@ -5,8 +5,11 @@ language_for, definitions, imports, calls, inheritance edges, and line
 pointers work correctly.
 """
 
+import pytest
+
 from mimry.constants import TEXT_EXTS
 from mimry.core.languages import EXTENSION_LANGUAGE, extract, language_for
+from mimry.intent import TEST_NAME_RE
 
 
 class TestLanguageFor:
@@ -674,3 +677,191 @@ printf("hello");
     assert "<stdio.h>" in modules, f"system include missing: {modules}"
     # printf("hello") should NOT be recorded as an import
     assert "hello" not in modules, f"printf call wrongly recorded as import: {modules}"
+
+
+# Scripting languages: Bash, PowerShell, Lua, Perl
+
+BASH_SOURCE = """#!/usr/bin/env bash
+source ./lib/util.sh
+. ./helpers.sh
+greet() {
+  echo "hi $1"
+}
+function build_all {
+  greet world
+}
+"""
+
+POWERSHELL_SOURCE = """using module ./Models/Shape.psm1
+Import-Module -Name Helpers
+. $PSScriptRoot/lib/Tools.ps1
+function Get-Thing {
+  param([string]$Name)
+  Get-Child -Path $Name
+}
+class Animal {
+  [string]$Name
+}
+class Dog : Animal {
+  [int]$Age
+  [string] Speak() {
+    return "woof"
+  }
+}
+"""
+
+LUA_SOURCE = """local json = require("cjson.util")
+local util = require "app.util"
+local M = {}
+local function helper(x)
+  return x + 1
+end
+function M.run(a)
+  helper(a)
+  util.log("x")
+end
+function M:step() self:run(1) end
+"""
+
+PERL_SOURCE = """package Foo::Bar;
+use strict;
+use parent -norequire, 'Base::Thing';
+use POSIX qw(floor);
+require Some::Module;
+sub helper { return 1; }
+sub run {
+  helper(1);
+  $self->go(2);
+  Other::Thing::do_it();
+}
+"""
+
+
+def test_language_for_scripting_languages():
+    """language_for maps shell, PowerShell, Lua and Perl extensions."""
+    assert language_for("build.sh") == "bash"
+    assert language_for("build.bash") == "bash"
+    assert language_for("Deploy.ps1") == "powershell"
+    assert language_for("Module.psm1") == "powershell"
+    assert language_for("util.lua") == "lua"
+    assert language_for("Widget.pl") == "perl"
+    assert language_for("Widget.pm") == "perl"
+    # .t files are tests by name only; they are not parsed as Perl.
+    assert language_for("widget.t") is None
+
+
+def test_bash_extracts_functions_sources_and_commands(tmp_path):
+    """Bash: functions with lines, source and dot paths as written,
+    and every simple command as a call.
+    """
+    result = _extract(tmp_path, "build.sh", BASH_SOURCE)
+    assert result["status"] == "ok", f"Bash parse failed: {result['status']}"
+    defs = {(d["name"], d["kind"], d["line_start"]) for d in result["definitions"]}
+    assert defs == {("greet", "function", 4), ("build_all", "function", 7)}
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("./lib/util.sh", 2), ("./helpers.sh", 3)]
+    assert {"echo", "greet"} <= {c["name"] for c in result["calls"]}
+
+
+def test_powershell_extracts_functions_classes_imports_and_bases(tmp_path):
+    """PowerShell: functions and classes, dot-sourcing and module
+    imports with $PSScriptRoot stripped, command calls, class bases.
+    """
+    result = _extract(tmp_path, "Tools.ps1", POWERSHELL_SOURCE)
+    # The `$PSScriptRoot/` form errors in the raw grammar; the file must
+    # still parse, or every symbol in it would be dropped.
+    assert result["status"] == "ok", f"PowerShell parse failed: {result['status']}"
+    defs = {(d["name"], d["kind"], d["line_start"]) for d in result["definitions"]}
+    # Speak is a method of Dog: a function-kind symbol at its own line.
+    assert defs == {
+        ("Get-Thing", "function", 4),
+        ("Animal", "class", 8),
+        ("Dog", "class", 11),
+        ("Speak", "function", 13),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("./Models/Shape.psm1", 1), ("Helpers", 2), ("lib/Tools.ps1", 3)]
+    assert {"Get-Child", "Import-Module"} <= {c["name"] for c in result["calls"]}
+    assert ("Dog", "Animal") in {(i["type"], i["base"]) for i in result["inherits"]}
+
+
+def test_lua_extracts_functions_requires_and_calls(tmp_path):
+    """Lua: local and dotted/method definitions named by their last
+    segment, require() strings as modules, calls by callee name.
+    """
+    result = _extract(tmp_path, "util.lua", LUA_SOURCE)
+    assert result["status"] == "ok", f"Lua parse failed: {result['status']}"
+    defs = {(d["name"], d["kind"], d["line_start"]) for d in result["definitions"]}
+    assert defs == {("helper", "function", 4), ("run", "function", 7), ("step", "function", 11)}
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("cjson.util", 1), ("app.util", 2)]
+    assert {"helper", "log", "run"} <= {c["name"] for c in result["calls"]}
+
+
+def test_perl_extracts_packages_subs_imports_and_calls(tmp_path):
+    """Perl: packages as modules, subs, use/require modules with
+    pragmas skipped, and method and function calls.
+    """
+    result = _extract(tmp_path, "Foo.pm", PERL_SOURCE)
+    assert result["status"] == "ok", f"Perl parse failed: {result['status']}"
+    defs = {(d["name"], d["kind"], d["line_start"]) for d in result["definitions"]}
+    assert defs == {
+        ("Foo::Bar", "module", 1),
+        ("helper", "function", 6),
+        ("run", "function", 7),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("POSIX", 4), ("Some::Module", 5)]
+    assert {"helper", "go", "do_it"} <= {c["name"] for c in result["calls"]}
+
+
+def test_perl_use_parent_is_inheritance_not_import(tmp_path):
+    """Perl `use parent` names base packages of the package above it; it
+    is never recorded as an import.
+    """
+    result = _extract(tmp_path, "Foo.pm", PERL_SOURCE)
+    bases = {(i["type"], i["base"]) for i in result["inherits"]}
+    assert bases == {("Foo::Bar", "Base::Thing")}, f"wrong Perl bases: {bases}"
+    assert "Base::Thing" not in {i["module"] for i in result["imports"]}
+    assert "parent" not in {i["module"] for i in result["imports"]}
+
+
+def test_perl_pragmas_and_versions_are_not_imports(tmp_path):
+    """Perl pragmas and version lines are not module imports."""
+    source = """use strict;
+use warnings;
+use utf8;
+use lib 'lib';
+use constant PI => 3.14;
+use v5.36;
+use 5.010;
+"""
+    result = _extract(tmp_path, "pragmas.pl", source)
+    assert result["status"] == "ok", f"Perl parse failed: {result['status']}"
+    assert result["imports"] == [], f"pragma recorded as import: {result['imports']}"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "build.bats",
+        "test_build.sh",
+        "build_test.sh",
+        "Deploy.Tests.ps1",
+        "auth_spec.lua",
+        "test_util.lua",
+        "util_test.lua",
+        "widget.t",
+    ],
+)
+def test_scripting_test_file_names_are_tests(name):
+    """Bats, Pester, busted and Perl .t names mark test files."""
+    assert TEST_NAME_RE.search(name), f"{name} should be a test file"
+
+
+@pytest.mark.parametrize(
+    "name", ["build.sh", "Deploy.ps1", "Module.psm1", "util.lua", "Widget.pm", "contest.lua"]
+)
+def test_scripting_source_file_names_are_not_tests(name):
+    """Scripting sources are not tests, even with test-like words."""
+    assert not TEST_NAME_RE.search(name), f"{name} should not be a test file"

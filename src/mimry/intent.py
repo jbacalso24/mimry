@@ -102,6 +102,7 @@ SOURCE_EXTS = {
     *(".py", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"),
     *(".go", ".rs", ".java", ".kt", ".cs", ".php", ".swift", ".rb", ".scala"),
     *(".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"),
+    *(".sh", ".bash", ".ps1", ".psm1", ".lua", ".pl", ".pm"),
 }
 # Code that ships with a project but is not the product: an edit task is
 # almost never about it, so it is supporting context rather than a
@@ -119,6 +120,12 @@ TEST_NAME_RE = re.compile(
     r"|^Test[A-Z]\w*\.(java|kt|cs|scala)$|[a-z0-9](Test|Tests|IT|Spec)\.(java|kt|cs|scala)$"
     r"|^test_.*\.[ch](pp|xx)?$|_test\.[ch](pp|xx)?$|_unittest\.cc$"
     r"|^Test[A-Z]\w*\.swift$|[a-z0-9](Test|Tests|IT|Spec)\.swift$"
+    # Bash bats and test scripts, PowerShell Pester, Lua busted, and
+    # Perl .t files, which are tests by name only.
+    r"|\.bats$|^test_.*\.sh$|_test\.sh$"
+    r"|\.Tests\.ps1$"
+    r"|_spec\.lua$|^test_.*\.lua$|_test\.lua$"
+    r"|\.t$"
 )
 TEST_TERMS = {"test", "tests", "testing", "pytest", "vitest", "jest", "spec"}
 # Suffixes that inflect a word ("token"/"tokens", "parse"/"parsing"), as
