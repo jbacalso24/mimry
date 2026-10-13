@@ -60,6 +60,7 @@
     ".cs",
     ".cts",
     ".cxx",
+    ".dart",
     ".go",
     ".h",
     ".hh",
@@ -71,6 +72,7 @@
     ".kt",
     ".kts",
     ".lua",
+    ".m",
     ".mjs",
     ".mts",
     ".php",
@@ -86,7 +88,8 @@
     ".sh",
     ".swift",
     ".ts",
-    ".tsx"
+    ".tsx",
+    ".zig"
    ],
    "parser": "tree-sitter-language-pack",
    "emits": [
@@ -98,7 +101,7 @@
     "inheritance_edges",
     "line_ranges"
    ],
-   "agent_use": "Backend, systems and web agents find Python, JavaScript, TypeScript, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, and Perl functions, classes, methods, interfaces, modules, imports, calls, and inheritance relationships without reading every file.",
+   "agent_use": "Backend, systems and web agents find Python, JavaScript, TypeScript, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart, Objective-C, and Zig functions, classes, methods, interfaces, modules, imports, calls, and inheritance relationships without reading every file.",
    "notes": "Extracts definitions (functions, classes, structs, interfaces, traits, enums), imports with their source paths, inter-symbol call edges, and inheritance (extends/implements/with relationships). Line ranges and call locations enable precise edit targeting. Import resolution uses relative path suffix matching for C/C++ headers, relative and `require` matches for Ruby, and language-specific resolution rules."
   },
   {

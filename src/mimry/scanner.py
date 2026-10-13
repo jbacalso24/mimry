@@ -647,6 +647,11 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
         doc_links = markdown_link_targets(path, root, source=data_decoded)
         if doc_links:
             references["doc_links"] = doc_links
+    if posixpath.basename(rel_path) == "pubspec.yaml":
+        # A Dart package's name, for resolving `package:` imports.
+        name = re.search(r"^name:\s*['\"]?([A-Za-z0-9_]+)", data_decoded, re.MULTILINE)
+        if name:
+            references["dart_package"] = name.group(1)
     if ext not in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".bin", ".o", ".exe", ".dll", ".so"}:
         try:
             table_refs = sql_table_references(data_decoded)

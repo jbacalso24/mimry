@@ -1,5 +1,5 @@
 """Import resolution for new languages: C, C++, Ruby, Bash, PowerShell,
-Lua and Perl.
+Lua, Perl, Dart, Objective-C and Zig.
 
 Tests ensure resolve_imports correctly handles language-specific import
 styles and extension handling, and that an import with no unambiguous
@@ -530,3 +530,167 @@ def test_src_layout_repo_resolves_imports_and_calls(tmp_path):
         if e["relation"] == "calls"
     }
     assert ("run", "helper") in calls, sorted(calls)
+
+
+class TestDartImports:
+    """Dart URIs: a relative one beside the importer, `package:` through
+    the one pubspec of that name, and `dart:` never.
+    """
+
+    def test_relative_uri_beside_the_importer(self):
+        imports = {"lib/main.dart": ["src/models.dart"]}
+        rel_paths = {"lib/main.dart", "lib/src/models.dart"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("lib/src/models.dart", "EXTRACTED")
+        ]
+
+    def test_package_uri_resolves_into_the_pubspec_lib_dir(self):
+        imports = {"app/lib/main.dart": ["package:app/src/models.dart"]}
+        rel_paths = {"app/lib/main.dart", "app/lib/src/models.dart"}
+
+        results = resolve_imports(imports, rel_paths, dart_packages={"app": ["app"]})
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("app/lib/src/models.dart", "INFERRED")
+        ]
+
+    def test_two_pubspecs_with_one_name_is_no_edge(self):
+        imports = {"app/lib/main.dart": ["package:app/src/models.dart"]}
+        rel_paths = {"app/lib/main.dart", "app/lib/src/models.dart", "copy/lib/src/models.dart"}
+
+        results = resolve_imports(imports, rel_paths, dart_packages={"app": ["app", "copy"]})
+
+        assert results == []
+
+    def test_package_without_a_pubspec_is_no_edge(self):
+        imports = {"app/lib/main.dart": ["package:http/client.dart"]}
+        rel_paths = {"app/lib/main.dart", "http/lib/client.dart"}
+
+        assert resolve_imports(imports, rel_paths, dart_packages={"app": ["app"]}) == []
+
+    def test_missing_relative_file_is_no_edge(self):
+        imports = {"lib/main.dart": ["src/missing.dart"]}
+        rel_paths = {"lib/main.dart"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_dart_scheme_never_resolves(self):
+        imports = {"lib/main.dart": ["dart:async"]}
+        rel_paths = {"lib/main.dart", "lib/async.dart"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestObjCImports:
+    """Objective-C includes follow the C rules; `@import Foo;` never
+    resolves.
+    """
+
+    def test_quoted_include_next_to_the_importer(self):
+        imports = {"src/Widget.m": ["./Widget.h"]}
+        rel_paths = {"src/Widget.m", "src/Widget.h"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("src/Widget.h", "EXTRACTED")]
+
+    def test_angle_include_by_unique_path_suffix(self):
+        imports = {"src/Widget.m": ["<UIKit/UIKit.h>"]}
+        rel_paths = {"src/Widget.m", "vendor/UIKit/UIKit.h"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("vendor/UIKit/UIKit.h", "INFERRED")
+        ]
+
+    def test_framework_module_is_no_edge_even_with_a_matching_header(self):
+        imports = {"src/Widget.m": ["Foundation"]}
+        rel_paths = {"src/Widget.m", "src/Foundation.h"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestZigImports:
+    """Zig `@import("x.zig")` resolves beside the importer; package
+    names never do.
+    """
+
+    def test_zig_file_beside_the_importer(self):
+        imports = {"src/main.zig": ["util.zig"]}
+        rel_paths = {"src/main.zig", "src/util.zig"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("src/util.zig", "EXTRACTED")]
+
+    def test_package_name_is_no_edge_even_with_a_matching_file(self):
+        imports = {"src/main.zig": ["std"]}
+        rel_paths = {"src/main.zig", "lib/std.zig"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_missing_zig_file_is_no_edge(self):
+        imports = {"src/main.zig": ["other.zig"]}
+        rel_paths = {"src/main.zig"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+def test_each_new_app_language_indexes_symbols_and_edges(tmp_path):
+    """One file per language: symbols are findable by name, and each
+    language gets an import edge. Dart's package: import resolves
+    through the pubspec.yaml that names its package.
+    """
+    root = tmp_path / "repo"
+    _write_repo(
+        root,
+        {
+            "flutter_app/pubspec.yaml": "name: app\n",
+            "flutter_app/lib/src/models.dart": "class User {\n  String name = '';\n}\n",
+            "flutter_app/lib/main.dart": (
+                "import 'package:app/src/models.dart';\nvoid startApp() {\n  User();\n}\n"
+            ),
+            "native/Widget.m": (
+                '#import "Widget.h"\n@implementation Widget\n- (void)render {\n}\n@end\n'
+            ),
+            "native/Widget.h": "@interface Widget : NSObject\n- (void)render;\n@end\n",
+            "tools/gen.zig": (
+                'const util = @import("util.zig");\npub fn generate() void {\n    util.run();\n}\n'
+            ),
+            "tools/util.zig": "pub fn run() void {}\n",
+        },
+    )
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(root)
+    assert pointer is not None
+    write_index(root, pointer)
+    ptr = load_pointer(root)
+    assert ptr is not None
+
+    for name, language in [
+        ("User", "dart"),
+        ("render", "objc"),
+        ("generate", "zig"),
+    ]:
+        matches = symbol_matches(ptr, name)
+        assert matches, f"{name} not found in the index"
+        assert {m["language"] for m in matches} == {language}, matches
+
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    imports = {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e["relation"] == "imports"
+    }
+    assert ("flutter_app/lib/main.dart", "flutter_app/lib/src/models.dart") in imports, sorted(
+        imports
+    )
+    assert ("native/Widget.m", "native/Widget.h") in imports, sorted(imports)
+    assert ("tools/gen.zig", "tools/util.zig") in imports, sorted(imports)

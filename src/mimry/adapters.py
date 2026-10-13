@@ -90,9 +90,9 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         ),
         agent_use=(
             "Backend, systems and web agents find Python, JavaScript, TypeScript, Go, Rust, C#,"
-            " Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, and Perl"
-            " functions, classes, methods, interfaces, modules, imports, calls, and inheritance"
-            " relationships without reading every file."
+            " Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart,"
+            " Objective-C, and Zig functions, classes, methods, interfaces, modules,"
+            " imports, calls, and inheritance relationships without reading every file."
         ),
         notes=(
             "Extracts definitions (functions, classes, structs, interfaces, traits, enums),"

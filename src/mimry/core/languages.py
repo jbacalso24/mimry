@@ -41,6 +41,9 @@ EXTENSION_LANGUAGE = {
     ".lua": "lua",
     ".pl": "perl",
     ".pm": "perl",
+    ".dart": "dart",
+    ".m": "objc",
+    ".zig": "zig",
 }
 
 # Display name for each EXTENSION_LANGUAGE value.
@@ -66,6 +69,9 @@ LANGUAGE_LABELS: dict[str, str] = {
     "powershell": "PowerShell",
     "lua": "Lua",
     "perl": "Perl",
+    "dart": "Dart",
+    "objc": "Objective-C",
+    "zig": "Zig",
 }
 
 NODE_TYPES = {
@@ -294,6 +300,48 @@ NODE_TYPES = {
         # declines them and they become inheritance edges instead.
         "calls": frozenset(["function_call_expression", "method_call_expression"]),
     },
+    "dart": {
+        # Methods are function_signature nodes inside method_signature,
+        # so the signature is the one place the name is read from.
+        "definitions": frozenset(
+            [
+                "class_definition",
+                "mixin_declaration",
+                "extension_declaration",
+                "enum_declaration",
+                "function_signature",
+            ]
+        ),
+        "imports": frozenset(["uri"]),
+        # Calls are flat: `f(x)` is an identifier then a selector, and
+        # `a.b(x)` is a chain of selectors. `new` has its own node.
+        "calls": frozenset(["selector", "new_expression"]),
+        "bases": frozenset(["superclass", "interfaces"]),
+    },
+    "objc": {
+        # Methods are method_declaration (in @interface and @protocol)
+        # and method_definition (in @implementation). C functions keep
+        # their declarator-based names.
+        "definitions": frozenset(
+            [
+                "class_interface",
+                "class_implementation",
+                "protocol_declaration",
+                "method_declaration",
+                "method_definition",
+                "function_definition",
+            ]
+        ),
+        "imports": frozenset(["preproc_include", "module_import"]),
+        "calls": frozenset(["call_expression", "message_expression"]),
+    },
+    "zig": {
+        # `const Name = struct {...}` is a container: the definition is
+        # the ContainerDecl, named by the VarDecl around it.
+        "definitions": frozenset(["FnProto", "ContainerDecl"]),
+        "imports": frozenset(["BUILTINIDENTIFIER"]),  # @import is a builtin call
+        "calls": frozenset(["FnCallArguments"]),
+    },
 }
 
 
@@ -336,6 +384,8 @@ def symbol_kind(language: str, node_kind: str) -> str:
         "trait_declaration",
         "trait_definition",
         "object_definition",
+        "mixin_declaration",
+        "extension_declaration",
     ):
         return "class"
     if "class" in node_kind or "struct" in node_kind:
@@ -357,6 +407,15 @@ def symbol_kind(language: str, node_kind: str) -> str:
     if node_kind == "union_specifier":
         return "class"
     return "function"
+
+
+def _definition_kind(language: str, node: Any, source: bytes) -> str:
+    """Kind of a definition node. A Zig container's kind depends on
+    its enum keyword, which the node kind does not carry.
+    """
+    if language == "zig" and node.type == "ContainerDecl":
+        return _zig_container_kind(node, source)
+    return symbol_kind(language, node.type)
 
 
 def _text(source: bytes, node: Any) -> str:
@@ -427,7 +486,7 @@ def _first_identifier(node: Any, source: str) -> str | None:
     return None
 
 
-def _definition_name(node: Any, source: bytes) -> str | None:
+def _definition_name(language: str, node: Any, source: bytes) -> str | None:
     """The declared name, preferring the grammar's own `name` field.
 
     _first_identifier returns the first identifier-like descendant,
@@ -451,6 +510,23 @@ def _definition_name(node: Any, source: bytes) -> str | None:
             if child.type in ("function_name", "simple_name"):
                 return _text(source, child).strip() or None
         return None
+
+    # The branches below are gated by language. PHP, Java, C#, Swift and
+    # others reuse method_declaration, method_definition and
+    # extension_declaration, and must keep their `name` field.
+    if language == "dart" and node.type == "extension_declaration":
+        # Dart `extension on String {}` is unnamed, and its first
+        # identifier would be the extended type.
+        return _direct_child_text(node, source, "identifier")
+    if language == "objc" and node.type in ("method_declaration", "method_definition"):
+        # Objective-C: the selector's first keyword is the direct
+        # identifier child. The return type sits in method_type, where a
+        # positional scan would find it first.
+        return _direct_child_text(node, source, "identifier")
+    if language == "zig" and node.type == "FnProto":
+        return _direct_child_text(node, source, "IDENTIFIER")
+    if language == "zig" and node.type == "ContainerDecl":
+        return _zig_container_name(node, source)
 
     try:
         named = node.child_by_field_name("name")
@@ -852,6 +928,166 @@ def _perl_package_at(packages: list[tuple[int, str]], offset: int) -> str | None
     return owner
 
 
+def _direct_child_text(node: Any, source: bytes, kind: str) -> str | None:
+    """Text of the first direct child of ``kind``, or None."""
+    for child in _children(node):
+        if child.type == kind:
+            return _text(source, child).strip() or None
+    return None
+
+
+def _dart_import(node: Any, source: bytes) -> str | None:
+    """The URI of a Dart import, export or part, as written."""
+    return _unquote(_text(source, node)) or None
+
+
+def _dart_base_names(container: Any, source: bytes) -> list[str]:
+    """Types named by a Dart `extends ... with ...` or `implements`
+    clause.
+
+    Type arguments are sibling nodes of the type, so a generic base such
+    as `Base<T>` names only `Base`.
+    """
+    names: list[str] = []
+    for child in _children(container):
+        if child.type in ("mixins", "interfaces"):
+            found = [sub for sub in _children(child) if sub.type == "type_identifier"]
+        elif child.type == "type_identifier":
+            found = [child]
+        else:
+            continue
+        for sub in found:
+            name = _text(source, sub).strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def _dart_call(node: Any, source: bytes) -> str | None:
+    """Callee of a Dart call: `f(x)` or `a.b(x)` (last segment), or `new
+    T(x)`.
+    """
+    if node.type == "new_expression":
+        children = list(_children(node))
+        names = [c for c in children if c.type == "identifier"] or [
+            c for c in children if c.type == "type_identifier"
+        ]
+        return _text(source, names[-1]).strip() if names else None
+    # A call is a selector holding an argument_part. Its callee is the
+    # node before it: a bare identifier, or a `.name` selector.
+    if not any(c.type == "argument_part" for c in _children(node)):
+        return None
+    before = node.prev_named_sibling
+    if before is None:
+        return None
+    if before.type == "identifier":
+        return _text(source, before).strip() or None
+    if before.type == "selector":
+        for part in _children(before):
+            if part.type in (
+                "unconditional_assignable_selector",
+                "conditional_assignable_selector",
+            ):
+                name = _direct_child_text(part, source, "identifier")
+                if name:
+                    return name
+    return None
+
+
+def _objc_import(node: Any, source: bytes) -> str | None:
+    """`#import` and `#include` as C reads them, or the module of
+    `@import Foo;`.
+    """
+    if node.type == "module_import":
+        return _direct_child_text(node, source, "identifier")
+    return _c_include(node, source)
+
+
+def _objc_call(node: Any, source: bytes) -> str | None:
+    """A C function's name, or the first keyword of a message `[recv
+    sel:arg]`.
+    """
+    if node.type != "message_expression":
+        return _callee_name(node, source)
+    named = node.named_children
+    if len(named) < 2 or named[1].type != "identifier":
+        return None
+    return _text(source, named[1]).strip() or None
+
+
+def _objc_bases(node: Any, source: bytes) -> list[str]:
+    """Superclass after ':' and the protocols in <...> of an
+    @interface.
+    """
+    bases: list[str] = []
+    children = list(_children(node))
+    for index, child in enumerate(children):
+        if child.type == ":" and index + 1 < len(children):
+            if children[index + 1].type == "identifier":
+                bases.append(_text(source, children[index + 1]).strip())
+        elif child.type == "parameterized_arguments":
+            for part in _children(child):
+                if part.type == "type_name":
+                    name = _direct_child_text(part, source, "type_identifier")
+                elif part.type == "identifier":
+                    name = _text(source, part).strip()
+                else:
+                    continue
+                if name:
+                    bases.append(name)
+    return bases
+
+
+def _zig_import(node: Any, source: bytes) -> str | None:
+    """Path in `@import("x.zig")`. Other builtins are not imports."""
+    if _text(source, node) != "@import":
+        return None
+    arguments = node.next_named_sibling
+    if arguments is None or arguments.type != "FnCallArguments":
+        return None
+    for child in _walk(arguments):
+        if child.type == "STRINGLITERALSINGLE":
+            return _unquote(_text(source, child)) or None
+    return None
+
+
+def _zig_call(node: Any, source: bytes) -> str | None:
+    """Callee of `f(x)` and `a.f(x)`: the identifier before the
+    arguments.
+    """
+    before = node.prev_named_sibling
+    if before is None or before.type != "IDENTIFIER":
+        return None
+    return _text(source, before).strip() or None
+
+
+def _zig_container_name(node: Any, source: bytes) -> str | None:
+    """Name of `const Name = struct {...}`: the VarDecl around the
+    container.
+
+    A container that is not assigned to a constant (a function's return
+    value, for one) has no name and is not a definition.
+    """
+    holder = node.parent
+    while holder is not None and holder.type in ("SuffixExpr", "ErrorUnionExpr"):
+        holder = holder.parent
+    if holder is None or holder.type != "VarDecl":
+        return None
+    return _direct_child_text(holder, source, "IDENTIFIER")
+
+
+def _zig_container_kind(node: Any, source: bytes) -> str:
+    """`enum` for an enum container; struct, union and opaque are
+    classes.
+    """
+    for child in _children(node):
+        if child.type == "ContainerDeclType":
+            first = next(_children(child), None)
+            if first is not None and _text(source, first).strip() == "enum":
+                return "enum"
+    return "class"
+
+
 def _generic_import_module(lang: str, node: Any, source: bytes) -> str | None:
     """Generic extraction: strings, identifiers, or regex parsing."""
     import_text = _text(source, node)
@@ -911,6 +1147,9 @@ _IMPORT_READERS = {
     "powershell": _powershell_import,
     "lua": _lua_require,
     "perl": _perl_import,
+    "dart": _dart_import,
+    "objc": _objc_import,
+    "zig": _zig_import,
 }
 
 
@@ -1040,6 +1279,9 @@ _CALL_READERS = {
     "bash": _bash_call,
     "powershell": _powershell_call,
     "perl": _perl_call,
+    "dart": _dart_call,
+    "objc": _objc_call,
+    "zig": _zig_call,
 }
 
 
@@ -1235,7 +1477,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
 
         # Definitions
         if category in (None, "definitions") and kind in node_types["definitions"]:
-            name = _definition_name(node, source)
+            name = _definition_name(lang, node, source)
             if name:  # Skip if no name found
                 line = _line(node)
                 key = (name, line)
@@ -1245,7 +1487,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                     definitions.append(
                         {
                             "name": name,
-                            "kind": symbol_kind(lang, kind),
+                            "kind": _definition_kind(lang, node, source),
                             "line_start": line,
                             "line_end": _end_line(node),
                             "exported": exported,
@@ -1256,10 +1498,17 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                     # for them.
                     for child in _children(node):
                         if child.type in base_kinds:
-                            for base in _base_type_names(child, source):
+                            if lang == "dart":
+                                bases = _dart_base_names(child, source)
+                            else:
+                                bases = _base_type_names(child, source)
+                            for base in bases:
                                 inherits.append({"type": name, "base": base, "line": line})
                     if lang == "powershell" and kind == "class_statement":
                         for base in _powershell_bases(node, source):
+                            inherits.append({"type": name, "base": base, "line": line})
+                    if lang == "objc" and kind == "class_interface":
+                        for base in _objc_bases(node, source):
                             inherits.append({"type": name, "base": base, "line": line})
 
         # Imports

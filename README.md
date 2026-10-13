@@ -107,7 +107,7 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 18 languages with tree-sitter |
+| Code graph | Maps imports, calls and inheritance across 21 languages with tree-sitter |
 | Documents | Indexes Markdown, text, PDF, Word and Excel files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
 | Feedback | Ranks files recorded as useful higher for similar tasks |
@@ -138,6 +138,9 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 | PowerShell | `.ps1`, `.psm1` |
 | Lua | `.lua` |
 | Perl | `.pl`, `.pm` |
+| Dart | `.dart` |
+| Objective-C | `.m` |
+| Zig | `.zig` |
 
 MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Word and Excel files.
 
@@ -149,7 +152,7 @@ We're adding these next; progress is tracked in [#47](https://github.com/jbacals
 
 - [ ] Web and markup: HTML, CSS, SCSS, Vue, Svelte
 - [ ] Data and config: SQL, JSON, YAML, TOML, XML, Terraform (HCL)
-- [ ] Apps and systems: Dart, Objective-C, Zig, Groovy
+- [ ] Apps and systems: Groovy
 - [ ] Functional and scientific: Elixir, Haskell, OCaml, R, Julia
 - [ ] Other: Solidity, Fortran, Pascal
 

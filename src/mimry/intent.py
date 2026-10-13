@@ -103,6 +103,7 @@ SOURCE_EXTS = {
     *(".go", ".rs", ".java", ".kt", ".cs", ".php", ".swift", ".rb", ".scala"),
     *(".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"),
     *(".sh", ".bash", ".ps1", ".psm1", ".lua", ".pl", ".pm"),
+    *(".dart", ".m", ".zig"),
 }
 # Code that ships with a project but is not the product: an edit task is
 # almost never about it, so it is supporting context rather than a
@@ -126,6 +127,11 @@ TEST_NAME_RE = re.compile(
     r"|\.Tests\.ps1$"
     r"|_spec\.lua$|^test_.*\.lua$|_test\.lua$"
     r"|\.t$"
+    # Dart *_test.dart, Objective-C *Tests.m and *Test.m, and Zig
+    # *_test.zig and test_*.zig (inline test blocks are not files).
+    r"|_test\.dart$"
+    r"|[A-Za-z0-9](Test|Tests)\.m$"
+    r"|_test\.zig$|^test_.*\.zig$"
 )
 TEST_TERMS = {"test", "tests", "testing", "pytest", "vitest", "jest", "spec"}
 # Suffixes that inflect a word ("token"/"tokens", "parse"/"parsing"), as

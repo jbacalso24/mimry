@@ -865,3 +865,261 @@ def test_scripting_test_file_names_are_tests(name):
 def test_scripting_source_file_names_are_not_tests(name):
     """Scripting sources are not tests, even with test-like words."""
     assert not TEST_NAME_RE.search(name), f"{name} should not be a test file"
+
+
+DART_SOURCE = """import 'dart:async';
+import 'package:app/src/models.dart' show User;
+import '../util/format.dart' as fmt;
+export 'src/widgets.dart';
+part 'store.g.dart';
+
+class Store extends Base with Logging implements Closeable {
+  Future<void> load() async {
+    await fetch();
+    fmt.pad(1);
+  }
+}
+
+mixin Logging on Base {
+  void log(String message) => print(message);
+}
+
+extension Padding on String {
+  String padLeftTo(int width) => padLeft(width);
+}
+
+extension on int {
+  int twice() => this * 2;
+}
+
+enum Color { red, green }
+
+int computeTotal(List<int> values) {
+  return values.fold(0, (a, b) => a + b);
+}
+"""
+
+OBJC_SOURCE = """#import "Widget.h"
+#import <UIKit/UIKit.h>
+#include "helpers.h"
+@import Foundation;
+
+@protocol Drawable <NSObject>
+- (void)draw;
+@end
+
+@interface Widget : UIView <Drawable, NSCopying>
+@property (nonatomic) int size;
+- (instancetype)initWithFrame:(CGRect)frame;
++ (Widget *)shared;
+@end
+
+@implementation Widget
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    [self draw];
+    [Helper reset];
+    return self;
+}
+
+- (void)draw {
+    NSLog(@"draw");
+    helper_fn(3);
+}
+
++ (Widget *)shared { return nil; }
+
+@end
+
+int helper_fn(int x) {
+    return x + 1;
+}
+"""
+
+ZIG_SOURCE = """const std = @import("std");
+const util = @import("util.zig");
+const Shape = struct {
+    width: u32,
+    pub fn area(self: Shape) u32 {
+        return self.width * self.width;
+    }
+};
+pub const Color = enum { red, green };
+const Tagged = union(enum) { a: u8, b: void };
+const Handle = opaque {};
+pub fn main() !void {
+    const s = Shape{ .width = 3 };
+    _ = util.helper(s.area());
+    std.debug.print("{}", .{s});
+}
+fn helper(x: u32) u32 {
+    return x;
+}
+test "area" {
+    try std.testing.expect(true);
+}
+"""
+
+
+def test_language_for_app_languages():
+    """language_for maps Dart, Objective-C (.m only) and Zig."""
+    assert language_for("lib/main.dart") == "dart"
+    assert language_for("Widget.m") == "objc"
+    assert language_for("Widget.h") == "c", ".h stays C"
+    assert language_for("Widget.mm") is None
+    assert language_for("main.zig") == "zig"
+
+
+def test_method_names_survive_the_objc_method_branch(tmp_path):
+    """PHP and JavaScript class methods keep their names, and an
+    Objective-C method keeps its selector name. The Objective-C branch
+    of _definition_name must not catch method_declaration or
+    method_definition in other languages.
+    """
+    from mimry.ts_ast_adapter import parse_ts_like
+
+    php = _extract(
+        tmp_path,
+        "Session.php",
+        "<?php\nclass Session {\n    public function start(): string { return 'x'; }\n}\n",
+    )
+    assert ("start", "function") in {(d["name"], d["kind"]) for d in php["definitions"]}
+
+    objc = _extract(
+        tmp_path,
+        "Widget.m",
+        "@interface Widget : NSObject\n- (void)draw;\n@end\n"
+        "@implementation Widget\n- (void)draw { }\n@end\n",
+    )
+    assert ("draw", "function") in {(d["name"], d["kind"]) for d in objc["definitions"]}
+
+    js_file = tmp_path / "session.js"
+    js_source = "class Session {\n  start() { return 1; }\n}\n"
+    js_file.write_text(js_source, encoding="utf-8")
+    js_symbols, *_ = parse_ts_like(js_file, tmp_path, {"file_id": "js"}, js_source)
+    assert ("start", "method") in {(s["name"], s["kind"]) for s in js_symbols}
+
+
+def test_dart_extracts_types_methods_imports_calls_and_bases(tmp_path):
+    """Dart: classes, mixins, extensions, enums, functions and methods
+    with their lines; URIs as written; calls by callee; extends, with
+    and implements as bases. An unnamed extension is not a
+    definition.
+    """
+    result = _extract(tmp_path, "store.dart", DART_SOURCE)
+    assert result["status"] == "ok", f"Dart parse failed: {result['status']}"
+    defs = {(d["name"], d["kind"], d["line_start"]) for d in result["definitions"]}
+    assert defs == {
+        ("Store", "class", 7),
+        ("load", "function", 8),
+        ("Logging", "class", 14),
+        ("log", "function", 15),
+        ("Padding", "class", 18),
+        ("padLeftTo", "function", 19),
+        ("twice", "function", 23),
+        ("Color", "enum", 26),
+        ("computeTotal", "function", 28),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [
+        ("dart:async", 1),
+        ("package:app/src/models.dart", 2),
+        ("../util/format.dart", 3),
+        ("src/widgets.dart", 4),
+        ("store.g.dart", 5),
+    ]
+    assert {"fetch", "pad", "print", "padLeft", "fold"} <= {c["name"] for c in result["calls"]}
+    assert {(i["type"], i["base"]) for i in result["inherits"]} == {
+        ("Store", "Base"),
+        ("Store", "Logging"),
+        ("Store", "Closeable"),
+    }
+
+
+def test_objc_extracts_classes_methods_imports_calls_and_bases(tmp_path):
+    """Objective-C: @interface, @implementation and @protocol, methods
+    named by their first selector keyword, C functions, #import as C
+    includes, @import modules, message sends as calls, and superclass
+    plus protocols.
+    """
+    result = _extract(tmp_path, "Widget.m", OBJC_SOURCE)
+    assert result["status"] == "ok", f"Objective-C parse failed: {result['status']}"
+    defs = {(d["name"], d["kind"], d["line_start"]) for d in result["definitions"]}
+    assert defs == {
+        ("Drawable", "interface", 6),
+        ("draw", "function", 7),
+        ("Widget", "class", 10),
+        ("initWithFrame", "function", 12),
+        ("shared", "function", 13),
+        ("Widget", "class", 16),
+        ("initWithFrame", "function", 18),
+        ("draw", "function", 25),
+        ("shared", "function", 30),
+        ("helper_fn", "function", 34),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [
+        ("./Widget.h", 1),
+        ("<UIKit/UIKit.h>", 2),
+        ("./helpers.h", 3),
+        ("Foundation", 4),
+    ]
+    assert {"NSLog", "draw", "reset", "helper_fn", "initWithFrame"} <= {
+        c["name"] for c in result["calls"]
+    }
+    assert {(i["type"], i["base"]) for i in result["inherits"]} == {
+        ("Widget", "UIView"),
+        ("Widget", "Drawable"),
+        ("Widget", "NSCopying"),
+    }
+
+
+def test_zig_extracts_functions_containers_imports_and_calls(tmp_path):
+    """Zig: fn declarations, const containers by kind (enum or class),
+    the @import path as written, and calls. Inline test blocks are
+    not symbols.
+    """
+    result = _extract(tmp_path, "main.zig", ZIG_SOURCE)
+    assert result["status"] == "ok", f"Zig parse failed: {result['status']}"
+    defs = {(d["name"], d["kind"], d["line_start"]) for d in result["definitions"]}
+    assert defs == {
+        ("Shape", "class", 3),
+        ("area", "function", 5),
+        ("Color", "enum", 9),
+        ("Tagged", "class", 10),
+        ("Handle", "class", 11),
+        ("main", "function", 12),
+        ("helper", "function", 17),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("std", 1), ("util.zig", 2)]
+    assert {"area", "helper", "print"} <= {c["name"] for c in result["calls"]}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "user_test.dart",
+        "WidgetTests.m",
+        "WidgetTest.m",
+        "parser_test.zig",
+        "test_parser.zig",
+    ],
+)
+def test_app_language_test_file_names_are_tests(name):
+    """Dart _test, Objective-C Test and Tests, and Zig _test and test_
+    names mark test files.
+    """
+    assert TEST_NAME_RE.search(name), f"{name} should be a test file"
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["widget.dart", "Widget.m", "Latest.m", "parser.zig", "contest.zig"],
+)
+def test_app_language_source_file_names_are_not_tests(name):
+    """Source files are not tests, even with test-like words in the
+    name.
+    """
+    assert not TEST_NAME_RE.search(name), f"{name} should not be a test file"

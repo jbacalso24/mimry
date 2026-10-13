@@ -41,6 +41,19 @@ from mimry.storage import load_pointer
         ),
         # The type argument is not a base type.
         (".cs", "class H : IHandler<MyCommand> { }", {("H", "IHandler")}),
+        (
+            ".dart",
+            "class Bar extends BaseThing with Logging implements IFoo {}",
+            {("Bar", "BaseThing"), ("Bar", "Logging"), ("Bar", "IFoo")},
+        ),
+        # Generic arguments are sibling nodes in Dart, so Base<T> names
+        # Base.
+        (".dart", "class Bar extends Base<Thing> {}", {("Bar", "Base")}),
+        (
+            ".m",
+            "@interface Widget : UIView <Drawable, NSCopying>\n@end\n",
+            {("Widget", "UIView"), ("Widget", "Drawable"), ("Widget", "NSCopying")},
+        ),
     ],
 )
 def test_base_types_are_extracted(tmp_path: Path, suffix: str, source: str, expected: set) -> None:

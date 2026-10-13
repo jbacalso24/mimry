@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import shutil
 import sqlite3
 import subprocess
@@ -174,7 +175,7 @@ MISSING_DEPENDENCY = "parse_error:MissingDependency"
 # Below this many files, worker start-up (a fresh interpreter importing
 # the parsers) costs more than it saves.
 PARALLEL_MIN_FILES = 64
-_REFERENCE_KEYS = ("doc_links", "table_refs", "inherits", "alembic", "xcode")
+_REFERENCE_KEYS = ("doc_links", "table_refs", "inherits", "alembic", "xcode", "dart_package")
 
 
 def _adapt_file(
@@ -646,8 +647,11 @@ def _build_core_graph(
     file_id_of = {f["rel_path"]: f["file_id"] for f in files}
     symbol_ids = _symbol_ids_by_path_name(files, symbols)
     overrides = settings.language_overrides() if settings is not None else None
-    import_edges = resolve_imports(imports, rel_paths, overrides)
     split_refs = _split_references(references)
+    dart_packages: dict[str, list[str]] = {}
+    for pubspec, name in split_refs["dart_package"].items():
+        dart_packages.setdefault(name, []).append(posixpath.dirname(pubspec))
+    import_edges = resolve_imports(imports, rel_paths, overrides, dart_packages)
 
     graph["edges"] += _import_graph_edges(import_edges, file_id_of)
     graph["edges"] += _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids)

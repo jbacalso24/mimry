@@ -9,8 +9,12 @@ SYMBOL_KIND_PRIORITY = {"class": 0, "interface": 1, "function": 2, "method": 3, 
 _JS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
 
 
+# Languages whose quoted and angle includes follow the C rules.
+_C_INCLUDE_LANGUAGES = ("c", "cpp", "objc")
+
+
 def _is_c_family(path: str, overrides: dict[str, str] | None = None) -> bool:
-    return language_for(path, overrides) in ("c", "cpp")
+    return language_for(path, overrides) in _C_INCLUDE_LANGUAGES
 
 
 def _relative_suffixes(importer: str, overrides: dict[str, str] | None = None) -> tuple[str, ...]:
@@ -18,7 +22,7 @@ def _relative_suffixes(importer: str, overrides: dict[str, str] | None = None) -
     language = language_for(importer, overrides)
     if language == "ruby":
         return ("", ".rb")
-    if language in ("c", "cpp"):
+    if language in _C_INCLUDE_LANGUAGES:
         return ("",)  # an include names its header's extension
     return ("", *_JS_EXTENSIONS)
 
@@ -45,6 +49,7 @@ def resolve_imports(
     imports: dict[str, list[str]],
     rel_paths: set[str],
     overrides: dict[str, str] | None = None,
+    dart_packages: dict[str, list[str]] | None = None,
 ) -> list[dict]:
     """Resolve import strings to repo-relative target files.
 
@@ -54,6 +59,8 @@ def resolve_imports(
         rel_paths: Set of all repo-relative file paths that exist
         overrides: Extension-to-language map from mimry.toml, used to
             pick each importer's language
+        dart_packages: Pub package name to the directories of the
+            pubspec.yaml files that declare it, for `package:` URIs
 
     Returns:
         Sorted list of {"importer": str, "target": str,
@@ -89,6 +96,7 @@ def resolve_imports(
                 exact_lookup,
                 overrides,
                 package_roots,
+                dart_packages,
             )
             if target:
                 results.append(
@@ -112,6 +120,7 @@ def _resolve_import(
     exact_lookup: dict | None = None,
     overrides: dict[str, str] | None = None,
     package_roots: dict | None = None,
+    dart_packages: dict[str, list[str]] | None = None,
 ) -> dict | None:
     """Try to resolve a single import against available paths.
 
@@ -126,10 +135,18 @@ def _resolve_import(
     if not module or module in (".", ".."):
         return None
 
-    # Shell, PowerShell, Lua and Perl imports follow their own rules.
+    # Shell, PowerShell, Lua, Perl and Zig imports follow their own
+    # rules.
     language = language_for(importer, overrides)
     if language in _SCRIPT_RESOLVERS:
         return _SCRIPT_RESOLVERS[language](importer, module, rel_paths, exact_lookup)
+    if language == "dart":
+        return _resolve_dart(importer, module, rel_paths, dart_packages or {})
+    # A bare Objective-C module is `@import Foundation;`, a framework
+    # and never a file. Includes always keep a "./" or "<" form (see
+    # _c_include).
+    if language == "objc" and not module.startswith((".", "<")):
+        return None
 
     # System include (C/C++): <path/to/file.h>
     if module.startswith("<") and module.endswith(">"):
@@ -254,11 +271,44 @@ def _resolve_perl(
     return None
 
 
+def _resolve_zig(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """`@import("x.zig")` relative to the importer. `@import("std")` and
+    other package names are recorded but never resolve.
+    """
+    if not module.endswith(".zig"):
+        return None
+    return _resolve_script_path(importer, module, rel_paths)
+
+
+def _resolve_dart(
+    importer: str, module: str, rel_paths: set[str], packages: dict[str, list[str]]
+) -> dict | None:
+    """Dart `package:<name>/<path>` through the one pubspec named
+    <name>, or a relative URI beside the importer. `dart:` URIs never
+    resolve.
+    """
+    if module.startswith("package:"):
+        name, slash, path = module[len("package:") :].partition("/")
+        pubspec_dirs = packages.get(name, [])
+        if len(pubspec_dirs) != 1 or not slash or not path:
+            return None
+        candidate = posixpath.normpath(posixpath.join(pubspec_dirs[0], "lib", path))
+        if candidate in rel_paths:
+            return {"path": candidate, "confidence": "INFERRED"}
+        return None
+    if ":" in module:
+        return None
+    return _resolve_script_path(importer, module, rel_paths)
+
+
 _SCRIPT_RESOLVERS = {
     "bash": _resolve_bash,
     "powershell": _resolve_powershell,
     "lua": _resolve_lua,
     "perl": _resolve_perl,
+    "zig": _resolve_zig,
 }
 
 
@@ -304,7 +354,7 @@ def _rule1_relative(
 
     # Probe: /index with JS extensions only when not Ruby/C-family
     language = language_for(importer, overrides)
-    if language not in ("ruby", "c", "cpp"):
+    if language not in ("ruby", *_C_INCLUDE_LANGUAGES):
         index_base = posixpath.join(candidate, "index")
         for ext in _JS_EXTENSIONS:
             with_index = index_base + ext
