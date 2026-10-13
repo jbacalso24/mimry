@@ -7,14 +7,19 @@ names the ``mimry find`` command to run instead. Exact-string searches
 stay quiet. The reminder is printed once per session and query. It must
 stay cheap (stdlib only, nothing from the indexing stack) and must never
 fail the call.
+
+``hook-refresh`` is the background hook for session start and file
+edits. It reindexes stale files so the next query does not wait.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import sys
+import time
 from pathlib import Path
 
 # Regex constructs that make a pattern broad. A plain identifier, an
@@ -45,6 +50,9 @@ LONG_WITH_VALUE = {
     "--before-context",
 }
 PLACEHOLDER = "<what you are looking for>"
+# A refresh lock older than this came from a run that died before
+# removing it. A refresh of a large repo finishes well inside it.
+REFRESH_LOCK_STALE_SECONDS = 15 * 60
 
 
 def cmd_hook_check(a) -> int:
@@ -52,6 +60,16 @@ def cmd_hook_check(a) -> int:
         _hook_check(Path(getattr(a, "root", None) or "."))
     except Exception:
         # A nudge is optional; breaking the user's tool call is not.
+        pass
+    return 0
+
+
+def cmd_hook_refresh(a) -> int:
+    try:
+        _hook_refresh(Path(getattr(a, "root", None) or "."))
+    except Exception:
+        # The next query reindexes stale files anyway, so a failed
+        # background refresh costs nothing but time.
         pass
     return 0
 
@@ -266,3 +284,52 @@ def _hook_check(root: Path) -> None:
                 }
             )
         )
+
+
+def _take_refresh_lock(lock: Path) -> bool:
+    """Create the lock file; False when a live run holds it."""
+    for attempt in range(2):
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return True
+        except FileExistsError:
+            try:
+                age = time.time() - lock.stat().st_mtime
+            except FileNotFoundError:
+                continue  # released between the two calls
+            if age < REFRESH_LOCK_STALE_SECONDS or attempt:
+                return False
+            lock.unlink(missing_ok=True)
+    return False
+
+
+def _hook_refresh(root: Path) -> None:
+    from .commands import _indexed_root, refresh_if_stale
+    from .paths import mdir, pointer_file
+
+    # The host sends a JSON payload; nothing in it is needed, and a
+    # closed or unreadable stdin must not stop the refresh.
+    try:
+        sys.stdin.buffer.read()
+    except Exception:
+        pass
+    root = _indexed_root(root.resolve())
+    # The hook never sets MIMRY up; that is what `mimry init` is for.
+    if not pointer_file(root).is_file():
+        return
+    state = mdir(root)
+    pending = state / "refresh.pending"
+    lock = state / "refresh.lock"
+    pending.touch()
+    if not _take_refresh_lock(lock):
+        # The running refresh sees the pending file and goes again.
+        return
+    try:
+        # ponytail: an edit that lands after the last pending check and
+        # before the lock is removed waits for the next hook or query,
+        # which reindexes anyway.
+        while pending.exists():
+            pending.unlink(missing_ok=True)
+            refresh_if_stale(root)
+    finally:
+        lock.unlink(missing_ok=True)

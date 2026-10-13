@@ -38,7 +38,7 @@ mimry --version</code></pre><p>Python 3.11 or newer is required. <code>pipx inst
 claude mcp get mimry</code></pre><p>This is the same Claude Code CLI registration used by MIMRY's integration smoke test. It runs the installed <code>mimry-mcp</code> stdio server locally.</p></li>
 <li><h3>Install the project workflow</h3><pre><code>cd /path/to/your/repo
 mimry install --project --platform claude-code --always-on --hooks
-mimry install --project --platform claude-code --status</code></pre><p>The project install writes the MIMRY skill under <code>.claude/skills/mimry/</code>. <code>--always-on</code> adds a bounded MIMRY block to <code>CLAUDE.md</code>; <code>--hooks</code> adds the supported first-search reminder. Review generated files before committing them.</p></li>
+mimry install --project --platform claude-code --status</code></pre><p>The project install writes the MIMRY skill under <code>.claude/skills/mimry/</code>. <code>--always-on</code> adds a bounded MIMRY block to <code>CLAUDE.md</code>; <code>--hooks</code> adds a reminder on broad searches and refreshes the index in the background when a session starts and after each edit. Review generated files before committing them.</p></li>
 <li><h3>Start a real task</h3><pre><code>mimry preflight "fix the login redirect bug"
 # Read .mimry/mimry-out/context/latest.md</code></pre><p>Use a specific task, not a generic word such as “frontend.” Preflight sets up and refreshes the index when needed, then writes the context pack and prints the first files to inspect.</p></li>
 </ol>

@@ -399,11 +399,10 @@ def test_install_hooks_serializes_windows_exe_for_posix_bash_and_stays_idempoten
     assert parsed.stdout.splitlines() == [normalized_exe, "hook-check"]
     assert installer.install_status(platform, project=True, root=repo)["hooks"] is True
     assert installer._remove_hooks(repo, cfg) is not None
+    settings = json.loads((repo / cfg.hook_path).read_text(encoding="utf-8"))
     assert not any(
         installer._is_mimry_hook(entry)
-        for entry in json.loads((repo / cfg.hook_path).read_text(encoding="utf-8"))["hooks"][
-            "PreToolUse"
-        ]
+        for entry in settings.get("hooks", {}).get("PreToolUse", [])
     )
 
 

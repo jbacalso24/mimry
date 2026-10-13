@@ -549,12 +549,15 @@ def skill_body(platform_key: str) -> str:
         "claude-code": (
             "Claude Code: use this skill with project `.claude/skills/mimry/` installs."
             " Optional hooks name the `mimry find` command when the agent starts a broad"
-            " search, and stay quiet for exact-string searches."
+            " search, and stay quiet for exact-string searches. The hooks also refresh the"
+            " index in the background when a session starts and after each file edit."
         ),
         "codex": (
             "Codex: invoke as `$mimry` when command-style skill invocation is available."
             " Optional `.codex/hooks.json` names the `mimry find` command when the agent"
             " starts a broad shell search, and stays quiet for exact-string searches."
+            " The hooks also refresh the index in the background when a session starts and"
+            " after each file edit; project hooks run only after you trust them with `/hooks`."
         ),
         "hermes": (
             "Hermes: this skill is installed under `.hermes/skills/mimry/` or the Hermes profile"
@@ -798,12 +801,46 @@ def _has_always_on(root: Path, cfg: MimryPlatform) -> bool:
     return bool(path and path.exists() and _ALWAYS_ON_MARKER in path.read_text(encoding="utf-8"))
 
 
+# The MIMRY subcommand each hook event runs. Status checks all three,
+# so an install from before the refresh hooks needs repair.
+_HOOK_SUBCOMMANDS = {
+    "PreToolUse": "hook-check",
+    "SessionStart": "hook-refresh",
+    "PostToolUse": "hook-refresh",
+}
+
+
+def _event_entries(hooks: dict, event: str) -> list:
+    """Entries under an event, or [] when the value is not a list."""
+    entries = hooks.get(event)
+    return entries if isinstance(entries, list) else []
+
+
 def _has_hook(root: Path, cfg: MimryPlatform) -> bool:
     path = root / cfg.hook_path if cfg.hook_path else None
     if not (path and path.exists()):
         return False
-    entries = json.loads(path.read_text(encoding="utf-8")).get("hooks", {}).get("PreToolUse", [])
-    return any(_is_mimry_hook(entry) for entry in entries)
+    hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+    return all(
+        any(
+            _is_mimry_hook(entry) and sub in str(entry).lower()
+            for entry in _event_entries(hooks, event)
+        )
+        for event, sub in _HOOK_SUBCOMMANDS.items()
+    )
+
+
+def _has_any_hook(root: Path, cfg: MimryPlatform) -> bool:
+    """True when any MIMRY hook entry is present, under any event.
+
+    Unlike _has_hook this also sees older or partial installs, so the
+    uninstall hint can point at --hooks for them.
+    """
+    path = root / cfg.hook_path if cfg.hook_path else None
+    if not (path and path.exists()):
+        return False
+    hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+    return any(_is_mimry_hook(entry) for event in hooks for entry in _event_entries(hooks, event))
 
 
 def _remove_always_on(root: Path, cfg: MimryPlatform) -> Path | None:
@@ -850,9 +887,37 @@ def _posix_executable() -> str:
     return quoted
 
 
-def _hook_command() -> str:
+def _hook_command(subcommand: str = "hook-check") -> str:
     """Build a command for hook hosts that run it with POSIX Bash."""
-    return f"{_posix_executable()} hook-check"
+    return f"{_posix_executable()} {subcommand}"
+
+
+def _mimry_hook_entries(cfg: MimryPlatform) -> dict[str, dict]:
+    """The MIMRY entry for each hook event, keyed by event name.
+
+    The reminder runs before search tools. The refresh runs in the
+    background when a session starts and after each file edit, so the
+    index is current before the agent's next query.
+    """
+    if cfg.key == "codex":
+        search, edit = "Bash", "apply_patch|Edit|Write"
+    else:
+        search, edit = "Bash|Glob|Grep", "Edit|Write|MultiEdit|NotebookEdit"
+
+    def refresh(matcher: str) -> dict:
+        handler = {"type": "command", "command": _hook_command("hook-refresh"), "async": True}
+        return {"matcher": matcher, "hooks": [handler]}
+
+    return {
+        # Grep and Glob are Claude Code's search tools; Bash covers
+        # shelled-out grep/rg. Reads never trigger the reminder.
+        "PreToolUse": {
+            "matcher": search,
+            "hooks": [{"type": "command", "command": _hook_command()}],
+        },
+        "SessionStart": refresh("startup|resume"),
+        "PostToolUse": refresh(edit),
+    }
 
 
 def _run_agent_cli(binary: str, args: list[str]) -> tuple[int, str]:
@@ -909,15 +974,11 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
         existing = json.loads(dst.read_text(encoding="utf-8")) if dst.exists() else {}
     except json.JSONDecodeError:
         existing = {}
-    command = _hook_command()
-    hook = {
-        # Grep and Glob are Claude Code's search tools; Bash covers
-        # shelled-out grep/rg. Reads never trigger the reminder.
-        "matcher": "Bash" if cfg.key == "codex" else "Bash|Glob|Grep",
-        "hooks": [{"type": "command", "command": command}],
-    }
-    pre_tool = existing.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    existing["hooks"]["PreToolUse"] = [h for h in pre_tool if not _is_mimry_hook(h)] + [hook]
+    hooks = existing.setdefault("hooks", {})
+    for event, entry in _mimry_hook_entries(cfg).items():
+        # Replace, never append: a reinstall must not duplicate entries.
+        kept = [h for h in _event_entries(hooks, event) if not _is_mimry_hook(h)]
+        hooks[event] = [*kept, entry]
     _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
     return dst
 
@@ -932,7 +993,7 @@ def _is_mimry_hook(entry: object) -> bool:
     never removed them, and status always reported them missing.
     """
     text = str(entry).lower()
-    return "hook-check" in text and "mimry" in text
+    return ("hook-check" in text or "hook-refresh" in text) and "mimry" in text
 
 
 def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
@@ -945,11 +1006,23 @@ def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
         existing = json.loads(dst.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
-    pre_tool = existing.get("hooks", {}).get("PreToolUse", [])
-    filtered = [h for h in pre_tool if not _is_mimry_hook(h)]
-    if len(filtered) == len(pre_tool):
+    hooks = existing.get("hooks", {})
+    changed = False
+    for event, entries in list(hooks.items()):
+        if not isinstance(entries, list):
+            continue  # hand-edited value; leave it alone
+        kept = [h for h in entries if not _is_mimry_hook(h)]
+        if len(kept) == len(entries):
+            continue
+        changed = True
+        if kept:
+            hooks[event] = kept
+        else:
+            del hooks[event]
+    if not changed:
         return None
-    existing.setdefault("hooks", {})["PreToolUse"] = filtered
+    if not hooks:
+        existing.pop("hooks")
     _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
     return dst
 
@@ -1165,7 +1238,8 @@ def install_skill(
     hook_target = _install_hooks(root, cfg, dry_run=True) if hooks else None
     if hook_target:
         extras.append(
-            f"a hook in {cfg.hook_path.as_posix()} that names `mimry find` for broad searches"
+            f"hooks in {cfg.hook_path.as_posix()} that name `mimry find` for broad searches"
+            " and refresh the index in the background"
         )
     if dry_run:
         print("Dry run - nothing was written")
@@ -1252,8 +1326,8 @@ def uninstall_skill(
     kept = []
     if project and not always_on and _has_always_on(root, cfg):
         kept.append(("--always-on", f"the always-on block in {cfg.always_on_file.as_posix()}"))
-    if project and not hooks and _has_hook(root, cfg):
-        kept.append(("--hooks", f"the hook in {cfg.hook_path.as_posix()}"))
+    if project and not hooks and _has_any_hook(root, cfg):
+        kept.append(("--hooks", f"the hooks in {cfg.hook_path.as_posix()}"))
     if kept:
         flags = " ".join(flag for flag, _ in kept)
         ui.detail(

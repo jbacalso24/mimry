@@ -62,7 +62,7 @@ def build_parser():
         cmd_why,
     )
     from .doctor import cmd_doctor
-    from .hook import cmd_hook_check
+    from .hook import cmd_hook_check, cmd_hook_refresh
     from .installer import cmd_install, cmd_uninstall
 
     p = argparse.ArgumentParser(
@@ -378,7 +378,7 @@ def build_parser():
     i.add_argument(
         "--hooks",
         action="store_true",
-        help="With --project, also install supported PreToolUse hooks",
+        help="With --project, also install the supported hooks",
     )
     i.add_argument(
         "--status", action="store_true", help="Check install health for the target platform/scope"
@@ -411,7 +411,7 @@ def build_parser():
     u.add_argument(
         "--hooks",
         action="store_true",
-        help="With --project, also remove supported PreToolUse hooks",
+        help="With --project, also remove the supported hooks",
     )
     u.add_argument(
         "--no-mcp",
@@ -422,6 +422,9 @@ def build_parser():
     sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(
         func=cmd_hook_check
     )
+    sub.add_parser(
+        "hook-refresh", help="Internal hook: refresh the index in the background"
+    ).set_defaults(func=cmd_hook_refresh)
     # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`:
     # package runners such as uvx only launch the script named after the
     # package.
@@ -435,7 +438,7 @@ def build_parser():
     w.add_argument("--current", action="store_true")
     w.set_defaults(func=cmd_cache_wipe)
     for name, command in sub.choices.items():
-        if name not in {"hook-check", "plan", "cache", "mcp"}:
+        if name not in {"hook-check", "hook-refresh", "plan", "cache", "mcp"}:
             command.add_argument(
                 "-v",
                 "--verbose",
