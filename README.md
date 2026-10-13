@@ -56,6 +56,14 @@ It needs `uv` on your PATH and nothing else.
 
 It replaces `mimry install --platform claude-code`, so use one or the other.
 
+### Other agents: npx skills
+
+It installs the skill only; for the MCP server and hooks, run `mimry install --platform <name>` (see [Supported agents](#supported-agents)).
+
+```text
+npx skills add jbacalso24/mimry
+```
+
 ## Quick start
 
 Run `mimry preflight` in your repository with a task description.

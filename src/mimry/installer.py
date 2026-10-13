@@ -568,11 +568,11 @@ def skill_body(platform_key: str) -> str:
             "Agent Skills: generic cross-framework skill install. Use the same MIMRY-first"
             " workflow even when the host has no native hooks."
         ),
-        "claude-code-plugin": (
-            "Claude Code plugin: this skill came with the MIMRY Claude Code plugin. The MIMRY"
-            " tools are loaded through MCP, so prefer them. The `mimry` command may not be"
-            " installed; when it isn't, run CLI commands as"
-            f" `uvx --from mimry=={__version__} mimry <command>`."
+        "bundled": (
+            "Bundled skill (Claude Code plugin or npx skills): prefer the MIMRY MCP tools when"
+            " they are loaded. If the `mimry` command is not installed, run CLI commands as"
+            f" `uvx --from mimry=={__version__} mimry <command>`, or install it with"
+            " `uv tool install mimry`."
         ),
     }
     if platform_key in platform_notes:

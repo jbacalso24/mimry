@@ -9,7 +9,7 @@ MIMRY is local repo intelligence for coding agents. It exists to stop blind grep
 
 Invocation hint for this platform: MIMRY
 
-Platform note: Claude Code plugin: this skill came with the MIMRY Claude Code plugin. The MIMRY tools are loaded through MCP, so prefer them. The `mimry` command may not be installed; when it isn't, run CLI commands as `uvx --from mimry==0.3.1 mimry <command>`.
+Platform note: Bundled skill (Claude Code plugin or npx skills): prefer the MIMRY MCP tools when they are loaded. If the `mimry` command is not installed, run CLI commands as `uvx --from mimry==0.3.1 mimry <command>`, or install it with `uv tool install mimry`.
 
 ## Non-negotiable workflow
 

@@ -69,7 +69,7 @@ def plugin_files() -> dict[str, str]:
             {"mcpServers": {NAME: {"command": "uvx", "args": _uvx("mimry-mcp")}}}
         ),
         f"{PLUGIN_DIR}/hooks/hooks.json": _json(_hooks()),
-        f"{PLUGIN_DIR}/skills/mimry/SKILL.md": skill_body("claude-code-plugin"),
+        f"{PLUGIN_DIR}/skills/mimry/SKILL.md": skill_body("bundled"),
     }
     for name, content in _REFERENCES.items():
         files[f"{PLUGIN_DIR}/skills/mimry/references/{name}"] = content

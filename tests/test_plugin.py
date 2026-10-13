@@ -144,11 +144,12 @@ def test_hook_nudge_names_the_mcp_tool_only_in_plugin_mode(tmp_path, plugin_root
     assert json.loads(res.stdout)["hookSpecificOutput"]["additionalContext"] == expected
 
 
-def test_skill_for_the_plugin_is_not_an_installable_platform():
-    assert "claude-code-plugin" not in installer.platforms()
-    body = installer.skill_body("claude-code-plugin")
-    assert "MIMRY Claude Code plugin" in body
+def test_bundled_skill_is_not_an_installable_platform():
+    assert "bundled" not in installer.platforms()
+    body = installer.skill_body("bundled")
+    assert "npx skills" in body
     assert f"`uvx --from {PIN} mimry <command>`" in body
+    assert "came with" not in body
 
 
 @pytest.fixture
