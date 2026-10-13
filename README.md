@@ -137,7 +137,16 @@ MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Wor
 
 Other extensions can be mapped to a supported language in `mimry.toml`, see [Configuration](#configuration).
 
-Planned: more languages are tracked in [#47](https://github.com/jbacalso24/mimry/issues/47), where you can ask for yours.
+### Planned
+
+We're adding these next; progress is tracked in [#47](https://github.com/jbacalso24/mimry/issues/47), where you can ask for yours.
+
+- [ ] Web and markup: HTML, CSS, SCSS, Vue, Svelte
+- [ ] Scripting and shells: Bash, PowerShell, Lua, Perl
+- [ ] Data and config: SQL, JSON, YAML, TOML, XML, Terraform (HCL)
+- [ ] Apps and systems: Dart, Objective-C, Zig, Groovy
+- [ ] Functional and scientific: Elixir, Haskell, OCaml, R, Julia
+- [ ] Other: Solidity, Fortran, Pascal
 
 ## Supported agents
 

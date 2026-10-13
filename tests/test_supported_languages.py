@@ -4,7 +4,8 @@
 "Supported languages" table. The language count stated in the README,
 the website and docs/how-it-works.md must match it. When a language
 is added, add its label to ``LANGUAGE_LABELS`` and update the table
-and the counts.
+and the counts. When a language lands, add it to the table and remove
+it from the README's "### Planned" list (drop a group line once empty).
 """
 
 from __future__ import annotations
@@ -43,6 +44,18 @@ def _names(text: str) -> list[str]:
     return re.split(r", | and ", text.strip())
 
 
+def _planned_names() -> list[str]:
+    text = README.read_text(encoding="utf-8")
+    section = re.search(r"^### Planned\n(.*?)(?=^#{1,3} |\Z)", text, re.DOTALL | re.MULTILINE)
+    assert section, "README.md has no '### Planned' subsection under '## Supported languages'"
+    names = []
+    for line in section.group(1).splitlines():
+        match = re.match(r"- \[[ xX]\] [^:]*: (.+)$", line)
+        if match:
+            names.extend(match.group(1).split(", "))
+    return names
+
+
 def _site_names() -> list[str]:
     match = re.search(r'<p class="langs">([^<]*)</p>', SITE.read_text(encoding="utf-8"))
     assert match, 'site/index.html has no <p class="langs"> language list to update'
@@ -68,6 +81,14 @@ def test_readme_table_matches_supported_languages():
         "the README '## Supported languages' table differs from supported_languages(); "
         "update its rows to match src/mimry/core/languages.py"
     )
+
+
+def test_planned_languages_are_not_already_supported():
+    supported = {label for label, _ in supported_languages()}
+    for name in _planned_names():
+        assert name not in supported, (
+            f"{name} is supported now; remove it from the README's Planned list"
+        )
 
 
 def test_site_and_how_it_works_list_labels_in_order():
