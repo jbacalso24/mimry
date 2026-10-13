@@ -35,6 +35,27 @@ EXTENSION_LANGUAGE = {
     ".swift": "swift",
 }
 
+# Display name for each EXTENSION_LANGUAGE value.
+# tests/test_supported_languages.py checks the README table and counts
+# against supported_languages().
+LANGUAGE_LABELS: dict[str, str] = {
+    "python": "Python",
+    "javascript": "JavaScript",
+    "typescript": "TypeScript",
+    "tsx": "TypeScript",
+    "go": "Go",
+    "rust": "Rust",
+    "csharp": "C#",
+    "java": "Java",
+    "php": "PHP",
+    "c": "C",
+    "cpp": "C++",
+    "ruby": "Ruby",
+    "kotlin": "Kotlin",
+    "scala": "Scala",
+    "swift": "Swift",
+}
+
 NODE_TYPES = {
     "python": {
         "definitions": frozenset(["function_definition", "class_definition"]),
@@ -246,6 +267,14 @@ def language_for(path: str | Path, overrides: dict[str, str] | None = None) -> s
     if overrides and ext in overrides:
         return overrides[ext]
     return EXTENSION_LANGUAGE.get(ext)
+
+
+def supported_languages() -> list[tuple[str, list[str]]]:
+    """(label, sorted extensions) per language, in first-seen order."""
+    groups: dict[str, list[str]] = {}
+    for ext, lang in EXTENSION_LANGUAGE.items():
+        groups.setdefault(LANGUAGE_LABELS[lang], []).append(ext)
+    return [(label, sorted(exts)) for label, exts in groups.items()]
 
 
 def symbol_kind(language: str, node_kind: str) -> str:

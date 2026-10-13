@@ -105,12 +105,39 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 16 languages with tree-sitter |
+| Code graph | Maps imports, calls and inheritance across 14 languages with tree-sitter |
 | Documents | Indexes Markdown, text, PDF, Word and Excel files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
 | Feedback | Ranks files recorded as useful higher for similar tasks |
 | MCP server | Exposes every lookup as an MCP tool |
 | Local | Runs without an LLM, API key or telemetry, and keeps your code on your machine |
+
+## Supported languages
+
+MIMRY parses these languages with tree-sitter for symbols, imports, calls and inheritance.
+
+| Language | Extensions |
+|---|---|
+| Python | `.py` |
+| JavaScript | `.cjs`, `.js`, `.jsx`, `.mjs` |
+| TypeScript | `.cts`, `.mts`, `.ts`, `.tsx` |
+| Go | `.go` |
+| Rust | `.rs` |
+| C# | `.cs` |
+| Java | `.java` |
+| PHP | `.php` |
+| C | `.c`, `.h` |
+| C++ | `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx` |
+| Ruby | `.rb` |
+| Kotlin | `.kt`, `.kts` |
+| Scala | `.sc`, `.scala` |
+| Swift | `.swift` |
+
+MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Word and Excel files.
+
+Other extensions can be mapped to a supported language in `mimry.toml`, see [Configuration](#configuration).
+
+Planned: more languages are tracked in [#47](https://github.com/jbacalso24/mimry/issues/47), where you can ask for yours.
 
 ## Supported agents
 

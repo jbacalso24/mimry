@@ -89,9 +89,10 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
             "line_ranges",
         ),
         agent_use=(
-            "Backend and systems agents find Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin,"
-            " Scala, and Swift functions, classes, methods, interfaces, modules, imports, calls,"
-            " and inheritance relationships without reading every file."
+            "Backend, systems and web agents find Python, JavaScript, TypeScript, Go, Rust, C#,"
+            " Java, PHP, C, C++, Ruby, Kotlin, Scala, and Swift functions, classes, methods,"
+            " interfaces, modules, imports, calls, and inheritance relationships without reading"
+            " every file."
         ),
         notes=(
             "Extracts definitions (functions, classes, structs, interfaces, traits, enums),"
