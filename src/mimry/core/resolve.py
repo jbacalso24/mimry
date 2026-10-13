@@ -76,10 +76,19 @@ def resolve_imports(
             exact_lookup = _build_suffix_lookup(rel_paths, keep_extension=True)
             break
 
+    # Python package roots (src/ layouts) share one lookup per pass.
+    package_roots = _build_package_roots(rel_paths)
+
     for importer, module_list in imports.items():
         for module in module_list:
             target = _resolve_import(
-                importer, module, rel_paths, suffix_lookup, exact_lookup, overrides
+                importer,
+                module,
+                rel_paths,
+                suffix_lookup,
+                exact_lookup,
+                overrides,
+                package_roots,
             )
             if target:
                 results.append(
@@ -102,6 +111,7 @@ def _resolve_import(
     suffix_lookup: dict,
     exact_lookup: dict | None = None,
     overrides: dict[str, str] | None = None,
+    package_roots: dict | None = None,
 ) -> dict | None:
     """Try to resolve a single import against available paths.
 
@@ -143,7 +153,7 @@ def _resolve_import(
 
     # Rule 2: Dotted absolute module (Python) - contains . and no /
     if "." in module and "/" not in module and importer.endswith(".py"):
-        return _rule2_dotted_absolute(module, rel_paths)
+        return _rule2_dotted_absolute(module, rel_paths, package_roots)
     # A dotted module from a non-Python importer is a Java/Kotlin-style
     # package, not a module path. Rule 2 probes <module>.py and
     # <module>/__init__.py, so returning its verdict for
@@ -155,6 +165,14 @@ def _resolve_import(
     result = _rule3_relative_to_package(importer, module, rel_paths)
     if result:
         return result
+
+    # A bare Python module (`import pkg`) is absolute too. Rule 3 gets
+    # the first look because a bare name is also the importer-relative
+    # form.
+    if "/" not in module and "." not in module and importer.endswith(".py"):
+        result = _rule2_dotted_absolute(module, rel_paths, package_roots)
+        if result:
+            return result
 
     # Rule 4: Suffix match
     return _rule4_suffix_match(module, rel_paths, suffix_lookup, importer, overrides)
@@ -312,26 +330,72 @@ def _rule1_python_relative(importer: str, module: str, rel_paths: set[str]) -> d
     return None
 
 
-def _rule2_dotted_absolute(module: str, rel_paths: set[str]) -> dict | None:
-    """Rule 2: Dotted absolute module (Python).
+def _module_file(prefix: str, rel_paths: set[str]) -> str | None:
+    """The file that makes `prefix` a module, or None.
 
-    Module contains . and no /
+    Probes `<prefix>.py` then `<prefix>/__init__.py`.
+    """
+    for path in (prefix + ".py", prefix + "/__init__.py"):
+        if path in rel_paths:
+            return path
+    return None
+
+
+def _build_package_roots(rel_paths: set[str]) -> dict[str, list[str]]:
+    """Map each top-level Python name to the folders that hold it.
+
+    A folder R (never the repository root) is a root for name `a` when
+    `R/a/__init__.py` or `R/a.py` exists and R has no `__init__.py`, so
+    `a` is top-level at R rather than a subpackage of it. Built once per
+    resolve pass; roots are sorted so the lookup is deterministic.
+    """
+    package_dirs = {p[: -len("/__init__.py")] for p in rel_paths if p.endswith("/__init__.py")}
+    roots: dict[str, set[str]] = {}
+    for path in rel_paths:
+        if not path.endswith(".py"):
+            continue
+        folder, _, name = path.rpartition("/")
+        if name == "__init__.py":
+            root, _, top = folder.rpartition("/")
+        else:
+            root, top = folder, name[: -len(".py")]
+        if not root or not top or root in package_dirs:
+            continue
+        roots.setdefault(top, set()).add(root)
+    return {top: sorted(found) for top, found in roots.items()}
+
+
+def _rule2_dotted_absolute(
+    module: str, rel_paths: set[str], package_roots: dict | None = None
+) -> dict | None:
+    """Rule 2: Absolute Python module, dotted (`a.b.c`) or bare (`a`).
+
+    Module contains no /
     Candidate = module with . replaced by /
-    Probe: <candidate>.py then <candidate>/__init__.py
+    Probe the repository root: <candidate>.py then
+    <candidate>/__init__.py. Otherwise probe each package root R for
+    the top-level name (src/ layouts): R/<candidate>.py then
+    R/<candidate>/__init__.py. One root that resolves wins. Several
+    resolving roots prefer the one named src (or ending in /src) when
+    exactly one is; otherwise no edge.
     Confidence: EXTRACTED
     """
     candidate = module.replace(".", "/")
 
-    # Probe: <candidate>.py
-    py_file = candidate + ".py"
-    if py_file in rel_paths:
-        return {"path": py_file, "confidence": "EXTRACTED"}
+    root_hit = _module_file(candidate, rel_paths)
+    if root_hit:
+        return {"path": root_hit, "confidence": "EXTRACTED"}
 
-    # Probe: <candidate>/__init__.py
-    init_file = candidate + "/__init__.py"
-    if init_file in rel_paths:
-        return {"path": init_file, "confidence": "EXTRACTED"}
-
+    hits = []
+    for root in (package_roots or {}).get(module.split(".", 1)[0], []):
+        path = _module_file(posixpath.join(root, candidate), rel_paths)
+        if path:
+            hits.append((root, path))
+    if len(hits) == 1:
+        return {"path": hits[0][1], "confidence": "EXTRACTED"}
+    src_hits = [hit for hit in hits if hit[0] == "src" or hit[0].endswith("/src")]
+    if len(src_hits) == 1:
+        return {"path": src_hits[0][1], "confidence": "EXTRACTED"}
     return None
 
 

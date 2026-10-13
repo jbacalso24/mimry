@@ -397,3 +397,136 @@ def test_each_scripting_language_indexes_symbols_and_edges(tmp_path):
     }
     assert ("Square", "Shape") in inherits, sorted(p for p in inherits if p[0])
     assert ("Acme::Widget", "Acme::Base") in inherits, sorted(p for p in inherits if p[0])
+
+
+class TestPythonAbsoluteImports:
+    """Absolute Python imports resolve against src/ package roots."""
+
+    def test_src_layout_module_resolves(self):
+        imports = {"tests/test_main.py": ["pkg.util"]}
+        rel_paths = {"tests/test_main.py", "src/pkg/__init__.py", "src/pkg/util.py"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/pkg/util.py", "EXTRACTED")
+        ]
+
+    def test_src_layout_package_resolves(self):
+        imports = {"tests/test_main.py": ["pkg.sub"]}
+        rel_paths = {"tests/test_main.py", "src/pkg/__init__.py", "src/pkg/sub/__init__.py"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/pkg/sub/__init__.py"]
+
+    def test_bare_src_layout_package_resolves(self):
+        imports = {"tests/test_main.py": ["pkg"]}
+        rel_paths = {"tests/test_main.py", "src/pkg/__init__.py"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/pkg/__init__.py"]
+
+    def test_repo_root_package_wins_over_src(self):
+        imports = {"tests/test_main.py": ["pkg.util"]}
+        rel_paths = {
+            "tests/test_main.py",
+            "pkg/__init__.py",
+            "pkg/util.py",
+            "src/pkg/__init__.py",
+            "src/pkg/util.py",
+        }
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["pkg/util.py"]
+
+    def test_folder_with_init_is_not_a_root(self):
+        imports = {"tests/test_main.py": ["pkg.util"]}
+        rel_paths = {
+            "tests/test_main.py",
+            "tools/__init__.py",
+            "tools/pkg/__init__.py",
+            "tools/pkg/util.py",
+        }
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_src_root_wins_over_other_root(self):
+        imports = {"tests/test_main.py": ["pkg.util"]}
+        rel_paths = {
+            "tests/test_main.py",
+            "src/pkg/__init__.py",
+            "src/pkg/util.py",
+            "vendor/pkg/__init__.py",
+            "vendor/pkg/util.py",
+        }
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/pkg/util.py"]
+
+    def test_two_non_src_roots_is_no_edge(self):
+        imports = {"tests/test_main.py": ["pkg.util"]}
+        rel_paths = {
+            "tests/test_main.py",
+            "a/pkg/__init__.py",
+            "a/pkg/util.py",
+            "b/pkg/__init__.py",
+            "b/pkg/util.py",
+        }
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_stdlib_name_is_no_edge(self):
+        imports = {"tests/test_main.py": ["os.path"]}
+        rel_paths = {"tests/test_main.py", "src/pkg/__init__.py", "src/pkg/util.py"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+def test_src_layout_repo_resolves_imports_and_calls(tmp_path):
+    """Issue 161 repro: a src/ layout package imported by absolute name.
+
+    The import edge from src/pkg/main.py to src/pkg/util.py, the test's
+    import of pkg.main, and the call from run to helper must all exist.
+    """
+    root = tmp_path / "repo"
+    _write_repo(
+        root,
+        {
+            "pyproject.toml": '[project]\nname = "pkg"\nversion = "0.1.0"\n',
+            "src/pkg/__init__.py": "",
+            "src/pkg/util.py": "def helper():\n    return 1\n",
+            "src/pkg/main.py": (
+                "from pkg.util import helper\n\n\ndef run():\n    return helper()\n"
+            ),
+            "tests/test_main.py": (
+                "from pkg.main import run\n\n\ndef test_run():\n    assert run() == 1\n"
+            ),
+        },
+    )
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(root)
+    assert pointer is not None
+    write_index(root, pointer)
+
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    imports = {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e["relation"] == "imports"
+    }
+    assert ("src/pkg/main.py", "src/pkg/util.py") in imports, sorted(imports)
+    assert ("tests/test_main.py", "src/pkg/main.py") in imports, sorted(imports)
+
+    calls = {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e["relation"] == "calls"
+    }
+    assert ("run", "helper") in calls, sorted(calls)
