@@ -280,6 +280,10 @@ Bug reports and pull requests are welcome.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks.
 MIMRY is in public alpha, and its interfaces may change before 1.0.
 
+Thanks to everyone who has contributed:
+
+[![MIMRY contributors](https://jbacalso24.github.io/mimry/contributors.svg)](https://jbacalso24.github.io/mimry/#contributors)
+
 ## License
 
 [MIT](LICENSE)

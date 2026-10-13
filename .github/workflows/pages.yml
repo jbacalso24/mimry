@@ -3,7 +3,9 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", "llms.txt", ".github/workflows/pages.yml"]
+    paths: ["site/**", "llms.txt", ".github/workflows/pages.yml", "scripts/build_contributors.py"]
+  schedule:
+    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -28,6 +30,10 @@ jobs:
           mkdir -p _site
           cp -r site/. _site/
           cp llms.txt _site/llms.txt
+      - name: Build contributors
+        run: python scripts/build_contributors.py _site
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

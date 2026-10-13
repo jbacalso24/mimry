@@ -282,6 +282,15 @@ ol.flow p { margin: 0; color: var(--slate); font-size: 0.95rem; }
 .faq h3 { font-size: 1.1rem; margin: 0 0 8px; }
 .faq p { margin: 0; color: var(--slate); max-width: 52ch; }
 
+/* Contributors */
+.contributors { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.contributors li { max-width: 100%; }
+.contributors a { display: flex; align-items: center; gap: 12px; min-height: 44px; max-width: 100%; text-decoration: none; }
+.contributors img { flex: none; width: 48px; height: 48px; border-radius: 50%; box-shadow: 0 0 0 1px var(--rule); }
+.contributors span { min-width: 0; overflow-wrap: anywhere; font-size: 0.9rem; color: var(--slate); }
+@media (hover: hover) and (pointer: fine) { .contributors a:hover span { color: var(--ink); } }
+#contributors .footnote { margin-top: 32px; }
+
 footer { border-top: 1px solid var(--rule); padding-block: 36px 56px; color: var(--slate); font-size: 0.95rem; }
 footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
 footer nav { display: flex; flex-wrap: wrap; gap: 24px; }
@@ -496,6 +505,21 @@ Start with
       </div>
     </div>
   </section>
+
+  <section id="contributors">
+    <div class="wrap">
+      <h2>Contributors</h2>
+      <p class="intro">MIMRY is built in the open. Thanks to everyone who has contributed.</p>
+      <!-- contributors:start -->
+<ul class="contributors">
+<li><a href="https://github.com/jbacalso24"><img src="https://avatars.githubusercontent.com/u/38557979?v=4&amp;s=96" width="48" height="48" loading="lazy" alt="jbacalso24"><span>jbacalso24</span></a></li>
+<li><a href="https://github.com/abhinavrastogi2627"><img src="https://avatars.githubusercontent.com/u/49560440?v=4&amp;s=96" width="48" height="48" loading="lazy" alt="abhinavrastogi2627"><span>abhinavrastogi2627</span></a></li>
+<li><a href="https://github.com/KeuqS"><img src="https://avatars.githubusercontent.com/u/50778230?v=4&amp;s=96" width="48" height="48" loading="lazy" alt="KeuqS"><span>KeuqS</span></a></li>
+</ul>
+      <!-- contributors:end -->
+      <p class="footnote"><a href="https://github.com/jbacalso24/mimry/blob/main/CONTRIBUTING.md">Contribute on GitHub</a></p>
+    </div>
+  </section>
 </main>
 
 <footer>
@@ -510,6 +534,7 @@ Start with
       <a href="context-retrieval/">Context retrieval</a>
       <a href="https://github.com/jbacalso24/mimry/releases">Releases</a>
       <a href="changelog/">Changelog</a>
+      <a href="#contributors">Contributors</a>
       <a href="llms.txt">llms.txt</a>
     </nav>
   </div>
