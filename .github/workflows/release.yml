@@ -68,12 +68,29 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     container: archlinux:latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Install Arch build tools
         run: pacman -Syu --noconfirm --needed base-devel git pacman-contrib python python-build python-hatchling python-pip uv
 
       - uses: actions/checkout@v4
+
+      # PyPI's /packages/source/ URL lags a fresh upload, so wait until the
+      # sdist the PKGBUILD downloads answers before rendering the package.
+      - name: Wait for the sdist on PyPI
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          url="https://files.pythonhosted.org/packages/source/m/mimry/mimry-$version.tar.gz"
+          attempts=0
+          until curl -fsSIL -o /dev/null "$url"; do
+            attempts=$((attempts + 1))
+            if [ "$attempts" -ge 30 ]; then
+              echo "::error::$url still does not answer after 15 minutes. Rerun this job once PyPI serves it."
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "sdist $url is available on PyPI"
 
       - name: Render, build, install and smoke-test the package
         run: |
