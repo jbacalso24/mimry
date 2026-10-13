@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from shutil import which
 
-from . import ui
+from . import __version__, ui
 from .state import replace_path
 
 
@@ -53,7 +53,8 @@ class MimryPlatform:
     mcp: McpCli | McpJson | None = None
 
 
-_VERSION = "0.1.0"
+# Installs before .mimry_version held the version wrote this marker.
+_OLD_MARKER = "0.1.0"
 # Agents without MCP support; the skill alone covers them.
 _NO_MCP = frozenset({"aider", "pi", "agents"})
 _PLATFORM_ALIASES = {
@@ -576,7 +577,6 @@ def skill_body(platform_key: str) -> str:
     return f"""---
 name: mimry
 description: Use local repo memory at the start of every repo task instead of exploring by grep. Run preflight, read context packs, query indexed files/symbols/relationships, explain rankings, and record feedback after verified work. For an exact string already known, rg or git grep is fine.
-version: {_VERSION}
 ---
 
 # MIMRY
@@ -770,17 +770,27 @@ def _install_references(skill_dir: Path) -> None:
         pass
 
 
-def _replace_or_append_section(content: str, marker: str, section: str) -> str:
-    lines = content.splitlines()
+def _section_bounds(lines: list[str], marker: str) -> tuple[int, int] | None:
+    """Line indexes of a section: the marker line to the next ``## ``.
+
+    The section runs to the end of the file when no heading follows.
+    """
     start = next((i for i, line in enumerate(lines) if line.strip() == marker), None)
     if start is None:
-        prefix = content.rstrip()
-        return (prefix + "\n\n" if prefix else "") + section.rstrip() + "\n"
-    end = len(lines)
+        return None
     for i in range(start + 1, len(lines)):
         if lines[i].startswith("## "):
-            end = i
-            break
+            return start, i
+    return start, len(lines)
+
+
+def _replace_or_append_section(content: str, marker: str, section: str) -> str:
+    lines = content.splitlines()
+    bounds = _section_bounds(lines, marker)
+    if bounds is None:
+        prefix = content.rstrip()
+        return (prefix + "\n\n" if prefix else "") + section.rstrip() + "\n"
+    start, end = bounds
     new_lines = lines[:start] + section.rstrip().splitlines() + lines[end:]
     return "\n".join(new_lines).rstrip() + "\n"
 
@@ -798,7 +808,21 @@ def _install_always_on(root: Path, cfg: MimryPlatform, dry_run: bool) -> Path | 
 
 def _has_always_on(root: Path, cfg: MimryPlatform) -> bool:
     path = root / cfg.always_on_file if cfg.always_on_file else None
-    return bool(path and path.exists() and _ALWAYS_ON_MARKER in path.read_text(encoding="utf-8"))
+    text = _read_text_or_none(path) if path else None
+    return text is not None and _ALWAYS_ON_MARKER in text
+
+
+def _always_on_current(root: Path, cfg: MimryPlatform) -> bool:
+    """True when the MIMRY section equals what this MIMRY writes."""
+    text = _read_text_or_none(root / cfg.always_on_file) if cfg.always_on_file else None
+    if text is None:
+        return False
+    lines = text.splitlines()
+    bounds = _section_bounds(lines, _ALWAYS_ON_MARKER)
+    if bounds is None:
+        return False
+    start, end = bounds
+    return _same_text("\n".join(lines[start:end]), always_on_body())
 
 
 # The MIMRY subcommand each hook event runs. Status checks all three,
@@ -1152,6 +1176,27 @@ def _shown(path: Path, root: Path, project: bool) -> str:
     return ui.display_path(path, root if project else None)
 
 
+def _read_text_or_none(path: Path) -> str | None:
+    """The file text, or None when it is missing or not UTF-8."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _same_text(actual: str, expected: str) -> bool:
+    """Equal after CRLF -> LF and trailing whitespace is stripped.
+
+    Git on Windows can check a committed skill out with CRLF.
+    """
+    return actual.replace("\r\n", "\n").rstrip() == expected.replace("\r\n", "\n").rstrip()
+
+
+def _is_current(path: Path, expected: str) -> bool:
+    text = _read_text_or_none(path)
+    return text is not None and _same_text(text, expected)
+
+
 def _status_row(
     state: bool | None, label: str, ok_text: str, missing_text: str
 ) -> tuple[str, str, str]:
@@ -1187,14 +1232,22 @@ def install_status_with_code(
     root = root.resolve()
     dst = (root / cfg.project_path if project else cfg.global_path).resolve()
     refs = dst.parent / "references"
-    version = dst.parent / ".mimry_version"
+    marker = _read_text_or_none(dst.parent / ".mimry_version")
+    marker = marker.strip() if marker else ""
+    # Older MIMRY installs wrote the constant 0.1.0, or no marker.
+    marker_known = marker not in ("", _OLD_MARKER)
+    skill_current = _is_current(dst, skill_body(key))
     result = {
         "skill": dst.exists(),
-        "references": refs.is_dir() and all((refs / name).exists() for name in _REFERENCES),
-        "version": version.exists() and version.read_text(encoding="utf-8").strip() == _VERSION,
+        "references": all(
+            _is_current(refs / name, content) for name, content in _REFERENCES.items()
+        ),
+        "version": skill_current and marker_known,
     }
+    always_on_stale = False
     if project and cfg.always_on_file:
         result["always_on"] = _has_always_on(root, cfg)
+        always_on_stale = result["always_on"] and not _always_on_current(root, cfg)
     if project and cfg.hook_path:
         result["hooks"] = _has_hook(root, cfg)
     if not _mcp_disabled(False):
@@ -1207,7 +1260,7 @@ def install_status_with_code(
     # entries exist but not all three.
     hooks_partial = "hooks" in result and not result["hooks"] and _has_any_hook(root, cfg)
     required_ok = all(v for name, v in result.items() if name not in ("always_on", "hooks"))
-    healthy = required_ok and not hooks_partial
+    healthy = required_ok and not hooks_partial and not always_on_stale
     code = 0 if healthy else (2 if result["skill"] else 1)
     headline = f"MIMRY skill for {cfg.label} ({_scope(project)})"
     if healthy:
@@ -1216,22 +1269,36 @@ def install_status_with_code(
         ui.warn(f"{headline} is not installed")
     else:
         ui.warn(f"{headline} needs repair")
+    if result["version"]:
+        version_row = _status_row(True, "Version", marker, "")
+    elif not result["skill"]:
+        version_row = _status_row(False, "Version", "", "missing")
+    else:
+        stale_from = f"written by MIMRY {marker}" if marker_known else "written by an older MIMRY"
+        version_row = _status_row(False, "Version", "", f"out of date ({stale_from})")
     rows = [
         _status_row(result["skill"], "Skill", _shown(dst, root, project), "missing"),
         _status_row(
-            result["references"], "References", _shown(refs, root, project), "missing or broken"
+            result["references"],
+            "References",
+            _shown(refs, root, project),
+            "missing or out of date",
         ),
-        _status_row(result["version"], "Version", _VERSION, "missing or out of date"),
+        version_row,
     ]
     if "always_on" in result:
-        rows.append(
-            _status_row(
-                True if result["always_on"] else None,
-                "Always-on",
-                cfg.always_on_file.as_posix(),
-                "not added (optional, --always-on)",
+        path_text = cfg.always_on_file.as_posix()
+        if always_on_stale:
+            rows.append(_status_row(False, "Always-on", path_text, "out of date"))
+        else:
+            rows.append(
+                _status_row(
+                    True if result["always_on"] else None,
+                    "Always-on",
+                    path_text,
+                    "not added (optional, --always-on)",
+                )
             )
-        )
     if "hooks" in result:
         hook_state = True if result["hooks"] else (False if hooks_partial else None)
         rows.append(
@@ -1247,6 +1314,7 @@ def install_status_with_code(
     ui.table(rows)
     if not healthy:
         flags = " --project" if project else ""
+        flags += " --always-on" if always_on_stale else ""
         flags += " --hooks" if hooks_partial else ""
         verb = "install" if not result["skill"] else "repair"
         ui.detail(f"Run `mimry install --platform {key}{flags}` to {verb} it.")
@@ -1297,7 +1365,7 @@ def install_skill(
         return dst
     _install_references(dst.parent)
     _atomic_write(dst, skill_body(key))
-    _atomic_write(dst.parent / ".mimry_version", _VERSION + "\n")
+    _atomic_write(dst.parent / ".mimry_version", __version__ + "\n")
     git_paths = [dst, dst.parent / ".mimry_version", dst.parent / "references"]
     if always_on:
         ao = _install_always_on(root, cfg, dry_run=False)

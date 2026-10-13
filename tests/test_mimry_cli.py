@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from mimry import installer
+from mimry import __version__, installer
 
 
 def _posix(text: str) -> str:
@@ -231,7 +231,7 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     version = skill_dir / ".mimry_version"
     refs = skill_dir / "references"
     assert skill.exists()
-    assert version.read_text(encoding="utf-8").strip() == "0.1.0"
+    assert version.read_text(encoding="utf-8").strip() == __version__
     assert (refs / "workflow.md").exists()
     assert (refs / "commands.md").exists()
     assert (refs / "mcp.md").exists()
@@ -483,7 +483,7 @@ def test_install_project_codex_hooks_and_status_detect_broken_references(tmp_pat
     )
     assert broken.returncode == 2, broken.stderr
     assert "needs repair" in broken.stdout
-    assert "x   References  missing or broken" in broken.stdout
+    assert "x   References  missing or out of date" in broken.stdout
     assert "Run `mimry install --platform codex --project` to repair it." in broken.stdout
 
 
@@ -556,6 +556,112 @@ def test_status_exits_2_when_the_version_file_is_missing(tmp_path):
     assert status.returncode == 2, status.stderr
     assert "needs repair" in status.stdout
     assert _status_table_row(status.stdout, "Version")[0] == "x"
+
+
+def _claude_status(repo: Path, cache: Path):
+    return run_cli(repo, cache, "install", "--project", "--platform", "claude-code", "--status")
+
+
+def _claude_project_install(tmp_path: Path, *extra: str) -> tuple[Path, Path]:
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    install = run_cli(repo, cache, "install", "--project", "--platform", "claude-code", *extra)
+    assert install.returncode == 0, install.stderr
+    return repo, cache
+
+
+def test_fresh_install_reports_the_package_version_as_current(tmp_path):
+    repo, cache = _claude_project_install(tmp_path)
+
+    status = _claude_status(repo, cache)
+    assert status.returncode == 0, status.stderr
+    assert _status_table_row(status.stdout, "Version") == ("OK", __version__)
+
+
+def test_a_new_package_version_with_the_same_skill_text_is_still_current(
+    tmp_path, monkeypatch, capsys
+):
+    repo, _ = _claude_project_install(tmp_path)
+    monkeypatch.setattr(installer, "__version__", "9.9.9")
+
+    _, code = installer.install_status_with_code("claude-code", project=True, root=repo)
+    assert code == 0
+    assert _status_table_row(capsys.readouterr().out, "Version") == ("OK", __version__)
+
+
+def test_status_flags_a_skill_written_with_different_text(tmp_path):
+    repo, cache = _claude_project_install(tmp_path)
+    skill = repo / ".claude" / "skills" / "mimry" / "SKILL.md"
+    skill.write_text("# A skill from an older MIMRY\n", encoding="utf-8")
+
+    status = _claude_status(repo, cache)
+    assert status.returncode == 2, status.stderr
+    assert "needs repair" in status.stdout
+    symbol, text = _status_table_row(status.stdout, "Version")
+    assert symbol == "x"
+    assert text == f"out of date (written by MIMRY {__version__})"
+
+
+def test_skill_with_crlf_line_endings_is_still_current(tmp_path):
+    repo, cache = _claude_project_install(tmp_path)
+    skill = repo / ".claude" / "skills" / "mimry" / "SKILL.md"
+    skill.write_bytes(installer.skill_body("claude-code").replace("\n", "\r\n").encode("utf-8"))
+
+    status = _claude_status(repo, cache)
+    assert status.returncode == 0, status.stderr
+    assert "is installed and up to date" in status.stdout
+
+
+def test_status_flags_a_changed_reference_file(tmp_path):
+    repo, cache = _claude_project_install(tmp_path)
+    workflow = repo / ".claude" / "skills" / "mimry" / "references" / "workflow.md"
+    workflow.write_text("# Edited by hand\n", encoding="utf-8")
+
+    status = _claude_status(repo, cache)
+    assert status.returncode == 2, status.stderr
+    assert _status_table_row(status.stdout, "References") == (
+        "x",
+        "missing or out of date",
+    )
+
+
+def test_version_0_1_0_with_a_different_skill_is_written_by_an_older_mimry(tmp_path):
+    repo, cache = _claude_project_install(tmp_path)
+    skill_dir = repo / ".claude" / "skills" / "mimry"
+    (skill_dir / ".mimry_version").write_text("0.1.0\n", encoding="utf-8")
+    (skill_dir / "SKILL.md").write_text("# A skill from an older MIMRY\n", encoding="utf-8")
+
+    status = _claude_status(repo, cache)
+    assert status.returncode == 2, status.stderr
+    assert _status_table_row(status.stdout, "Version") == (
+        "x",
+        "out of date (written by an older MIMRY)",
+    )
+
+
+def test_always_on_section_edited_inside_is_out_of_date_and_outside_is_not(tmp_path):
+    repo, cache = _claude_project_install(tmp_path, "--always-on")
+    claude_md = repo / "CLAUDE.md"
+    block = claude_md.read_text(encoding="utf-8")
+    claude_md.write_text(
+        "# Team rules\n\nBe kind.\n\n" + block + "\n## Build\n\nRun make.\n", encoding="utf-8"
+    )
+    assert _claude_status(repo, cache).returncode == 0
+
+    # Edits outside the MIMRY section keep the install current.
+    claude_md.write_text(claude_md.read_text(encoding="utf-8").replace("Be kind.", "Be kind!"))
+    assert _claude_status(repo, cache).returncode == 0
+
+    claude_md.write_text(
+        claude_md.read_text(encoding="utf-8").replace(
+            "Treat MIMRY as navigation, not proof.", "Treat MIMRY as proof."
+        )
+    )
+    status = _claude_status(repo, cache)
+    assert status.returncode == 2, status.stderr
+    assert _status_table_row(status.stdout, "Always-on") == ("x", "out of date")
+    repair = "Run `mimry install --platform claude-code --project --always-on` to repair it."
+    assert repair in status.stdout
 
 
 def test_uninstall_project_codex_removes_hooks_when_requested(tmp_path):
