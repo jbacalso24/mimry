@@ -2265,7 +2265,7 @@ def symbol_matches(ptr: dict, name: str) -> list[dict]:
             "line_start": None,
         }
         for f in sorted(visible_files, key=lambda f: f["rel_path"])
-        if needle in Path(f["filename"]).stem.lower()
+        if needle in f["filename"].lower()
     ]
 
 

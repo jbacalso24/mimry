@@ -144,6 +144,13 @@ def test_symbol_falls_back_to_file_names(tmp_path: Path) -> None:
     assert matches[0]["path"] == "skills/verify/scripts/scan_standards.py"
     assert matches[0]["line_start"] is None
 
+    # A query that carries the extension matches the whole file name too
+    by_full_name = symbol_matches(ptr, "scan_standards.py")
+    assert len(by_full_name) == 1
+    assert by_full_name[0]["name"] == "scan_standards.py"
+    assert by_full_name[0]["kind"] == "file"
+    assert by_full_name[0]["path"] == "skills/verify/scripts/scan_standards.py"
+
     # Test that the symbol match takes precedence
     matches = symbol_matches(ptr, "main")
     assert len(matches) > 0
