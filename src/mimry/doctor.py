@@ -18,7 +18,14 @@ from typing import Any
 
 from . import __version__, installer, ui
 from .cache_safety import IndexOutsideCacheError, validated_current_index_path
-from .commands import _health, _install_channel, _repair_command
+from .commands import (
+    _direct_url,
+    _editable_folder,
+    _health,
+    _install_channel,
+    _local_folder,
+    _repair_command,
+)
 from .paths import pointer_file
 from .state import validate_generation
 
@@ -135,22 +142,6 @@ def _read_only_stdout(args: list[str]) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
-def _direct_url(dist: metadata.Distribution) -> dict[str, Any] | None:
-    """PEP 610 direct_url.json: None when absent, {} when unreadable."""
-    raw = dist.read_text("direct_url.json")
-    if raw is None:
-        return None
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _local_folder(url: str) -> str:
-    return urllib.request.url2pathname(urllib.parse.urlsplit(url).path)
-
-
 def _public_url(url: str) -> str:
     """The URL without credentials; file URLs show their folder as ~."""
     parts = urllib.parse.urlsplit(url)
@@ -184,14 +175,13 @@ def _source_check() -> dict[str, Any]:
     direct = _direct_url(dist)
     url = direct.get("url") if direct else None
     url = url if isinstance(url, str) else None
-    dir_info = direct.get("dir_info") if direct else None
     vcs = direct.get("vcs_info") if direct else None
+    folder = _editable_folder(direct)
     path = commit = shown_url = None
     if direct is None:
         source = "index"
-    elif isinstance(dir_info, dict) and dir_info.get("editable") is True and url:
+    elif folder:
         source = "editable"
-        folder = _local_folder(url)
         path = _display(folder)
         commit = _git_commit(folder)
     elif isinstance(vcs, dict):
@@ -328,8 +318,8 @@ def _servers_check() -> dict[str, Any]:
             pids=[],
         )
     suggestion = (
-        "Windows locks a running server's executable: close the agents that started them"
-        " before upgrading MIMRY."
+        "Windows locks a running server's executable: `mimry upgrade --stop-servers` stops them"
+        " before upgrading, or close the agents that started them."
         if sys.platform == "win32"
         else None
     )

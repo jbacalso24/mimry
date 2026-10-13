@@ -64,6 +64,7 @@ def build_parser():
     from .doctor import cmd_doctor
     from .hook import cmd_hook_check, cmd_hook_refresh
     from .installer import cmd_install, cmd_uninstall
+    from .upgrade import cmd_upgrade
 
     p = argparse.ArgumentParser(
         prog="mimry",
@@ -125,6 +126,13 @@ def build_parser():
         help="Re-hash indexed files while checking freshness; still performs no writes",
     )
     s.set_defaults(func=cmd_doctor)
+    s = sub.add_parser("upgrade", aliases=["update"], help="Upgrade MIMRY to the latest release")
+    s.add_argument(
+        "--stop-servers",
+        action="store_true",
+        help="Stop running MIMRY MCP servers first; open agents must reconnect afterwards",
+    )
+    s.set_defaults(func=cmd_upgrade)
     s = sub.add_parser("watch", help="Poll for changes and refresh when they settle")
     s.add_argument(
         "--interval",
@@ -438,7 +446,7 @@ def build_parser():
     w.add_argument("--current", action="store_true")
     w.set_defaults(func=cmd_cache_wipe)
     for name, command in sub.choices.items():
-        if name not in {"hook-check", "hook-refresh", "plan", "cache", "mcp"}:
+        if name not in {"hook-check", "hook-refresh", "plan", "cache", "mcp", "upgrade", "update"}:
             command.add_argument(
                 "-v",
                 "--verbose",

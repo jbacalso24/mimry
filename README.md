@@ -41,8 +41,8 @@ Requires Python 3.11 or newer on Windows, Linux or macOS.
 `pipx install mimry` and `pip install mimry` also work.
 
 > [!NOTE]
-> To upgrade, run `uv tool upgrade mimry`.
-> On Windows, close agent sessions that use MIMRY first, because a running `mimry-mcp` keeps its files locked.
+> To upgrade, run `mimry upgrade`.
+> On Windows, `mimry upgrade` refuses while MIMRY servers run, and `mimry upgrade --stop-servers` stops them first.
 
 ## Quick start
 
