@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import posixpath
+import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -138,6 +139,21 @@ def test_sitemap_lists_each_canonical_and_llms_with_current_lastmod() -> None:
     expected = {BASE + key for key in PAGES} | {BASE + "llms.txt"}
     assert set(entries) == expected
     assert set(entries.values()) == {"2026-10-10"}
+
+
+def test_site_software_version_matches_pyproject() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = pyproject["project"]["version"]
+    site_versions = [
+        item["softwareVersion"]
+        for item in parse(SITE / "index.html").json_ld
+        if isinstance(item, dict) and "softwareVersion" in item
+    ]
+    assert site_versions, "site/index.html has no softwareVersion in its JSON-LD"
+    assert site_versions == [version], (
+        f"site/index.html softwareVersion is {site_versions[0]!r} but pyproject.toml "
+        f"version is {version!r}; update site/index.html to match"
+    )
 
 
 def test_robots_is_truthful_about_project_scope() -> None:

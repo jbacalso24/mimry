@@ -2,6 +2,24 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.3.2 - 2026-10-13
+
+### Upgrade notes
+
+- From 0.3.1, upgrade the old way one last time: `uv tool upgrade mimry`, `pipx upgrade mimry` or `pip install --upgrade mimry`.
+  On Windows, close the agents that use MIMRY first.
+  From 0.3.2 on, `mimry upgrade` does it for you.
+
+### New features
+
+- `mimry upgrade` (or `mimry update`) upgrades MIMRY through whatever installed it: uv, pipx or pip ([#147](https://github.com/jbacalso24/mimry/pull/147)).
+  On Windows it refuses while MIMRY servers are running, and `--stop-servers` stops them first.
+  After upgrading it tells you how to switch each open agent to the new version.
+- MIMRY installs as a Claude Code plugin: `/plugin marketplace add jbacalso24/mimry`, then `/plugin install mimry@mimry` ([#148](https://github.com/jbacalso24/mimry/pull/148)).
+  It brings the skill, the hooks and the MCP server, and only needs `uv`.
+- `npx skills add jbacalso24/mimry` installs the MIMRY skill for other agents ([#149](https://github.com/jbacalso24/mimry/pull/149)).
+- The README lists the supported languages and the ones planned next ([#151](https://github.com/jbacalso24/mimry/pull/151)).
+
 ## 0.3.1 - 2026-10-13
 
 ### Upgrade notes
