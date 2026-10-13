@@ -12,3 +12,7 @@ packaging/aur/** text eol=lf
 # tests/test_plugin.py, so keep it LF on every platform.
 plugins/** text eol=lf
 .claude-plugin/** text eol=lf
+
+# The changelog page is generated and compared byte-for-byte by
+# tests/test_changelog_page.py, so keep it LF on every platform.
+site/changelog/** text eol=lf

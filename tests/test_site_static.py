@@ -16,6 +16,7 @@ PAGES = {
     "claude-code/": SITE / "claude-code" / "index.html",
     "codex/": SITE / "codex" / "index.html",
     "context-retrieval/": SITE / "context-retrieval" / "index.html",
+    "changelog/": SITE / "changelog" / "index.html",
 }
 
 
@@ -136,9 +137,10 @@ def test_sitemap_lists_each_canonical_and_llms_with_current_lastmod() -> None:
         )
         for item in tree.findall("sm:url", namespace)
     }
-    expected = {BASE + key for key in PAGES} | {BASE + "llms.txt"}
-    assert set(entries) == expected
-    assert set(entries.values()) == {"2026-10-10"}
+    expected = {BASE + key: "2026-10-10" for key in PAGES} | {BASE + "llms.txt": "2026-10-10"}
+    # The changelog changes with each release, so it has its own date.
+    expected[BASE + "changelog/"] = "2026-10-13"
+    assert entries == expected
 
 
 def test_site_software_version_matches_pyproject() -> None:

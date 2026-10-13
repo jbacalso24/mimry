@@ -106,6 +106,7 @@ evidence of parser compatibility, which is why `tree-sitter` carries an upper bo
 
 1. Update `version` in `pyproject.toml` and the matching changelog section.
    Run `uv run python scripts/build_plugin.py` so the Claude Code plugin pins the new version.
+   Run `uv run python scripts/build_changelog.py` so the site's changelog shows the new release.
    The plugin reaches users only after the tag is on PyPI, because `uvx` fetches the pinned version from there.
    Tag right after merging the release pull request.
 2. Re-run the unlocked-artifact parser and determinism lane before changing `tree-sitter` or `tree-sitter-language-pack`; keep both constrained in project metadata and regenerate `uv.lock`. Widening the `tree-sitter` upper bound requires that lane to pass and the golden determinism values to be re-confirmed, not regenerated to match.
