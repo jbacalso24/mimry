@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  If MIMRY saves your agent tokens, please <a href="https://github.com/jbacalso24/mimry">star it on GitHub</a>.
+  If <a href="https://github.com/jbacalso24/mimry">MIMRY</a> saves your agent tokens, please star it.
 </p>
 
 MIMRY is a command-line tool that tells AI coding agents which files, and which lines in them, to read for a task.
