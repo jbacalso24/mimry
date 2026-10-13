@@ -1152,7 +1152,36 @@ def _shown(path: Path, root: Path, project: bool) -> str:
     return ui.display_path(path, root if project else None)
 
 
+def _status_row(
+    state: bool | None, label: str, ok_text: str, missing_text: str
+) -> tuple[str, str, str]:
+    """One --status table row.
+
+    A None state is an optional extra that is not added: a neutral row.
+    """
+    if state is None:
+        return ui.paint(ui.symbol("dot"), "dim"), label, missing_text
+    style = "ok" if state else "fail"
+    return ui.paint(ui.symbol(style), style), label, ok_text if state else missing_text
+
+
 def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str, bool]:
+    """Print the install health table; return the checks.
+
+    The exit code is in install_status_with_code.
+    """
+    return install_status_with_code(platform_name, project=project, root=root)[0]
+
+
+def install_status_with_code(
+    platform_name: str, *, project: bool, root: Path
+) -> tuple[dict[str, bool], int]:
+    """Print the install health table; return the checks and exit code.
+
+    0: installed and up to date.
+    1: the skill is not installed.
+    2: installed but needs repair.
+    """
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
     root = root.resolve()
@@ -1172,7 +1201,14 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
         mcp_check = mcp_registered(cfg)
         if mcp_check is not None:
             result["mcp"] = mcp_check
-    healthy = all(result.values())
+    # Health is what `mimry install --platform <key>` (plus --project)
+    # produces: skill, references, version and MCP registration. Opt-in
+    # extras count only when partly installed: for hooks, some MIMRY
+    # entries exist but not all three.
+    hooks_partial = "hooks" in result and not result["hooks"] and _has_any_hook(root, cfg)
+    required_ok = all(v for name, v in result.items() if name not in ("always_on", "hooks"))
+    healthy = required_ok and not hooks_partial
+    code = 0 if healthy else (2 if result["skill"] else 1)
     headline = f"MIMRY skill for {cfg.label} ({_scope(project)})"
     if healthy:
         ui.ok(f"{headline} is installed and up to date")
@@ -1180,36 +1216,41 @@ def install_status(platform_name: str, *, project: bool, root: Path) -> dict[str
         ui.warn(f"{headline} is not installed")
     else:
         ui.warn(f"{headline} needs repair")
-    checks = [
-        ("skill", "Skill", _shown(dst, root, project), "missing"),
-        ("references", "References", _shown(refs, root, project), "missing or broken"),
-        ("version", "Version", _VERSION, "missing or out of date"),
+    rows = [
+        _status_row(result["skill"], "Skill", _shown(dst, root, project), "missing"),
+        _status_row(
+            result["references"], "References", _shown(refs, root, project), "missing or broken"
+        ),
+        _status_row(result["version"], "Version", _VERSION, "missing or out of date"),
     ]
     if "always_on" in result:
-        checks.append(("always_on", "Always-on", cfg.always_on_file.as_posix(), "missing"))
-    if "hooks" in result:
-        checks.append(("hooks", "Hook", cfg.hook_path.as_posix(), "missing"))
-    if "mcp" in result:
-        checks.append(("mcp", "MCP server", "registered", "not registered"))
-    ui.table(
-        [
-            (
-                ui.paint(ui.symbol("ok"), "ok")
-                if result[name]
-                else ui.paint(ui.symbol("fail"), "fail"),
-                label,
-                good if result[name] else bad,
+        rows.append(
+            _status_row(
+                True if result["always_on"] else None,
+                "Always-on",
+                cfg.always_on_file.as_posix(),
+                "not added (optional, --always-on)",
             )
-            for name, label, good, bad in checks
-        ]
-    )
+        )
+    if "hooks" in result:
+        hook_state = True if result["hooks"] else (False if hooks_partial else None)
+        rows.append(
+            _status_row(
+                hook_state,
+                "Hook",
+                cfg.hook_path.as_posix(),
+                "incomplete" if hooks_partial else "not added (optional, --hooks)",
+            )
+        )
+    if "mcp" in result:
+        rows.append(_status_row(result["mcp"], "MCP server", "registered", "not registered"))
+    ui.table(rows)
     if not healthy:
         flags = " --project" if project else ""
-        flags += " --always-on" if "always_on" in result and not result["always_on"] else ""
-        flags += " --hooks" if "hooks" in result and not result["hooks"] else ""
+        flags += " --hooks" if hooks_partial else ""
         verb = "install" if not result["skill"] else "repair"
         ui.detail(f"Run `mimry install --platform {key}{flags}` to {verb} it.")
-    return result
+    return result, code
 
 
 def install_skill(
@@ -1354,8 +1395,7 @@ def cmd_install(a) -> int:
             )
         )
     if getattr(a, "status", False):
-        install_status(a.platform, project=a.project, root=Path(a.root))
-        return 0
+        return install_status_with_code(a.platform, project=a.project, root=Path(a.root))[1]
     install_skill(
         a.platform,
         project=a.project,

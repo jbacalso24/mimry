@@ -10,6 +10,7 @@ mimry uninstall --platform <name>           # remove it
 ```
 
 Add `--project` to any of these to work on the current repository only.
+`--status` exits 0 when the install is up to date, 1 when the skill is not installed, and 2 when it needs repair.
 
 ## How the MCP server is registered
 

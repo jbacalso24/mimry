@@ -472,19 +472,90 @@ def test_install_project_codex_hooks_and_status_detect_broken_references(tmp_pat
         repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status"
     )
     assert status.returncode == 0, status.stderr
+    assert "is installed and up to date" in status.stdout
     assert "OK  Hook" in status.stdout
     assert "OK  References" in status.stdout
+    assert "not added (optional, --always-on)" in status.stdout
 
     shutil.rmtree(repo / ".codex" / "skills" / "mimry" / "references")
     broken = run_cli(
         repo, tmp_path / "cache", "install", "--project", "--platform", "codex", "--status"
     )
-    assert broken.returncode == 0, broken.stderr
+    assert broken.returncode == 2, broken.stderr
     assert "needs repair" in broken.stdout
     assert "x   References  missing or broken" in broken.stdout
-    assert (
-        "Run `mimry install --platform codex --project --always-on` to repair it." in broken.stdout
+    assert "Run `mimry install --platform codex --project` to repair it." in broken.stdout
+
+
+def _status_table_row(output: str, label: str) -> tuple[str, str]:
+    """(symbol, text) of the --status table row for ``label``."""
+    for line in output.splitlines():
+        parts = line.split(maxsplit=2)
+        if len(parts) >= 2 and parts[1] == label:
+            return parts[0], parts[2] if len(parts) > 2 else ""
+    raise AssertionError(f"no {label!r} row in:\n{output}")
+
+
+def test_status_exits_1_when_the_skill_is_not_installed(tmp_path):
+    repo = copy_fixture(tmp_path)
+    status = run_cli(
+        repo, tmp_path / "cache", "install", "--project", "--platform", "claude-code", "--status"
     )
+    assert status.returncode == 1, status.stderr
+    assert "is not installed" in status.stdout
+
+
+def test_plain_project_install_is_healthy_and_optional_extras_are_neutral(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    install = run_cli(repo, cache, "install", "--project", "--platform", "claude-code")
+    assert install.returncode == 0, install.stderr
+
+    status = run_cli(repo, cache, "install", "--project", "--platform", "claude-code", "--status")
+    assert status.returncode == 0, status.stderr
+    assert "is installed and up to date" in status.stdout
+    assert _status_table_row(status.stdout, "Always-on") == (
+        "-",
+        "not added (optional, --always-on)",
+    )
+    assert _status_table_row(status.stdout, "Hook") == ("-", "not added (optional, --hooks)")
+
+
+def test_partly_installed_hooks_need_repair_and_the_repair_adds_hooks(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    install = run_cli(
+        repo, cache, "install", "--project", "--platform", "claude-code", "--always-on", "--hooks"
+    )
+    assert install.returncode == 0, install.stderr
+    settings_path = repo / ".claude" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["hooks"] = {
+        "PreToolUse": [
+            entry for entry in settings["hooks"]["PreToolUse"] if installer._is_mimry_hook(entry)
+        ]
+    }
+    settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
+    status = run_cli(repo, cache, "install", "--project", "--platform", "claude-code", "--status")
+    assert status.returncode == 2, status.stderr
+    assert "needs repair" in status.stdout
+    assert _status_table_row(status.stdout, "Hook") == ("x", "incomplete")
+    repair = "Run `mimry install --platform claude-code --project --hooks` to repair it."
+    assert repair in status.stdout
+
+
+def test_status_exits_2_when_the_version_file_is_missing(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    install = run_cli(repo, cache, "install", "--project", "--platform", "claude-code")
+    assert install.returncode == 0, install.stderr
+    (repo / ".claude" / "skills" / "mimry" / ".mimry_version").unlink()
+
+    status = run_cli(repo, cache, "install", "--project", "--platform", "claude-code", "--status")
+    assert status.returncode == 2, status.stderr
+    assert "needs repair" in status.stdout
+    assert _status_table_row(status.stdout, "Version")[0] == "x"
 
 
 def test_uninstall_project_codex_removes_hooks_when_requested(tmp_path):

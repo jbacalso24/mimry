@@ -45,7 +45,7 @@ mimry install --project --platform codex --status</code></pre><p>The project ins
 </section>
 <section>
 <h2>Verify and repair</h2>
-<table><thead><tr><th>Check</th><th>Command</th><th>What it proves</th></tr></thead><tbody><tr><td>MCP entry</td><td><code>codex mcp get mimry --json</code></td><td>Codex has an enabled stdio server entry.</td></tr><tr><td>Project files</td><td><code>mimry install --project --platform codex --status</code></td><td>The skill, references, always-on block, and requested hook are present.</td></tr><tr><td>Repo context</td><td><code>mimry preflight "&lt;specific task&gt;"</code></td><td>The index is usable and a task context pack was written.</td></tr></tbody></table>
+<table><thead><tr><th>Check</th><th>Command</th><th>What it proves</th></tr></thead><tbody><tr><td>MCP entry</td><td><code>codex mcp get mimry --json</code></td><td>Codex has an enabled stdio server entry.</td></tr><tr><td>Project files</td><td><code>mimry install --project --platform codex --status</code></td><td>The skill, references, and version are present, and a partly installed hook needs repair. Exit 0 when healthy, 1 when not installed, 2 when it needs repair.</td></tr><tr><td>Repo context</td><td><code>mimry preflight "&lt;specific task&gt;"</code></td><td>The index is usable and a task context pack was written.</td></tr></tbody></table>
 <p class="note"><strong>Repair:</strong> rerun the install command if status reports missing references. To remove the project integration, run <code>mimry uninstall --project --platform codex --always-on --hooks</code>. Remove the MCP entry separately with <code>codex mcp remove mimry</code>.</p>
 </section>
 <section>
