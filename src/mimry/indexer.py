@@ -16,6 +16,7 @@ from .config_manifest_adapter import is_config_manifest
 from .constants import SCHEMA_VERSION
 from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
 from .core.cluster import assign_communities
+from .core.languages import GRAMMAR_UNAVAILABLE
 from .core.report import build_manifest, render_report
 from .core.resolve import (
     resolve_calls,
@@ -168,6 +169,8 @@ def _symbol_order(symbol: dict) -> tuple:
 SKIPPED = "skipped"
 UNINDEXABLE = "unindexable"
 MISSING_DEPENDENCY = "parse_error:MissingDependency"
+# GRAMMAR_UNAVAILABLE (core.languages) is the tree-sitter counterpart:
+# indexed without its grammar, so its stat identity is never trusted.
 # Below this many files, worker start-up (a fresh interpreter importing
 # the parsers) costs more than it saves.
 PARALLEL_MIN_FILES = 64
@@ -352,10 +355,11 @@ def _collect(
                 _note_unindexable(path)
                 continue
             row = json.loads(line)
-            # Read without its reader library (an incomplete install):
-            # never reuse that, so the first index after the repair
-            # reads the file properly.
-            if row["out"][0].get("parse_status") != MISSING_DEPENDENCY:
+            # Read without its reader library (an incomplete install) or
+            # without its tree-sitter grammar (offline first run): never
+            # reuse that, so the next index after the repair reads the
+            # file properly.
+            if row["out"][0].get("parse_status") not in (MISSING_DEPENDENCY, GRAMMAR_UNAVAILABLE):
                 stat_entries[rel_path] = [*stat_identity, INDEXED]
         adapt_lines.append(line)
         output = row["out"]
@@ -862,6 +866,8 @@ def write_index(root, ptr, *, full: bool = False):
             )
             # Recorded, but without text: the reader library is missing.
             unread = sum(f.get("parse_status") == MISSING_DEPENDENCY for f in files)
+            # Symbols missing: their grammar could not be downloaded.
+            no_grammar = sum(f.get("parse_status") == GRAMMAR_UNAVAILABLE for f in files)
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
                 # Nothing to publish, but the tree git sees may have
@@ -879,6 +885,7 @@ def write_index(root, ptr, *, full: bool = False):
                     "changes": changes,
                     "unindexable": skipped,
                     "missing_dependency": unread,
+                    "grammar_unavailable": no_grammar,
                 }
             progress("MIMRY: building graph", force=True)
             graph = _build_core_graph(
@@ -1018,6 +1025,7 @@ def write_index(root, ptr, *, full: bool = False):
                 "graph_engine": graph["engine"],
                 "semantic_chunks": semantic["chunks"],
                 "semantic_backend": semantic["backend"],
+                "grammar_unavailable": no_grammar,
             }
             atomic_write_json(staging / GENERATION_MANIFEST, manifest)
             fsync_tree(staging)
@@ -1068,4 +1076,5 @@ def write_index(root, ptr, *, full: bool = False):
         "changes": changes,
         "unindexable": skipped,
         "missing_dependency": unread,
+        "grammar_unavailable": no_grammar,
     }

@@ -762,13 +762,53 @@ def _callee_name(node: Any, source: bytes) -> str | None:
     return name
 
 
+GRAMMAR_UNAVAILABLE = "parse_error:GrammarUnavailable"
+
+
+class GrammarUnavailableError(RuntimeError):
+    """A tree-sitter grammar could not be downloaded in this process."""
+
+
+# Set by the first failed download. The pack would otherwise retry the
+# download for every file, each attempt waiting out the network first.
+_download_failed = False
+
+
+def _pack_grammar(getter: str, lang: str) -> Any:
+    """Call ``tree_sitter_language_pack.<getter>(lang)``.
+
+    This is the one grammar loader. After a DownloadError, every later
+    call in this process raises GrammarUnavailableError without trying
+    again. Other errors pass through.
+    """
+    global _download_failed
+    import tree_sitter_language_pack as pack
+
+    if _download_failed:
+        raise GrammarUnavailableError(lang)
+    try:
+        return getattr(pack, getter)(lang)
+    except pack.DownloadError as exc:
+        _download_failed = True
+        raise GrammarUnavailableError(lang) from exc
+
+
+def load_language(lang: str) -> Any:
+    """The tree-sitter Language for ``lang``."""
+    return _pack_grammar("get_language", lang)
+
+
+def load_parser(lang: str) -> Any:
+    """The pack's ready-made parser for ``lang``."""
+    return _pack_grammar("get_parser", lang)
+
+
 @functools.cache
 def _grammar(lang: str):
     """Parser and fact query for ``lang``, built once per process."""
     from tree_sitter import Parser, Query, QueryError
-    from tree_sitter_language_pack import get_language
 
-    language = get_language(lang)
+    language = load_language(lang)
     node_types = NODE_TYPES[lang]
     patterns = []
     for category in ("definitions", "imports", "calls"):
@@ -860,6 +900,14 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
         source = source.encode("utf-8")
         tree = parser.parse(source)
         root_node = tree.root_node
+    except GrammarUnavailableError:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": GRAMMAR_UNAVAILABLE,
+        }
     except Exception as exc:
         return {
             "definitions": [],

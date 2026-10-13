@@ -459,7 +459,18 @@ def _parser_check() -> dict[str, Any]:
     for language in ("python", "javascript"):
         try:
             parser = get_parser(language)
-        except Exception:
+        except Exception as exc:
+            # Matched by name: a stub pack may not define DownloadError.
+            if exc.__class__.__name__ == "DownloadError":
+                return _check(
+                    "parsers.tree_sitter",
+                    "error",
+                    "tree-sitter grammars could not be downloaded",
+                    "Check your network or proxy; MIMRY downloads each grammar once, "
+                    "on first use.",
+                    state="download_failed",
+                    language=language,
+                )
             return _check(
                 "parsers.tree_sitter",
                 "error",

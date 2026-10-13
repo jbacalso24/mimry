@@ -80,7 +80,7 @@ from .security import (
 )
 from .semantic import semantic_health, semantic_rows
 from .source_snippets import with_source_snippets
-from .state import StateLockTimeoutError, atomic_write_text
+from .state import StateLockTimeoutError, atomic_write_text, grammar_unavailable_count
 from .storage import (
     active_index_pointer,
     load_jsonl,
@@ -443,6 +443,19 @@ def _install_problem() -> str | None:
     return None
 
 
+def _print_grammar_warning(unavailable: int) -> None:
+    """One warning when files were indexed without symbols."""
+    if unavailable:
+        ui.warn(
+            f"{ui.count(unavailable, 'file')} indexed without symbols: tree-sitter"
+            " grammars could not be downloaded."
+        )
+        ui.detail(
+            "MIMRY downloads each grammar once, on first use. Check your network or proxy,"
+            " then run `mimry index`."
+        )
+
+
 def _print_index_result(
     root: Path, stats: dict, seconds: float, *, full: bool, verbose: bool = False
 ) -> None:
@@ -483,6 +496,7 @@ def _print_index_result(
             f"{ui.count(stats['missing_dependency'], 'PDF')} indexed without text: pypdf is"
             f" missing. Run `{_repair_command()}` to add it."
         )
+    _print_grammar_warning(stats.get("grammar_unavailable", 0))
     if verbose:
         ui.table(
             [
@@ -613,6 +627,7 @@ def _print_status(
             f"{ui.count(fresh['unindexable_count'], 'file')} skipped: may contain secrets or could"
             " not be read"
         )
+    _print_grammar_warning(grammar_unavailable_count(ptr))
     fixes = _print_problems(fresh, graph, semantic)
     if verbose:
         ui.table(
@@ -1409,6 +1424,12 @@ def cmd_preflight(a):
         ui.detail(f"{action} ({totals}, {ui.took(elapsed)})")
     elif fresh["state"] == "current" and graph["status"] == "current":
         ui.detail(f"Index is up to date ({totals}, indexed {ui.ago(ptr.get('lastIndexedAt'))})")
+    # Once per run: this run's count after a reindex, else the index's.
+    _print_grammar_warning(
+        stats.get("grammar_unavailable", 0)
+        if stats is not None
+        else grammar_unavailable_count(ptr)
+    )
     ui.detail(f"Context pack: {ui.display_path(pack_path, root)}")
     _print_index_note(fresh, graph)
     _print_results_section("Start with", rows[:5], verbose=getattr(a, "verbose", False))

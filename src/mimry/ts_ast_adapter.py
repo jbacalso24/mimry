@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .constants import EXPORT_RE, IMPORT_RE, REQUIRE_RE
+from .core.languages import GRAMMAR_UNAVAILABLE, GrammarUnavailableError, load_parser
 from .paths import stable_id
 from .security import is_text
 
@@ -180,11 +181,21 @@ def parse_ts_like(
     seen: set[tuple[str, str, int | None]] = set()
 
     try:
-        from tree_sitter_language_pack import get_parser
-
-        parser = get_parser(_language_for(ext))
+        parser = load_parser(_language_for(ext))
         tree = parser.parse(source)
         root_node = tree.root_node()
+    except GrammarUnavailableError:
+        fallback_symbols, fallback_edges = _fallback_symbols_regex(
+            source, file_record, path, extension=ext
+        )
+        return (
+            fallback_symbols,
+            fallback_edges,
+            imports,
+            exports,
+            GRAMMAR_UNAVAILABLE,
+            "js-ts-regex",
+        )
     except Exception:
         fallback_symbols, fallback_edges = _fallback_symbols_regex(
             source, file_record, path, extension=ext

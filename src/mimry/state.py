@@ -411,6 +411,21 @@ def scoped(key: tuple, compute: Callable[[], Any]) -> Any:
     return cache[key]
 
 
+def grammar_unavailable_count(pointer: dict[str, Any]) -> int:
+    """Files in the active generation indexed without their grammar.
+
+    0 when the manifest or the key is missing (indexes built before the
+    count was recorded) or unreadable.
+    """
+    try:
+        manifest, _ = load_json_state(Path(pointer["indexPath"]) / GENERATION_MANIFEST)
+    except (StateCorruptionError, OSError, KeyError):
+        return 0
+    stats = manifest.get("stats") if isinstance(manifest, dict) else None
+    count = stats.get("grammar_unavailable") if isinstance(stats, dict) else None
+    return count if isinstance(count, int) and count > 0 else 0
+
+
 def validate_generation(pointer: dict[str, Any]) -> None:
     """Validate that all state exposes one generation.
 

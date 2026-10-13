@@ -40,6 +40,8 @@ uv tool install mimry
 Requires Python 3.11 or newer on Windows, Linux or macOS.
 `pipx install mimry` and `pip install mimry` also work.
 
+The first index downloads the tree-sitter grammars it needs, once per user, and keeps them in a cache.
+
 > [!NOTE]
 > To upgrade, run `mimry upgrade`.
 > On Windows, `mimry upgrade` refuses while MIMRY servers run, and `mimry upgrade --stop-servers` stops them first.
