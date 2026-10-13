@@ -12,10 +12,15 @@
 
 <p align="center">
   <a href="https://pypi.org/project/mimry/"><img alt="PyPI" src="https://img.shields.io/pypi/v/mimry"></a>
+  <a href="https://github.com/jbacalso24/mimry"><img alt="GitHub stars" src="https://img.shields.io/github/stars/jbacalso24/mimry"></a>
   <a href="https://github.com/jbacalso24/mimry/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jbacalso24/mimry/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue">
   <a href="LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
   <a href="https://jbacalso24.github.io/mimry/"><img alt="Website" src="https://img.shields.io/badge/website-mimry-0b7285"></a>
+</p>
+
+<p align="center">
+  If MIMRY saves your agent tokens, please <a href="https://github.com/jbacalso24/mimry">star it on GitHub</a>.
 </p>
 
 MIMRY is a command-line tool that tells AI coding agents which files, and which lines in them, to read for a task.
