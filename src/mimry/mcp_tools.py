@@ -17,6 +17,7 @@ from mimry.commands import (
     INDEX_REBUILT_NOTE,
     _change_summary,
     _write_context_pack,
+    calls_payload,
     cmd_explain,
     cmd_init,
     cmd_path,
@@ -28,7 +29,7 @@ from mimry.commands import (
     require,
     symbol_matches,
 )
-from mimry.core.artifacts import graph_health
+from mimry.core.artifacts import CALL_DIRECTIONS, graph_health
 from mimry.digest import canonical_digest
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.freshness import index_freshness
@@ -577,13 +578,42 @@ def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8)
 @tool
 @_state_guard
 @_index_operation(refresh=True)
-def mimry_symbol(name: str, root: str | None = None) -> dict[str, Any]:
-    """Search indexed symbols by name, falling back to file names."""
+def mimry_symbol(
+    name: str,
+    root: str | None = None,
+    relations: str | None = None,
+    depth: int = 1,
+    file: str | None = None,
+) -> dict[str, Any]:
+    """Search indexed symbols by name, falling back to file names.
+
+    Set relations to "callers" (what calls the symbol) or "callees"
+    (what it calls), with depth 1 to 3 for how many calls away to
+    follow. file picks one symbol when several share the name. Without
+    relations this only searches.
+    """
     root_path = _root(root)
     name = sanitize_query(name)
+    if relations is None:
+        ptr = require(root_path)
+        matches = symbol_matches(ptr, name)
+        return sanitize_data({"name": name, "root": str(root_path), "symbols": matches})
+    if relations not in CALL_DIRECTIONS:
+        return {
+            "returncode": 2,
+            "error": {
+                "code": "invalid_relations",
+                "message": 'relations must be "callers" or "callees"',
+            },
+        }
+    if depth not in (1, 2, 3):
+        return {
+            "returncode": 2,
+            "error": {"code": "invalid_depth", "message": "depth must be 1, 2 or 3"},
+        }
     ptr = require(root_path)
-    matches = symbol_matches(ptr, name)
-    return sanitize_data({"name": name, "root": str(root_path), "symbols": matches})
+    payload = calls_payload(root_path, ptr, name, relations, depth, file)
+    return sanitize_data({**payload, "root": str(root_path)})
 
 
 @tool

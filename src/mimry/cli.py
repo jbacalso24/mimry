@@ -33,6 +33,8 @@ def build_parser():
         cmd_adapters,
         cmd_brief,
         cmd_cache_wipe,
+        cmd_callees,
+        cmd_callers,
         cmd_context,
         cmd_digest,
         cmd_explain,
@@ -309,6 +311,25 @@ def build_parser():
     s.add_argument("source")
     s.add_argument("target")
     s.set_defaults(func=cmd_path)
+    for relation, func in (("callers", cmd_callers), ("callees", cmd_callees)):
+        s = sub.add_parser(
+            relation,
+            help=f"List the functions that {'call' if relation == 'callers' else 'are called by'}"
+            " a function, from the graph",
+        )
+        s.add_argument("name")
+        s.add_argument(
+            "--depth",
+            type=int,
+            choices=(1, 2, 3),
+            default=1,
+            help="How many calls away to follow, 1 to 3 (default 1)",
+        )
+        s.add_argument(
+            "--file", help="Keep only the symbol defined in this file, when the name is shared"
+        )
+        s.add_argument("--json", action="store_true", help="Print the structured answer as JSON")
+        s.set_defaults(func=func)
     s = sub.add_parser("why", help="Explain why a file or symbol ranked for a task query")
     s.add_argument("surface")
     s.add_argument("--query", required=True)

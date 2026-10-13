@@ -67,6 +67,8 @@ mimry find "<query>"
 mimry find "<query>" --semantic
 mimry related "<query>"
 mimry symbol "<name>"
+mimry callers "<name>"
+mimry callees "<name>"
 mimry explain "<task>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"

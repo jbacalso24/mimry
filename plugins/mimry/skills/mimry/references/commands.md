@@ -15,6 +15,8 @@ mimry related "<query>"
 mimry symbol "<name>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
+mimry callers "<name>"
+mimry callees "<name>"
 mimry semantic "<query>"
 ```
 

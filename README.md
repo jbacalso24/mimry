@@ -223,6 +223,8 @@ MIMRY is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/)
 mimry preflight "<task>"            # list the files and lines to read first, and write a context pack
 mimry find "<query>"                # rank files for a query
 mimry symbol <name>                 # find where a function, class or heading is defined
+mimry callers <name>                # list the functions that call a function, from the graph
+mimry callees <name>                # list the functions a function calls, from the graph
 mimry related "<query>"             # list files connected through imports and calls
 mimry explain "<task>"              # show the key files and symbols, and how they connect
 mimry why <file> --query "<task>"   # explain why a file ranked

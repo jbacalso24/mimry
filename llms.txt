@@ -8,7 +8,7 @@ Agent workflow in a repo:
 
 1. `mimry preflight "<task>"` sets MIMRY up if needed and prints the files to read first.
 2. Read the context pack that preflight names (printed as `Context pack:`, returned as `context_path`), for example `.mimry/mimry-out/context/<task>-<hash>.md`: ranked files with reasons, key symbols, relationships, risky paths, and verification commands.
-3. Navigate with focused queries instead of exploring by grep: `mimry find "<query>"`, `mimry symbol <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`. For an exact string you already know, use `rg` (or `git grep`) directly.
+3. Navigate with focused queries instead of exploring by grep: `mimry find "<query>"`, `mimry symbol <name>`, `mimry callers <name>`, `mimry callees <name>`, `mimry related "<query>"`, `mimry explain "<task>"`, `mimry path <a> <b>`, `mimry why <file> --query "<task>"`. For an exact string you already know, use `rg` (or `git grep`) directly.
 4. Verify against real source, tests, and build output. MIMRY output is navigation, not proof.
 5. Record what helped: `mimry feedback --query "<task>" --opened <files> --changed <files> --verification "<result>" --outcome passed`.
 

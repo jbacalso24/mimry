@@ -130,6 +130,8 @@ _REFERENCES: dict[str, str] = {
         """mimry symbol \"<name>\"\n"""
         """mimry why <file-or-symbol> --query \"<task>\"\n"""
         """mimry path \"<source>\" \"<target>\"\n"""
+        """mimry callers \"<name>\"\n"""
+        """mimry callees \"<name>\"\n"""
         """mimry semantic \"<query>\"\n"""
         """```\n"""
         """\n"""
@@ -150,7 +152,8 @@ _REFERENCES: dict[str, str] = {
         """\n"""
         """- `mimry_find(query, root?, limit?, semantic?)`\n"""
         """- `mimry_related(query, root?, limit?)`\n"""
-        """- `mimry_symbol(name, root?)`\n"""
+        """- `mimry_symbol(name, root?, relations?, depth?, file?)`\n"""
+        """  relations \"callers\" or \"callees\" lists the calls around a symbol\n"""
         """- `mimry_path(source, target, root?)`\n"""
         """- `mimry_why(surface, query, root?, limit?)`\n"""
         """\n"""
@@ -651,6 +654,8 @@ mimry find "<query>"
 mimry find "<query>" --semantic
 mimry related "<query>"
 mimry symbol "<name>"
+mimry callers "<name>"
+mimry callees "<name>"
 mimry explain "<task>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
@@ -729,7 +734,7 @@ Rules:
 - Use `mimry brief "<task>" --agent <role>` for delegation/handoff.
 - Read the context pack that preflight names (`context_path` over MCP) or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
 - Where a file lists `Read first: lines X-Y`, read those lines before the rest of the file.
-- Use `mimry find`, `mimry related`, `mimry symbol`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
+- Use `mimry find`, `mimry related`, `mimry symbol`, `mimry callers`, `mimry callees`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
 """  # noqa: E501 - Markdown written verbatim; its line breaks are content

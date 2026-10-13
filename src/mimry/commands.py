@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 import re
 import shutil
@@ -26,6 +27,9 @@ from .cache_safety import (
 from .commit_feedback import record_commit_feedback
 from .constants import SCHEMA_VERSION
 from .core.artifacts import (
+    CALLS_NOTE,
+    call_lookup,
+    empty_call_payload,
     graph_health,
     load_graph,
     relationship_edges,
@@ -2050,6 +2054,101 @@ def cmd_path(a):
         ui.detail(f"{ui.quote(query)} matched {found}")
     ui.detail(f'Try `mimry related "{source}"` to see what it connects to.')
     return 0
+
+
+def calls_payload(
+    root: Path, ptr: dict, name: str, relation: str, depth: int, file: str | None
+) -> dict:
+    """The callers or callees answer, shared by the CLI and MCP. Checks
+    graph health first, as ``mimry path`` does."""
+    _fresh, health = _index_and_graph_health(root, ptr)
+    if health["status"] != "current":
+        payload = empty_call_payload(name, relation, depth)
+        payload["error"] = {
+            "code": "graph_not_current",
+            "message": f"The graph files are {health['status']}, so calls can't be checked",
+        }
+        return payload
+    return call_lookup(load_graph(root), name, relation, depth, file)
+
+
+def _location(path: str, line) -> str:
+    return f"{path}:{line}" if line else path
+
+
+@_fresh_index
+@_index_reader
+def cmd_callers(a):
+    return _print_calls(a, "callers")
+
+
+@_fresh_index
+@_index_reader
+def cmd_callees(a):
+    return _print_calls(a, "callees")
+
+
+def _print_calls(a, relation: str) -> int:
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    name = sanitize_query(a.name)
+    file = sanitize_query(a.file) if a.file else None
+    payload = calls_payload(root, ptr, name, relation, a.depth, file)
+    if getattr(a, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    if "error" in payload:
+        ui.warn(payload["error"]["message"])
+        ui.detail("Run `mimry refresh`, then try again.")
+        return 0
+    target = payload["target"]
+    if target is None:
+        if payload["ambiguous"]:
+            print(f"Several symbols are named {ui.quote(name)}; add --file <path> to pick one.")
+            ui.table(
+                [
+                    (c["name"], c["kind"], _location(c["path"], c["line"]))
+                    for c in payload["candidates"]
+                ],
+                indent=4,
+            )
+            return 0
+        where = f"in {file}" if file else "in the graph"
+        print(f"No function or method named {ui.quote(name)} is {where}.")
+        if payload["candidates"]:
+            ui.detail("Did you mean:")
+            ui.table(
+                [(c["name"], _location(c["path"], c["line"])) for c in payload["candidates"]],
+                indent=4,
+            )
+        return 0
+    results = payload["results"]
+    if not results:
+        if relation == "callers":
+            print(f"Nothing in the graph calls {name}.")
+        else:
+            print(f"{name} calls nothing in the graph.")
+        return 0
+    noun = "caller" if relation == "callers" else "callee"
+    within = f" within {a.depth} calls" if a.depth > 1 else ""
+    ui.title(
+        f"{ui.count(len(results), noun)} of {name}{within}"
+        f" ({_location(target['path'], target['line'])})"
+    )
+    for path, group in itertools.groupby(results, key=lambda r: r["path"]):
+        print()
+        ui.detail(path)
+        ui.table([_call_row(r, a.depth) for r in group], indent=4)
+    print()
+    ui.detail(ui.faint(CALLS_NOTE))
+    return 0
+
+
+def _call_row(result: dict, depth: int) -> tuple:
+    cells = [result["name"], result["kind"], f":{result['line']}" if result["line"] else ""]
+    if depth > 1:
+        cells.append("direct" if result["depth"] == 1 else f"{result['depth']} calls away")
+    return tuple(cells)
 
 
 @_index_reader

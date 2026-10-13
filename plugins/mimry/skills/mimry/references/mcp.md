@@ -11,7 +11,8 @@ Navigation and explanation tools:
 
 - `mimry_find(query, root?, limit?, semantic?)`
 - `mimry_related(query, root?, limit?)`
-- `mimry_symbol(name, root?)`
+- `mimry_symbol(name, root?, relations?, depth?, file?)`
+  relations "callers" or "callees" lists the calls around a symbol
 - `mimry_path(source, target, root?)`
 - `mimry_why(surface, query, root?, limit?)`
 

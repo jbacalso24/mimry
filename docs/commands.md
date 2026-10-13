@@ -16,6 +16,8 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry context "<task>"` | Write a context pack without the preflight checks |
 | `mimry explain "<task>"` | Files, key symbols, and how they connect |
 | `mimry path <a> <b>` | Shortest relationship path between two files or symbols |
+| `mimry callers <name>` | Functions that call a function, from the graph (`--depth` follows the chain up to 3 calls, `--file` picks one of several, `--json` for tools) |
+| `mimry callees <name>` | Functions that a function calls, with the same options |
 | `mimry why <file> --query "<task>"` | Why a file ranks for a query |
 | `mimry route "<task>"` | Recommend an agent role (`--json` for tools) |
 | `mimry brief "<task>" --agent <role>` | Write a role-specific brief |

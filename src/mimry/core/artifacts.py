@@ -442,6 +442,132 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
     }
 
 
+CALL_DIRECTIONS = ("callers", "callees")
+CALLS_NOTE = (
+    "Calls are matched by name, so dynamic calls (callbacks, decorators,"
+    " reflection) can be missing."
+)
+# ponytail: substring match, not fuzzy; rank it if the hints miss.
+_SIMILAR_LIMIT = 5
+
+
+def call_relations(graph: dict, target_ids: set[str], direction: str, depth: int) -> list[dict]:
+    """Symbols that call the targets (``callers``) or that they call
+    (``callees``), following ``calls`` edges breadth-first up to
+    ``depth``.
+
+    Returns ``{"node": node, "depth": hops}`` for each symbol, at its
+    shallowest depth. A symbol is reported once, and the targets are
+    never reported, even when a cycle leads back to them.
+    """
+    if direction not in CALL_DIRECTIONS:
+        raise ValueError(f"direction must be callers or callees, not {direction!r}")
+    nodes = {str(n["id"]): n for n in graph.get("nodes") or [] if n.get("id") is not None}
+    adjacency: dict[str, list[str]] = defaultdict(list)
+    for edge in graph.get("links") or graph.get("edges") or []:
+        source, target = _edge_endpoints(edge)
+        if not source or not target or _edge_relation(edge) != "calls":
+            continue
+        if direction == "callers":
+            adjacency[target].append(source)
+        else:
+            adjacency[source].append(target)
+    seen = set(target_ids)
+    frontier = sorted(target_ids)
+    found: list[dict] = []
+    for hop in range(1, depth + 1):
+        reached = {
+            other
+            for node_id in frontier
+            for other in adjacency.get(node_id, ())
+            if other not in seen and other in nodes
+        }
+        frontier = sorted(reached)
+        if not frontier:
+            break
+        seen.update(frontier)
+        found.extend({"node": nodes[node_id], "depth": hop} for node_id in frontier)
+    return found
+
+
+def _symbol_label(node: dict) -> str:
+    return str(node.get("label") or node.get("id"))
+
+
+def _symbol_row(node: dict) -> dict:
+    return {
+        "name": _symbol_label(node),
+        "kind": node.get("kind"),
+        "path": node_source_file(node) or "",
+        "line": node.get("line"),
+    }
+
+
+def empty_call_payload(name: str, relation: str, depth: int) -> dict:
+    return {
+        "name": name,
+        "relation": relation,
+        "depth": depth,
+        "target": None,
+        "results": [],
+        "candidates": [],
+        "ambiguous": False,
+        "note": CALLS_NOTE,
+    }
+
+
+def call_lookup(
+    graph: dict, name: str, relation: str, depth: int, file: str | None = None
+) -> dict:
+    """The answer to ``mimry callers`` / ``mimry callees`` for one name.
+
+    ``name`` must resolve to exactly one symbol, narrowed by ``file``.
+    When several share it, ``ambiguous`` is set and ``candidates`` lists
+    them. When none does, ``candidates`` holds symbols whose name
+    contains ``name`` case-insensitively.
+    """
+    payload = empty_call_payload(name, relation, depth)
+    wanted_file = file.replace("\\", "/") if file else None
+    symbols = [n for n in graph.get("nodes") or [] if n.get("type") == "symbol"]
+
+    def in_file(node: dict) -> bool:
+        if wanted_file is None:
+            return True
+        src = node_source_file(node) or ""
+        return src == wanted_file or src.endswith("/" + wanted_file)
+
+    def by_location(row: dict) -> tuple:
+        return (row["path"], row["line"] or 0, row["name"])
+
+    targets = [n for n in symbols if _symbol_label(n) == name and in_file(n)]
+    if len(targets) > 1:
+        payload["ambiguous"] = True
+        payload["candidates"] = sorted((_symbol_row(n) for n in targets), key=by_location)
+        return payload
+    if not targets:
+        needle = name.lower()
+        similar = [n for n in symbols if needle in _symbol_label(n).lower()]
+        payload["candidates"] = sorted((_symbol_row(n) for n in similar), key=by_location)[
+            :_SIMILAR_LIMIT
+        ]
+        return payload
+
+    target = targets[0]
+    payload["target"] = _symbol_row(target)
+    hits = call_relations(graph, {str(target["id"])}, relation, depth)
+    rows = [{**_symbol_row(hit["node"]), "depth": hit["depth"]} for hit in hits]
+    # Files with the most results first, then by path; inside a file by
+    # depth, then line.
+    per_file: dict[str, int] = defaultdict(int)
+    for row in rows:
+        per_file[row["path"]] += 1
+    payload["results"] = sorted(
+        rows,
+        key=lambda r: (-per_file[r["path"]], r["path"], r["depth"], r["line"] or 0, r["name"]),
+    )
+    return payload
+
+
 def _exact_surface_matches(nodes: list[dict], query: str) -> list[dict]:
     """Nodes whose id or label is ``query``.
 
