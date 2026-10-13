@@ -83,6 +83,7 @@ from .source_snippets import with_source_snippets
 from .state import StateLockTimeoutError, atomic_write_text, grammar_unavailable_count
 from .storage import (
     active_index_pointer,
+    copied_folder_lines,
     load_jsonl,
     load_pointer,
     load_root_registry,
@@ -170,12 +171,7 @@ def cmd_init(a):
     if existing:
         recorded_root = Path(existing["rootPath"]).expanduser().resolve(strict=False)
         if recorded_root != root:
-            ui.fail(
-                "This .mimry folder was copied from another location",
-                f"It belongs to:  {recorded_root}",
-                f"This folder:    {root}",
-                "Delete the .mimry folder here, then run `mimry init` again.",
-            )
+            ui.fail(*copied_folder_lines(recorded_root, root))
             return 2
         # Reconcile stale path/root-ID aliases in the global registry
         # from the authoritative root-local pointer.

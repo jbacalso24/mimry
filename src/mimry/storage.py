@@ -25,6 +25,25 @@ from .state import (
     validate_generation,
 )
 
+COPIED_FOLDER_HEADLINE = "This .mimry folder was copied from another location"
+
+
+def copied_folder_lines(recorded_root: Path, current_root: Path) -> tuple[str, ...]:
+    """Headline and detail lines for a copied folder."""
+    return (
+        COPIED_FOLDER_HEADLINE,
+        f"It belongs to:  {recorded_root}",
+        f"This folder:    {current_root}",
+        "Delete the .mimry folder here, then run `mimry init` again.",
+    )
+
+
+def copied_folder_sentence(recorded_root: Path, current_root: Path) -> str:
+    """Sentence form of copied_folder_lines, for MCP and stderr."""
+    return (
+        f"{COPIED_FOLDER_HEADLINE}. It belongs to {recorded_root}. This folder is {current_root}."
+    )
+
 
 class RootIdentityError(RuntimeError):
     """A root-local pointer opened from a different filesystem root."""
@@ -32,10 +51,7 @@ class RootIdentityError(RuntimeError):
     def __init__(self, recorded_root: Path, current_root: Path):
         self.recorded_root = recorded_root
         self.current_root = current_root
-        super().__init__(
-            "MIMRY pointer belongs to a different root; refusing shared-cache access. "
-            f"Recorded root: {recorded_root}. Current root: {current_root}."
-        )
+        super().__init__(copied_folder_sentence(recorded_root, current_root))
 
 
 def _recovery_notice(path: Path) -> None:

@@ -17,10 +17,10 @@ import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
 from mimry import state
-from mimry.commands import cmd_cache_wipe, cmd_feedback
+from mimry.commands import cmd_cache_wipe, cmd_feedback, cmd_preflight
 from mimry.freshness import index_freshness
 from mimry.indexer import _cleanup_generations, write_index
-from mimry.mcp_tools import mimry_find
+from mimry.mcp_tools import _capture_command, mimry_find, mimry_preflight
 from mimry.paths import idx_path
 from mimry.storage import (
     active_index_pointer,
@@ -203,16 +203,77 @@ def test_copied_pointer_blocks_index_preflight_and_mcp_without_mutating_original
     for command in (("index",), ("preflight", "copied root must fail closed"), ("status",)):
         refused = run_cli(copied, cache, *command)
         assert refused.returncode == 2
-        assert "x This .mimry folder belongs to a different location" in refused.stderr
+        assert "x This .mimry folder was copied from another location" in refused.stderr
         assert "Traceback" not in refused.stderr
 
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     payload = mimry_find("auth", str(copied))
     assert payload["returncode"] == 2
     assert payload["error"]["code"] == "root_identity_mismatch"
+    assert payload["recommended"] == (
+        f"Delete the .mimry folder in {copied.resolve()}, then run `mimry init`"
+        " (or mimry_preflight) there."
+    )
     assert (repo / ".mimry" / "pointer.json").read_bytes() == original_pointer
     after_status = run_cli(repo, cache, "status")
     assert after_status.returncode == 0, after_status.stderr
+
+
+def test_copied_folder_prints_init_wording_in_every_command(tmp_path: Path):
+    repo, cache = _initialized_repo(tmp_path)
+    copied = tmp_path / "copied-repo"
+    shutil.copytree(repo, copied)
+    init_block = "\n".join(
+        [
+            "x This .mimry folder was copied from another location",
+            f"  It belongs to:  {repo.resolve()}",
+            f"  This folder:    {copied.resolve()}",
+            "  Delete the .mimry folder here, then run `mimry init` again.",
+        ]
+    )
+
+    for command in (
+        ("index",),
+        ("preflight", "copied root must explain itself"),
+        ("status",),
+        ("init", "--skip-graph"),
+    ):
+        refused = run_cli(copied, cache, *command)
+        assert refused.returncode == 2, command
+        assert init_block in refused.stderr, command
+        assert "refusing shared-cache access" not in refused.stdout + refused.stderr, command
+        assert "Traceback" not in refused.stderr, command
+
+
+def test_copied_folder_mcp_preflight_recommends_init_in_current_root(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    copied = tmp_path / "copied-repo"
+    shutil.copytree(repo, copied)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    payload = mimry_preflight("copied root must explain itself", str(copied))
+
+    assert payload["returncode"] == 2
+    assert payload["error"]["code"] == "root_identity_mismatch"
+    assert payload["error"]["current_root"] == str(copied.resolve())
+    assert payload["error"]["message"] == (
+        "This .mimry folder was copied from another location. "
+        f"It belongs to {repo.resolve()}. This folder is {copied.resolve()}."
+    )
+    assert payload["recommended"] == (
+        f"Delete the .mimry folder in {copied.resolve()}, then run `mimry init`"
+        " (or mimry_preflight) there."
+    )
+
+    captured = _capture_command(
+        cmd_preflight,
+        SimpleNamespace(
+            root=str(copied), task="copied root must explain itself", force_refresh=False
+        ),
+    )
+    assert captured["error"]["code"] == "root_identity_mismatch"
+    assert captured["stderr"] == f"{payload['error']['message']}\n"
+    assert captured["recommended"] == payload["recommended"]
 
 
 def test_roots_labels_missing_and_duplicate_root_ids_without_repairing_registry(tmp_path: Path):

@@ -507,7 +507,7 @@ def main(argv=None):
         StateLockTimeoutError,
         UnsupportedIndexSchemaError,
     )
-    from .storage import RootIdentityError
+    from .storage import RootIdentityError, copied_folder_lines
 
     _configure_console()
     a = build_parser().parse_args(argv)
@@ -532,7 +532,7 @@ def main(argv=None):
     except StateLockTimeoutError as exc:
         ui.fail("Another MIMRY command is still using this index", str(exc))
     except RootIdentityError as exc:
-        ui.fail("This .mimry folder belongs to a different location", str(exc))
+        ui.fail(*copied_folder_lines(exc.recorded_root, exc.current_root))
     except IndexOutsideCacheError as exc:
         ui.fail("This repo's index is in another MIMRY cache", str(exc))
     except PlanError as exc:

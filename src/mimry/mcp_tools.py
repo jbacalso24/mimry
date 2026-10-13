@@ -127,6 +127,13 @@ def _state_error_payload(exc: StateCorruptionError, *, root: Path | None = None)
     }
 
 
+def _root_identity_recommended(exc: RootIdentityError) -> str:
+    return (
+        f"Delete the .mimry folder in {exc.current_root}, then run `mimry init`"
+        " (or mimry_preflight) there."
+    )
+
+
 def _state_guard(func):
     """One structured corruption envelope for direct/protocol calls."""
 
@@ -195,10 +202,7 @@ def _state_guard(func):
                         "recorded_root": str(exc.recorded_root),
                         "current_root": str(exc.current_root),
                     },
-                    "recommended": (
-                        "Do not share one root ID/cache across copied roots; initialize a distinct"
-                        " root."
-                    ),
+                    "recommended": _root_identity_recommended(exc),
                 }
             )
 
@@ -232,7 +236,7 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
             payload.update({"stdout": stdout.getvalue(), "stderr": stderr.getvalue()})
             return sanitize_data(payload)
         except RootIdentityError as exc:
-            print(f"MIMRY root identity error: {exc}", file=sys.stderr)
+            print(str(exc), file=sys.stderr)
             return sanitize_data(
                 {
                     "returncode": 2,
@@ -244,6 +248,7 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
                         "recorded_root": str(exc.recorded_root),
                         "current_root": str(exc.current_root),
                     },
+                    "recommended": _root_identity_recommended(exc),
                 }
             )
     return sanitize_data(
