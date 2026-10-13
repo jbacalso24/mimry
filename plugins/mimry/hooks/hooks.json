@@ -1,0 +1,57 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Glob|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx",
+            "args": [
+              "--from",
+              "mimry==0.3.1",
+              "mimry",
+              "hook-check"
+            ]
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx",
+            "args": [
+              "--from",
+              "mimry==0.3.1",
+              "mimry",
+              "hook-refresh"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx",
+            "args": [
+              "--from",
+              "mimry==0.3.1",
+              "mimry",
+              "hook-refresh"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

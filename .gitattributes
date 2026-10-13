@@ -7,3 +7,8 @@ tests/fixtures/** text eol=lf
 
 # makepkg reads PKGBUILD and its scripts as shell; CRLF breaks them.
 packaging/aur/** text eol=lf
+
+# The Claude Code plugin is generated and compared byte-for-byte by
+# tests/test_plugin.py, so keep it LF on every platform.
+plugins/** text eol=lf
+.claude-plugin/** text eol=lf

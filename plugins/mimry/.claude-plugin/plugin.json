@@ -1,0 +1,12 @@
+{
+  "name": "mimry",
+  "version": "0.3.1",
+  "description": "Modular Intelligence Memory for Repos",
+  "homepage": "https://github.com/jbacalso24/mimry",
+  "repository": "https://github.com/jbacalso24/mimry",
+  "license": "MIT",
+  "author": {
+    "name": "Judison Bacalso",
+    "url": "https://github.com/jbacalso24"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mimry": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "mimry==0.3.1",
+        "mimry-mcp"
+      ]
+    }
+  }
+}

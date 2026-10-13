@@ -44,6 +44,18 @@ Requires Python 3.11 or newer on Windows, Linux or macOS.
 > To upgrade, run `mimry upgrade`.
 > On Windows, `mimry upgrade` refuses while MIMRY servers run, and `mimry upgrade --stop-servers` stops them first.
 
+### Claude Code plugin
+
+In Claude Code, the plugin gives the agent the MIMRY skill, the hooks and the MCP server in one step.
+It needs `uv` on your PATH and nothing else.
+
+```text
+/plugin marketplace add jbacalso24/mimry
+/plugin install mimry@mimry
+```
+
+It replaces `mimry install --platform claude-code`, so use one or the other.
+
 ## Quick start
 
 Run `mimry preflight` in your repository with a task description.

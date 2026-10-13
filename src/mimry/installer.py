@@ -568,12 +568,20 @@ def skill_body(platform_key: str) -> str:
             "Agent Skills: generic cross-framework skill install. Use the same MIMRY-first"
             " workflow even when the host has no native hooks."
         ),
+        "claude-code-plugin": (
+            "Claude Code plugin: this skill came with the MIMRY Claude Code plugin. The MIMRY"
+            " tools are loaded through MCP, so prefer them. The `mimry` command may not be"
+            " installed; when it isn't, run CLI commands as"
+            f" `uvx --from mimry=={__version__} mimry <command>`."
+        ),
     }
-    note = platform_notes.get(
-        platform_key,
-        f"{platforms()[platform_key].label}: platform-specific MIMRY skill install using this"
-        " host's skill directory convention.",
-    )
+    if platform_key in platform_notes:
+        note = platform_notes[platform_key]
+    else:
+        note = (
+            f"{platforms()[platform_key].label}: platform-specific MIMRY skill install using"
+            " this host's skill directory convention."
+        )
     return f"""---
 name: mimry
 description: Use local repo memory at the start of every repo task instead of exploring by grep. Run preflight, read context packs, query indexed files/symbols/relationships, explain rankings, and record feedback after verified work. For an exact string already known, rg or git grep is fine.
@@ -825,13 +833,28 @@ def _always_on_current(root: Path, cfg: MimryPlatform) -> bool:
     return _same_text("\n".join(lines[start:end]), always_on_body())
 
 
-# The MIMRY subcommand each hook event runs. Status checks all three,
-# so an install from before the refresh hooks needs repair.
-_HOOK_SUBCOMMANDS = {
-    "PreToolUse": "hook-check",
-    "SessionStart": "hook-refresh",
-    "PostToolUse": "hook-refresh",
-}
+def hook_table(platform_key: str) -> dict[str, tuple[str, str, bool]]:
+    """Each MIMRY hook event -> (matcher, subcommand, in background).
+
+    The reminder runs before search tools. The refresh runs in the
+    background when a session starts and after each file edit, so the
+    index is current before the agent's next query. The installed hooks
+    and the Claude Code plugin's hooks.json are both built from this
+    table, so they cannot drift apart.
+    """
+    if platform_key == "codex":
+        search, edit = "Bash", "apply_patch|Edit|Write"
+    else:
+        # Grep and Glob are Claude Code's search tools; Bash covers
+        # shelled-out grep/rg. Reads never trigger the reminder.
+        search, edit = "Bash|Glob|Grep", "Edit|Write|MultiEdit|NotebookEdit"
+    return {
+        # Status checks all three events, so an install from before the
+        # refresh hooks needs repair.
+        "PreToolUse": (search, "hook-check", False),
+        "SessionStart": ("startup|resume", "hook-refresh", True),
+        "PostToolUse": (edit, "hook-refresh", True),
+    }
 
 
 def _event_entries(hooks: dict, event: str) -> list:
@@ -850,7 +873,7 @@ def _has_hook(root: Path, cfg: MimryPlatform) -> bool:
             _is_mimry_hook(entry) and sub in str(entry).lower()
             for entry in _event_entries(hooks, event)
         )
-        for event, sub in _HOOK_SUBCOMMANDS.items()
+        for event, (_, sub, _) in hook_table(cfg.key).items()
     )
 
 
@@ -917,31 +940,14 @@ def _hook_command(subcommand: str = "hook-check") -> str:
 
 
 def _mimry_hook_entries(cfg: MimryPlatform) -> dict[str, dict]:
-    """The MIMRY entry for each hook event, keyed by event name.
-
-    The reminder runs before search tools. The refresh runs in the
-    background when a session starts and after each file edit, so the
-    index is current before the agent's next query.
-    """
-    if cfg.key == "codex":
-        search, edit = "Bash", "apply_patch|Edit|Write"
-    else:
-        search, edit = "Bash|Glob|Grep", "Edit|Write|MultiEdit|NotebookEdit"
-
-    def refresh(matcher: str) -> dict:
-        handler = {"type": "command", "command": _hook_command("hook-refresh"), "async": True}
-        return {"matcher": matcher, "hooks": [handler]}
-
-    return {
-        # Grep and Glob are Claude Code's search tools; Bash covers
-        # shelled-out grep/rg. Reads never trigger the reminder.
-        "PreToolUse": {
-            "matcher": search,
-            "hooks": [{"type": "command", "command": _hook_command()}],
-        },
-        "SessionStart": refresh("startup|resume"),
-        "PostToolUse": refresh(edit),
-    }
+    """The MIMRY entry for each hook event, keyed by event name."""
+    entries = {}
+    for event, (matcher, sub, background) in hook_table(cfg.key).items():
+        handler = {"type": "command", "command": _hook_command(sub)}
+        if background:
+            handler["async"] = True
+        entries[event] = {"matcher": matcher, "hooks": [handler]}
+    return entries
 
 
 def _run_agent_cli(binary: str, args: list[str]) -> tuple[int, str]:
@@ -1451,6 +1457,23 @@ def uninstall_skill(
     return True
 
 
+def _plugin_installed() -> bool:
+    """True when Claude Code lists the MIMRY plugin as installed.
+
+    Reads Claude Code's installed-plugin list. Any read or parse error
+    means the plugin is not installed.
+    """
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(config_dir) if config_dir else _home() / ".claude"
+    try:
+        listing = base / "plugins" / "installed_plugins.json"
+        data = json.loads(listing.read_text(encoding="utf-8"))
+        plugins = data["plugins"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return isinstance(plugins, dict) and any(str(key).startswith("mimry@") for key in plugins)
+
+
 def cmd_install(a) -> int:
     if getattr(a, "list_platforms", False):
         print(platform_table(verbose=getattr(a, "verbose", False)))
@@ -1464,6 +1487,13 @@ def cmd_install(a) -> int:
         )
     if getattr(a, "status", False):
         return install_status_with_code(a.platform, project=a.project, root=Path(a.root))[1]
+    if not a.project and canonical_platform(a.platform) == "claude-code" and _plugin_installed():
+        ui.warn("The MIMRY Claude Code plugin is installed")
+        ui.detail(
+            "It already gives Claude Code the skill, hooks and MCP server. Installing both"
+            " runs every hook twice. Uninstall one of them."
+        )
+        return 1
     install_skill(
         a.platform,
         project=a.project,

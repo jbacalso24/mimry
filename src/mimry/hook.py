@@ -218,6 +218,15 @@ def broad_search_query(tool_name: str, tool_input: dict, command: str) -> str | 
 
 
 def nudge(query: str) -> str:
+    # The Claude Code plugin runs this hook with CLAUDE_PLUGIN_ROOT set,
+    # and its MIMRY tools are MCP tools, so name the tool rather than
+    # a CLI command the user may not have installed.
+    if os.environ.get("CLAUDE_PLUGIN_ROOT"):
+        return (
+            f'MIMRY can answer this: call the mimry_find tool with query "{query}"'
+            " to rank the files and the lines to read first. For an exact identifier or"
+            " string, `rg` is fine."
+        )
     return (
         f'MIMRY can answer this: run `mimry find "{query}"` to rank the files'
         " and the lines to read first. For an exact identifier or string,"
