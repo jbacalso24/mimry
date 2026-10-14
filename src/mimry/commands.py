@@ -2207,9 +2207,16 @@ def _print_calls(a, relation: str) -> int:
     results = payload["results"]
     if not results:
         if relation == "callers":
-            print(f"Nothing in the graph calls {name}.")
+            print(
+                f"No static callers of {name} found. Calls through imports MIMRY could not"
+                " resolve, and dynamic calls, are not tracked; search the code before"
+                " treating it as unused."
+            )
         else:
-            print(f"{name} calls nothing in the graph.")
+            print(
+                f"No static callees of {name} found. Calls through imports MIMRY could not"
+                " resolve, and dynamic calls, are not tracked."
+            )
         return 0
     noun = "caller" if relation == "callers" else "callee"
     within = f" within {a.depth} calls" if a.depth > 1 else ""

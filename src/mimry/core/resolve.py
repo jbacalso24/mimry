@@ -3,10 +3,12 @@ from __future__ import annotations
 import posixpath
 
 from .languages import language_for
+from .tsconfig import resolve_ts_alias
 
 SYMBOL_KIND_PRIORITY = {"class": 0, "interface": 1, "function": 2, "method": 3, "sql_table": 4}
 
 _JS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
+_TS_ALIAS_LANGUAGES = frozenset(("typescript", "tsx", "javascript"))
 
 
 # Languages whose quoted and angle includes follow the C rules.
@@ -51,6 +53,7 @@ def resolve_imports(
     overrides: dict[str, str] | None = None,
     dart_packages: dict[str, list[str]] | None = None,
     go_modules: dict[str, list[str]] | None = None,
+    ts_paths: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Resolve import strings to repo-relative target files.
 
@@ -65,6 +68,8 @@ def resolve_imports(
         go_modules: Go module path to the directories of the go.mod
             files that declare it. A Go import names a package, so it
             can link to one result per .go file in that package.
+        ts_paths: Effective tsconfig/jsconfig alias table per config
+            folder, from tsconfig.build_ts_paths.
 
     Returns:
         Sorted list of {"importer": str, "target": str,
@@ -106,6 +111,7 @@ def resolve_imports(
                     overrides,
                     package_roots,
                     dart_packages,
+                    ts_paths=ts_paths,
                 )
                 targets = [target] if target else []
             for target in targets:
@@ -131,6 +137,7 @@ def _resolve_import(
     overrides: dict[str, str] | None = None,
     package_roots: dict | None = None,
     dart_packages: dict[str, list[str]] | None = None,
+    ts_paths: dict[str, dict] | None = None,
 ) -> dict | None:
     """Try to resolve a single import against available paths.
 
@@ -202,6 +209,13 @@ def _resolve_import(
     # form.
     if "/" not in module and "." not in module and importer.endswith(".py"):
         result = _rule2_dotted_absolute(module, rel_paths, package_roots)
+        if result:
+            return result
+
+    # tsconfig/jsconfig path aliases and baseUrl, through the nearest
+    # config. A hit is exact, so it beats the suffix guess below.
+    if ts_paths and language in _TS_ALIAS_LANGUAGES:
+        result = resolve_ts_alias(importer, module, rel_paths, ts_paths)
         if result:
             return result
 
@@ -784,6 +798,7 @@ def resolve_calls(
                     methods,
                     imports_by_importer,
                     enclosing_class,
+                    qualifier=call.get("qualifier"),
                 )
                 if target_info:
                     break
@@ -867,6 +882,7 @@ def _resolve_call_candidate(
     methods: set[int],
     imports_by_importer: dict[str, set],
     enclosing_class: dict | None,
+    qualifier: str | None = None,
 ) -> dict | None:
     """Resolve a name used at a call site, by scope.
 
@@ -878,7 +894,10 @@ def _resolve_call_candidate(
     3. A module-level symbol of exactly one imported file. When the
        imported file is a package __init__ that does not define the
        name, the one file it imports is followed (one level of
-       re-export, e.g. `from .core import Engine`).
+       re-export, e.g. `from .core import Engine`). When several
+       imported files define it and the call is `qualifier.name(...)`,
+       the one whose module name is the qualifier wins, so
+       `service.create()` picks service.py.
     4. A method of the caller's file.
     5. A method of exactly one imported file.
 
@@ -906,6 +925,10 @@ def _resolve_call_candidate(
                 definers.update(
                     target for target in imports_by_importer.get(path, ()) if module_level(target)
                 )
+    if len(definers) > 1 and qualifier:
+        named_for_qualifier = {path for path in definers if _module_name(path) == qualifier}
+        if len(named_for_qualifier) == 1:
+            definers = named_for_qualifier
     if len(definers) == 1:
         path = next(iter(definers))
         return _found(path, module_level(path), "INFERRED")
@@ -919,6 +942,15 @@ def _resolve_call_candidate(
         path = next(iter(method_files))
         return _found(path, named(path), "INFERRED")
     return None
+
+
+def _module_name(path: str) -> str:
+    """The name a file is imported by: its stem, or its folder for
+    __init__.py."""
+    folder, _, name = path.rpartition("/")
+    if name == "__init__.py":
+        return folder.rpartition("/")[2]
+    return posixpath.splitext(name)[0]
 
 
 def _found(path: str, symbols: list[dict], confidence: str) -> dict:

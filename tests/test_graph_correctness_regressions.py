@@ -87,7 +87,9 @@ def test_python_parent_relative_import_resolves_from_declared_level(
     )
 
     adapted = adapt(root / "pkg/sub/mod.py", root)
-    assert adapted[3] == ["..util"]
+    # `..util.f` is the submodule form of `from ..util import f`; the
+    # resolver drops it unless `f` is a file.
+    assert adapted[3] == ["..util", "..util.f"]
 
     write_index(root, pointer)
     published = load_pointer(root)

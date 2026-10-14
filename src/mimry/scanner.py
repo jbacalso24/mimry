@@ -23,6 +23,7 @@ from .core.documents import (
 )
 from .core.languages import EXTENSION_LANGUAGE, is_objc_header
 from .core.languages import extract as extract_language
+from .core.tsconfig import CONFIG_NAMES, parse_tsconfig
 from .framework_adapters import (
     alembic_migration,
     enrich_framework_facts,
@@ -696,6 +697,12 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
         module = re.search(r"^module\s+[\"'`]?([^\s\"'`]+)", data_decoded, re.MULTILINE)
         if module:
             references["go_module"] = module.group(1)
+    if posixpath.basename(rel_path) in CONFIG_NAMES:
+        # Path aliases, for resolving `@/x` style imports. A config that
+        # does not parse is skipped, as if absent.
+        ts_config = parse_tsconfig(data_decoded)
+        if ts_config is not None:
+            references["ts_config"] = ts_config
     if ext not in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".bin", ".o", ".exe", ".dll", ".so"}:
         try:
             table_refs = sql_table_references(data_decoded)
@@ -706,19 +713,22 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
 
 
 def _python_imports(node: ast.AST) -> list[str]:
-    """Modules one statement names, as the resolver expects them."""
+    """Modules one statement names, as the resolver expects them.
+
+    ``from X import a`` also names ``X.a``, because ``a`` may be a
+    submodule. The resolver drops every name that is no file, so a
+    class imported the same way costs nothing.
+    """
     if isinstance(node, ast.Import):
         return [a.name for a in node.names]
     elif isinstance(node, ast.ImportFrom):
+        prefix = "." * node.level
+        names = [alias.name for alias in node.names if alias.name != "*"]
         if node.module:
-            return ["." * node.level + node.module]
+            return [prefix + node.module] + [f"{prefix}{node.module}.{name}" for name in names]
         elif node.level > 0:
             # from . import name or from .. import name
-            result = []
-            for alias in node.names:
-                if alias.name != "*":
-                    result.append("." * node.level + alias.name)
-            return result
+            return [prefix + name for name in names]
     return []
 
 
@@ -852,6 +862,13 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
                         call = {"name": callee_name, "line": getattr(node, "lineno", None)}
                         if receiver:
                             call["receiver"] = receiver
+                        # `service.create()` names its module, so the
+                        # resolver can tell two files defining `create`
+                        # apart.
+                        if isinstance(node.func, ast.Attribute) and isinstance(
+                            node.func.value, ast.Name
+                        ):
+                            call["qualifier"] = node.func.value.id
                         calls.append(call)
                 elif isinstance(node, (ast.Import, ast.ImportFrom)):
                     imports += _python_imports(node)

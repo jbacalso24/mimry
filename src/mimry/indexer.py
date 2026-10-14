@@ -26,6 +26,7 @@ from .core.resolve import (
     resolve_inheritance,
     resolve_table_refs,
 )
+from .core.tsconfig import build_ts_paths
 from .paths import graph_output_dir, idx_path, now, pointer_file
 from .pieces import PIECES_FTS_CREATE, file_pieces
 from .reuse import (
@@ -188,6 +189,7 @@ _REFERENCE_KEYS = (
     "xcode",
     "dart_package",
     "go_module",
+    "ts_config",
 )
 
 
@@ -692,7 +694,10 @@ def _build_core_graph(
     go_modules: dict[str, list[str]] = {}
     for gomod, name in split_refs["go_module"].items():
         go_modules.setdefault(name, []).append(posixpath.dirname(gomod))
-    import_edges = resolve_imports(imports, rel_paths, overrides, dart_packages, go_modules)
+    ts_paths = build_ts_paths(split_refs["ts_config"], rel_paths)
+    import_edges = resolve_imports(
+        imports, rel_paths, overrides, dart_packages, go_modules, ts_paths=ts_paths
+    )
 
     graph["edges"] += _import_graph_edges(import_edges, file_id_of)
     graph["edges"] += _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids)

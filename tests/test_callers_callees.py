@@ -243,8 +243,13 @@ def test_zero_results_say_so(tmp_path):
     cache = tmp_path / "cache"
     repo = _repo(tmp_path, cache)
 
-    assert "Nothing in the graph calls main." in _mimry(repo, cache, "callers", "main").stdout
-    assert "leaf calls nothing in the graph." in _mimry(repo, cache, "callees", "leaf").stdout
+    callers = _mimry(repo, cache, "callers", "main").stdout
+    callees = _mimry(repo, cache, "callees", "leaf").stdout
+
+    assert "No static callers of main found." in callers
+    assert "search the code before treating it as unused" in callers
+    assert "Nothing in the graph" not in callers
+    assert "No static callees of leaf found." in callees
 
 
 def test_unknown_name_says_so_and_suggests_similar_names(tmp_path):
@@ -276,7 +281,7 @@ def test_ambiguous_name_lists_candidates_until_file_picks_one(tmp_path):
     assert "Several symbols" not in picked.stdout
 
     by_suffix = _mimry(repo, cache, "callees", "helper", "--file", "three.py")
-    assert "helper calls nothing in the graph." in by_suffix.stdout
+    assert "No static callees of helper found." in by_suffix.stdout
 
 
 @pytest.mark.parametrize(
@@ -442,3 +447,182 @@ def test_stale_graph_is_reported_not_answered(tmp_path, monkeypatch):
 
     assert payload["error"]["code"] == "graph_not_current"
     assert payload["results"] == []
+
+
+PKG_SERVICE = """def create(x):
+    return dict(x)
+
+
+def batch_swipe(items):
+    return [create(i) for i in items]
+"""
+
+PKG_VIEWS = """from pkg import service
+
+
+def create_view(x):
+    return service.create(x)
+
+
+def swipe_view(x):
+    return service.batch_swipe(x)
+"""
+
+PKG_SIBLING = """from . import service
+
+
+def sibling_view(x):
+    return service.create(x)
+"""
+
+PKG_OTHER = """def create(x):
+    return x
+"""
+
+PKG_PICKY = """from pkg import other, service
+
+
+def both(x):
+    return service.create(x)
+"""
+
+
+def _indexed_repo(tmp_path: Path, cache: Path, files: dict[str, str]) -> Path:
+    repo = tmp_path / "repo"
+    for rel_path, text in files.items():
+        path = repo / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "MIMRY Test")
+    _git(repo, "config", "user.email", "test@example.com")
+    assert _mimry(repo, cache, "init").returncode == 0
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "Initial commit")
+    assert _mimry(repo, cache, "index").returncode == 0
+    return repo
+
+
+def test_module_qualified_calls_reach_the_defining_submodule(tmp_path):
+    """Module-qualified calls reach the submodule that defines them."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "pkg/__init__.py": "",
+            "pkg/service.py": PKG_SERVICE,
+            "pkg/views.py": PKG_VIEWS,
+            "pkg/sibling.py": PKG_SIBLING,
+        },
+    )
+
+    create = _mimry(repo, cache, "callers", "create", "--file", "pkg/service.py")
+    swipe = _mimry(repo, cache, "callers", "batch_swipe", "--file", "pkg/service.py")
+
+    assert create.returncode == 0, create.stderr
+    assert "create_view" in create.stdout and "pkg/views.py" in create.stdout
+    assert "sibling_view" in create.stdout and "pkg/sibling.py" in create.stdout
+    assert "swipe_view" in swipe.stdout and "pkg/views.py" in swipe.stdout
+
+
+def test_qualifier_picks_the_module_named_by_the_receiver(tmp_path):
+    """A receiver naming a module breaks a tie between two files."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "pkg/__init__.py": "",
+            "pkg/service.py": PKG_SERVICE,
+            "pkg/other.py": PKG_OTHER,
+            "pkg/picky.py": PKG_PICKY,
+        },
+    )
+
+    service_callers = _mimry(repo, cache, "callers", "create", "--file", "pkg/service.py")
+    other_callers = _mimry(repo, cache, "callers", "create", "--file", "pkg/other.py")
+
+    assert "both" in service_callers.stdout and "pkg/picky.py" in service_callers.stdout
+    assert "pkg/picky.py" not in other_callers.stdout
+
+
+TS_ROOT_CONFIG = """{
+  // Root config: "@/" points into src.
+  "compilerOptions": {
+    "baseUrl": ".",
+    /* paths are relative to baseUrl */
+    "paths": {
+      "@/*": ["src/*"],
+    },
+  },
+}
+"""
+
+TS_URLS = """export function normalizeJobUrl(url: string): string {
+  return url.trim();
+}
+"""
+
+TS_APP = """import { normalizeJobUrl } from "@/lib/urls";
+
+export function run(url: string) {
+  return normalizeJobUrl(url);
+}
+"""
+
+TS_SUB_PAGE = """import { normalizeJobUrl } from "@/lib/urls";
+
+export function page(url) {
+  return normalizeJobUrl(url);
+}
+"""
+
+
+def test_tsconfig_path_alias_reaches_the_imported_file(tmp_path):
+    """tsconfig aliases with comments, extends and a broken config."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "tsconfig.json": TS_ROOT_CONFIG,
+            "src/lib/urls.ts": TS_URLS,
+            "src/app.ts": TS_APP,
+            "sub/jsconfig.json": '{"extends": "../tsconfig.json"}\n',
+            "sub/page.js": TS_SUB_PAGE,
+            "broken/tsconfig.json": '{ "compilerOptions": { "paths": { \n',
+            "broken/page.ts": TS_APP,
+        },
+    )
+
+    res = _mimry(repo, cache, "callers", "normalizeJobUrl")
+
+    assert res.returncode == 0, res.stderr
+    assert "Error" not in res.stderr
+    assert "src/app.ts" in res.stdout
+    assert "sub/page.js" in res.stdout
+    assert "broken/page.ts" in res.stdout
+
+
+def test_strip_jsonc_keeps_comment_markers_inside_strings():
+    import json
+
+    from mimry.core.tsconfig import strip_jsonc
+
+    text = '{"url": "http://x.test//a", /* note */ "list": [1, 2,], // tail\n}'
+
+    assert json.loads(strip_jsonc(text)) == {"url": "http://x.test//a", "list": [1, 2]}
+
+
+def test_extends_cycle_terminates_and_unparsable_config_is_none():
+    from mimry.core.tsconfig import build_ts_paths, parse_tsconfig
+
+    configs = {
+        "a/tsconfig.json": parse_tsconfig('{"extends": "../b/tsconfig.json"}'),
+        "b/tsconfig.json": parse_tsconfig('{"extends": "../a/tsconfig.json"}'),
+    }
+    table = build_ts_paths(configs, {"a/x.ts", "b/x.ts"})
+
+    assert set(table) == {"a", "b"}
+    assert parse_tsconfig("{ nope") is None
