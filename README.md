@@ -25,6 +25,7 @@
 
 MIMRY is a command-line tool that tells AI coding agents which files, and which lines in them, to read for a task.
 It parses a repository into symbols and a dependency graph, keeps the index on your machine, and ranks the files that matter for a task described in plain words.
+The index is deterministic: the same code gives the same graph, rankings and context pack on Windows, Linux and macOS, and no LLM is involved in building it.
 Agents call it from the shell or through its MCP server.
 
 <p align="center">
@@ -108,6 +109,7 @@ mimry install --platform claude-code
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
 | Code graph | Maps imports, calls and inheritance across 21 languages with tree-sitter |
+| Deterministic | The same code gives the same symbols, graph, rankings and context pack on every machine; CI checks every change against committed golden values ([how](docs/determinism.md)) |
 | Documents | Indexes Markdown, text, PDF, Word and Excel files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
 | Feedback | Ranks files recorded as useful higher for similar tasks |
