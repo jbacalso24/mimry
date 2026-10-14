@@ -117,37 +117,39 @@ The merged summary shows the instance count, so a partial merge is visible.
 
 ## Results
 
-The first full run used MIMRY at commit 4b937cf (release 0.3.3 plus benchmark-only changes), on GitHub-hosted Linux runners.
-All 500 instances were scored, with no errors.
-The full per-instance output is in [results.verified.json](results.verified.json).
+Results on SWE-bench Verified, all 500 instances scored with no errors, on GitHub-hosted Linux runners.
+The full per-instance output of the latest run, with each result's score line, is in [results.verified.json](results.verified.json).
 
-| Metric | Value |
-|---|---|
-| Acc@1 | 26.4% |
-| Acc@5 | 54.0% |
-| Acc@10 | 66.2% |
-| Mean recall@5 | 57.4% |
-| Mean recall@10 | 69.8% |
-| Median first gold rank, when found | 2 |
-| Instances with no gold file in the top 10 | 130 |
+| Run | Acc@1 | Acc@5 | Acc@10 | Mean recall@5 | Mean recall@10 |
+|---|---|---|---|---|---|
+| 0.3.3 (4b937cf) | 26.4% | 54.0% | 66.2% | 57.4% | 69.8% |
+| After #239, #240 and #241 (37eb25b) | 34.8% | 63.8% | 74.6% | 67.6% | 77.7% |
+
+The three changes were chosen and measured on the dev set first, one at a time, and Verified was run once with all three:
+
+- #239 reads intent from the task's headline, so a test word in an issue body no longer ranks test files up.
+- #240 ranks a file the query names by path, traceback line or dotted module.
+- #241 keeps BM25 in step with the keyword and graph sums on queries longer than 24 terms.
+
+On the dev set they moved Acc@10 from 57.4% to 65.4%.
 
 Acc@10 by repository:
 
-| Repository | Instances | Acc@10 |
-|---|---|---|
-| django/django | 231 | 66.7% |
-| sympy/sympy | 75 | 70.7% |
-| sphinx-doc/sphinx | 44 | 65.9% |
-| matplotlib/matplotlib | 34 | 55.9% |
-| scikit-learn/scikit-learn | 32 | 87.5% |
-| astropy/astropy | 22 | 77.3% |
-| pydata/xarray | 22 | 40.9% |
-| pytest-dev/pytest | 19 | 52.6% |
-| pylint-dev/pylint | 10 | 20.0% |
-| psf/requests | 8 | 100.0% |
-| mwaskom/seaborn | 2 | 50.0% |
-| pallets/flask | 1 | 100.0% |
+| Repository | Instances | 0.3.3 | Now |
+|---|---|---|---|
+| django/django | 231 | 66.7% | 77.9% |
+| sympy/sympy | 75 | 70.7% | 70.7% |
+| sphinx-doc/sphinx | 44 | 65.9% | 65.9% |
+| matplotlib/matplotlib | 34 | 55.9% | 67.6% |
+| scikit-learn/scikit-learn | 32 | 87.5% | 93.8% |
+| astropy/astropy | 22 | 77.3% | 68.2% |
+| pydata/xarray | 22 | 40.9% | 63.6% |
+| pytest-dev/pytest | 19 | 52.6% | 73.7% |
+| pylint-dev/pylint | 10 | 20.0% | 40.0% |
+| psf/requests | 8 | 100.0% | 100.0% |
+| mwaskom/seaborn | 2 | 50.0% | 100.0% |
+| pallets/flask | 1 | 100.0% | 100.0% |
 
-Instances whose fix touches more than one file are harder: Acc@10 is 25.4% over those 71, because every gold file must be in the top 10.
-When MIMRY finds a gold file, it is usually near the top, but the right file comes first in only about a quarter of instances.
-That gap is what ranking work in #42 targets, tuned on SWE-bench instances outside Verified.
+When MIMRY finds a gold file, the median first gold rank is now 1.
+Instances whose fix touches more than one file remain the hardest: Acc@10 is 50.7% over those 71.
+96 instances still have no gold file in the top 10; ranking work continues in #42.
