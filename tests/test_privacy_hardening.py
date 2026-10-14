@@ -29,6 +29,7 @@ from mimry.security import (
     STREAM_CHUNK_BYTES,
     contains_sensitive_text,
     has_sensitive_content,
+    is_sensitive,
     path_has_ignored_part,
     redact_sensitive_text,
     root_contains_sensitive_content,
@@ -1190,3 +1191,201 @@ def test_new_language_non_literal_credentials_not_flagged():
     # C++: computed value
     cpp_computed = "std::string token = getToken();\n"
     assert not contains_sensitive_text(cpp_computed, code=True)
+
+
+# A credential assignment after a word or whitespace mid-line (#167).
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"Run the app with DB_PASSWORD={CONFIG_VALUE} npm start for local dev.\n",
+        f"fix login using password={CONFIG_VALUE} now",
+    ],
+)
+def test_credential_assignment_after_a_word_is_detected_and_redacted(line: str):
+    assert contains_sensitive_text(line)
+    redacted = redact_sensitive_text(line)
+    assert CONFIG_VALUE not in redacted
+    assert "[REDACTED]" in redacted
+
+
+def test_credential_word_inside_another_identifier_keeps_its_verdict():
+    line = f"xpassword={CONFIG_VALUE}\n"
+    assert not contains_sensitive_text(line)
+    assert redact_sensitive_text(line) == line
+
+
+def test_credential_written_mid_sentence_never_reaches_the_context_pack(
+    tmp_path: Path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "docs" / "setup.md").write_text(
+        f"# Local setup\n\nRun the app with DB_PASSWORD={CONFIG_VALUE} npm start for local dev.\n",
+        encoding="utf-8",
+    )
+    (repo / "app.py").write_text("print('hello')\n", encoding="utf-8")
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    query = f"fix login using password={CONFIG_VALUE} now"
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    preflight = run_cli(repo, cache, "preflight", query)
+    assert preflight.returncode == 0, preflight.stderr
+    assert CONFIG_VALUE not in preflight.stdout + preflight.stderr
+
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    idx = Path(pointer["indexPath"])
+    generated = repo / ".mimry" / "mimry-out"
+    assert CONFIG_VALUE not in all_text_files(idx) + all_text_files(generated)
+    assert CONFIG_VALUE not in sqlite_dump(idx / "mimry.sqlite")
+    assert "docs/setup.md" not in (idx / "files.jsonl").read_text(encoding="utf-8")
+    # The pack file name is slugged from the query, so redact it too.
+    assert all(CONFIG_VALUE not in name.name for name in (generated / "context").iterdir())
+
+
+# Credential labels whose value is a URL, a path or a metadata word.
+# Issue #168.
+@pytest.mark.parametrize(
+    "line",
+    [
+        'const TOKEN_URL = "https://auth.example.com/oauth/token";\n',
+        'PASSWORD_RESET_URL = "/accounts/reset/"\n',
+        "password_policy: strict\n",
+        "password_hint = 'x'\n",
+        'TOKEN = "https://auth.example.com/oauth/token"\n',
+        'TOKEN_PATH = "./keys/token.txt"\n',
+        'TOKEN_DIR = "~/keys"\n',
+        'SECRET_FILE = "/run/secrets/x"\n',
+    ],
+)
+def test_urls_paths_and_metadata_labels_are_not_credentials(line: str):
+    assert not contains_sensitive_text(line)
+    assert not contains_sensitive_text(line, code=True)
+    assert redact_sensitive_text(line) == line
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'TOKEN = "https://user:pass@host/x"\n',
+        f'TOKEN_URL = "https://user:{CONFIG_VALUE}@host/token"\n',
+        f'PASSWORD_RESET_URL = "https://user:{CONFIG_VALUE}@host/reset"\n',
+        'secret_sauce = "tomato"\n',
+        'password = "tomato"\n',
+        'password = "/accounts/reset/ tomato"\n',
+    ],
+)
+def test_userinfo_urls_and_plain_words_under_credential_names_stay_sensitive(line: str):
+    assert contains_sensitive_text(line)
+    assert contains_sensitive_text(line, code=True)
+    assert "[REDACTED]" in redact_sensitive_text(line)
+
+
+# A path is a location only under a metadata label: under a credential
+# label, a path-shaped value is still a credential (#168 review).
+@pytest.mark.parametrize(
+    "line",
+    [
+        'password = "/tomato"\n',
+        'password = "./tomato"\n',
+        'password = "../tomato"\n',
+        'token = "~/tomato"\n',
+        'TOKEN = "/tomato"\n',
+    ],
+)
+def test_path_shaped_values_under_credential_labels_stay_sensitive(line: str):
+    assert contains_sensitive_text(line)
+    assert contains_sensitive_text(line, code=True)
+    assert "[REDACTED]" in redact_sensitive_text(line)
+
+
+# A URL is a location unless its query or fragment carries a credential
+# named parameter with a real value (#168 review).
+@pytest.mark.parametrize(
+    "line",
+    [
+        'TOKEN = "https://x/y?page=2"\n',
+        'token_url = "https://x/y?page=2"\n',
+        'TOKEN = "https://api.example.com/?key=..."\n',
+        'TOKEN = "https://x/y?key="\n',
+    ],
+)
+def test_urls_without_a_credential_parameter_stay_exempt(line: str):
+    assert not contains_sensitive_text(line)
+    assert not contains_sensitive_text(line, code=True)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f'TOKEN = "https://api.example.com/?key={CONFIG_VALUE}"\n',
+        f'TOKEN_URL = "https://api.example.com/?key={CONFIG_VALUE}"\n',
+        f'TOKEN = "https://x/y?access_token={CONFIG_VALUE}"\n',
+        f'TOKEN = "https://x/y?x_api_key={CONFIG_VALUE}"\n',
+        f'TOKEN = "https://x/y#token={CONFIG_VALUE}"\n',
+        f'TOKEN = "https://x/y?Sig={CONFIG_VALUE}"\n',
+        f'password = "https://x/y?pwd={CONFIG_VALUE}"\n',
+        f'TOKEN = "https://x/y?a=1&client_secret={CONFIG_VALUE}"\n',
+    ],
+)
+def test_urls_with_a_credential_parameter_stay_sensitive(line: str):
+    assert contains_sensitive_text(line)
+    assert contains_sensitive_text(line, code=True)
+    assert "[REDACTED]" in redact_sensitive_text(line)
+
+
+def test_files_with_url_or_metadata_under_a_credential_name_are_indexed(tmp_path: Path):
+    from mimry.indexer import _collect
+
+    repo = tmp_path / "repo"
+    (repo / "web").mkdir(parents=True)
+    (repo / "web" / "oauth.js").write_text(
+        'const TOKEN_URL = "https://auth.example.com/oauth/token";\n'
+        "export function go() { return TOKEN_URL }\n",
+        encoding="utf-8",
+    )
+    (repo / "web" / "reset.py").write_text(
+        'PASSWORD_RESET_URL = "/accounts/reset/"\ndef reset():\n    return PASSWORD_RESET_URL\n',
+        encoding="utf-8",
+    )
+    (repo / "web" / "policy.yml").write_text("password_policy: strict\n", encoding="utf-8")
+    (repo / "web" / "sauce.py").write_text('secret_sauce = "tomato"\n', encoding="utf-8")
+
+    files, *_ = _collect(repo)
+
+    assert sorted(record["rel_path"] for record in files) == [
+        "web/oauth.js",
+        "web/policy.yml",
+        "web/reset.py",
+    ]
+
+
+# Credentials in text formats outside TEXT_EXTS, and *.env names (#169).
+def test_unlisted_text_formats_are_classified_by_content_and_binary_is_not():
+    fake_token = "ghp_" + "E" * 36
+    assert has_sensitive_content(Path("app.conf"), data=f"password={CONFIG_VALUE}\n".encode())
+    assert has_sensitive_content(Path("Dockerfile"), data=f"ENV TOKEN={fake_token}\n".encode())
+    assert not has_sensitive_content(Path("notes.conf"), data=b"retries = 3\n")
+    assert not has_sensitive_content(
+        Path("blob.dat"), data=b"\x00\x01password=" + CONFIG_VALUE.encode() + b"\n"
+    )
+    assert is_sensitive(Path("prod.env"))
+
+
+def test_text_formats_outside_the_text_list_with_credentials_are_not_indexed(tmp_path: Path):
+    from mimry.indexer import _collect
+
+    fake_token = "ghp_" + "E" * 36
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.conf").write_text(f"password={CONFIG_VALUE}\n", encoding="utf-8")
+    (repo / "app.properties").write_text(f"db.password={CONFIG_VALUE}\n", encoding="utf-8")
+    (repo / "terraform.tfvars").write_text(f'db_password = "{CONFIG_VALUE}"\n', encoding="utf-8")
+    (repo / "prod.env").write_text(f"DB_PASSWORD={CONFIG_VALUE}\n", encoding="utf-8")
+    (repo / "Dockerfile").write_text(f"ENV TOKEN={fake_token}\n", encoding="utf-8")
+    (repo / "notes.conf").write_text("retries = 3\n", encoding="utf-8")
+
+    files, *_ = _collect(repo)
+
+    assert [record["rel_path"] for record in files] == ["notes.conf"]

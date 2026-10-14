@@ -36,6 +36,7 @@ HEAVY_IGNORES = {
 }
 SENSITIVE_PATTERNS = [
     ".env",
+    "*.env",
     ".env.*",
     ".npmrc",
     ".yarnrc",

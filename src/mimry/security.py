@@ -105,13 +105,18 @@ SENSITIVE_LABEL_TOKENS = {
 # Assignment boundaries are deliberately structural rather than
 # line-only. This catches object/JSON/code members after ``{``, `(`, `,`
 # or `;` without treating a credential word embedded in ordinary prose
-# as an assignment. Values stop at the matching config delimiter; quoted
-# values may contain delimiters, and TOML / Python-style triple-quoted
-# values may span lines.
+# as an assignment. After whitespace only an equals sign counts, so a
+# label mid-sentence is caught but a colon in prose is not. The label
+# still starts at a boundary, so a credential word inside another
+# identifier (``xpassword=``) is not an assignment.
+# Values stop at the matching config delimiter; quoted values may
+# contain delimiters, and TOML / Python-style triple-quoted values may
+# span lines.
 ASSIGNMENT_RE = re.compile(
-    r"(?ims)(?P<boundary>^|(?<=[{(,;]))"
+    r"(?ims)(?P<boundary>^|(?<=[{(,;])|(?P<spaced>(?<=[ \t])))"
     r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
-    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)[ \t]*(?P<operator>=|:)[ \t]*"
+    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
+    r"[ \t]*(?P<operator>(?(spaced)=|[=:]))[ \t]*"
     # A value may start on the next line when that line is an indented
     # scalar (``password:\n  hunter2``); a nested ``key: value`` is its
     # own assignment.
@@ -183,6 +188,60 @@ _NON_CREDENTIAL_WORDS = frozenset(
 # Authorization schemes, as in ``"Bearer " + token``: the credential is
 # what follows.
 _AUTH_SCHEMES = frozenset({"basic", "bearer", "digest", "token"})
+# A location, not a credential: a URL whose authority has no
+# ``user:pass@`` (a URL with userinfo is still judged) and whose query
+# or fragment carries no credential-named parameter.
+_URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://(?![^\s/?#]*@)\S*")
+_USERINFO_URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s/?#]*@")
+_URL_IN_TEXT_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'`<>]*")
+# Parameter names that carry a credential, compared without separators
+# (``api_key`` is ``apikey``) and by their last segment (``x_api_key``).
+_CREDENTIAL_PARAM_NAMES = frozenset(
+    {
+        "key",
+        "apikey",
+        "token",
+        "accesstoken",
+        "auth",
+        "secret",
+        "clientsecret",
+        "password",
+        "pass",
+        "pwd",
+        "sig",
+        "signature",
+        "credential",
+    }
+)
+# The last ``_``, ``-`` or ``.`` segment of a label that names metadata
+# about a credential, not the credential: ``TOKEN_URL``,
+# ``password_hint``.
+_NON_CREDENTIAL_LABEL_SEGMENTS = frozenset(
+    {
+        "url",
+        "uri",
+        "endpoint",
+        "path",
+        "policy",
+        "hint",
+        "file",
+        "dir",
+        "name",
+        "header",
+        "field",
+        "type",
+        "length",
+        "min",
+        "max",
+        "regex",
+        "pattern",
+        "label",
+        "prompt",
+        "placeholder",
+        "env",
+        "var",
+    }
+)
 _NUMBER_RE = re.compile(r"[-+]?(?:\d[\d_]*(?:\.\d*)?|\.\d+)")
 # A whole value resolved elsewhere at run time: ``$VAR``, ``${VAR}``,
 # ``${{ secrets.TOKEN }}``. Environment variables are upper case by
@@ -307,13 +366,13 @@ def contains_sensitive_text(text: str, *, code: bool = False) -> bool:
     ):
         return True
     if any(
-        _is_sensitive_label(match.group("label"))
+        _is_sensitive_label(match.group("label"), match.group("body"))
         for match in YAML_BLOCK_ASSIGNMENT_RE.finditer(text)
     ):
         return True
     if any(
-        _is_sensitive_label(label)
-        for _start, _end, label, _replacement in _yaml_quoted_multiline_assignments(text)
+        _is_sensitive_label(label, text[start:end])
+        for start, end, label, _replacement in _yaml_quoted_multiline_assignments(text)
     ):
         return True
     # That pattern requires a triple quote; skipping the scan without
@@ -356,8 +415,22 @@ def _label_tokens(label: str) -> set[str]:
     return pieces
 
 
-def _is_sensitive_label(label: str) -> bool:
+def _has_credential_words(label: str) -> bool:
     return bool(_label_tokens(label) & SENSITIVE_LABEL_TOKENS)
+
+
+def _is_sensitive_label(label: str, value: str = "") -> bool:
+    """Whether a label names a credential, given its value.
+
+    A label whose last segment is metadata about a credential
+    (``TOKEN_URL``, ``password_policy``) is not one. Its value is still
+    a credential when it is a URL that carries one.
+    """
+    if not _has_credential_words(label):
+        return False
+    if re.split(r"[_.-]", label)[-1].lower() in _NON_CREDENTIAL_LABEL_SEGMENTS:
+        return _carries_credential(value)
+    return True
 
 
 def is_code_path(path: str | Path) -> bool:
@@ -387,6 +460,8 @@ def _value_is_credential(
     candidate = value.strip().rstrip(",;}").strip()
     if not candidate or candidate == REDACTED or candidate[0] == "|":
         return False  # nothing assigned, already redacted, or a YAML block (classified above)
+    if _is_location(candidate):
+        return False
     start = pos + len(value) - len(value.lstrip())
     if candidate[0] == ">":
         if operator == ":":
@@ -452,6 +527,52 @@ def _value_is_credential(
                 candidate
             )  # bare colon phrases are common in prose and Markdown
     return True
+
+
+def _is_credential_param(name: str) -> bool:
+    lowered = name.lower()
+    return (
+        re.sub(r"[_.-]", "", lowered) in _CREDENTIAL_PARAM_NAMES
+        or re.split(r"[_.-]", lowered)[-1] in _CREDENTIAL_PARAM_NAMES
+    )
+
+
+def _has_credential_query(url: str) -> bool:
+    """Whether a URL's query or fragment has a credential parameter.
+
+    The value must not be a placeholder.
+    """
+    for part in re.split(r"[?#&;]", url)[1:]:
+        name, separator, value = part.partition("=")
+        if (
+            separator
+            and _is_credential_param(name)
+            and not (
+                value == ""
+                or value == REDACTED
+                or _PLACEHOLDER_RE.fullmatch(value)
+                or _REFERENCE_RE.fullmatch(value)
+            )
+        ):
+            return True
+    return False
+
+
+def _carries_credential(value: str) -> bool:
+    """Whether a value holds a URL with userinfo or a credential query.
+
+    Judged per URL, so prose around a URL does not matter.
+    """
+    return _USERINFO_URL_RE.search(value) is not None or any(
+        _has_credential_query(url) for url in _URL_IN_TEXT_RE.findall(value)
+    )
+
+
+def _is_location(value: str) -> bool:
+    """Whether a value is a URL that is not a credential by its userinfo
+    or query.
+    """
+    return _URL_RE.fullmatch(value) is not None and not _has_credential_query(value)
 
 
 def _prose_is_credential(value: str) -> bool:
@@ -801,6 +922,7 @@ def _string_literal_is_credential(literal: re.Match[str], *, code: bool) -> bool
         or _REFERENCE_RE.fullmatch(text)
         or _PLACEHOLDER_RE.fullmatch(text)
         or _ENV_LOOKUP_RE.fullmatch(text)
+        or _is_location(text)
     )
 
 
@@ -900,7 +1022,7 @@ def _assignment_match_is_sensitive(
     match: re.Match[str], *, code: bool = False, scanner: _Scanner
 ) -> bool:
     label = match.group("label")
-    if not _is_sensitive_label(label):
+    if not _is_sensitive_label(label, match.group("value")):
         return False
     if code and not match.group("label_quote") and match.group("value").startswith(">"):
         # ``token => token.value``: a bare name before ``=>`` is an
@@ -937,7 +1059,7 @@ def _redact_assignment(match: re.Match[str], scanner: _Scanner) -> str | None:
 
 
 def _redact_yaml_block(match: re.Match[str]) -> str:
-    if not _is_sensitive_label(match.group("label")):
+    if not _is_sensitive_label(match.group("label"), match.group("body")):
         return match.group(0)
     newline = "\r\n" if "\r\n" in match.group("header") else "\n"
     return (
@@ -1003,7 +1125,7 @@ def _yaml_quoted_multiline_assignments(text: str):
     while index < len(lines):
         first, _first_newline = _split_line_ending(lines[index])
         match = YAML_QUOTED_MULTILINE_ASSIGNMENT_START_RE.match(first)
-        if match is None or not _is_sensitive_label(match.group("label")):
+        if match is None or not _has_credential_words(match.group("label")):
             index += 1
             continue
 
@@ -1047,7 +1169,7 @@ def _redact_yaml_quoted_multiline(text: str) -> str:
     matches = [
         match
         for match in _yaml_quoted_multiline_assignments(text)
-        if _is_sensitive_label(match[2])
+        if _is_sensitive_label(match[2], text[match[0] : match[1]])
     ]
     if not matches:
         return text
@@ -1061,9 +1183,9 @@ def _redact_yaml_quoted_multiline(text: str) -> str:
 
 
 def _redact_unclosed_multiline_assignment(match: re.Match[str]) -> str:
-    if not _is_sensitive_label(match.group("label")) or match.group("quote") in match.group(
-        "body"
-    ):
+    if not _is_sensitive_label(match.group("label"), match.group("body")) or match.group(
+        "quote"
+    ) in match.group("body"):
         return match.group(0)
     return f"{match.group('prefix')}{match.group('quote')}{REDACTED}"
 
@@ -1218,12 +1340,34 @@ def has_sensitive_content(path: Path, data: bytes | None = None) -> bool:
     if _is_env_example(path):
         return False
     if path.suffix.lower() not in TEXT_EXTS and path.name not in {"config", "credentials"}:
-        return False
+        return _unlisted_text_is_sensitive(path, data)
     if data is not None:
         import io
 
         return stream_contains_sensitive_content(io.BytesIO(data), code=is_code_path(path))
     return _stream_contains_sensitive_content(path)
+
+
+def _unlisted_text_is_sensitive(path: Path, data: bytes | None) -> bool:
+    """Classify a text format outside TEXT_EXTS by its content.
+
+    Such formats are ``.conf`` and ``Dockerfile``. A listed one is
+    classified the same way.
+
+    Binary input (the strict text sniff) is not a text format, so it is
+    not scanned here and keeps the name rules.
+    """
+    try:
+        if data is not None:
+            import io
+
+            return opened_file_has_sensitive_content(path, io.BytesIO(data))
+        with path.open("rb") as handle:
+            return opened_file_has_sensitive_content(path, handle)
+    except ValueError:
+        return False
+    except OSError:
+        return True
 
 
 def _raw_file_has_sensitive_content(path: Path) -> bool:
