@@ -5,8 +5,11 @@ from pathlib import Path
 
 from mimry.core.artifacts import graph_rows
 from mimry.intent import (
+    INTENT_TERM_LIMIT,
+    TEST_TERMS,
     apply_intent_adjustment,
     excluded_query_terms,
+    intent_terms,
     is_concept_intent,
     is_edit_intent,
     is_source_file,
@@ -639,3 +642,100 @@ def test_content_match_lifts_a_file_the_graph_ranks_below_the_limit(tmp_path):
     top = find_rows(idx, query, limit=1, graph=True, root=tmp_path)[0]
     assert top["path"] == "src/c.py"
     assert "corroborated by MIMRY content index" in top["reason"]
+
+
+def _checkout_index(tmp_path: Path) -> Path:
+    idx = tmp_path / "index"
+    idx.mkdir()
+    paths = ["src/checkout/redirect.py", "tests/test_checkout_redirect.py"]
+    write_jsonl(
+        idx / "files.jsonl",
+        [
+            {
+                "file_id": path,
+                "filename": Path(path).name,
+                "rel_path": path,
+                "content_hint": "",
+                "metadata_text": "",
+                "adapter": "python-ast",
+            }
+            for path in paths
+        ],
+    )
+    return idx
+
+
+# A bug report whose body runs pytest and quotes a traceback in a test.
+CHECKOUT_BODY = (
+    "I ran pytest on the checkout flow and it fails with this traceback:\n"
+    '  File "tests/test_checkout_redirect.py", line 12, in test_redirect\n'
+    "AssertionError: expected /cart, got /login\n"
+)
+
+
+def test_test_words_in_a_multi_line_issue_body_do_not_make_it_a_test_task(tmp_path):
+    idx = _checkout_index(tmp_path)
+    issue = "Checkout redirect loses the return URL\n\n" + CHECKOUT_BODY
+
+    paths = [r["path"] for r in find_rows(idx, issue, limit=5, root=tmp_path)]
+
+    assert paths.index("src/checkout/redirect.py") < paths.index("tests/test_checkout_redirect.py")
+
+
+def test_a_test_headline_keeps_test_intent_for_a_multi_line_issue(tmp_path):
+    idx = _checkout_index(tmp_path)
+    issue = "Add tests for checkout redirect\n\n" + CHECKOUT_BODY
+
+    paths = [r["path"] for r in find_rows(idx, issue, limit=5, root=tmp_path)]
+
+    assert paths[0] == "tests/test_checkout_redirect.py"
+
+
+def test_a_one_line_short_query_keeps_its_ranking_and_test_intent(tmp_path):
+    idx = _checkout_index(tmp_path)
+    query = "tests for checkout redirect"
+
+    assert intent_terms(query) == query_terms(query)
+    paths = [r["path"] for r in find_rows(idx, query, limit=5, root=tmp_path)]
+
+    assert paths[0] == "tests/test_checkout_redirect.py"
+
+
+def test_a_test_word_after_the_24th_term_of_a_single_line_is_not_intent():
+    words = [f"term{i:02d}" for i in range(60)]
+    words[30] = "test"
+    query = " ".join(words)
+
+    intent = intent_terms(query)
+
+    assert len(intent) == INTENT_TERM_LIMIT
+    assert not set(intent) & TEST_TERMS
+    assert "test" in query_terms(query)
+    _score, reasons = apply_intent_adjustment(100, "tests/test_x.py", intent)
+    assert "test hint downrank for edit intent" in reasons
+
+
+def test_intent_terms_of_an_empty_query_are_empty():
+    assert intent_terms("") == []
+    assert intent_terms(" \n\n\t\n") == []
+
+
+def test_intent_terms_skip_leading_blank_lines_and_read_only_the_headline():
+    query = "\n\n  Fix checkout redirect\n\nI ran pytest on the checkout flow"
+
+    assert intent_terms(query) == query_terms("Fix checkout redirect")
+
+
+def test_intent_terms_keep_exclusions_from_the_headline():
+    query = "fix checkout without touching backend\nmore text"
+
+    assert intent_terms(query) == query_terms("fix checkout without touching backend")
+
+
+def test_intent_terms_cut_a_long_headline_to_its_first_24_terms():
+    headline = " ".join(f"term{i:02d}" for i in range(30))
+
+    terms = intent_terms(headline)
+
+    assert len(terms) == INTENT_TERM_LIMIT
+    assert terms == query_terms(headline)[:INTENT_TERM_LIMIT]

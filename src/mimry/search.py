@@ -12,6 +12,7 @@ from .intent import (
     apply_exclusion_adjustment,
     apply_intent_adjustment,
     excluded_query_terms,
+    intent_terms,
     query_terms,
 )
 from .paths import canonical_cached_rel_path
@@ -175,8 +176,18 @@ def _with_ranges(rows, pieces, id_by_path):
     return out
 
 
-def score(f, q, fts_boost: tuple[int, str] | None = None):
-    terms = query_terms(q)
+def score(
+    f,
+    q,
+    fts_boost: tuple[int, str] | None = None,
+    *,
+    terms: list[str] | None = None,
+    intent: list[str] | None = None,
+):
+    # find_rows passes both lists in, computed once per query; other
+    # callers get them from q.
+    terms = query_terms(q) if terms is None else terms
+    intent = intent_terms(q) if intent is None else intent
     h = {
         "filename": f["filename"].lower(),
         "path": f["rel_path"].lower(),
@@ -206,7 +217,7 @@ def score(f, q, fts_boost: tuple[int, str] | None = None):
         s += 8
         reasons.append(f["adapter"] + " adapter")
 
-    s, intent_reasons = apply_intent_adjustment(s, f["rel_path"], terms)
+    s, intent_reasons = apply_intent_adjustment(s, f["rel_path"], intent)
     reasons.extend(intent_reasons)
 
     return s, reasons
@@ -318,8 +329,10 @@ def find_rows(
     clusters = {}
     if graph and (idx / "graph.json").exists():
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
+    terms = query_terms(q)
+    intent = intent_terms(q)
     for f in files:
-        s, rs = score(f, q, fts_scores.get(f["file_id"]))
+        s, rs = score(f, q, fts_scores.get(f["file_id"]), terms=terms, intent=intent)
 
         if s:
             folder = f["rel_path"].rsplit("/", 1)[0] if "/" in f["rel_path"] else "."

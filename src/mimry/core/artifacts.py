@@ -12,6 +12,7 @@ from typing import Any
 
 from ..intent import (
     apply_intent_adjustment,
+    intent_terms,
     location_terms,
     matching_tokens,
     query_terms,
@@ -710,6 +711,7 @@ def graph_rows(root: Path, query: str, limit: int | None = 10) -> list[dict]:
 
     if not terms:
         return []
+    intent = intent_terms(query)
 
     by_file: dict[str, dict] = {}
     degree: dict[str, int] = defaultdict(int)
@@ -798,7 +800,7 @@ def graph_rows(root: Path, query: str, limit: int | None = 10) -> list[dict]:
     rows = []
     for row in by_file.values():
         row["score"], intent_reasons = apply_intent_adjustment(
-            row["score"], row["path"], terms, graph=True
+            row["score"], row["path"], intent, graph=True
         )
 
         if row["score"] <= 0:

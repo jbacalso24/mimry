@@ -161,7 +161,7 @@ def _patch_ranking_dependencies(monkeypatch):
     monkeypatch.setattr(
         search,
         "score",
-        lambda row, *_args: (
+        lambda row, *_args, **_kwargs: (
             51 - int(row["file_id"]),
             ["baseline content"],
         ),
