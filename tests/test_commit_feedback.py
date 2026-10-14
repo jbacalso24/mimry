@@ -13,6 +13,7 @@ from test_mimry_cli import copy_fixture, run_cli
 
 from mimry.autoupdate import git_hooks_install
 from mimry.feedback import (
+    _redact_feedback_string,
     feedback_payload_from_args,
     list_feedback,
     parse_context_suggested_paths,
@@ -326,6 +327,34 @@ def test_agent_feedback_on_latest_pack_blocks_a_second_row_for_the_task(tmp_path
     assert "feedback already recorded for this task" in res.stdout
     [row] = _rows(repo)
     assert row["outcome"] == "passed"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "pass the duplicate flag",
+        "fix password reset email",
+        "password reset.",
+        "bypass=cache",
+        "compass: north",
+    ],
+)
+def test_feedback_keeps_prose_that_mentions_passwords(text):
+    assert _redact_feedback_string(text) == (text, False)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("pass=hunter2xyz", "pass=[REDACTED]"),
+        ('"pass": "hunter2xyz"', '"pass": [REDACTED]'),
+        ('"password": "hunter2xyz"', '"password": [REDACTED]'),
+        ("password hunter2", "password [REDACTED]"),
+        ("passwd s3cret!", "passwd [REDACTED]"),
+    ],
+)
+def test_feedback_redacts_password_values(text, expected):
+    assert _redact_feedback_string(text) == (expected, True)
 
 
 def test_feedback_payload_from_args_is_unchanged(tmp_path):

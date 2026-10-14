@@ -16,14 +16,20 @@ VALID_OUTCOMES = {"passed", "failed", "blocked", "partial", "unknown"}
 FEEDBACK_SCHEMA_VERSION = "0.1.0"
 COMMIT_NOTE_PREFIX = "Recorded from commit "
 SECRET_ASSIGNMENT_RE = re.compile(
-    r"\b(?P<key>[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|credential)[A-Za-z0-9_.-]*)"
-    r"(?P<sep>\s*(?:=|:)\s*)"
+    r"\b(?P<key>[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|credential)[A-Za-z0-9_.-]*"
+    r"|pass)"
+    r"(?P<sep>[\"']?\s*(?:=|:)\s*)"
     r"(?P<value>(?!\[REDACTED\])(?:Bearer\s+)?[\"']?[^\s,;\"'{}\]]+[\"']?)",
     re.IGNORECASE,
 )
 BEARER_RE = re.compile(r"\b(Bearer\s+)(?!\[REDACTED\])[^\s,;\"'{}\]]+", re.IGNORECASE)
+# "password hunter2" in prose. "pass" alone is an English verb ("pass
+# the flag") and a plain word after "password" is prose ("password
+# reset"), so the value must hold a digit or a symbol.
 PASSWORD_WORD_RE = re.compile(
-    r"\b(?P<key>pass(?:word|wd)?)\s+(?P<value>(?!\[REDACTED\])[^\s,;\"'{}\]]+)", re.IGNORECASE
+    r"\b(?P<key>password|passwd)\s+"
+    r"(?P<value>(?!\[REDACTED\])(?=[^\s,;\"'{}\]]*[^\sA-Za-z.,;:!?()\"'{}\]])[^\s,;\"'{}\]]+)",
+    re.IGNORECASE,
 )
 
 
