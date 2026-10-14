@@ -91,5 +91,37 @@ The merged summary shows the instance count, so a partial merge is visible.
 
 ## Results
 
-Results land after the first full run.
-This section will list the summary and link the merged results file once that run has finished.
+The first full run used MIMRY at commit 4b937cf (release 0.3.3 plus benchmark-only changes), on GitHub-hosted Linux runners.
+All 500 instances were scored, with no errors.
+The full per-instance output is in [results.verified.json](results.verified.json).
+
+| Metric | Value |
+|---|---|
+| Acc@1 | 26.4% |
+| Acc@5 | 54.0% |
+| Acc@10 | 66.2% |
+| Mean recall@5 | 57.4% |
+| Mean recall@10 | 69.8% |
+| Median first gold rank, when found | 2 |
+| Instances with no gold file in the top 10 | 130 |
+
+Acc@10 by repository:
+
+| Repository | Instances | Acc@10 |
+|---|---|---|
+| django/django | 231 | 66.7% |
+| sympy/sympy | 75 | 70.7% |
+| sphinx-doc/sphinx | 44 | 65.9% |
+| matplotlib/matplotlib | 34 | 55.9% |
+| scikit-learn/scikit-learn | 32 | 87.5% |
+| astropy/astropy | 22 | 77.3% |
+| pydata/xarray | 22 | 40.9% |
+| pytest-dev/pytest | 19 | 52.6% |
+| pylint-dev/pylint | 10 | 20.0% |
+| psf/requests | 8 | 100.0% |
+| mwaskom/seaborn | 2 | 50.0% |
+| pallets/flask | 1 | 100.0% |
+
+Instances whose fix touches more than one file are harder: Acc@10 is 25.4% over those 71, because every gold file must be in the top 10.
+When MIMRY finds a gold file, it is usually near the top, but the right file comes first in only about a quarter of instances.
+That gap is what ranking work in #42 targets, tuned on SWE-bench instances outside Verified.
