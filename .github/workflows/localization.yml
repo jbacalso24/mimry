@@ -13,6 +13,10 @@ on:
           - dev
           - verified
         default: dev
+      diagnose:
+        description: "Record gold ranks to 50 and each result's score line"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,6 +50,7 @@ jobs:
         run: >-
           uv run python benchmarks/localization/run.py --work /tmp/loc
           --set ${{ inputs.set }} --shard ${{ matrix.shard }}/10
+          ${{ inputs.diagnose && '--diagnose' || '' }}
           --out /tmp/loc-shard-${{ matrix.shard }}.json
 
       - name: Upload shard results

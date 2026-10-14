@@ -46,6 +46,10 @@ TOP = 10
 # `mimry find` prints "  %2d  <path>" per result. Reason lines are
 # indented further.
 RESULT_LINE = re.compile(r"^  ( \d|\d\d)  (.+)$")
+# With -v, each result also prints its score and the signals behind it.
+SCORE_LINE = re.compile(r"^      (score -?\d+: .*)$")
+# --diagnose looks this deep for gold files ranked below the top 10.
+DIAGNOSE_DEPTH = 50
 
 
 def score(ranked: list[str], gold: list[str]) -> dict:
@@ -122,18 +126,42 @@ def mimry(repo: Path, env: dict[str, str], *args: str) -> str:
     return run([sys.executable, "-m", "mimry.cli", "--root", str(repo), *args], repo, env)
 
 
-def parse_find(output: str) -> list[str]:
+def parse_find(output: str, depth: int = TOP) -> list[str]:
     """The ranked paths printed by `mimry find`, in rank order."""
-    paths: list[str] = []
+    return [path for path, _ in parse_find_explained(output, depth)]
+
+
+def parse_find_explained(output: str, depth: int = TOP) -> list[tuple[str, str | None]]:
+    """Ranked paths with the score line `find -v` prints, if any."""
+    results: list[tuple[str, str | None]] = []
     for line in output.splitlines():
         match = RESULT_LINE.match(line)
         if match:
-            if int(match.group(1)) != len(paths) + 1:
+            if int(match.group(1)) != len(results) + 1:
                 raise RuntimeError("mimry find printed its results out of rank order")
-            paths.append(match.group(2))
-    if not paths and "No files match" not in output:
+            results.append((match.group(2), None))
+            continue
+        explained = SCORE_LINE.match(line)
+        if explained and results and results[-1][1] is None:
+            results[-1] = (results[-1][0], explained.group(1))
+    if not results and "No files match" not in output:
         raise RuntimeError("mimry find printed no result list")
-    return paths[:TOP]
+    return results[:depth]
+
+
+def diagnosis(explained: list[tuple[str, str | None]], gold: list[str]) -> dict:
+    """Where each gold file ranked within DIAGNOSE_DEPTH, and why the
+    top 10 and those gold files scored as they did."""
+    rank = {path: position for position, (path, _) in enumerate(explained, 1)}
+    keep = {path for path, _ in explained[:TOP]} | set(gold)
+    return {
+        "gold_rank": {path: rank.get(path) for path in sorted(gold)},
+        "explain": [
+            {"rank": position, "path": path, "score": line}
+            for position, (path, line) in enumerate(explained, 1)
+            if path in keep
+        ],
+    }
 
 
 def load_problems(work: Path, set_name: str, tasks: list[dict]) -> dict[str, dict[str, str]]:
@@ -168,7 +196,9 @@ def load_problems(work: Path, set_name: str, tasks: list[dict]) -> dict[str, dic
     return json.loads(cache.read_text(encoding="utf-8"))
 
 
-def run_instance(task: dict, problem: dict[str, str], work: Path, env: dict[str, str]) -> dict:
+def run_instance(
+    task: dict, problem: dict[str, str], work: Path, env: dict[str, str], diagnose: bool = False
+) -> dict:
     row = {
         "instance_id": task["instance_id"],
         "repo": task["repo"],
@@ -194,8 +224,15 @@ def run_instance(task: dict, problem: dict[str, str], work: Path, env: dict[str,
         started = time.perf_counter_ns()
         # "--" stops an issue text starting with "-" as an option.
         query = problem["problem_statement"]
-        found = mimry(repo, env, "find", "--limit", str(TOP), "--", query)
-        ranked = parse_find(found)
+        if diagnose:
+            # The same ranking, deeper and with -v; the top 10 are
+            # scored exactly as in a normal run.
+            found = mimry(repo, env, "find", "--limit", str(DIAGNOSE_DEPTH), "-v", "--", query)
+            explained = parse_find_explained(found, DIAGNOSE_DEPTH)
+            ranked = [path for path, _ in explained[:TOP]]
+        else:
+            found = mimry(repo, env, "find", "--limit", str(TOP), "--", query)
+            ranked = parse_find(found)
         lookup_ms = (time.perf_counter_ns() - started) / 1_000_000
     except (RuntimeError, OSError) as exc:
         return row | {"status": "error", "error": f"{stage} failed: {exc}"}
@@ -208,6 +245,7 @@ def run_instance(task: dict, problem: dict[str, str], work: Path, env: dict[str,
             "lookup_ms": round(lookup_ms),
         }
         | score(ranked, task["gold"])
+        | ({"diagnosis": diagnosis(explained, task["gold"])} if diagnose else {})
     )
 
 
@@ -293,6 +331,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Task set to run (default: verified)",
     )
     parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        help=f"Also record gold ranks to {DIAGNOSE_DEPTH} and the score line of each result",
+    )
+    parser.add_argument(
         "--merge", type=Path, nargs="+", help="Merge these shard files into --out and exit"
     )
     args = parser.parse_args(argv)
@@ -307,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
     problems = load_problems(work, args.set_name, all_tasks)
     rows = []
     for task in tasks:
-        row = run_instance(task, problems[task["instance_id"]], work, env)
+        row = run_instance(task, problems[task["instance_id"]], work, env, args.diagnose)
         rows.append(row)
         detail = (
             f"acc@10 {row['acc_at_10']} first {row['first_gold_rank']}"

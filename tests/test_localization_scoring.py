@@ -177,3 +177,22 @@ def test_select_dev_drops_verified_and_keeps_sha256_order():
     assert build_tasks.select_dev(ids, verified) == everything
     assert build_tasks.select_dev(ids, verified, size=2) == everything[:2]
     assert build_tasks.select_dev(ids, verified, size=99) == everything
+
+
+def test_parse_find_explained_pairs_paths_with_score_lines():
+    run = _load_run()
+    output = (
+        "Best matches\n\n"
+        "   1  a/b.py\n"
+        "      name matches\n"
+        "      score 120: graph node label match, intent source boost\n"
+        "   2  tests/test_b.py\n"
+        "      name matches\n"
+    )
+    assert run.parse_find_explained(output, 50) == [
+        ("a/b.py", "score 120: graph node label match, intent source boost"),
+        ("tests/test_b.py", None),
+    ]
+    diagnosis = run.diagnosis(run.parse_find_explained(output, 50), ["tests/test_b.py", "c.py"])
+    assert diagnosis["gold_rank"] == {"c.py": None, "tests/test_b.py": 2}
+    assert [item["path"] for item in diagnosis["explain"]] == ["a/b.py", "tests/test_b.py"]
