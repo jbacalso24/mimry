@@ -10,6 +10,7 @@ The tasks come from SWE-bench Verified, the `test` split of the `princeton-nlp/S
 Its rows are read from the Hugging Face datasets-server JSON API, which needs no extra dependency.
 
 `tasks.verified.json` is built from that dataset by `build_tasks.py`.
+The dev set has its own task file, `tasks.dev.json`, described in [Dev set](#dev-set).
 Each row holds the instance id, the repository, the base commit, `gold` and `added`.
 `gold` is the sorted list of files the gold patch modifies or deletes at the base commit.
 A rename counts as its old path.
@@ -23,6 +24,24 @@ Rebuild the file with:
     uv run python benchmarks/localization/build_tasks.py
 
 The script fails unless the API returns exactly 500 rows, and its output is deterministic.
+Its `--set dev` option fails unless the full split returns exactly 2294 rows.
+
+## Dev set
+
+The dev set is a fixed sample of 300 SWE-bench instances that are not in Verified, for tuning ranking changes.
+It is drawn from the `test` split of `princeton-nlp/SWE-bench`, which holds 2294 instances, and is written to `tasks.dev.json` in the same format as `tasks.verified.json`.
+
+The selection rule is mechanical and was fixed before any result was seen.
+Drop every instance id that is in Verified.
+Sort the rest by the hex SHA-256 digest of the instance id, UTF-8 encoded.
+Keep the first 300.
+
+Build the file with:
+
+    uv run python benchmarks/localization/build_tasks.py --set dev
+
+Every ranking change is measured on the dev set first, in the `Localization` workflow with `set` set to `dev`.
+Verified is run once per frozen change, after the dev results are recorded, so Verified is never used to pick a change.
 
 ## Protocol
 
@@ -37,7 +56,7 @@ For each instance, the runner does the following, in order.
 MIMRY runs with its shipped defaults.
 The only option is `--limit 10`, which is also the default page size.
 Nothing was tuned on SWE-bench Verified.
-Any future change to ranking must be chosen on SWE-bench instances outside Verified and frozen before a Verified run.
+Any future change to ranking must be chosen on the dev set, which is made of SWE-bench instances outside Verified, and frozen before a Verified run.
 
 All instances of a repository share one clone under the work directory, and `MIMRY_CACHE_HOME` also points into the work directory.
 So no run reads or writes a developer's MIMRY cache.
@@ -63,8 +82,14 @@ Percentages are rounded to one decimal place.
     uv run python benchmarks/localization/run.py --work C:/tmp/loc \
         --only psf__requests-1142 --out C:/tmp/loc-one.json
 
+`--set {verified,dev}` picks the task set, and the default is `verified`.
+The dev set reads its issue text from the full split and caches it as `problem-statements.dev.json`, so one work directory can hold both sets:
+
+    uv run python benchmarks/localization/run.py --work C:/tmp/loc \
+        --set dev --only psf__requests --max 1 --out C:/tmp/loc-dev-one.json
+
 `--only` takes text that appears in instance ids, and `--max N` limits the run to the first N selected instances.
-`--shard I/N` runs the instances at positions I mod N in instance id order, which is how the workflow splits the 500.
+`--shard I/N` runs the instances at positions I mod N in instance id order, which is how the workflow splits the task set.
 
 Merge shard outputs into one file with:
 
@@ -73,9 +98,10 @@ Merge shard outputs into one file with:
 ## Run the full benchmark in CI
 
 The `Localization` workflow runs only when triggered by hand.
-It runs ten shards on GitHub-hosted runners, uploads each shard, and then merges them into a `localization-results` artifact.
+It takes a `set` input, `dev` or `verified`, with `dev` as the default.
+It runs ten shards on GitHub-hosted runners, uploads each shard, and then merges them into a `localization-results-<set>` artifact.
 
-    gh workflow run localization.yml
+    gh workflow run localization.yml -f set=dev
 
 Each shard job has a 300-minute limit.
 If a shard job fails, its shard file is missing, and the merge job still runs on the shards that finished.

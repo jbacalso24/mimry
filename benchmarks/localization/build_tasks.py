@@ -1,4 +1,14 @@
-"""Build tasks.verified.json with each instance's gold files.
+"""Build tasks.<set>.json with each instance's gold files.
+
+There are two sets.
+The verified set is the SWE-bench Verified test split, 500 rows.
+The dev set is a fixed sample of 300 instances from the full SWE-bench
+test split that are not in Verified. Ranking changes are tuned on dev,
+and Verified is run once per frozen change.
+
+The dev selection rule is fixed in select_dev, before any result is
+seen: drop every instance id that is in Verified, sort the rest by the
+hex sha256 digest of the id, and keep the first 300.
 
 The rows come from the Hugging Face datasets-server JSON API. Only the
 fields the runner needs are kept. Neither the issue text nor the patch
@@ -9,10 +19,13 @@ commit.
 Run from the repo root:
 
     uv run python benchmarks/localization/build_tasks.py
+    uv run python benchmarks/localization/build_tasks.py --set dev
 """
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import itertools
 import json
 import re
@@ -21,12 +34,21 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-DATASET = "princeton-nlp/SWE-bench_Verified"
+HERE = Path(__file__).resolve().parent
 API = "https://datasets-server.huggingface.co/rows"
-EXPECTED_ROWS = 500
 PAGE = 100
-ATTEMPTS = 3
-OUT = Path(__file__).resolve().parent / "tasks.verified.json"
+ATTEMPTS = 6
+DEV_SIZE = 300
+# The dataset each set is built from, and the exact row count of its
+# test split. The dev set is drawn from the full SWE-bench test split.
+SETS = {
+    "verified": {"dataset": "princeton-nlp/SWE-bench_Verified", "rows": 500},
+    "dev": {"dataset": "princeton-nlp/SWE-bench", "rows": 2294},
+}
+
+
+def task_path(set_name: str) -> Path:
+    return HERE / f"tasks.{set_name}.json"
 
 
 def _get_json(url: str) -> dict:
@@ -37,12 +59,20 @@ def _get_json(url: str) -> dict:
                 return json.load(response)
         except OSError as exc:
             last = exc
-            time.sleep(2 * (attempt + 1))
+            # Ten CI shards fetch at once and the API rate-limits bursts
+            # (429), so wait longer each time, or as long as it asks.
+            retry_after = getattr(exc, "headers", None) and exc.headers.get("Retry-After")
+            wait = int(retry_after) if str(retry_after or "").isdigit() else 5 * 2**attempt
+            time.sleep(min(wait, 120))
     raise RuntimeError(f"{url} failed after {ATTEMPTS} attempts: {last}")
 
 
-def fetch_rows(dataset: str = DATASET) -> list[dict]:
-    """Every row of the dataset's test split, in dataset order."""
+def fetch_rows(dataset: str, expected: int) -> list[dict]:
+    """Every row of the dataset's test split, in dataset order.
+
+    Fails unless the split holds exactly `expected` rows. A truncated
+    cell fails too, so no patch is ever read partially.
+    """
     rows: list[dict] = []
     total: int | None = None
     while total is None or len(rows) < total:
@@ -65,8 +95,8 @@ def fetch_rows(dataset: str = DATASET) -> list[dict]:
             if item["truncated_cells"]:
                 raise RuntimeError(f"{item['row']['instance_id']}: truncated cells")
             rows.append(item["row"])
-    if len(rows) != EXPECTED_ROWS or total != EXPECTED_ROWS:
-        raise RuntimeError(f"{dataset}: expected {EXPECTED_ROWS} rows, got {len(rows)}")
+    if len(rows) != expected or total != expected:
+        raise RuntimeError(f"{dataset}: expected {expected} rows, got {len(rows)}")
     return rows
 
 
@@ -131,18 +161,68 @@ def build(rows: list[dict]) -> list[dict]:
             }
         )
     tasks.sort(key=lambda task: task["instance_id"])
-    if len({task["instance_id"] for task in tasks}) != EXPECTED_ROWS:
-        raise RuntimeError("duplicate or missing instance ids")
+    if len({task["instance_id"] for task in tasks}) != len(tasks):
+        raise RuntimeError("duplicate instance ids")
     return tasks
 
 
-def main() -> int:
-    tasks = build(fetch_rows())
-    OUT.write_text(
+def select_dev(instance_ids: list[str], verified_ids: set[str], size: int = DEV_SIZE) -> list[str]:
+    """The dev instance ids, in sha256 order, at most `size` of them.
+
+    The rule is fixed and mechanical: drop every id that is in Verified,
+    sort the rest by the hex sha256 digest of the id (UTF-8), and keep
+    the first `size`. Nothing about an instance's content or its result
+    takes part.
+    """
+    candidates = [
+        instance_id
+        for instance_id in dict.fromkeys(instance_ids)
+        if instance_id not in verified_ids
+    ]
+    candidates.sort(
+        key=lambda instance_id: hashlib.sha256(instance_id.encode("utf-8")).hexdigest()
+    )
+    return candidates[:size]
+
+
+def build_dev(full_rows: list[dict]) -> list[dict]:
+    """The dev tasks, drawn from the full split rows fetched for it."""
+    verified = {
+        task["instance_id"]
+        for task in json.loads(task_path("verified").read_text(encoding="utf-8"))
+    }
+    ids = [row["instance_id"] for row in full_rows]
+    missing = verified - set(ids)
+    if missing:
+        raise RuntimeError(
+            f"{len(missing)} Verified ids are not in the full split, e.g. {sorted(missing)[0]}"
+        )
+    chosen = select_dev(ids, verified)
+    if len(chosen) != DEV_SIZE:
+        raise RuntimeError(f"dev: {len(chosen)} eligible instances, expected {DEV_SIZE}")
+    by_id = {row["instance_id"]: row for row in full_rows}
+    return build([by_id[instance_id] for instance_id in chosen])
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--set",
+        dest="set_name",
+        choices=sorted(SETS),
+        default="verified",
+        help="Which task set to build (default: verified)",
+    )
+    args = parser.parse_args(argv)
+    spec = SETS[args.set_name]
+    rows = fetch_rows(spec["dataset"], spec["rows"])
+    tasks = build_dev(rows) if args.set_name == "dev" else build(rows)
+    out = task_path(args.set_name)
+    out.write_text(
         json.dumps(tasks, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
     empty = sum(1 for task in tasks if not task["gold"])
-    print(f"wrote {len(tasks)} rows to {OUT} ({empty} with no gold files)")
+    print(f"wrote {len(tasks)} rows to {out} ({empty} with no gold files)")
     return 0
 
 

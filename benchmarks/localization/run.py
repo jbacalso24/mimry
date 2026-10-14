@@ -9,10 +9,17 @@ for scoring.
 This measures file retrieval from issue text, not issue resolution.
 README.md has the protocol and the metrics.
 
+`--set dev` runs the dev set instead of Verified (default: verified).
+
 Run one instance locally:
 
     uv run python benchmarks/localization/run.py --work C:/tmp/loc \\
         --only psf__requests-1142 --out C:/tmp/loc-one.json
+
+Run the dev set on the same work directory:
+
+    uv run python benchmarks/localization/run.py --work C:/tmp/loc \\
+        --set dev --only psf__requests --out C:/tmp/loc-dev-one.json
 
 Merge shard outputs into one results file:
 
@@ -33,10 +40,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from build_tasks import fetch_rows
+from build_tasks import SETS, fetch_rows, task_path
 
-HERE = Path(__file__).resolve().parent
-TASKS = HERE / "tasks.verified.json"
 TOP = 10
 # `mimry find` prints "  %2d  <path>" per result. Reason lines are
 # indented further.
@@ -131,21 +136,31 @@ def parse_find(output: str) -> list[str]:
     return paths[:TOP]
 
 
-def load_problems(work: Path) -> dict[str, dict[str, str]]:
-    """Issue text and base commit per instance, from one download.
+def load_problems(work: Path, set_name: str, tasks: list[dict]) -> dict[str, dict[str, str]]:
+    """Issue text and base commit for every task in the set.
 
     The download is cached in the work directory, so a shard fetches the
-    dataset once rather than once per instance.
+    dataset once rather than once per instance. The cache is named per
+    set and keeps only the instances in the task file, so every shard
+    reads the same cache and one work directory can hold both sets.
     """
-    cache = work / "problem-statements.json"
+    cache = work / f"problem-statements.{set_name}.json"
     if not cache.exists():
+        wanted = {task["instance_id"] for task in tasks}
+        spec = SETS[set_name]
         problems = {
             row["instance_id"]: {
                 "base_commit": row["base_commit"],
                 "problem_statement": row["problem_statement"],
             }
-            for row in fetch_rows()
+            for row in fetch_rows(spec["dataset"], spec["rows"])
+            if row["instance_id"] in wanted
         }
+        missing = wanted - problems.keys()
+        if missing:
+            raise RuntimeError(
+                f"{len(missing)} tasks have no issue text, e.g. {sorted(missing)[0]}"
+            )
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(
             json.dumps(problems, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
@@ -271,6 +286,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max", dest="limit", type=int, help="Run at most this many instances")
     parser.add_argument("--out", type=Path, required=True, help="Results JSON file")
     parser.add_argument(
+        "--set",
+        dest="set_name",
+        choices=sorted(SETS),
+        default="verified",
+        help="Task set to run (default: verified)",
+    )
+    parser.add_argument(
         "--merge", type=Path, nargs="+", help="Merge these shard files into --out and exit"
     )
     args = parser.parse_args(argv)
@@ -280,10 +302,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--work is required to run instances")
     work = args.work.resolve()
     env = {**os.environ, "MIMRY_CACHE_HOME": str(work / "cache"), "PYTHONIOENCODING": "utf-8"}
-    tasks = select(
-        json.loads(TASKS.read_text(encoding="utf-8")), args.shard, args.only, args.limit
-    )
-    problems = load_problems(work)
+    all_tasks = json.loads(task_path(args.set_name).read_text(encoding="utf-8"))
+    tasks = select(all_tasks, args.shard, args.only, args.limit)
+    problems = load_problems(work, args.set_name, all_tasks)
     rows = []
     for task in tasks:
         row = run_instance(task, problems[task["instance_id"]], work, env)

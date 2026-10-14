@@ -1,9 +1,18 @@
 name: Localization
 
-# Manual only. The full SWE-bench Verified run takes hours, so no push or
-# pull request starts it.
+# Manual only. The full run takes hours, so no push or pull request starts
+# it. Tune ranking on the dev set first, and run verified once per frozen
+# change.
 on:
   workflow_dispatch:
+    inputs:
+      set:
+        description: "Task set to run: dev (tuning) or verified (final)"
+        type: choice
+        options:
+          - dev
+          - verified
+        default: dev
 
 permissions:
   contents: read
@@ -36,7 +45,7 @@ jobs:
       - name: Run shard
         run: >-
           uv run python benchmarks/localization/run.py --work /tmp/loc
-          --shard ${{ matrix.shard }}/10
+          --set ${{ inputs.set }} --shard ${{ matrix.shard }}/10
           --out /tmp/loc-shard-${{ matrix.shard }}.json
 
       - name: Upload shard results
@@ -84,6 +93,6 @@ jobs:
       - name: Upload merged results
         uses: actions/upload-artifact@v4
         with:
-          name: localization-results
+          name: localization-results-${{ inputs.set }}
           path: /tmp/localization-results.json
           if-no-files-found: error

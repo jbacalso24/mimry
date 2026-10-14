@@ -160,3 +160,20 @@ def test_header_paths_with_separator_inside_a_name():
         "x b/y.py",
     )
     assert build_tasks.header_paths("diff --git a/a.py b/b.py") == ("a.py", "b.py")
+
+
+def test_select_dev_drops_verified_and_keeps_sha256_order():
+    ids = [
+        "astropy__a-1",
+        "django__django-2",
+        "psf__requests-3",
+        "sympy__sympy-4",
+        "pytest__x-5",
+        "flask__f-6",
+        "astropy__a-1",
+    ]
+    verified = {"django__django-2"}
+    everything = ["pytest__x-5", "sympy__sympy-4", "flask__f-6", "astropy__a-1", "psf__requests-3"]
+    assert build_tasks.select_dev(ids, verified) == everything
+    assert build_tasks.select_dev(ids, verified, size=2) == everything[:2]
+    assert build_tasks.select_dev(ids, verified, size=99) == everything
