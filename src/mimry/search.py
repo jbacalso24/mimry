@@ -163,7 +163,8 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
     best = min(rank for _file_id, rank in rows)
     for file_id, rank in rows:
         if best < 0:
-            boost = 8 + round(72 * rank / best)
+            # Keyword sums grow with query length; keep BM25 in step.
+            boost = round((8 + 72 * rank / best) * max(1.0, 2 * len(terms) / 24))
         else:
             boost = 8
         scores[file_id] = (boost, "FTS/BM25 match")
