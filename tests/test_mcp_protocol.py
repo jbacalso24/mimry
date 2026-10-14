@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -222,3 +222,94 @@ def test_tool_exceptions_become_error_results(registry):
         "content": [{"type": "text", "text": "ValueError: bad x"}],
         "isError": True,
     }
+
+
+def test_a_tool_that_exits_is_an_error_result_and_the_server_keeps_going(registry):
+    @tool
+    def quits(text: str) -> dict:
+        """Exits with a message, like a CLI helper."""
+        raise SystemExit(f"not set up for {text}")
+
+    @tool
+    def status(code: int) -> dict:
+        """Exits with a status."""
+        raise SystemExit(code)
+
+    replies = _exchange(
+        [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "quits", "arguments": {"text": "repo"}},
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "status", "arguments": {"code": 3}},
+            },
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
+        ]
+    )
+    assert replies[1]["result"] == {
+        "content": [{"type": "text", "text": "not set up for repo"}],
+        "isError": True,
+    }
+    assert replies[2]["result"]["isError"] is True
+    assert replies[2]["result"]["content"][0]["text"] == "exited with status 3"
+    assert [tool["name"] for tool in replies[3]["result"]["tools"]] == ["quits", "status"]
+
+
+def test_keyboard_interrupt_is_not_turned_into_a_tool_error(registry):
+    @tool
+    def interrupted() -> dict:
+        """Interrupted by the user."""
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _exchange(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": "interrupted", "arguments": {}},
+                },
+            ]
+        )
+
+
+def test_string_literals_are_an_enum_and_a_bad_value_is_an_argument_error():
+    def pick(outcome: Literal["passed", "failed"] = "failed") -> dict:
+        return {"outcome": outcome}
+
+    schema = input_schema(pick)
+    assert schema["properties"]["outcome"] == {
+        "type": "string",
+        "enum": ["passed", "failed"],
+        "default": "failed",
+    }
+    assert validate(schema, {"outcome": "passed"}) is None
+    assert validate(schema, {"outcome": "bogus"}) == (
+        '"outcome" must be one of "passed", "failed", got "bogus"'
+    )
+    assert validate(schema, {"outcome": 1}) == (
+        '"outcome" must be one of "passed", "failed", got an integer'
+    )
+
+
+def test_a_bad_item_in_the_list_branch_of_a_union_is_named():
+    schema = input_schema(sample)
+    base = {"text": "a", "count": 1, "flag": True, "names": [], "rows": []}
+    assert validate(schema, {**base, "maybe": [1]}) == (
+        '"maybe"[0] must be an object, got an integer'
+    )
+    assert validate(schema, {**base, "maybe": [{"k": 1}]}) == (
+        '"maybe"[0]["k"] must be a string, got an integer'
+    )
+    # No branch matches the container, so the union message stands.
+    assert validate(schema, {**base, "maybe": 3}) == (
+        '"maybe" must be a string or a list or null, got an integer'
+    )

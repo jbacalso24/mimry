@@ -9,7 +9,7 @@ from functools import wraps
 from inspect import signature
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 from mimry.adapters import list_adapters
 from mimry.cache_safety import IndexOutsideCacheError
@@ -34,7 +34,7 @@ from mimry.digest import canonical_digest
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
-from mimry.mcp_protocol import tool
+from mimry.mcp_protocol import exit_message, exit_status, tool
 from mimry.paths import context_file, task_context_file
 from mimry.plan import (
     InvalidPlanError,
@@ -250,6 +250,16 @@ def _capture_command(func, args: SimpleNamespace) -> dict[str, Any]:
                         "current_root": str(exc.current_root),
                     },
                     "recommended": _root_identity_recommended(exc),
+                }
+            )
+        except SystemExit as exc:
+            # A CLI helper exited instead of returning. Keep its output.
+            return sanitize_data(
+                {
+                    "returncode": exit_status(exc),
+                    "stdout": stdout.getvalue(),
+                    "stderr": stderr.getvalue(),
+                    "error": {"code": "command_exited", "message": exit_message(exc)},
                 }
             )
     return sanitize_data(
@@ -696,7 +706,7 @@ def mimry_feedback(
     missed: list[str] | None = None,
     ignored: list[str] | None = None,
     verification: str | list[dict[str, str]] | None = None,
-    outcome: str = "unknown",
+    outcome: Literal["passed", "failed", "blocked", "partial", "unknown"] = "unknown",
     notes: str | None = None,
 ) -> dict[str, Any]:
     """Record local agent usage feedback for future ranking."""

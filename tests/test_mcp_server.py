@@ -13,10 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from mimry import mcp_server
+from mimry import mcp_protocol, mcp_server
 from mimry.commands import refresh_if_stale
+from mimry.feedback import VALID_OUTCOMES
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
+from mimry.mcp_protocol import input_schema, validate
 from mimry.mcp_tools import (
     mimry_brief,
     mimry_context,
@@ -868,3 +870,87 @@ def test_no_op_reindex_records_the_current_fingerprint(tmp_path: Path, monkeypat
 
     monkeypatch.setattr(commands, "index_freshness", walk_must_not_run)
     assert refresh_if_stale(repo) is None
+
+
+def _serve(messages: list[dict]) -> list[dict]:
+    """Run the real tools through the stdio protocol, in process."""
+    stdin = io.BytesIO("".join(json.dumps(m) + "\n" for m in messages).encode("utf-8"))
+    stdout = io.BytesIO()
+    info = {"name": "MIMRY", "version": "test", "instructions": "test"}
+    mcp_protocol.serve(info, lambda: None, stdin=stdin, stdout=stdout)
+    return [json.loads(line) for line in stdout.getvalue().splitlines() if line]
+
+
+def test_a_tool_on_a_root_not_set_up_is_an_error_and_the_server_answers(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("def hello():\n    return 1\n", encoding="utf-8")
+    call = {
+        "name": "mimry_find",
+        "arguments": {"query": "hello", "root": str(repo)},
+    }
+
+    replies = _serve(
+        [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": call},
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/list"},
+        ]
+    )
+
+    result = replies[1]["result"]
+    assert result["isError"] is True
+    assert "MIMRY is not set up for repo yet" in result["content"][0]["text"]
+    assert "mimry init" in result["content"][0]["text"]
+    assert "mimry_find" in [tool["name"] for tool in replies[2]["result"]["tools"]]
+
+
+def test_feedback_outcome_is_an_enum_and_a_bad_value_is_an_argument_error():
+    schema = input_schema(mimry_feedback)
+    assert set(schema["properties"]["outcome"]["enum"]) == VALID_OUTCOMES
+    assert schema["properties"]["outcome"]["default"] == "unknown"
+    assert validate(schema, {"query": "x", "outcome": "passed"}) is None
+    assert validate(schema, {"query": "x", "outcome": "pass"}) == (
+        '"outcome" must be one of "passed", "failed", "blocked", "partial", "unknown", got "pass"'
+    )
+
+    call = {"name": "mimry_feedback", "arguments": {"query": "x", "outcome": "pass"}}
+    replies = _serve(
+        [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": call},
+        ]
+    )
+    result = replies[1]["result"]
+    assert result["isError"] is True
+    assert result["content"][0]["text"].startswith("Invalid arguments for mimry_feedback: ")
+
+
+def test_a_bad_item_in_a_list_argument_is_named_not_the_union():
+    schema = input_schema(mimry_find)
+    assert validate(schema, {"query": "hello", "path_globs": [1]}) == (
+        '"path_globs"[0] must be a string, got an integer'
+    )
+    assert validate(schema, {"query": "hello", "path_globs": "x"}) == (
+        '"path_globs" must be a list or null, got a string'
+    )
+
+
+def test_capture_command_keeps_what_a_cli_helper_printed_before_it_exited():
+    from types import SimpleNamespace
+
+    from mimry.mcp_tools import _capture_command
+
+    def helper(args):
+        print("half done")
+        raise SystemExit("gone")
+
+    assert _capture_command(helper, SimpleNamespace()) == {
+        "returncode": 1,
+        "stdout": "half done\n",
+        "stderr": "",
+        "error": {"code": "command_exited", "message": "gone"},
+    }

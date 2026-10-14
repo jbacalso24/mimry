@@ -61,6 +61,10 @@ def _type_schema(hint: Any, name: str) -> dict[str, Any]:
         return {"type": "null"}
     origin = typing.get_origin(hint)
     args = typing.get_args(hint)
+    if origin is typing.Literal:
+        if not all(isinstance(arg, str) for arg in args):
+            raise TypeError(f"{name}: only string Literal values are supported")
+        return {"type": "string", "enum": list(args)}
     if origin is list and len(args) == 1:
         return {"type": "array", "items": _type_schema(args[0], name)}
     if origin is dict and len(args) == 2 and args[0] is str:
@@ -114,6 +118,8 @@ def _got(value: Any) -> str:
 def _describe(schema: dict[str, Any]) -> str:
     if "anyOf" in schema:
         return " or ".join(_describe(option) for option in schema["anyOf"])
+    if "enum" in schema:
+        return "one of " + ", ".join(json.dumps(choice) for choice in schema["enum"])
     kind = schema["type"]
     return {
         "string": "a string",
@@ -127,9 +133,23 @@ def _describe(schema: dict[str, Any]) -> str:
 
 def _check(value: Any, schema: dict[str, Any], where: str) -> str | None:
     if "anyOf" in schema:
-        if any(_check(value, option, where) is None for option in schema["anyOf"]):
-            return None
+        problems = []
+        for option in schema["anyOf"]:
+            problem = _check(value, option, where)
+            if problem is None:
+                return None
+            problems.append((option, problem))
+        # A list or dict that failed its own branch: name the bad item.
+        container = {list: "array", dict: "object"}.get(type(value))
+        for option, problem in problems:
+            if option.get("type") == container:
+                return problem
         return f"{where} must be {_describe(schema)}, got {_got(value)}"
+    if "enum" in schema:
+        if isinstance(value, str) and value in schema["enum"]:
+            return None
+        got = json.dumps(value) if isinstance(value, str) else _got(value)
+        return f"{where} must be {_describe(schema)}, got {got}"
     kind = schema["type"]
     if kind == "integer":
         ok = isinstance(value, int) and not isinstance(value, bool)
@@ -191,6 +211,22 @@ def _tool_result(text: str, *, is_error: bool = False, structured: Any = None) -
     if is_error:
         result["isError"] = True
     return result
+
+
+def exit_message(exc: SystemExit) -> str:
+    """The text a SystemExit carries: its message or its exit status."""
+    if isinstance(exc.code, str):
+        return exc.code
+    if exc.code is None:
+        return "exited"
+    return f"exited with status {exc.code}"
+
+
+def exit_status(exc: SystemExit) -> int:
+    """The process exit status a SystemExit stands for."""
+    if exc.code is None:
+        return 0
+    return exc.code if isinstance(exc.code, int) else 1
 
 
 def _dumps(message: Any) -> str:
@@ -279,6 +315,10 @@ class _Session:
         try:
             result = entry.func(**_with_defaults(entry.schema, arguments))
             text = _dumps(result)
+        except SystemExit as exc:
+            # A CLI helper exited (bad root or state): a tool error for
+            # this call. The server keeps answering.
+            return _tool_result(exit_message(exc), is_error=True)
         except Exception as exc:
             traceback.print_exc(file=sys.stderr)
             return _tool_result(f"{type(exc).__name__}: {exc}", is_error=True)
