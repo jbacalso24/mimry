@@ -12,6 +12,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
@@ -800,6 +801,44 @@ def test_repeated_successful_publications_retain_current_and_last_known_good(
     assert retained == {current["generationId"], previous["generationId"]}
     state.validate_generation(current)
     state.validate_generation(previous)
+
+
+def test_upgrade_rebuild_leaves_no_text_from_the_previous_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import mimry.reuse as reuse
+    import mimry.scanner as scanner
+    import mimry.security as security
+
+    canary = b"canaryScrub7f3Q"
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    (repo / "docs").mkdir()
+    (repo / "docs" / "setup.md").write_text(
+        f"# Setup\n\nDB_PASSWORD={canary.decode()}\n", encoding="utf-8"
+    )
+    # The previous build's rules let the credential through.
+    with (
+        patch.object(security, "contains_sensitive_text", lambda *a, **k: False),
+        patch.object(security, "redact_sensitive_text", lambda text: text),
+        patch.object(scanner, "redact_sensitive_text", lambda text: text),
+    ):
+        write_index(repo, load_pointer(repo))
+    old_index = Path(load_pointer(repo)["indexPath"]).parent.parent
+    assert any(canary in path.read_bytes() for path in old_index.rglob("*") if path.is_file())
+
+    monkeypatch.setattr(reuse, "_FINGERPRINT", "a-newer-mimry")
+    write_index(repo, load_pointer(repo))
+
+    pointer = load_pointer(repo)
+    generations = idx_path(pointer["rootId"]) / "generations"
+    assert [path.name for path in generations.iterdir()] == [pointer["generationId"]]
+    leaked = [
+        path
+        for path in idx_path(pointer["rootId"]).rglob("*")
+        if path.is_file() and canary in path.read_bytes()
+    ]
+    assert leaked == []
 
 
 def test_semantic_generation_swap_is_detected_as_corrupt(tmp_path: Path, monkeypatch):

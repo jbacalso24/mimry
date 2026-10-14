@@ -705,9 +705,33 @@ def _pointer_generation(pointer: object, base: Path) -> str | None:
     return generation_id
 
 
-def _cleanup_generations(root: Path, base: Path, current: dict | None = None) -> None:
+def _built_by_other_code(generation: Path) -> bool:
+    """Whether ``generation`` was built by different MIMRY code.
+
+    An unreadable record counts as other code, so its text is not kept
+    as last-known-good.
+    """
+    built = load_stat_cache(generation)
+    return built is None or built.fingerprint != code_fingerprint()
+
+
+def _vacuum(db: Path) -> None:
+    con = sqlite3.connect(db)
+    try:
+        con.execute("vacuum")
+    finally:
+        con.close()
+
+
+def _cleanup_generations(
+    root: Path, base: Path, current: dict | None = None, *, last_known_good: bool = True
+) -> None:
     """Retain only pointer-current + readable LKG and remove crash
     leftovers.
+
+    ``last_known_good=False`` (after an upgrade) keeps no previous
+    generation: the backup pointer goes with it, so text the previous
+    build indexed does not outlive the rebuild.
 
     The caller must hold ``base/operation.lock`` exclusively so staging
     and final generation cleanup cannot race publication or a
@@ -720,7 +744,8 @@ def _cleanup_generations(root: Path, base: Path, current: dict | None = None) ->
     if current_id:
         protected.add(current_id)
     pointer = pointer_file(root)
-    for candidate in (pointer, backup_path(pointer)):
+    backup = backup_path(pointer)
+    for candidate in (pointer, backup) if last_known_good else (pointer,):
         try:
             payload = json.loads(candidate.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
@@ -737,6 +762,8 @@ def _cleanup_generations(root: Path, base: Path, current: dict | None = None) ->
                 _remove_tree(child)
             else:
                 child.unlink()
+    if not last_known_good:
+        backup.unlink(missing_ok=True)
 
 
 def _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable) -> dict | None:
@@ -834,6 +861,9 @@ def write_index(root, ptr, *, full: bool = False):
                 "MIMRY root pointer changed while waiting for the operation lock; retry indexing"
             )
         ptr = active
+        # An upgrade rebuilds from a generation built by other code.
+        # Its text was indexed under the old rules, so it is not kept.
+        upgraded = bool(ptr.get("generationId")) and _built_by_other_code(Path(ptr["indexPath"]))
 
         # A pointer written under an older identity schema names a
         # generation whose file, symbol, and chunk IDs were derived from
@@ -1031,6 +1061,10 @@ def write_index(root, ptr, *, full: bool = False):
                 staging, ptr["rootId"], generation_id, precomputed=record["chunks"]
             )
             _fault("after-sidecars")
+            if upgraded:
+                # Deleted rows and dropped FTS tables keep their text in
+                # free pages until the file is rewritten.
+                _vacuum(staging / "mimry.sqlite")
 
             progress("MIMRY: publishing index", force=True)
             manifest = generation_manifest(staging, generation_id, indexed_at)
@@ -1062,7 +1096,7 @@ def write_index(root, ptr, *, full: bool = False):
                 published.pop("worktreeFingerprint")
             save_pointer(root, published)
             register_root(published)
-            _cleanup_generations(root, base, published)
+            _cleanup_generations(root, base, published, last_known_good=not upgraded)
 
             # Write visible graph artifacts after successful publication
             out = graph_output_dir(root)
