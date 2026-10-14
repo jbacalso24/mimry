@@ -140,6 +140,20 @@ def _fts_match_query(terms: list[str]) -> str:
     return " OR ".join(f'"{term}"*' for term in terms if term)
 
 
+LONG_QUERY_TERMS = 24
+
+
+def bm25_scale(term_count: int) -> float:
+    """How much to scale the BM25 boost for a query this long.
+
+    Keyword and graph sums grow with every query term; BM25 does not.
+    On an issue-length query they drowned it out, though BM25 is the
+    signal that corrects for long files. Up to LONG_QUERY_TERMS terms
+    the boost is unchanged; past that it grows 4x per further block.
+    """
+    return max(1.0, 1 + 4 * (term_count - LONG_QUERY_TERMS) / LONG_QUERY_TERMS)
+
+
 def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
     terms = query_terms(q)
     match = _fts_match_query(terms)
@@ -161,9 +175,10 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
         return {}
     scores: dict[str, tuple[int, str]] = {}
     best = min(rank for _file_id, rank in rows)
+    scale = bm25_scale(len(terms))
     for file_id, rank in rows:
         if best < 0:
-            boost = 8 + round(72 * rank / best)
+            boost = round((8 + 72 * rank / best) * scale)
         else:
             boost = 8
         scores[file_id] = (boost, "FTS/BM25 match")
