@@ -13,7 +13,7 @@ from . import __version__
 from .installer import _REFERENCES, hook_table, skill_body
 
 NAME = "mimry"
-DESCRIPTION = "Modular Intelligence Memory for Repos"
+DESCRIPTION = "The local context engine for AI coding agents"
 HOMEPAGE = "https://github.com/jbacalso24/mimry"
 PLUGIN_DIR = "plugins/mimry"
 
@@ -47,7 +47,7 @@ def plugin_files() -> dict[str, str]:
         ".claude-plugin/marketplace.json": _json(
             {
                 "name": NAME,
-                "description": "MIMRY: local repo memory for coding agents.",
+                "description": "MIMRY: the local context engine for coding agents.",
                 "owner": {"name": "Judison Bacalso"},
                 "plugins": [
                     {"name": NAME, "source": f"./{PLUGIN_DIR}", "description": DESCRIPTION}

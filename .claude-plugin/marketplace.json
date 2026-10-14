@@ -1,6 +1,6 @@
 {
   "name": "mimry",
-  "description": "MIMRY: local repo memory for coding agents.",
+  "description": "MIMRY: the local context engine for coding agents.",
   "owner": {
     "name": "Judison Bacalso"
   },
@@ -8,7 +8,7 @@
     {
       "name": "mimry",
       "source": "./plugins/mimry",
-      "description": "Modular Intelligence Memory for Repos"
+      "description": "The local context engine for AI coding agents"
     }
   ]
 }

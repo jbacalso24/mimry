@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/banner.png" alt="MIMRY - Local repo memory for coding agents" width="100%">
+  <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/banner.png" alt="MIMRY - The local context engine for AI coding agents" width="100%">
 </p>
 
 <h1 align="center">MIMRY</h1>
@@ -7,7 +7,7 @@
 <!-- mcp-name: io.github.jbacalso24/mimry -->
 
 <p align="center">
-  Local repo memory for AI coding agents.
+  The local context engine for AI coding agents.
 </p>
 
 <p align="center">

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mimry"
 version = "0.3.3"
-description = "Modular Intelligence Memory for Repos"
+description = "The local context engine for AI coding agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

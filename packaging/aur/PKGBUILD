@@ -7,7 +7,7 @@
 pkgname=mimry
 pkgver=0
 pkgrel=1
-pkgdesc='Local repo memory for coding agents: a CLI and MCP server that ranks the files that matter for a task'
+pkgdesc='The local context engine for coding agents: a CLI and MCP server that ranks the files that matter for a task'
 arch=('x86_64')
 url='https://github.com/jbacalso24/mimry'
 license=('MIT')
