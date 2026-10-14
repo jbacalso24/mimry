@@ -123,6 +123,28 @@ def grep_search(repo: Path, task: str) -> tuple[int, list[str]]:
     return cost, ranked
 
 
+def rank_metrics(ranked: list[str], gold: list[str]) -> dict[str, object]:
+    """Ranking quality before any read.
+
+    Recall at 5 and 10, the first gold rank (1-based, None if absent)
+    and the gold files never ranked. A path that appears twice keeps
+    its first rank.
+    """
+    gold_set = set(gold)
+    rank = {path: position for position, path in enumerate(dict.fromkeys(ranked), 1)}
+    gold_ranks = sorted(rank[path] for path in gold_set if path in rank)
+
+    def recall(k: int) -> float:
+        return sum(1 for position in gold_ranks if position <= k) / len(gold_set)
+
+    return {
+        "recall_at_5": recall(5),
+        "recall_at_10": recall(10),
+        "first_gold_rank": gold_ranks[0] if gold_ranks else None,
+        "missed": sorted(path for path in gold_set if path not in rank),
+    }
+
+
 def changed_lines(repo: Path, task: dict) -> dict[str, set[int]]:
     """Changed lines per gold file; absent if rebase merge untouched."""
     base, gold = task["base"], set(task["gold"])
@@ -347,12 +369,30 @@ def mimry_agent(
         read=read,
         then_whole=changed is not None,
     )
-    return result | {"index_ms": round(index_ms), "preflight_ms": round(preflight_ms)}
+    return result | {
+        "index_ms": round(index_ms),
+        "preflight_ms": round(preflight_ms),
+        "ranking": rank_metrics(order, task["gold"]),
+    }
 
 
 def summarize(results: list[dict]) -> dict[str, object]:
     def total(agent: str, rows: list[dict]) -> int:
         return sum(r[agent]["tokens"] for r in rows)
+
+    def ranking(agent: str) -> dict[str, object]:
+        metrics = [r[agent]["ranking"] for r in results]
+        ranks = [m["first_gold_rank"] for m in metrics if m["first_gold_rank"] is not None]
+        return {
+            "mean_recall_at_5_pct": round(
+                100 * statistics.mean(m["recall_at_5"] for m in metrics), 1
+            ),
+            "mean_recall_at_10_pct": round(
+                100 * statistics.mean(m["recall_at_10"] for m in metrics), 1
+            ),
+            "median_first_gold_rank": statistics.median(ranks) if ranks else None,
+            "tasks_with_missed_files": sum(1 for m in metrics if m["missed"]),
+        }
 
     both = [r for r in results if r["grep"]["success"] and r["mimry"]["success"]]
     ratios = [r["repo_tokens"] / r["mimry"]["tokens"] for r in results]
@@ -381,6 +421,7 @@ def summarize(results: list[dict]) -> dict[str, object]:
             1,
         ),
         "median_x_fewer_than_reading_whole_repo": round(statistics.median(ratios), 1),
+        "ranking": {agent: ranking(agent) for agent in ("grep", "mimry")},
     }
 
 
@@ -440,7 +481,8 @@ def main() -> int:
                 cost,
                 ranked,
                 read=sed and (lambda path, repo=repo, sed=sed: sed_read(repo, path, sed)),
-            ),
+            )
+            | {"ranking": rank_metrics(ranked, task["gold"])},
             "mimry": mimry_agent(
                 repo,
                 task,
@@ -453,7 +495,8 @@ def main() -> int:
         g, m = row["grep"], row["mimry"]
         print(
             f"{task['id']:<28} grep {g['tokens']:>7} {'ok' if g['success'] else '--'}"
-            f"   mimry {m['tokens']:>7} {'ok' if m['success'] else '--'}",
+            f"   mimry {m['tokens']:>7} {'ok' if m['success'] else '--'}"
+            f" first gold rank {m['ranking']['first_gold_rank']}",
             file=sys.stderr,
         )
 

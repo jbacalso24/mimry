@@ -29,6 +29,15 @@ The window size was fixed at 100 lines before any run and was not tuned.
 The agents are scripted so that results are reproducible and free to rerun.
 A model-driven agent would choose its reads differently, so these numbers compare the search tools, not complete agents.
 
+## Ranking
+
+Each agent also reports how well its ranked list orders the files a change touched, before any read or fallback, so the numbers do not depend on the read budget.
+recall@5 and recall@10 are the share of those files that appear in the first 5 or 10 entries of the list.
+The first gold rank is the 1-based position of the first such file, and the missed files are the ones the list never reaches, listed per task.
+MIMRY's ranked list is its context pack, which holds at most 8 files, so its recall@10 is recall over the whole pack.
+grep's ranked list is its hit ranking from the keyword search.
+The columns join the README tables from the next release run.
+
 ## Task selection
 
 Tasks come from real merged pull requests, selected by the mechanical rule in [select_tasks.py](select_tasks.py), fixed before any result was seen:
