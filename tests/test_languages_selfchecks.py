@@ -8,7 +8,7 @@ pointers work correctly.
 import pytest
 
 from mimry.constants import TEXT_EXTS
-from mimry.core.languages import EXTENSION_LANGUAGE, extract, language_for
+from mimry.core.languages import EXTENSION_LANGUAGE, extract, is_objc_header, language_for
 from mimry.intent import TEST_NAME_RE
 
 
@@ -1123,3 +1123,64 @@ def test_app_language_source_file_names_are_not_tests(name):
     name.
     """
     assert not TEST_NAME_RE.search(name), f"{name} should not be a test file"
+
+
+def test_zig_function_span_covers_its_body(tmp_path):
+    """A Zig function runs from its declaration to its closing brace.
+    Its FnProto is only the signature, so the span comes from the Decl
+    around it.
+    """
+    result = _extract(tmp_path, "b.zig", "pub fn helper() i32 {\n    return 1;\n}\n")
+    assert [(d["name"], d["line_start"], d["line_end"]) for d in result["definitions"]] == [
+        ("helper", 1, 3)
+    ]
+
+
+@pytest.mark.parametrize(
+    "name,source,expected",
+    [
+        ("main.rs", "fn run() { Foo::new(); crate::x::f(); }\n", {"new", "f"}),
+        ("main.cpp", "void run() { ns::f(); ns::Foo::make(); Foo::make(); }\n", {"f", "make"}),
+    ],
+)
+def test_path_qualified_calls_record_the_last_segment(tmp_path, name, source, expected):
+    """`Foo::new()` and `ns::f()` record the segment after the last
+    `::`, as `a.b()` records `b`.
+    """
+    result = _extract(tmp_path, name, source)
+    assert {c["name"] for c in result["calls"]} == expected
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        (b"@interface B : NSObject\n@end\n", True),
+        (b"#include <stdio.h>\n@protocol P\n", True),
+        (b"  @implementation A\n", True),
+        (b"#import <Foundation/Foundation.h>\n", True),
+        (b"int add(int a, int b);\n", False),
+        (b"#include <stdio.h>\n#importer_t x;\n", False),
+        (b"/* @interface B */\n// @end\n", False),
+    ],
+)
+def test_objc_header_is_recognised_by_its_markers(source, expected):
+    """A header is Objective-C when one of its lines starts with an
+    Objective-C marker. C headers and comments that merely mention one
+    do not count.
+    """
+    assert is_objc_header(source) is expected
+
+
+def test_objc_header_extracts_its_classes_and_functions(tmp_path):
+    """The scanner parses a header holding Objective-C markers as
+    Objective-C, so its class and its C function are both symbols.
+    """
+    target = tmp_path / "B.h"
+    text = "@interface B : NSObject\n@end\n\nstatic int helper(void) {\n    return 1;\n}\n"
+    target.write_text(text, encoding="utf-8")
+    result = extract(target, text, language="objc")
+    assert result["status"] == "ok", result["status"]
+    assert {(d["name"], d["kind"]) for d in result["definitions"]} == {
+        ("B", "class"),
+        ("helper", "function"),
+    }

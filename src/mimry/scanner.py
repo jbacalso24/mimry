@@ -21,7 +21,7 @@ from .core.documents import (
     extract_document_text,
     is_document,
 )
-from .core.languages import EXTENSION_LANGUAGE
+from .core.languages import EXTENSION_LANGUAGE, is_objc_header
 from .core.languages import extract as extract_language
 from .framework_adapters import (
     alembic_migration,
@@ -832,6 +832,10 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
     else:
         # Go/Rust/C# via core.languages
         language = EXTENSION_LANGUAGE.get(ext)
+        # `ext` is still ".h" only when no mimry.toml override names it,
+        # so an override of `.h` keeps its language.
+        if ext == ".h" and is_objc_header(data):
+            language = "objc"
         if language and ext != ".py" and ext not in TS_EXTENSIONS:
             try:
                 source = data.decode("utf-8", errors="ignore")

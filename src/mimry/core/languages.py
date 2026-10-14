@@ -353,6 +353,19 @@ NODE_TYPES = {
 }
 
 
+# Objective-C declarations and directives that start a line. C
+# headers have none of them, so a `.h` with one of these is parsed as
+# Objective-C.
+_OBJC_HEADER_MARKER = re.compile(
+    rb"^[ \t]*(?:@interface|@protocol|@implementation|@end|#import)\b", re.M
+)
+
+
+def is_objc_header(data: bytes) -> bool:
+    """Whether a `.h` file's bytes hold Objective-C rather than C."""
+    return _OBJC_HEADER_MARKER.search(data) is not None
+
+
 def language_for(path: str | Path, overrides: dict[str, str] | None = None) -> str | None:
     """Grammar name for a path's extension, or None if unsupported.
 
@@ -415,6 +428,17 @@ def symbol_kind(language: str, node_kind: str) -> str:
     if node_kind == "union_specifier":
         return "class"
     return "function"
+
+
+def _definition_span(language: str, node: Any) -> Any:
+    """The node whose lines a definition covers. A Zig FnProto is only
+    the signature; its enclosing Decl also holds the body, and calls in
+    the body belong to the function.
+    """
+    if language == "zig" and node.type == "FnProto" and node.parent is not None:
+        if node.parent.type == "Decl":
+            return node.parent
+    return node
 
 
 def _definition_kind(language: str, node: Any, source: bytes) -> str:
@@ -1238,6 +1262,11 @@ def _import_module(lang: str, node: Any, source: bytes) -> str | None:
     return _generic_import_module(lang, node, source)
 
 
+_PATH_KINDS = frozenset(
+    ["scoped_identifier", "scoped_type_identifier", "qualified_identifier", "scope_resolution"]
+)
+
+
 def _expression_name(node: Any, source: bytes) -> str | None:
     """Reduce a callee expression to the identifier a caller would match
     on.
@@ -1247,6 +1276,14 @@ def _expression_name(node: Any, source: bytes) -> str | None:
     segment wins".
     """
     kind = node.type
+    if kind in _PATH_KINDS:
+        # `Foo::new`, `crate::x::f`, `ns::Foo::make`: the name is the
+        # last `::` segment, as `a.b` keeps `b`. Rust and C++ both name
+        # that segment with a `name` field.
+        tail = node.child_by_field_name("name")
+        if tail is None and node.named_child_count:
+            tail = node.named_children[-1]
+        return _expression_name(tail, source) if tail is not None else None
     if _is_identifier_kind(kind):
         return _text(source, node)
     if "generic" in kind:
@@ -1556,7 +1593,8 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
         if category in (None, "definitions") and kind in node_types["definitions"]:
             name = _definition_name(lang, node, source)
             if name:  # Skip if no name found
-                line = _line(node)
+                span = _definition_span(lang, node)
+                line = _line(span)
                 key = (name, line)
                 if key not in seen_defs:
                     seen_defs.add(key)
@@ -1566,7 +1604,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                             "name": name,
                             "kind": _definition_kind(lang, node, source),
                             "line_start": line,
-                            "line_end": _end_line(node),
+                            "line_end": _end_line(span),
                             "exported": exported,
                         }
                     )

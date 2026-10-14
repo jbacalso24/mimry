@@ -914,3 +914,57 @@ def test_go_rust_and_php_imports_link_files_end_to_end(tmp_path):
     assert ("main.go", "lib/lib.go") in imports, sorted(imports)
     assert ("src/main.rs", "src/b.rs") in imports, sorted(imports)
     assert ("a.php", "b.php") in imports, sorted(imports)
+
+
+def _graph_pairs(root, relation):
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    return {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e["relation"] == relation
+    }
+
+
+def _index_repo(root, files):
+    _write_repo(root, files)
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(root)
+    assert pointer is not None
+    write_index(root, pointer)
+
+
+def test_zig_call_inside_a_function_reaches_the_graph(tmp_path):
+    """Zig: a call in a function body belongs to that function, so the
+    cross-file call becomes a graph edge.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "b.zig": "pub fn helper() i32 {\n    return 1;\n}\n",
+            "a.zig": (
+                'const b = @import("b.zig");\n\npub fn run() i32 {\n    return b.helper();\n}\n'
+            ),
+        },
+    )
+    assert ("run", "helper") in _graph_pairs(root, "calls")
+
+
+def test_rust_qualified_call_reaches_the_graph(tmp_path):
+    """Rust: `Foo::new()` is a call to `new`, which the impl block
+    defines in the same file.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "src/main.rs": (
+                "struct Foo;\n\nimpl Foo {\n    fn new() -> Foo {\n        Foo\n    }\n}\n\n"
+                "fn run() -> Foo {\n    Foo::new()\n}\n"
+            ),
+        },
+    )
+    assert ("run", "new") in _graph_pairs(root, "calls")

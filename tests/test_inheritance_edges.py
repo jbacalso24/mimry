@@ -208,3 +208,60 @@ def test_namespace_module_does_not_own_a_base_name() -> None:
     }
 
     assert resolve_inheritance(inherits, symbols, []) == []
+
+
+_OBJC_PAIR = {
+    "A.m": '#import "B.h"\n\n@interface A : B\n@end\n\n@implementation A\n@end\n',
+    "B.h": "#import <Foundation/Foundation.h>\n\n@interface B : NSObject\n@end\n",
+}
+
+
+def test_objc_header_superclass_reaches_the_graph(tmp_path: Path) -> None:
+    """A `.h` with @interface is parsed as Objective-C, so the class it
+    declares can be the base of a class in a `.m` file.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    for rel, text in _OBJC_PAIR.items():
+        (root / rel).write_text(text, encoding="utf-8")
+
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(root)
+    assert pointer is not None
+    write_index(root, pointer)
+
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    pairs = {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e.get("relation") == "inherits"
+    }
+    assert ("A", "B") in pairs, sorted(p for p in pairs if p[0])
+
+
+def test_h_language_override_keeps_the_header_as_c(tmp_path: Path) -> None:
+    """A mimry.toml override of `.h` wins over the content check."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "mimry.toml").write_text('[index.languages]\n".h" = "c"\n', encoding="utf-8")
+    for rel, text in _OBJC_PAIR.items():
+        (root / rel).write_text(text, encoding="utf-8")
+
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(root)
+    assert pointer is not None
+    write_index(root, pointer)
+
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    pairs = {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e.get("relation") == "inherits"
+    }
+    assert ("A", "B") not in pairs, sorted(p for p in pairs if p[0])
