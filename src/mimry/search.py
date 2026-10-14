@@ -140,6 +140,9 @@ def _fts_match_query(terms: list[str]) -> str:
     return " OR ".join(f'"{term}"*' for term in terms if term)
 
 
+LONG_QUERY_TERMS = 24
+
+
 def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
     terms = query_terms(q)
     match = _fts_match_query(terms)
@@ -151,7 +154,7 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
         # extension, content_hint, metadata_text, body follow.
         rows = con.execute(
             "select file_id, bm25(files_fts, 0.0, 1.0, 1.4, 0.4, 0.8, 0.8, 0.8) as rank "
-            "from files_fts where files_fts match ? order by rank, rel_path, file_id limit 80",
+            "from files_fts where files_fts match ? order by rank, rel_path, file_id limit 300",
             (match,),
         ).fetchall()
         con.close()
@@ -161,9 +164,12 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
         return {}
     scores: dict[str, tuple[int, str]] = {}
     best = min(rank for _file_id, rank in rows)
+    # Keyword sums grow with every query term, BM25 does not: past
+    # LONG_QUERY_TERMS terms, scale BM25 up 4x per further block.
+    scale = max(1.0, 1 + 4 * (len(terms) - LONG_QUERY_TERMS) / LONG_QUERY_TERMS)
     for file_id, rank in rows:
         if best < 0:
-            boost = 8 + round(72 * rank / best)
+            boost = round((8 + 72 * rank / best) * scale)
         else:
             boost = 8
         scores[file_id] = (boost, "FTS/BM25 match")
