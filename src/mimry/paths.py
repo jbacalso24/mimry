@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
 import re
 import unicodedata
 from datetime import UTC, datetime
@@ -118,6 +119,22 @@ def canonical_rel_path(path, root) -> str:
     """
     rel = Path(path).relative_to(root).as_posix()
     return unicodedata.normalize("NFC", rel)
+
+
+def normalize_file_filter(file: str, root) -> str:
+    """A user's ``--file`` value as a repo-relative POSIX path.
+
+    Backslashes, ``./`` and ``..`` segments are normalised, and an
+    absolute path inside ``root`` becomes root-relative. A path outside
+    ``root`` comes back unchanged, so it matches no file.
+    """
+    text = file.strip().replace("\\", "/")
+    if Path(text).is_absolute():
+        try:
+            text = Path(text).resolve().relative_to(Path(root).resolve()).as_posix()
+        except (OSError, ValueError):
+            return text
+    return posixpath.normpath(text)
 
 
 def canonical_cached_rel_path(value: object) -> str | None:

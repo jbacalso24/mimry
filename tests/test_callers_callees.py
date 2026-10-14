@@ -279,6 +279,41 @@ def test_ambiguous_name_lists_candidates_until_file_picks_one(tmp_path):
     assert "helper calls nothing in the graph." in by_suffix.stdout
 
 
+@pytest.mark.parametrize(
+    "spelling",
+    ["app/one.py", "./app/one.py", "app\\one.py", "app/../app/one.py", "{abs}"],
+)
+def test_file_filter_accepts_dot_slash_backslash_and_absolute_paths(tmp_path, spelling):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+    _add_second_helper(repo)
+    spelling = spelling.replace("{abs}", str(repo / "app" / "one.py"))
+
+    payload = json.loads(
+        _mimry(repo, cache, "callers", "helper", "--file", spelling, "--json").stdout
+    )
+
+    assert payload["target"]["path"] == "app/one.py"
+    assert payload["ambiguous"] is False
+    assert payload["file_matched"] is True
+
+
+def test_file_filter_that_matches_no_file_says_so(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+    _add_second_helper(repo)
+
+    payload = json.loads(
+        _mimry(repo, cache, "callers", "helper", "--file", "nope.py", "--json").stdout
+    )
+    text = _mimry(repo, cache, "callers", "helper", "--file", "nope.py")
+
+    assert payload["target"] is None
+    assert payload["ambiguous"] is False
+    assert payload["file_matched"] is False
+    assert 'No file in the graph matches "nope.py".' in text.stdout
+
+
 def test_json_has_the_documented_shape(tmp_path):
     cache = tmp_path / "cache"
     repo = _repo(tmp_path, cache)
@@ -348,6 +383,18 @@ def test_mcp_symbol_returns_callers_payload(tmp_path, monkeypatch):
     assert payload["root"] == str(repo)
     assert {r["name"] for r in payload["results"]} == {"main", "helper2"}
     assert payload["target"]["path"] == "app/one.py"
+
+
+def test_mcp_symbol_file_filter_accepts_a_dot_slash_path(tmp_path, monkeypatch):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+    _add_second_helper(repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    payload = mcp_tools.mimry_symbol("helper", str(repo), relations="callers", file="./app/one.py")
+
+    assert payload["target"]["path"] == "app/one.py"
+    assert payload["file_matched"] is True
 
 
 def test_mcp_symbol_without_relations_is_unchanged(tmp_path, monkeypatch):

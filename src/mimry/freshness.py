@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,29 @@ def _unindexable_paths(idx: Path) -> set[str]:
     return {entry for entry in payload if isinstance(entry, str)}
 
 
+def _spelled_on_disk(root: Path, rel_path: str, listings: dict[str, set[str]]) -> bool:
+    """True when every component of rel_path exists under that exact
+    spelling.
+
+    Path.exists() is case-insensitive on Windows and macOS, so an
+    indexed name still "exists" after a case-only rename. Directory
+    listings are cached per folder for one freshness pass.
+    """
+    folder = ""
+    for part in rel_path.split("/"):
+        names = listings.get(folder)
+        if names is None:
+            try:
+                names = set(os.listdir(root / folder))
+            except OSError:
+                return False
+            listings[folder] = names
+        if part not in names:
+            return False
+        folder = f"{folder}/{part}" if folder else part
+    return True
+
+
 def index_freshness(root: Path, ptr: dict[str, Any], *, verify: bool = False) -> dict[str, Any]:
     """Compare the active generation with the live tree, once per read
     scope.
@@ -107,6 +131,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     # snapshots or by an unchanged stat identity; graph health reuses
     # them instead of reading every source file a second time.
     verified_hashes: dict[str, str] = {}
+    listings: dict[str, set[str]] = {}
 
     for f in files:
         rel_path = f["rel_path"]
@@ -135,7 +160,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
             changed.append(rel_path)
             live_excluded.append(rel_path)
             continue
-        if not p.exists():
+        if not p.exists() or (live is None and not _spelled_on_disk(root, rel_path, listings)):
             missing.append(rel_path)
             continue
         # Policy changes must invalidate old generations. Otherwise a

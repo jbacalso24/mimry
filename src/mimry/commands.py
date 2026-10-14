@@ -58,6 +58,7 @@ from .paths import (
     idx_path,
     legacy_context_file,
     mdir,
+    normalize_file_filter,
     now,
     output_dir,
     pointer_file,
@@ -2069,7 +2070,8 @@ def calls_payload(
             "message": f"The graph files are {health['status']}, so calls can't be checked",
         }
         return payload
-    return call_lookup(load_graph(root), name, relation, depth, file)
+    wanted = normalize_file_filter(file, root) if file else None
+    return call_lookup(load_graph(root), name, relation, depth, wanted)
 
 
 def _location(path: str, line) -> str:
@@ -2113,8 +2115,11 @@ def _print_calls(a, relation: str) -> int:
                 indent=4,
             )
             return 0
-        where = f"in {file}" if file else "in the graph"
-        print(f"No function or method named {ui.quote(name)} is {where}.")
+        if payload.get("file_matched") is False:
+            print(f"No file in the graph matches {ui.quote(file)}.")
+        else:
+            where = f"in {file}" if file else "in the graph"
+            print(f"No function or method named {ui.quote(name)} is {where}.")
         if payload["candidates"]:
             ui.detail("Did you mean:")
             ui.table(

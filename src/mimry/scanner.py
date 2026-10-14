@@ -448,8 +448,14 @@ def worktree_fingerprint(root: Path) -> str | None:
     head = _git_output(root, "rev-parse", "--show-toplevel", "HEAD")
     if head is None:
         return None
+    # With core.ignorecase=true git matches index names
+    # case-insensitively, so a case-only rename shows as a clean tree.
+    # Turning it off makes git report the old name as deleted and the
+    # new one as untracked.
     status = _git_output(
         root,
+        "-c",
+        "core.ignorecase=false",
         "--no-optional-locks",
         "status",
         "--porcelain=v1",

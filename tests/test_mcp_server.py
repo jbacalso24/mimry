@@ -31,6 +31,7 @@ from mimry.mcp_tools import (
     mimry_refresh,
     mimry_route,
     mimry_status,
+    mimry_symbol,
     mimry_why,
 )
 from mimry.paths import idx_path, task_context_file
@@ -819,6 +820,19 @@ def test_cli_find_reindexes_a_file_added_since_the_last_index(tmp_path: Path, mo
 
     assert code == 0
     assert "src/zebra.py" in buf_out.getvalue()
+
+
+def test_symbol_refreshes_after_a_case_only_rename_on_a_case_insensitive_repo(
+    tmp_path: Path, monkeypatch
+):
+    repo = _indexed_repo(tmp_path, monkeypatch, git=True)
+    subprocess.run(["git", "config", "core.ignorecase", "true"], cwd=repo, check=True)
+    os.rename(repo / "src" / "auth" / "session.py", repo / "src" / "auth" / "Session.py")
+
+    payload = mimry_symbol("create_session", str(repo))
+
+    assert [s["path"] for s in payload["symbols"]] == ["src/auth/Session.py"]
+    assert "reindexed" in payload
 
 
 def test_refresh_if_stale_skips_the_walk_when_git_sees_the_indexed_tree(

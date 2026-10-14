@@ -536,6 +536,10 @@ def call_lookup(
         src = node_source_file(node) or ""
         return src == wanted_file or src.endswith("/" + wanted_file)
 
+    if wanted_file is not None:
+        # Tells a missing function in that file from a missing file.
+        payload["file_matched"] = any(in_file(n) for n in graph.get("nodes") or [])
+
     def by_location(row: dict) -> tuple:
         return (row["path"], row["line"] or 0, row["name"])
 

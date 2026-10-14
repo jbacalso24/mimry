@@ -6,6 +6,8 @@ The output never differs.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +18,7 @@ import mimry.indexer as indexer
 from mimry.commands import cmd_init
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
+from mimry.scanner import worktree_fingerprint
 from mimry.storage import load_pointer
 
 ARTIFACTS = (
@@ -160,3 +163,33 @@ def test_parallel_adaptation_matches_in_process(tmp_path, monkeypatch):
     in_process = _index(root, full=True)
     monkeypatch.setenv("MIMRY_INDEX_WORKERS", "2")
     assert _index(root, full=True) == in_process
+
+
+def test_case_only_rename_makes_a_case_insensitive_git_repo_stale(tmp_path, monkeypatch):
+    """With core.ignorecase=true git shows a case-only rename as clean.
+
+    The fingerprint must still change, and freshness must report the
+    old spelling as missing and the new one as changed.
+    """
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    root = _repo(tmp_path, monkeypatch)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "core.ignorecase", "true"], cwd=root, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"],
+        cwd=root,
+        check=True,
+    )
+    _index(root)
+    indexed = worktree_fingerprint(root)
+    assert indexed == load_pointer(root)["worktreeFingerprint"]
+
+    os.rename(root / "app" / "b.py", root / "app" / "B.py")
+
+    assert worktree_fingerprint(root) != indexed
+    fresh = index_freshness(root, load_pointer(root))
+    assert fresh["state"] == "stale"
+    assert fresh["missing"] == ["app/b.py"]
+    assert "app/B.py" in fresh["changed"]
