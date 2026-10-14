@@ -2,6 +2,45 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.3.3 - 2026-10-14
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`.
+  The first command after upgrading rebuilds the index, and the rebuild keeps nothing from the old one, so text the new privacy rules redact is gone from the cache ([#206](https://github.com/jbacalso24/mimry/pull/206)).
+- Run `mimry install --platform <name>` again to add `.mimry/` to Git's global ignore file ([#213](https://github.com/jbacalso24/mimry/pull/213)).
+  After that, `mimry init` no longer edits each repo's `.gitignore`.
+  `--no-global-gitignore` skips it.
+- The privacy rules are stricter, so a few files may drop out of the index ([#204](https://github.com/jbacalso24/mimry/pull/204)).
+  `.conf`, `.properties`, `.tfvars`, `Dockerfile` and other text formats MIMRY doesn't parse are now checked for credentials, and `*.env` files are skipped by name.
+  Files whose only "secret" was a URL-valued setting such as `TOKEN_URL` are indexed again.
+
+### New features
+
+- `mimry callers` and `mimry callees` show who calls a function and what it calls ([#163](https://github.com/jbacalso24/mimry/pull/163)).
+- MIMRY parses Bash, PowerShell, Lua, Perl ([#157](https://github.com/jbacalso24/mimry/pull/157)), Dart, Objective-C and Zig ([#166](https://github.com/jbacalso24/mimry/pull/166)).
+- `mimry install` adds `.mimry/` and `mimry-out/` to Git's global ignore file, once per machine ([#213](https://github.com/jbacalso24/mimry/pull/213)).
+- The site has a changelog page ([#158](https://github.com/jbacalso24/mimry/pull/158)), and the site and README show contributors ([#159](https://github.com/jbacalso24/mimry/pull/159)).
+
+### Fixes
+
+- Commands run from a subfolder of an indexed repo answer from the repo's index, and create no `.mimry/` there ([#212](https://github.com/jbacalso24/mimry/pull/212)).
+- A repo under a non-ASCII path works; `--root` pointing at a file or a drive root fails with one line; `find` on a repo that was never indexed indexes it first; `why` says when a path is missing or outside the repo ([#212](https://github.com/jbacalso24/mimry/pull/212)).
+- Credentials in the middle of a sentence are redacted, in queries as well as in files ([#204](https://github.com/jbacalso24/mimry/pull/204)).
+  A placeholder after a credential label is no longer treated as a secret ([#165](https://github.com/jbacalso24/mimry/pull/165)).
+- Calls resolve by scope, through package re-exports, and within Swift, Kotlin and C# modules ([#208](https://github.com/jbacalso24/mimry/pull/208)).
+- Go, Rust and PHP imports link files ([#201](https://github.com/jbacalso24/mimry/pull/201)), and absolute Python imports resolve in `src/` layout projects ([#164](https://github.com/jbacalso24/mimry/pull/164)).
+- Zig function bodies, Rust `Type::method()` calls and Objective-C `.h` headers are recorded ([#207](https://github.com/jbacalso24/mimry/pull/207)).
+- Python files that start with a BOM, subclasses of `Base[T]`, and files with a syntax error keep their symbols; `index` and `status` name the files that could not be parsed ([#211](https://github.com/jbacalso24/mimry/pull/211)).
+- Indexing a minified JavaScript bundle takes seconds, not minutes ([#211](https://github.com/jbacalso24/mimry/pull/211)).
+- `mimry symbol <file.py>` matches the file name ([#187](https://github.com/jbacalso24/mimry/pull/187), thanks @wzd8888).
+- A case-only rename is picked up, and `--file` accepts either slash ([#210](https://github.com/jbacalso24/mimry/pull/210)).
+- The MCP server stays up when a tool is asked about a folder that isn't set up, and rejects an invalid `outcome` with a clear error ([#203](https://github.com/jbacalso24/mimry/pull/203)).
+- `install` never overwrites a settings file it can't parse, an MCP config it can't write is a warning, and install-only warnings no longer mark a repo unhealthy in `doctor` ([#205](https://github.com/jbacalso24/mimry/pull/205)).
+- MIMRY says when tree-sitter grammars can't be downloaded, and tries only once ([#155](https://github.com/jbacalso24/mimry/pull/155)).
+- A copied `.mimry` folder is explained the same way in every command ([#160](https://github.com/jbacalso24/mimry/pull/160)).
+- The AUR build waits for the new sdist on PyPI ([#154](https://github.com/jbacalso24/mimry/pull/154)).
+
 ## 0.3.2 - 2026-10-13
 
 ### Upgrade notes
