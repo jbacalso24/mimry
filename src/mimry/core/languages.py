@@ -129,7 +129,7 @@ NODE_TYPES = {
     },
     "rust": {
         "definitions": frozenset(["function_item", "struct_item", "impl_item", "mod_item"]),
-        "imports": frozenset(["use_declaration"]),
+        "imports": frozenset(["use_declaration", "mod_item"]),
         "calls": frozenset(["call_expression"]),
     },
     "csharp": {
@@ -182,7 +182,15 @@ NODE_TYPES = {
                 "method_declaration",
             ]
         ),
-        "imports": frozenset(["namespace_use_declaration"]),
+        "imports": frozenset(
+            [
+                "namespace_use_declaration",
+                "require_expression",
+                "require_once_expression",
+                "include_expression",
+                "include_once_expression",
+            ]
+        ),
         # Three call shapes: helper(), $this->method(),
         # Static::method().
         "calls": frozenset(
@@ -1136,7 +1144,76 @@ def _generic_import_module(lang: str, node: Any, source: bytes) -> str | None:
     return module
 
 
+_PHP_INCLUDE_NODES = frozenset(
+    (
+        "require_expression",
+        "require_once_expression",
+        "include_expression",
+        "include_once_expression",
+    )
+)
+
+
+def _rust_import(node: Any, source: bytes) -> str | None:
+    """A `use` path as written, or the name in a `mod x;` declaration.
+
+    `mod x { ... }` declares its module inline, so it imports nothing.
+    """
+    if node.type != "mod_item":
+        return _generic_import_module("rust", node, source)
+    if any(child.type == "declaration_list" for child in _children(node)):
+        return None
+    return _direct_child_text(node, source, "identifier")
+
+
+def _php_literal(node: Any, source: bytes) -> str | None:
+    """Value of a PHP string with no interpolation, or None."""
+    if node.type not in ("string", "encapsed_string"):
+        return None
+    if any(child.is_named and child.type != "string_content" for child in _children(node)):
+        return None
+    return _unquote(_text(source, node))
+
+
+def _php_include(node: Any, source: bytes) -> str | None:
+    """The file a PHP require/include loads when its path is a literal.
+
+    The argument may be parenthesized, or `__DIR__ . '/x.php'`, which is
+    the importer's own folder. A plain path is taken relative to the
+    importing file, as Ruby's require_relative is. A variable or any
+    other expression names nothing.
+    """
+    expr = next((child for child in _children(node) if child.is_named), None)
+    while expr is not None and expr.type == "parenthesized_expression":
+        expr = next((child for child in _children(expr) if child.is_named), None)
+    if expr is None:
+        return None
+    if expr.type == "binary_expression":
+        left = expr.child_by_field_name("left")
+        operator = expr.child_by_field_name("operator")
+        right = expr.child_by_field_name("right")
+        if left is None or operator is None or right is None:
+            return None
+        if _text(source, left) != "__DIR__" or _text(source, operator) != ".":
+            return None
+        path = _php_literal(right, source)
+        return "./" + path.lstrip("/") if path is not None else None
+    path = _php_literal(expr, source)
+    if not path or path.startswith("/"):
+        return None
+    return path if path.startswith(("./", "../")) else "./" + path
+
+
+def _php_import(node: Any, source: bytes) -> str | None:
+    """A PHP `use` clause, or the path of a require/include."""
+    if node.type in _PHP_INCLUDE_NODES:
+        return _php_include(node, source)
+    return _generic_import_module("php", node, source)
+
+
 _IMPORT_READERS = {
+    "rust": _rust_import,
+    "php": _php_import,
     "ruby": _ruby_require,
     "c": _c_include,
     "cpp": _c_include,

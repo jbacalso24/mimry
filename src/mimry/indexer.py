@@ -175,7 +175,15 @@ MISSING_DEPENDENCY = "parse_error:MissingDependency"
 # Below this many files, worker start-up (a fresh interpreter importing
 # the parsers) costs more than it saves.
 PARALLEL_MIN_FILES = 64
-_REFERENCE_KEYS = ("doc_links", "table_refs", "inherits", "alembic", "xcode", "dart_package")
+_REFERENCE_KEYS = (
+    "doc_links",
+    "table_refs",
+    "inherits",
+    "alembic",
+    "xcode",
+    "dart_package",
+    "go_module",
+)
 
 
 def _adapt_file(
@@ -651,7 +659,10 @@ def _build_core_graph(
     dart_packages: dict[str, list[str]] = {}
     for pubspec, name in split_refs["dart_package"].items():
         dart_packages.setdefault(name, []).append(posixpath.dirname(pubspec))
-    import_edges = resolve_imports(imports, rel_paths, overrides, dart_packages)
+    go_modules: dict[str, list[str]] = {}
+    for gomod, name in split_refs["go_module"].items():
+        go_modules.setdefault(name, []).append(posixpath.dirname(gomod))
+    import_edges = resolve_imports(imports, rel_paths, overrides, dart_packages, go_modules)
 
     graph["edges"] += _import_graph_edges(import_edges, file_id_of)
     graph["edges"] += _call_graph_edges(calls, symbols_by_file, import_edges, symbol_ids)

@@ -652,6 +652,11 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
         name = re.search(r"^name:\s*['\"]?([A-Za-z0-9_]+)", data_decoded, re.MULTILINE)
         if name:
             references["dart_package"] = name.group(1)
+    if posixpath.basename(rel_path) == "go.mod":
+        # A Go module's path, for resolving the imports of its packages.
+        module = re.search(r"^module\s+[\"'`]?([^\s\"'`]+)", data_decoded, re.MULTILINE)
+        if module:
+            references["go_module"] = module.group(1)
     if ext not in {".png", ".jpg", ".jpeg", ".gif", ".ico", ".bin", ".o", ".exe", ".dll", ".so"}:
         try:
             table_refs = sql_table_references(data_decoded)

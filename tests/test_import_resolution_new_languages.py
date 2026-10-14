@@ -640,6 +640,187 @@ class TestZigImports:
         assert resolve_imports(imports, rel_paths) == []
 
 
+class TestGoImports:
+    """A Go import names a package: every non-test .go file in the
+    folder that its go.mod module path maps to. The standard library
+    and third-party paths name nothing.
+    """
+
+    def test_import_links_every_file_of_the_package(self):
+        imports = {"main.go": ["example.com/app/lib"]}
+        rel_paths = {"main.go", "lib/lib.go", "lib/util.go", "other/x.go"}
+
+        results = resolve_imports(imports, rel_paths, go_modules={"example.com/app": [""]})
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("lib/lib.go", "EXTRACTED"),
+            ("lib/util.go", "EXTRACTED"),
+        ]
+
+    def test_test_files_are_not_linked(self):
+        imports = {"main.go": ["example.com/app/lib"]}
+        rel_paths = {"main.go", "lib/lib.go", "lib/lib_test.go"}
+
+        results = resolve_imports(imports, rel_paths, go_modules={"example.com/app": [""]})
+
+        assert [r["target"] for r in results] == ["lib/lib.go"]
+
+    def test_standard_library_import_is_no_edge_even_with_a_matching_file(self):
+        imports = {"main.go": ["fmt"]}
+        rel_paths = {"main.go", "util/fmt.go"}
+
+        assert resolve_imports(imports, rel_paths, go_modules={"example.com/app": [""]}) == []
+
+    def test_without_a_go_mod_nothing_resolves(self):
+        imports = {"main.go": ["example.com/app/lib"]}
+        rel_paths = {"main.go", "lib/lib.go"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_longest_module_path_wins_for_a_nested_module(self):
+        imports = {"main.go": ["example.com/app/tools/gen"]}
+        rel_paths = {"main.go", "tools/gen/gen.go", "tools/gen.go"}
+
+        results = resolve_imports(
+            imports,
+            rel_paths,
+            go_modules={"example.com/app": [""], "example.com/app/tools": ["tools"]},
+        )
+
+        assert [r["target"] for r in results] == ["tools/gen/gen.go"]
+
+    def test_go_mod_in_a_subfolder_maps_its_own_packages(self):
+        imports = {"services/api/main.go": ["example.com/api/internal/db"]}
+        rel_paths = {"services/api/main.go", "services/api/internal/db/db.go"}
+
+        results = resolve_imports(
+            imports, rel_paths, go_modules={"example.com/api": ["services/api"]}
+        )
+
+        assert [r["target"] for r in results] == ["services/api/internal/db/db.go"]
+
+    def test_module_declared_twice_is_no_edge(self):
+        imports = {"main.go": ["example.com/app/lib"]}
+        rel_paths = {"main.go", "lib/lib.go"}
+
+        assert (
+            resolve_imports(imports, rel_paths, go_modules={"example.com/app": ["", "copy"]}) == []
+        )
+
+
+class TestRustImports:
+    """Rust `use` and `mod` paths.
+
+    crate:: starts at the crate root, self:: and super:: at the module
+    the importer belongs to, and `mod x;` names the file beside it.
+    """
+
+    def test_crate_path_links_the_module_file(self):
+        imports = {"src/main.rs": ["crate::b::helper"]}
+        rel_paths = {"src/main.rs", "src/b.rs"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("src/b.rs", "EXTRACTED")]
+
+    def test_crate_path_to_a_mod_rs_folder(self):
+        imports = {"src/main.rs": ["crate::a::b::Item"]}
+        rel_paths = {"src/main.rs", "src/a/b/mod.rs"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/a/b/mod.rs"]
+
+    def test_crate_root_is_the_nearest_lib_rs_folder(self):
+        imports = {"crates/app/src/lib.rs": ["crate::util"]}
+        rel_paths = {"crates/app/src/lib.rs", "crates/app/src/util.rs", "src/util.rs"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["crates/app/src/util.rs"]
+
+    def test_mod_declaration_in_main_rs_is_a_sibling_file(self):
+        imports = {"src/main.rs": ["b"]}
+        rel_paths = {"src/main.rs", "src/b.rs"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("src/b.rs", "EXTRACTED")]
+
+    def test_mod_declaration_in_a_named_file_uses_its_folder(self):
+        imports = {"src/foo.rs": ["bar"]}
+        rel_paths = {"src/foo.rs", "src/foo/bar.rs"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/foo/bar.rs"]
+
+    def test_super_and_self_paths(self):
+        imports = {"src/foo/mod.rs": ["super::util", "self::inner"]}
+        rel_paths = {"src/foo/mod.rs", "src/util.rs", "src/foo/inner.rs"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert sorted(r["target"] for r in results) == ["src/foo/inner.rs", "src/util.rs"]
+
+    def test_missing_module_file_is_no_edge(self):
+        imports = {"src/main.rs": ["crate::missing::f"]}
+        rel_paths = {"src/main.rs"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_external_crate_path_is_no_edge(self):
+        imports = {"src/main.rs": ["std::fmt"]}
+        rel_paths = {"src/main.rs"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_extraction_keeps_use_paths_and_bodyless_mods_only(self):
+        source = 'mod b;\nmod inline { fn f() { let s = "x"; } }\nuse crate::b::helper;\n'
+
+        modules = [i["module"] for i in extract("src/main.rs", source)["imports"]]
+
+        assert sorted(modules) == ["b", "crate::b::helper"]
+
+
+class TestPhpImports:
+    """PHP require/include of a literal path.
+
+    The path resolves beside the importing file, as require_relative
+    does. A variable path names nothing.
+    """
+
+    def test_literal_forms_are_extracted_as_relative_paths(self):
+        source = (
+            "<?php\nrequire_once 'b.php';\nrequire (__DIR__ . '/x.php');\n"
+            "include \"c.php\";\ninclude $dyn;\nrequire $base . 'd.php';\n"
+        )
+
+        modules = {i["module"] for i in extract("a.php", source)["imports"]}
+
+        assert modules == {"./b.php", "./x.php", "./c.php"}
+
+    def test_literal_paths_resolve_beside_the_importer(self):
+        imports = {"app/a.php": ["./b.php", "../lib/c.php"]}
+        rel_paths = {"app/a.php", "app/b.php", "lib/c.php"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("app/b.php", "EXTRACTED"),
+            ("lib/c.php", "EXTRACTED"),
+        ]
+
+    def test_missing_file_is_no_edge(self):
+        assert resolve_imports({"app/a.php": ["./missing.php"]}, {"app/a.php"}) == []
+
+    def test_no_javascript_extension_is_probed(self):
+        imports = {"app/a.php": ["./b"]}
+        rel_paths = {"app/a.php", "app/b.js"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
 def test_each_new_app_language_indexes_symbols_and_edges(tmp_path):
     """One file per language: symbols are findable by name, and each
     language gets an import edge. Dart's package: import resolves
@@ -694,3 +875,42 @@ def test_each_new_app_language_indexes_symbols_and_edges(tmp_path):
     )
     assert ("native/Widget.m", "native/Widget.h") in imports, sorted(imports)
     assert ("tools/gen.zig", "tools/util.zig") in imports, sorted(imports)
+
+
+def test_go_rust_and_php_imports_link_files_end_to_end(tmp_path):
+    """Go packages, Rust crate and mod paths, and PHP require_once each
+    give an import edge, so a call into the other file can resolve.
+    """
+    root = tmp_path / "repo"
+    _write_repo(
+        root,
+        {
+            "go.mod": "module example.com/app\n\ngo 1.21\n",
+            "main.go": (
+                'package main\n\nimport "example.com/app/lib"\n\n'
+                "func Run() int {\n\treturn lib.Helper()\n}\n"
+            ),
+            "lib/lib.go": "package lib\n\nfunc Helper() int {\n\treturn 1\n}\n",
+            "src/main.rs": "use crate::b::helper;\n\nfn run() -> i32 {\n    helper()\n}\n",
+            "src/b.rs": "pub fn helper() -> i32 {\n    1\n}\n",
+            "a.php": "<?php\nrequire_once 'b.php';\n\nfunction run() {\n    return helper();\n}\n",
+            "b.php": "<?php\nfunction helper() {\n    return 1;\n}\n",
+        },
+    )
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    pointer = load_pointer(root)
+    assert pointer is not None
+    write_index(root, pointer)
+
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    imports = {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e["relation"] == "imports"
+    }
+    assert ("main.go", "lib/lib.go") in imports, sorted(imports)
+    assert ("src/main.rs", "src/b.rs") in imports, sorted(imports)
+    assert ("a.php", "b.php") in imports, sorted(imports)

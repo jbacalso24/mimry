@@ -22,8 +22,8 @@ def _relative_suffixes(importer: str, overrides: dict[str, str] | None = None) -
     language = language_for(importer, overrides)
     if language == "ruby":
         return ("", ".rb")
-    if language in _C_INCLUDE_LANGUAGES:
-        return ("",)  # an include names its header's extension
+    if language == "php" or language in _C_INCLUDE_LANGUAGES:
+        return ("",)  # an include names its file's extension
     return ("", *_JS_EXTENSIONS)
 
 
@@ -50,6 +50,7 @@ def resolve_imports(
     rel_paths: set[str],
     overrides: dict[str, str] | None = None,
     dart_packages: dict[str, list[str]] | None = None,
+    go_modules: dict[str, list[str]] | None = None,
 ) -> list[dict]:
     """Resolve import strings to repo-relative target files.
 
@@ -61,6 +62,9 @@ def resolve_imports(
             pick each importer's language
         dart_packages: Pub package name to the directories of the
             pubspec.yaml files that declare it, for `package:` URIs
+        go_modules: Go module path to the directories of the go.mod
+            files that declare it. A Go import names a package, so it
+            can link to one result per .go file in that package.
 
     Returns:
         Sorted list of {"importer": str, "target": str,
@@ -69,6 +73,7 @@ def resolve_imports(
         result for ambiguous rule-4 matches.
     """
     results = []
+    go_package_files = _build_go_package_files(rel_paths) if go_modules else {}
 
     # Precompute suffix lookup for rule 4 efficiency
     suffix_lookup = _build_suffix_lookup(rel_paths)
@@ -87,18 +92,23 @@ def resolve_imports(
     package_roots = _build_package_roots(rel_paths)
 
     for importer, module_list in imports.items():
+        is_go = language_for(importer, overrides) == "go"
         for module in module_list:
-            target = _resolve_import(
-                importer,
-                module,
-                rel_paths,
-                suffix_lookup,
-                exact_lookup,
-                overrides,
-                package_roots,
-                dart_packages,
-            )
-            if target:
+            if is_go:
+                targets = _resolve_go(module, go_modules or {}, go_package_files)
+            else:
+                target = _resolve_import(
+                    importer,
+                    module,
+                    rel_paths,
+                    suffix_lookup,
+                    exact_lookup,
+                    overrides,
+                    package_roots,
+                    dart_packages,
+                )
+                targets = [target] if target else []
+            for target in targets:
                 results.append(
                     {
                         "importer": importer,
@@ -142,6 +152,10 @@ def _resolve_import(
         return _SCRIPT_RESOLVERS[language](importer, module, rel_paths, exact_lookup)
     if language == "dart":
         return _resolve_dart(importer, module, rel_paths, dart_packages or {})
+    if language == "rust":
+        result = _resolve_rust(importer, module, rel_paths)
+        if result:
+            return result
     # A bare Objective-C module is `@import Foundation;`, a framework
     # and never a file. Includes always keep a "./" or "<" form (see
     # _c_include).
@@ -303,6 +317,110 @@ def _resolve_dart(
     return _resolve_script_path(importer, module, rel_paths)
 
 
+def _rust_crate_root(importer: str, rel_paths: set[str]) -> str | None:
+    """Folder of the nearest lib.rs or main.rs above the importer."""
+    parts = posixpath.dirname(importer).split("/") if "/" in importer else []
+    for depth in range(len(parts), -1, -1):
+        folder = "/".join(parts[:depth])
+        if any(posixpath.join(folder, root) in rel_paths for root in ("lib.rs", "main.rs")):
+            return folder
+    return None
+
+
+def _rust_module_dir(importer: str) -> str:
+    """Folder that holds the child modules of the importer's module.
+
+    mod.rs, lib.rs and main.rs own their folder. Any other file `a.rs`
+    owns the folder `a/` beside it (Rust 2018 layout).
+    """
+    folder, name = posixpath.split(importer)
+    if name in ("mod.rs", "lib.rs", "main.rs"):
+        return folder
+    return posixpath.join(folder, name[: -len(".rs")])
+
+
+def _rust_module_file(base: str, segments: list[str], rel_paths: set[str]) -> str | None:
+    """File of the longest leading run of segments under base, as
+    `a/b.rs` or `a/b/mod.rs`.
+
+    The last segment is often an item (`use crate::a::b::Item`), so
+    shorter runs are tried after the longest one.
+    """
+    for count in range(len(segments), 0, -1):
+        stem = posixpath.join(base, *segments[:count])
+        for path in (stem + ".rs", posixpath.join(stem, "mod.rs")):
+            if path in rel_paths:
+                return path
+    return None
+
+
+def _resolve_rust(importer: str, module: str, rel_paths: set[str]) -> dict | None:
+    """Rust `use` and `mod` paths to the file that defines the module.
+
+    `crate::` starts at the crate root, `self::` at the importer's
+    module and `super::` at its parent. An unprefixed path is looked up
+    in the importer's module, as a Rust 2018 `use` of a sibling module
+    is. A bare name is a `mod x;` declaration. Anything not found falls
+    through to the suffix match.
+    """
+    segments = module.split("::")
+    prefix = segments[0]
+    base = _rust_module_dir(importer)
+    if prefix == "crate":
+        root = _rust_crate_root(importer, rel_paths)
+        if root is None:
+            return None
+        base, segments = root, segments[1:]
+    elif prefix == "self":
+        segments = segments[1:]
+    elif prefix == "super":
+        while segments and segments[0] == "super":
+            base, segments = posixpath.dirname(base), segments[1:]
+    if not segments or not all(segments):
+        return None
+    path = _rust_module_file(base, segments, rel_paths)
+    if path is None:
+        return None
+    # Only a path the module tree names outright is certain.
+    exact = prefix in ("crate", "self", "super") or len(segments) == 1
+    return {"path": path, "confidence": "EXTRACTED" if exact else "INFERRED"}
+
+
+def _build_go_package_files(rel_paths: set[str]) -> dict[str, list[str]]:
+    """Map each folder to its sorted .go files, test files excluded."""
+    packages: dict[str, list[str]] = {}
+    for path in sorted(rel_paths):
+        if path.endswith(".go") and not path.endswith("_test.go"):
+            packages.setdefault(posixpath.dirname(path), []).append(path)
+    return packages
+
+
+def _resolve_go(
+    module: str, go_modules: dict[str, list[str]], package_files: dict[str, list[str]]
+) -> list[dict]:
+    """A Go import path to the .go files of the package it names.
+
+    The longest go.mod module path that the import equals or extends
+    maps the rest of the path onto that go.mod's folder. The standard
+    library and third-party paths match no module, so they name nothing
+    and never fall through to the suffix match.
+    """
+    best = None
+    for name in go_modules:
+        if module == name or module.startswith(name + "/"):
+            if best is None or len(name) > len(best):
+                best = name
+    if best is None or len(go_modules[best]) != 1:
+        return []
+    rest = module[len(best) :].lstrip("/")
+    package_dir = posixpath.normpath(posixpath.join(go_modules[best][0], rest))
+    if package_dir == ".":
+        package_dir = ""
+    return [
+        {"path": path, "confidence": "EXTRACTED"} for path in package_files.get(package_dir, [])
+    ]
+
+
 _SCRIPT_RESOLVERS = {
     "bash": _resolve_bash,
     "powershell": _resolve_powershell,
@@ -354,7 +472,7 @@ def _rule1_relative(
 
     # Probe: /index with JS extensions only when not Ruby/C-family
     language = language_for(importer, overrides)
-    if language not in ("ruby", *_C_INCLUDE_LANGUAGES):
+    if language not in ("ruby", "php", *_C_INCLUDE_LANGUAGES):
         index_base = posixpath.join(candidate, "index")
         for ext in _JS_EXTENSIONS:
             with_index = index_base + ext
