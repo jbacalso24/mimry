@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -225,6 +227,7 @@ _REFERENCES: dict[str, str] = {
     ),
 }
 _ALWAYS_ON_MARKER = "## MIMRY"
+_HEADING_LINE = re.compile(r"#{1,6} ")
 
 
 def _home() -> Path:
@@ -507,6 +510,11 @@ def platforms() -> dict[str, MimryPlatform]:
     }
 
 
+def platform_keys() -> str:
+    """Every platform key, for the --platform help text."""
+    return ", ".join(sorted(platforms()))
+
+
 def canonical_platform(name: str) -> str:
     key = _PLATFORM_ALIASES.get(name)
     if not key:
@@ -743,8 +751,13 @@ Rules:
 def _atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(content, encoding="utf-8")
-    replace_path(tmp, path)
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        replace_path(tmp, path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
 
 
 def _remove_tree(path: Path, *, attempts: int = 12, delay: float = 0.05) -> None:
@@ -784,15 +797,18 @@ def _install_references(skill_dir: Path) -> None:
 
 
 def _section_bounds(lines: list[str], marker: str) -> tuple[int, int] | None:
-    """Line indexes of a section: the marker line to the next ``## ``.
+    """Line indexes of a section: the marker line to the next heading of
+    any level.
 
-    The section runs to the end of the file when no heading follows.
+    MIMRY's always-on block holds no heading after its own, so a heading
+    that follows it belongs to the user. The section runs to the end of
+    the file when no heading follows.
     """
     start = next((i for i, line in enumerate(lines) if line.strip() == marker), None)
     if start is None:
         return None
     for i in range(start + 1, len(lines)):
-        if lines[i].startswith("## "):
+        if _HEADING_LINE.match(lines[i]):
             return start, i
     return start, len(lines)
 
@@ -868,11 +884,42 @@ def _event_entries(hooks: dict, event: str) -> list:
     return entries if isinstance(entries, list) else []
 
 
-def _has_hook(root: Path, cfg: MimryPlatform) -> bool:
+def _read_hooks_file(path: Path) -> dict:
+    """The hooks file as a dict, or {} when it is missing.
+
+    Raises OSError or ValueError when the file cannot be read, is not a
+    JSON object, or has a "hooks" value that is not an object.
+    """
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
+        raise ValueError('expected a JSON object with a "hooks" object')
+    return data
+
+
+def _hooks_problem(root: Path, cfg: MimryPlatform) -> str | None:
+    """Why the hooks file cannot be merged, or None when it can."""
+    if cfg.key not in {"claude-code", "codex"} or cfg.hook_path is None:
+        return None
+    dst = (root / cfg.hook_path).resolve()
+    try:
+        _read_hooks_file(dst)
+    except (OSError, ValueError) as exc:
+        return f"could not read {_shown(dst, root, True)}: {exc}"
+    return None
+
+
+def _has_hook(root: Path, cfg: MimryPlatform) -> bool | None:
+    """True when every MIMRY hook event is present; None when the hooks
+    file cannot be read."""
     path = root / cfg.hook_path if cfg.hook_path else None
     if not (path and path.exists()):
         return False
-    hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+    try:
+        hooks = _read_hooks_file(path).get("hooks", {})
+    except (OSError, ValueError):
+        return None
     return all(
         any(
             _is_mimry_hook(entry) and sub in str(entry).lower()
@@ -882,8 +929,9 @@ def _has_hook(root: Path, cfg: MimryPlatform) -> bool:
     )
 
 
-def _has_any_hook(root: Path, cfg: MimryPlatform) -> bool:
-    """True when any MIMRY hook entry is present, under any event.
+def _has_any_hook(root: Path, cfg: MimryPlatform) -> bool | None:
+    """True when any MIMRY hook entry is present, under any event; None
+    when the hooks file cannot be read.
 
     Unlike _has_hook this also sees older or partial installs, so the
     uninstall hint can point at --hooks for them.
@@ -891,7 +939,10 @@ def _has_any_hook(root: Path, cfg: MimryPlatform) -> bool:
     path = root / cfg.hook_path if cfg.hook_path else None
     if not (path and path.exists()):
         return False
-    hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+    try:
+        hooks = _read_hooks_file(path).get("hooks", {})
+    except (OSError, ValueError):
+        return None
     return any(_is_mimry_hook(entry) for event in hooks for entry in _event_entries(hooks, event))
 
 
@@ -939,9 +990,32 @@ def _posix_executable() -> str:
     return quoted
 
 
+def _same_file(first: str, second: str) -> bool:
+    """True when two paths name the same file.
+
+    The comparison ignores case on Windows, where normcase lowercases.
+    """
+    return os.path.normcase(str(Path(first).resolve())) == os.path.normcase(
+        str(Path(second).resolve())
+    )
+
+
+def _hook_executable() -> str:
+    """What the hook commands run.
+
+    Bare `mimry` when PATH resolves to this install's mimry, so a hooks
+    file committed for a team works on any machine with mimry on PATH.
+    Otherwise this install's own path, which only works here.
+    """
+    on_path = shutil.which("mimry")
+    if on_path and _same_file(on_path, _resolve_mimry_exe()):
+        return "mimry"
+    return _posix_executable()
+
+
 def _hook_command(subcommand: str = "hook-check") -> str:
     """Build a command for hook hosts that run it with POSIX Bash."""
-    return f"{_posix_executable()} {subcommand}"
+    return f"{_hook_executable()} {subcommand}"
 
 
 def _mimry_hook_entries(cfg: MimryPlatform) -> dict[str, dict]:
@@ -1005,10 +1079,7 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
     dst = (root / cfg.hook_path).resolve()
     if dry_run:
         return dst
-    try:
-        existing = json.loads(dst.read_text(encoding="utf-8")) if dst.exists() else {}
-    except json.JSONDecodeError:
-        existing = {}
+    existing = _read_hooks_file(dst)
     hooks = existing.setdefault("hooks", {})
     for event, entry in _mimry_hook_entries(cfg).items():
         # Replace, never append: a reinstall must not duplicate entries.
@@ -1038,8 +1109,9 @@ def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
     if not dst.exists():
         return None
     try:
-        existing = json.loads(dst.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+        existing = _read_hooks_file(dst)
+    except (OSError, ValueError) as exc:
+        ui.warn(f"Skipped the MIMRY hooks: could not read {_shown(dst, root, True)}: {exc}")
         return None
     hooks = existing.get("hooks", {})
     changed = False
@@ -1121,7 +1193,13 @@ def register_mcp(cfg: MimryPlatform, *, dry_run: bool) -> None:
             ui.detail(f"Would add the MIMRY MCP server to {ui.display_path(path)}")
             return
         data.setdefault(key, {})["mimry"] = cfg.mcp.entry(server)
-        _atomic_write(path, json.dumps(data, indent=2) + "\n")
+        try:
+            _atomic_write(path, json.dumps(data, indent=2) + "\n")
+        except OSError as exc:
+            ui.warn(f"Could not register the MIMRY MCP server in {ui.display_path(path)}: {exc}")
+            ui.detail(f"To give {cfg.label} MIMRY's tools, add this MCP server in its settings:")
+            print(json.dumps({key: {"mimry": cfg.mcp.entry(server)}}, indent=2))
+            return
         ui.detail(f"Registered the MIMRY MCP server in {ui.display_path(path)}")
 
 
@@ -1269,7 +1347,8 @@ def install_status_with_code(
     # produces: skill, references, version and MCP registration. Opt-in
     # extras count only when partly installed: for hooks, some MIMRY
     # entries exist but not all three.
-    hooks_partial = "hooks" in result and not result["hooks"] and _has_any_hook(root, cfg)
+    hooks_unreadable = "hooks" in result and result["hooks"] is None
+    hooks_partial = "hooks" in result and not result["hooks"] and _has_any_hook(root, cfg) is True
     required_ok = all(v for name, v in result.items() if name not in ("always_on", "hooks"))
     healthy = required_ok and not hooks_partial and not always_on_stale
     code = 0 if healthy else (2 if result["skill"] else 1)
@@ -1310,7 +1389,11 @@ def install_status_with_code(
                     "not added (optional, --always-on)",
                 )
             )
-    if "hooks" in result:
+    if hooks_unreadable:
+        rows.append(
+            _status_row(None, "Hook", cfg.hook_path.as_posix(), "unknown, file unreadable")
+        )
+    elif "hooks" in result:
         hook_state = True if result["hooks"] else (False if hooks_partial else None)
         rows.append(
             _status_row(
@@ -1352,6 +1435,15 @@ def install_skill(
     if hooks and not project:
         raise SystemExit(ui.error_text("--hooks only works with --project"))
     dst = (root / cfg.project_path if project else cfg.global_path).resolve()
+    # Never merge into a hooks file that cannot be parsed: that would
+    # replace everything in it. Skip the hooks, show them, exit 1.
+    hooks_problem = _hooks_problem(root, cfg) if hooks else None
+    if hooks_problem:
+        ui.warn(f"Skipped the MIMRY hooks: {hooks_problem}")
+        ui.detail('Add them by hand under "hooks" in that file:')
+        entries = {event: [entry] for event, entry in _mimry_hook_entries(cfg).items()}
+        print(json.dumps({"hooks": entries}, indent=2))
+        hooks = False
     extras = []
     if always_on and cfg.always_on_file:
         extras.append(f"always-on instructions in {cfg.always_on_file.as_posix()}")
@@ -1373,6 +1465,8 @@ def install_skill(
             ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
         if not _mcp_disabled(not mcp):
             register_mcp(cfg, dry_run=True)
+        if hooks_problem:
+            raise SystemExit(1)
         return dst
     _install_references(dst.parent)
     _atomic_write(dst, skill_body(key))
@@ -1382,10 +1476,14 @@ def install_skill(
         ao = _install_always_on(root, cfg, dry_run=False)
         if ao:
             git_paths.append(ao)
+    machine_hooks = None
     if hooks:
         hp = _install_hooks(root, cfg, dry_run=False)
         if hp:
-            git_paths.append(hp)
+            if _hook_executable() == "mimry":
+                git_paths.append(hp)
+            else:
+                machine_hooks = hp
     ui.ok(f"Installed the MIMRY skill for {cfg.label} ({_scope(project)})")
     ui.detail(_shown(dst, root, project))
     for extra in extras:
@@ -1397,6 +1495,14 @@ def install_skill(
     if project:
         rels = [p.relative_to(root).as_posix() + ("/" if p.is_dir() else "") for p in git_paths]
         ui.detail(f"To share it with your team: git add {' '.join(rels)}")
+    if machine_hooks:
+        hooks_rel = machine_hooks.relative_to(root).as_posix()
+        ui.detail(
+            f"{hooks_rel} points at this machine's mimry; teammates should run"
+            f" `mimry install --platform {key} --project --hooks` themselves."
+        )
+    if hooks_problem:
+        raise SystemExit(1)
     return dst
 
 
@@ -1446,8 +1552,13 @@ def uninstall_skill(
     kept = []
     if project and not always_on and _has_always_on(root, cfg):
         kept.append(("--always-on", f"the always-on block in {cfg.always_on_file.as_posix()}"))
-    if project and not hooks and _has_any_hook(root, cfg):
-        kept.append(("--hooks", f"the hooks in {cfg.hook_path.as_posix()}"))
+    if project and not hooks:
+        hook_present = _has_any_hook(root, cfg)
+        if hook_present is None:
+            hooks_file = _shown(root / cfg.hook_path, root, True)
+            ui.warn(f"Skipped the hook check: could not read {hooks_file}")
+        elif hook_present:
+            kept.append(("--hooks", f"the hooks in {cfg.hook_path.as_posix()}"))
     if kept:
         flags = " ".join(flag for flag, _ in kept)
         ui.detail(

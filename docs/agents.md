@@ -19,8 +19,8 @@ It also reports a skill or always-on block written by an older MIMRY as out of d
 |---|---|
 | Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Factory Droid, Kimi, Amp, Devin | Through the agent's own CLI, at user scope |
 | Cursor, Kiro, OpenCode, VS Code | In the agent's config file |
-| Kilo Code | Not registered; the skill only |
-| Any other agent | `mimry install` prints the snippet to add to its MCP settings |
+| Aider, Pi Agent, Agent Skills | None; the agent has no MCP support, so the skill alone covers it |
+| Any other agent, including Kilo Code | `mimry install` prints the snippet to add to its MCP settings |
 
 Pass `--no-mcp`, or set `MIMRY_NO_MCP_REGISTRATION=1`, to install the skill without registering the server.
 The agent starts its own `mimry-mcp` when a session begins and stops it when the session ends.
@@ -49,6 +49,7 @@ mimry install --platform kilo
 ```
 
 The command writes the skill to `~/.config/kilo/skills/mimry/SKILL.md`; it does not modify a Kilo MCP configuration.
+It prints the MCP snippet for you to add to Kilo's settings by hand.
 Check the skill installation with:
 
 ```bash

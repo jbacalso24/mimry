@@ -629,7 +629,14 @@ def doctor_report(root: Path, *, verify: bool = False) -> dict[str, Any]:
         _parser_check(),
         *_root_checks(root, verify=verify),
     ]
-    statuses = {check["status"] for check in checks}
+    # Install-only warnings (two mimry executables on PATH) are listed
+    # but do not set the status or the exit code.
+    scored = [
+        check
+        for check in checks
+        if not (check["status"] == "warning" and check["id"].startswith("installation."))
+    ]
+    statuses = {check["status"] for check in scored}
     status = "error" if "error" in statuses else "warning" if "warning" in statuses else "ok"
     by_id = {check["id"]: check for check in checks}
     root_check = by_id.get("root.path", by_id.get("root.index", {}))
@@ -643,7 +650,7 @@ def doctor_report(root: Path, *, verify: bool = False) -> dict[str, Any]:
         for check in checks
     ) or root_state in {"uninitialized", "missing", "outside_cache"}:
         condition = "incomplete"
-    elif any(check["status"] == "warning" for check in checks):
+    elif any(check["status"] == "warning" for check in scored):
         condition = "stale"
     else:
         condition = "healthy"

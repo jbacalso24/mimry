@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import pytest
 
 from mimry import installer
+from mimry.cli import main
 
 
 @pytest.fixture
@@ -627,3 +629,44 @@ def test_vscode_user_dir_per_os(mcp_test_fixture, monkeypatch):
     assert installer._vscode_user_dir() == fake_home / ".config" / "Code" / "User"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(fake_home / "xdg"))
     assert installer._vscode_user_dir() == fake_home / "xdg" / "Code" / "User"
+
+
+def test_unwritable_mcp_config_warns_and_the_install_completes(
+    mcp_test_fixture, monkeypatch, capsys
+):
+    """#173: an unwritable MCP config is a warning with the snippet to
+    add by hand, not a traceback. The skill still installs."""
+    fixture = mcp_test_fixture
+    fake_home = fixture["fake_home"]
+    mcp_path = fake_home / ".cursor" / "mcp.json"
+    mcp_path.parent.mkdir(parents=True)
+    original = '{"mcpServers": {}}\n'
+    mcp_path.write_text(original, encoding="utf-8")
+    real_replace = installer.replace_path
+
+    def refuse_mcp(source, target, **kwargs):
+        if Path(target).name == "mcp.json":
+            raise PermissionError(13, "Access is denied", str(target))
+        return real_replace(source, target, **kwargs)
+
+    monkeypatch.setattr(installer, "replace_path", refuse_mcp)
+
+    installer.install_skill("cursor", project=False, root=fixture["tmp_path"])
+
+    out = capsys.readouterr()
+    assert "Could not register the MIMRY MCP server" in out.out + out.err
+    assert '"mimry"' in out.out  # the snippet to add by hand
+    assert (fake_home / ".cursor" / "skills" / "mimry" / "SKILL.md").is_file()
+    assert mcp_path.read_text(encoding="utf-8") == original
+    assert not (fake_home / ".cursor" / "mcp.json.tmp").exists()
+
+
+def test_install_help_lists_every_platform_from_the_table(capsys):
+    """#176: the --platform help comes from the platform table, so it
+    cannot drift from what the installer supports."""
+    with pytest.raises(SystemExit) as exc:
+        main(["install", "--help"])
+
+    assert exc.value.code == 0
+    text = " ".join(capsys.readouterr().out.split())
+    assert "Target platform: " + ", ".join(sorted(installer.platforms())) in text

@@ -65,7 +65,7 @@ def build_parser():
     )
     from .doctor import cmd_doctor
     from .hook import cmd_hook_check, cmd_hook_refresh
-    from .installer import cmd_install, cmd_uninstall
+    from .installer import cmd_install, cmd_uninstall, platform_keys
     from .upgrade import cmd_upgrade
 
     p = argparse.ArgumentParser(
@@ -390,7 +390,7 @@ def build_parser():
         "install",
         help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills",
     )
-    i.add_argument("--platform", help="Target platform: claude-code, codex, hermes, agents")
+    i.add_argument("--platform", help=f"Target platform: {platform_keys()}")
     i.add_argument(
         "--project",
         action="store_true",
@@ -424,9 +424,7 @@ def build_parser():
     )
     i.set_defaults(func=cmd_install)
     u = sub.add_parser("uninstall", help="Remove a MIMRY agent skill install")
-    u.add_argument(
-        "--platform", required=True, help="Target platform: claude-code, codex, hermes, agents"
-    )
+    u.add_argument("--platform", required=True, help=f"Target platform: {platform_keys()}")
     u.add_argument(
         "--project",
         action="store_true",

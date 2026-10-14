@@ -708,7 +708,9 @@ def test_json_report_has_the_install_checks_with_home_as_tilde(tmp_path, monkeyp
     assert str(root) not in text
 
 
-def test_path_warning_makes_condition_stale_and_exit_one(tmp_path, monkeypatch):
+def test_path_warning_is_shown_but_keeps_condition_healthy(tmp_path, monkeypatch, capsys):
+    """An install-only warning (two mimry executables on PATH) is listed
+    but does not mark the repo stale or exit 1."""
     _install_ok(monkeypatch)
     monkeypatch.setattr(doctor, "_path_check", _REAL_PATH_CHECK)
     _write_pointer(tmp_path, _pointer(tmp_path, monkeypatch))
@@ -723,5 +725,10 @@ def test_path_warning_makes_condition_stale_and_exit_one(tmp_path, monkeypatch):
 
     checks = {check["id"]: check for check in report["checks"]}
     assert checks["installation.path"]["status"] == "warning"
-    assert report["condition"] == "stale"
-    assert doctor.doctor_exit_code(report) == 1
+    assert report["condition"] == "healthy"
+    assert doctor.doctor_exit_code(report) == 0
+
+    assert main(["--root", str(tmp_path), "doctor"]) == 0
+    text = capsys.readouterr().out
+    assert text.startswith("MIMRY doctor: healthy (ok)\n")
+    assert f"[WARNING] {checks['installation.path']['summary']}" in text

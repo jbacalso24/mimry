@@ -175,11 +175,13 @@ We're adding these next; progress is tracked in [#47](https://github.com/jbacals
 | Factory Droid | `droid` | ✅ | ✅ |
 | Kimi | `kimi` | ✅ | ✅ |
 | Kilo Code | `kilo` | ✅ | [manual](#manual-mcp-setup) |
-| Aider, Antigravity, CodeBuddy, Hermes, OpenClaw, Pi Agent, Trae | see `mimry install --list-platforms` | ✅ | [manual](#manual-mcp-setup) |
+| Antigravity, CodeBuddy, Hermes, OpenClaw, Trae | see `mimry install --list-platforms` | ✅ | [manual](#manual-mcp-setup) |
+| Aider, Pi Agent | see `mimry install --list-platforms` | ✅ | none |
 | Windsurf, Cline, Roo Code, Zed, JetBrains | [#80](https://github.com/jbacalso24/mimry/issues/80) | 🚧 | 🚧 |
 | Grok | [#93](https://github.com/jbacalso24/mimry/issues/93) | 🚧 | 🚧 |
 
 ✅ means `mimry install` sets it up, manual means you add the MCP server by hand, and 🚧 means support is in progress.
+none means the agent has no MCP support, so the skill alone covers it.
 
 See [docs/agents.md](docs/agents.md) for where each agent's files go and how its MCP server is registered.
 
