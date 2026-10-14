@@ -57,10 +57,11 @@ def _get_json(url: str) -> dict:
         try:
             with urllib.request.urlopen(url, timeout=60) as response:
                 return json.load(response)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             last = exc
             # Ten CI shards fetch at once and the API rate-limits bursts
-            # (429), so wait longer each time, or as long as it asks.
+            # (429) or cuts a response short (invalid JSON), so wait
+            # longer each time, or as long as it asks.
             retry_after = getattr(exc, "headers", None) and exc.headers.get("Retry-After")
             wait = int(retry_after) if str(retry_after or "").isdigit() else 5 * 2**attempt
             time.sleep(min(wait, 120))
