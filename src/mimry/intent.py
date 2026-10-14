@@ -364,6 +364,23 @@ def query_terms(q: str) -> list[str]:
     ]
 
 
+# A headline longer than this is a paragraph with no line break; its
+# first words still carry the request.
+INTENT_TERM_LIMIT = 24
+
+
+def intent_terms(q: str) -> list[str]:
+    """Positive query terms that decide what the user wants done.
+
+    Intent is read from the headline (the first non-empty line). A long
+    issue body mentions tests, pytest and tracebacks in passing, and
+    reading those words as intent turned test ranking on for source
+    tasks. A one-line query gives exactly query_terms(q).
+    """
+    headline = next((line for line in q.splitlines() if line.strip()), "")
+    return query_terms(headline)[:INTENT_TERM_LIMIT]
+
+
 def apply_exclusion_adjustment(
     score: int, rel_path: str, excluded_terms: list[str]
 ) -> tuple[int, list[str]]:
@@ -450,6 +467,8 @@ def apply_intent_adjustment(
 ) -> tuple[int, list[str]]:
     """Apply transparent intent-aware ranking.
 
+    ``terms`` must be intent_terms(query), not query_terms(query): only
+    the headline decides edit, concept, test and migration intent.
     Graph and content signals are kept, not replaced.
     """
     reasons: list[str] = []
