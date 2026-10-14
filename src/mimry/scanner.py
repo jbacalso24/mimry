@@ -791,12 +791,21 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
                                 )
                 elif isinstance(node, ast.Call):
                     callee_name = None
+                    receiver = None
                     if isinstance(node.func, ast.Name):
                         callee_name = node.func.id
                     elif isinstance(node.func, ast.Attribute):
                         callee_name = node.func.attr
+                        if isinstance(node.func.value, ast.Name) and node.func.value.id in (
+                            "self",
+                            "cls",
+                        ):
+                            receiver = node.func.value.id
                     if callee_name:
-                        calls.append({"name": callee_name, "line": getattr(node, "lineno", None)})
+                        call = {"name": callee_name, "line": getattr(node, "lineno", None)}
+                        if receiver:
+                            call["receiver"] = receiver
+                        calls.append(call)
                 elif isinstance(node, (ast.Import, ast.ImportFrom)):
                     imports += _python_imports(node)
         except SyntaxError as e:

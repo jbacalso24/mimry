@@ -137,3 +137,159 @@ def test_write_index_and_reindex_report_enriched_graph_edge_count(
         (Path(reindex_stats["index"]) / "graph.json").read_text(encoding="utf-8")
     )
     assert reindex_stats["edges"] == len(reindexed_graph["edges"])
+
+
+def _call_edges(index: Path) -> set[str]:
+    """'file:caller:line -> file:callee:line' for each calls edge."""
+    files = {}
+    for line in (index / "files.jsonl").read_text(encoding="utf-8").splitlines():
+        if line:
+            record = json.loads(line)
+            files[record["file_id"]] = record["rel_path"]
+    described = {}
+    for line in (index / "symbols.jsonl").read_text(encoding="utf-8").splitlines():
+        if line:
+            symbol = json.loads(line)
+            described[symbol["symbol_id"]] = (
+                f"{files[symbol['file_id']]}:{symbol['name']}:{symbol['line_start']}"
+            )
+    graph = json.loads((index / "graph.json").read_text(encoding="utf-8"))
+    return {
+        f"{described[edge['source'].removeprefix('symbol:')]} -> "
+        f"{described[edge['target'].removeprefix('symbol:')]}"
+        for edge in graph["edges"]
+        if edge["relation"] == "calls"
+    }
+
+
+def test_bare_call_prefers_the_imported_function_over_a_same_file_method(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, pointer = _init_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "store.py": "def save(x):\n    return x\n",
+            "thing.py": (
+                "from store import save\n\nclass Thing:\n    def save(self, x):\n"
+                "        return x\n\ndef a():\n    return save(1)\n"
+            ),
+        },
+    )
+
+    stats = write_index(root, pointer)
+    edges = _call_edges(Path(stats["index"]))
+
+    assert "thing.py:a:7 -> store.py:save:1" in edges
+    assert not any(edge.endswith("-> thing.py:save:5") for edge in edges)
+
+
+def test_self_call_prefers_the_method_of_the_enclosing_class(tmp_path: Path, monkeypatch) -> None:
+    root, pointer = _init_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "same.py": (
+                "def save(x):\n    return x\n\nclass Repo:\n    def save(self, x):\n"
+                "        return x\n\n    def put(self, x):\n        return self.save(x)\n"
+            ),
+        },
+    )
+
+    stats = write_index(root, pointer)
+    edges = _call_edges(Path(stats["index"]))
+
+    assert "same.py:put:8 -> same.py:save:5" in edges
+    assert "same.py:put:8 -> same.py:save:1" not in edges
+
+
+def test_js_this_call_prefers_the_method_of_the_enclosing_class(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, pointer = _init_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "repo.js": (
+                "function save(x) {\n  return x;\n}\nclass Repo {\n  save(x) {\n"
+                "    return x;\n  }\n  put(x) {\n    return this.save(x);\n  }\n}\n"
+            ),
+        },
+    )
+
+    stats = write_index(root, pointer)
+    edges = _call_edges(Path(stats["index"]))
+
+    assert "repo.js:put:8 -> repo.js:save:5" in edges
+    assert "repo.js:put:8 -> repo.js:save:1" not in edges
+
+
+def test_call_through_a_package_reexport_reaches_the_defining_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, pointer = _init_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "pkg/__init__.py": "from .core import Engine\n",
+            "pkg/core.py": "class Engine:\n    def run(self):\n        return 1\n",
+            "app.py": "from pkg import Engine\n\ndef main():\n    Engine().run()\n",
+        },
+    )
+
+    stats = write_index(root, pointer)
+    edges = _call_edges(Path(stats["index"]))
+
+    assert "app.py:main:3 -> pkg/core.py:Engine:1" in edges
+
+
+def test_python_bare_call_never_reaches_an_unimported_file_by_name(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, pointer = _init_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "a.py": "def a():\n    return helper()\n",
+            "b.py": "def helper():\n    return 1\n",
+        },
+    )
+
+    stats = write_index(root, pointer)
+
+    assert not any(edge.startswith("a.py:") for edge in _call_edges(Path(stats["index"])))
+
+
+def test_swift_call_within_one_module_resolves_to_the_unique_owner(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, pointer = _init_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "A.swift": "class A: B {\n  func run() -> Int { return helper() }\n}\n",
+            "B.swift": "class B {}\nfunc helper() -> Int { return 1 }\n",
+        },
+    )
+
+    stats = write_index(root, pointer)
+
+    assert "A.swift:run:2 -> B.swift:helper:2" in _call_edges(Path(stats["index"]))
+
+
+def test_swift_call_with_two_owners_of_the_name_stays_unresolved(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, pointer = _init_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "A.swift": "class A {\n  func run() -> Int { return helper() }\n}\n",
+            "B.swift": "func helper() -> Int { return 1 }\n",
+            "C.swift": "func helper() -> Int { return 2 }\n",
+        },
+    )
+
+    stats = write_index(root, pointer)
+
+    assert not any(edge.startswith("A.swift:") for edge in _call_edges(Path(stats["index"])))

@@ -1342,16 +1342,8 @@ def _base_type_names(container: Any, source: bytes) -> list[str]:
     return names
 
 
-def _callee_name(node: Any, source: bytes) -> str | None:
-    """The called function's name, not the expression that produced it.
-
-    A call node's first child is the whole function expression. Using
-    its text verbatim turns `schemes.Where(x => ...)` into a multi-line
-    blob -- unmatchable as a call target, and large enough to drag file
-    content into the record (one such blob tripped the secret scanner
-    and silently dropped the file from the index). Take the final
-    identifier, as the Python adapter does with `Attribute.attr`.
-    """
+def _callee_node(node: Any) -> Any:
+    """The node holding the called expression of a call, or None."""
     # Most grammars make the whole callee expression the first child,
     # but Java's method_invocation and PHP's member/scoped calls put the
     # object there and the method in a `name` field -- taking child 0
@@ -1368,6 +1360,35 @@ def _callee_name(node: Any, source: bytes) -> str | None:
             break
     if callee is None:
         callee = next(_children(node), None)
+    return callee
+
+
+_SELF_CALLEE = re.compile(r"(self|this|cls)\.[A-Za-z_]\w*")
+
+
+def _self_receiver(node: Any, source: bytes) -> str | None:
+    """`self`, `this` or `cls` when the call is `<receiver>.name(...)`.
+
+    A longer chain (`this.x.f()`) has no receiver.
+    """
+    callee = _callee_node(node)
+    if callee is None:
+        return None
+    match = _SELF_CALLEE.fullmatch(_text(source, callee).strip())
+    return match.group(1) if match else None
+
+
+def _callee_name(node: Any, source: bytes) -> str | None:
+    """The called function's name, not the expression that produced it.
+
+    A call node's first child is the whole function expression. Using
+    its text verbatim turns `schemes.Where(x => ...)` into a multi-line
+    blob -- unmatchable as a call target, and large enough to drag file
+    content into the record (one such blob tripped the secret scanner
+    and silently dropped the file from the index). Take the final
+    identifier, as the Python adapter does with `Attribute.attr`.
+    """
+    callee = _callee_node(node)
     if callee is None:
         return None
     name = (_expression_name(callee, source) or "").strip()
@@ -1647,12 +1668,11 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
         if category in (None, "calls") and kind in node_types["calls"]:
             call_name = _call_name(lang, node, source)
             if call_name:
-                calls.append(
-                    {
-                        "name": call_name,
-                        "line": _line(node),
-                    }
-                )
+                call = {"name": call_name, "line": _line(node)}
+                receiver = _self_receiver(node, source)
+                if receiver:
+                    call["receiver"] = receiver
+                calls.append(call)
 
     # Check for parse errors
     if root_node.has_error:

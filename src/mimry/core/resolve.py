@@ -679,6 +679,13 @@ def _strip_extension(path: str) -> str:
         return file_without_ext
 
 
+_CONTAINER_KINDS = ("class", "interface")
+_FUNCTION_KINDS = ("function", "method")
+_CALLABLE_KINDS = ("function", "method", "class")
+# Languages where same-module files call each other without imports.
+_IMPLICIT_SCOPE_LANGUAGES = frozenset(("swift", "kotlin", "csharp"))
+
+
 def resolve_calls(
     calls: dict[str, list[dict]],
     symbols_by_file: dict[str, list[dict]],
@@ -689,6 +696,11 @@ def resolve_calls(
     Returns a sorted list of {"caller_file", "caller_symbol",
     "target_file", "target_symbol", "confidence"}. caller_symbol may be
     None when the call sits at module level.
+
+    A call with a "receiver" (self, this, cls) prefers a method of the
+    class around it. A bare call prefers the module-level symbols of
+    its own file, then those of an imported file, and only then a
+    method; a method never beats a module-level symbol of the same name.
     """
     results = []
 
@@ -715,10 +727,22 @@ def resolve_calls(
                     symbols_by_file_and_name[file_path][name] = []
                 symbols_by_file_and_name[file_path][name].append(symbol)
 
+    methods = _method_ids(symbols_by_file)
+
+    # Repo-wide owners of each callable name, for the implicit-scope
+    # languages' last-resort lookup.
+    owners_by_name: dict[str, list[tuple[str, dict]]] = {}
+    for file_path, symbols in symbols_by_file.items():
+        for symbol in symbols:
+            name = symbol.get("name")
+            if name and symbol.get("kind") in _CALLABLE_KINDS:
+                owners_by_name.setdefault(name, []).append((file_path, symbol))
+
     # Process each file's calls
     for file_path, call_list in calls.items():
         # Get symbols in this file
         file_symbols = symbols_by_file.get(file_path, [])
+        file_classes = [s for s in file_symbols if s.get("kind") in _CONTAINER_KINDS]
 
         # Get imports from this file
         imported_targets = imports_by_importer.get(file_path, set())
@@ -726,15 +750,22 @@ def resolve_calls(
         # Many calls share a line; the enclosing symbol depends on the
         # line alone.
         caller_by_line: dict[int, dict | None] = {}
+        class_by_line: dict[int, dict | None] = {}
 
         for call in call_list:
-            # Step 1: Find the calling symbol
+            # Step 1: Find the calling symbol and, for self/this/cls
+            # calls, the class around the call
             call_line = call.get("line")
             caller = None
+            enclosing_class = None
             if call_line is not None:
                 if call_line not in caller_by_line:
                     caller_by_line[call_line] = _enclosing_symbol(file_symbols, call_line)
                 caller = caller_by_line[call_line]
+                if call.get("receiver"):
+                    if call_line not in class_by_line:
+                        class_by_line[call_line] = _enclosing_symbol(file_classes, call_line)
+                    enclosing_class = class_by_line[call_line]
             caller_symbol = caller.get("name") if caller else None
             caller_symbol_id = caller.get("symbol_id") if caller else None
 
@@ -743,35 +774,41 @@ def resolve_calls(
             candidates = _generate_candidates(callee_name)
 
             # Step 3: Resolve candidates (first hit wins)
+            target_info = None
             for candidate in candidates:
-                target_info = _resolve_candidate(
+                target_info = _resolve_call_candidate(
                     candidate,
                     file_path,
                     imported_targets,
                     symbols_by_file_and_name,
+                    methods,
+                    imports_by_importer,
+                    enclosing_class,
                 )
-
                 if target_info:
-                    target_file = target_info["file"]
-                    target_symbol = target_info["symbol"]
-                    confidence = target_info["confidence"]
-
-                    # Never emit self-recursion (same symbol in same
-                    # file)
-                    if not (file_path == target_file and caller_symbol == target_symbol):
-                        results.append(
-                            {
-                                "caller_file": file_path,
-                                "caller_symbol": caller_symbol,
-                                "caller_symbol_id": caller_symbol_id,
-                                "target_file": target_file,
-                                "target_symbol": target_symbol,
-                                "target_symbol_id": target_info.get("symbol_id"),
-                                "confidence": confidence,
-                            }
-                        )
-                    # First hit wins - don't try other candidates
                     break
+            if target_info is None and candidates:
+                target_info = _unique_owner(candidates[0], file_path, owners_by_name)
+
+            if target_info:
+                target_file = target_info["file"]
+                target_symbol = target_info["symbol"]
+                confidence = target_info["confidence"]
+
+                # Never emit self-recursion (same symbol in same
+                # file)
+                if not (file_path == target_file and caller_symbol == target_symbol):
+                    results.append(
+                        {
+                            "caller_file": file_path,
+                            "caller_symbol": caller_symbol,
+                            "caller_symbol_id": caller_symbol_id,
+                            "target_file": target_file,
+                            "target_symbol": target_symbol,
+                            "target_symbol_id": target_info.get("symbol_id"),
+                            "confidence": confidence,
+                        }
+                    )
 
     # Sort deterministically by (caller_file, caller_symbol,
     # target_file, target_symbol)
@@ -785,6 +822,144 @@ def resolve_calls(
     )
 
     return results
+
+
+def _method_ids(symbols_by_file: dict[str, list[dict]]) -> set[int]:
+    """ids of the function symbols defined inside a class or interface.
+
+    Grammars give a method the same kind as a free function, so scope
+    comes from line containment: a function whose innermost enclosing
+    symbol is a class is a method. Spans are sorted outermost first and
+    kept on a stack of open ancestors, so this is linear in the symbol
+    count.
+    ponytail: symbols on one line cannot be told apart by line alone, so
+    a minified file may count a function beside a class as its method.
+    """
+    methods: set[int] = set()
+    for file_symbols in symbols_by_file.values():
+        spans = [
+            s
+            for s in file_symbols
+            if s.get("line_start") is not None and s.get("line_end") is not None
+        ]
+        spans.sort(key=lambda s: (s["line_start"], -s["line_end"]))
+        stack: list[dict] = []
+        for symbol in spans:
+            # Ancestors that end before this symbol do not enclose it;
+            # the rest of the stack is nested, so one check suffices.
+            while stack and stack[-1]["line_end"] < symbol["line_end"]:
+                stack.pop()
+            if (
+                symbol.get("kind") in _FUNCTION_KINDS
+                and stack
+                and stack[-1].get("kind") in _CONTAINER_KINDS
+            ):
+                methods.add(id(symbol))
+            stack.append(symbol)
+    return methods
+
+
+def _resolve_call_candidate(
+    candidate: str,
+    caller_file: str,
+    imported_targets: set,
+    symbols_by_file_and_name: dict,
+    methods: set[int],
+    imports_by_importer: dict[str, set],
+    enclosing_class: dict | None,
+) -> dict | None:
+    """Resolve a name used at a call site, by scope.
+
+    Returns {"file": str, "symbol": str, "symbol_id", "confidence": str}
+    or None. Tiers in order, each one ending the search when it answers:
+
+    1. A method of the enclosing class (self/this/cls calls only).
+    2. A module-level symbol of the caller's file.
+    3. A module-level symbol of exactly one imported file. When the
+       imported file is a package __init__ that does not define the
+       name, the one file it imports is followed (one level of
+       re-export, e.g. `from .core import Engine`).
+    4. A method of the caller's file.
+    5. A method of exactly one imported file.
+
+    A tier that finds names in two files declines rather than pick one.
+    """
+
+    def named(path: str) -> list[dict]:
+        return symbols_by_file_and_name.get(path, {}).get(candidate, [])
+
+    def module_level(path: str) -> list[dict]:
+        return [s for s in named(path) if id(s) not in methods]
+
+    local = named(caller_file)
+    if enclosing_class is not None:
+        own = [s for s in local if id(s) in methods and _contains(enclosing_class, s)]
+        if own:
+            return _found(caller_file, own, "EXTRACTED")
+    if module_level(caller_file):
+        return _found(caller_file, module_level(caller_file), "EXTRACTED")
+
+    definers = {path for path in imported_targets if module_level(path)}
+    if not definers:
+        for path in imported_targets:
+            if posixpath.basename(path) == "__init__.py":
+                definers.update(
+                    target for target in imports_by_importer.get(path, ()) if module_level(target)
+                )
+    if len(definers) == 1:
+        path = next(iter(definers))
+        return _found(path, module_level(path), "INFERRED")
+    if len(definers) > 1:
+        return None
+
+    if local:
+        return _found(caller_file, local, "EXTRACTED")
+    method_files = {path for path in imported_targets if named(path)}
+    if len(method_files) == 1:
+        path = next(iter(method_files))
+        return _found(path, named(path), "INFERRED")
+    return None
+
+
+def _found(path: str, symbols: list[dict], confidence: str) -> dict:
+    symbol = _pick_best_symbol(symbols)
+    return {
+        "file": path,
+        "symbol": symbol.get("name"),
+        "symbol_id": symbol.get("symbol_id"),
+        "confidence": confidence,
+    }
+
+
+def _contains(outer: dict, inner: dict) -> bool:
+    bounds = (outer.get("line_start"), outer.get("line_end"))
+    inner_bounds = (inner.get("line_start"), inner.get("line_end"))
+    if None in bounds or None in inner_bounds:
+        return False
+    return bounds[0] <= inner_bounds[0] and inner_bounds[1] <= bounds[1]
+
+
+def _unique_owner(name: str, caller_file: str, owners_by_name: dict) -> dict | None:
+    """The one symbol in the repo with this name, for the implicit-scope
+    languages only, so a Swift file can call a function defined in
+    another file of its module. Two or more owners is a conflict and
+    declines, as resolve_inheritance does.
+    """
+    language = language_for(caller_file)
+    if language not in _IMPLICIT_SCOPE_LANGUAGES:
+        return None
+    owners = owners_by_name.get(name, [])
+    if len(owners) != 1:
+        return None
+    path, symbol = owners[0]
+    if language_for(path) != language:
+        return None
+    return {
+        "file": path,
+        "symbol": name,
+        "symbol_id": symbol.get("symbol_id"),
+        "confidence": "INFERRED",
+    }
 
 
 def _enclosing_symbol(file_symbols: list[dict], line: int) -> dict | None:
