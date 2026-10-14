@@ -179,6 +179,8 @@ def test_mcp_status_includes_graph_health_payload(tmp_path: Path, monkeypatch):
     assert payload["graph"]["graph_exists"] is True
     assert payload["graph"]["report_exists"] is True
     assert payload["graph"]["manifest_exists"] is True
+    assert payload["languages"]["Python"] > 0
+    assert sum(payload["languages"].values()) == payload["files_indexed"]
 
 
 def test_mcp_context_uses_evidence_grade_context_pack_writer(tmp_path: Path, monkeypatch):

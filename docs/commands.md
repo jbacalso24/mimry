@@ -69,6 +69,7 @@ $ mimry status
     new      src/auth/magic_link.py
   Indexed 5 minutes ago · at commit d7bf046
   3,105 files · 6,859 symbols · 10,749 links
+  Languages: Python 1,840, TypeScript 610, Markdown 300, Go 150, Rust 90, Java 45, and 4 more
   Run `mimry reindex` to update it.
 
 $ mimry reindex

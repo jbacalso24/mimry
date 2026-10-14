@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 
 from mimry import __version__, installer
+from mimry.commands import _languages_text
+from mimry.core.languages import language_counts
 
 
 def _posix(text: str) -> str:
@@ -1683,6 +1685,59 @@ def test_status_reports_graph_artifact_health(tmp_path):
     assert "OK repo is up to date" in status.stdout
     assert "at commit abc123" in status.stdout
     assert _row(status.stdout, "Graph").startswith("current, 1 node,")
+
+
+def test_status_lists_indexed_files_per_language(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+    (repo / "util.py").write_text("def helper():\n    return 2\n", encoding="utf-8")
+    (repo / "web.ts").write_text(
+        "export function render(): number {\n  return 3;\n}\n", encoding="utf-8"
+    )
+    (repo / "README.md").write_text("# Demo\n\nNotes.\n", encoding="utf-8")
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    status = run_cli(repo, cache, "status", "--verbose")
+
+    assert status.returncode == 0, status.stdout
+    assert _row(status.stdout, "Languages") == "Python 2, Markdown 1, TypeScript 1"
+    assert "  Languages: Python 2, Markdown 1, TypeScript 1\n" in status.stdout
+
+
+def test_languages_text_cuts_to_six_and_counts_the_rest():
+    counts = {
+        "Python": 120,
+        "TypeScript": 40,
+        "Markdown": 12,
+        "Go": 9,
+        "Rust": 9,
+        "Java": 5,
+        "C": 3,
+        "Bash": 1,
+    }
+
+    assert _languages_text(counts, 6) == (
+        "Python 120, TypeScript 40, Markdown 12, Go 9, Rust 9, Java 5, and 2 more"
+    )
+    assert _languages_text(counts) == (
+        "Python 120, TypeScript 40, Markdown 12, Go 9, Rust 9, Java 5, C 3, Bash 1"
+    )
+    assert _languages_text({"Go": 2, "Bash": 2}, 6) == "Bash 2, Go 2"
+    assert _languages_text({"other": 86, "Python": 3}) == "Python 3, other 86"
+
+
+def test_language_counts_groups_tsx_and_falls_back_to_symbols_then_other():
+    files = [
+        {"file_id": "a", "rel_path": "x.tsx"},
+        {"file_id": "b", "rel_path": "NOTES.md"},
+        {"file_id": "c", "rel_path": "data.bin"},
+    ]
+    symbols = [{"file_id": "b", "language": "markdown"}]
+
+    assert language_counts(files, symbols) == {"TypeScript": 1, "Markdown": 1, "other": 1}
 
 
 def test_status_prefers_manifest_hash_over_timestamp_precision(tmp_path):

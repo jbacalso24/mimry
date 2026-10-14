@@ -39,6 +39,7 @@ from .core.artifacts import (
     surface_evidence,
 )
 from .core.export import export_cypher, export_graphml, export_html, export_obsidian
+from .core.languages import language_counts
 from .digest import canonical_digest, canonical_state
 from .feedback import (
     COMMIT_NOTE_PREFIX,
@@ -352,6 +353,21 @@ def _totals(files: int, symbols: int, links: int) -> str:
     return ui.facts(ui.count(files, "file"), ui.count(symbols, "symbol"), ui.count(links, "link"))
 
 
+LANGUAGE_DETAIL_LIMIT = 6
+
+
+def _languages_text(counts: dict[str, int], limit: int | None = None) -> str:
+    """Counts like "Python 120, TypeScript 40", "other" last.
+
+    With a limit, the rest are summed up as "and N more".
+    """
+    ranked = sorted(counts.items(), key=lambda item: (item[0] == "other", -item[1], item[0]))
+    shown = ranked if limit is None else ranked[:limit]
+    text = ", ".join(f"{name} {count:,}" for name, count in shown)
+    hidden = len(ranked) - len(shown)
+    return f"{text}, and {hidden} more" if hidden else text
+
+
 def _install_channel() -> str | None:
     """The install channel: "uv tool", "pipx", or None."""
     if (Path(sys.prefix) / "uv-receipt.toml").is_file():
@@ -643,6 +659,9 @@ def _print_status(
     ui.detail(
         _totals(len(fresh["files"]), len(fresh["symbols"]), len(fresh["graph"].get("edges", [])))
     )
+    languages = language_counts(fresh["files"], fresh["symbols"])
+    if languages:
+        ui.detail(f"Languages: {_languages_text(languages, LANGUAGE_DETAIL_LIMIT)}")
     if fresh.get("unindexable_count"):
         ui.detail(
             f"{ui.count(fresh['unindexable_count'], 'file')} skipped: may contain secrets or could"
@@ -672,6 +691,7 @@ def _print_status(
                     ),
                 ),
                 ("Commit", commit or "unknown"),
+                *([("Languages", _languages_text(languages))] if languages else []),
             ]
         )
     for fix in fixes:

@@ -30,6 +30,7 @@ from mimry.commands import (
     symbol_matches,
 )
 from mimry.core.artifacts import CALL_DIRECTIONS, graph_health
+from mimry.core.languages import language_counts
 from mimry.digest import canonical_digest
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.freshness import index_freshness
@@ -319,6 +320,7 @@ def _status_payload_unchecked(root_path: Path, verify: bool = False) -> dict[str
         "last_indexed_at": ptr.get("lastIndexedAt"),
         "files_indexed": len(files),
         "symbols_indexed": len(symbols),
+        "languages": language_counts(files, symbols),
         "changed_files": changed,
         "deleted_files": missing,
         "policy_excluded_stale_records": fresh["policy_excluded_count"],

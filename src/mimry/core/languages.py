@@ -72,6 +72,9 @@ LANGUAGE_LABELS: dict[str, str] = {
     "dart": "Dart",
     "objc": "Objective-C",
     "zig": "Zig",
+    # Symbol-only languages, with no extension entry.
+    "markdown": "Markdown",
+    "sql": "SQL",
 }
 
 NODE_TYPES = {
@@ -386,6 +389,27 @@ def supported_languages() -> list[tuple[str, list[str]]]:
     for ext, lang in EXTENSION_LANGUAGE.items():
         groups.setdefault(LANGUAGE_LABELS[lang], []).append(ext)
     return [(label, sorted(exts)) for label, exts in groups.items()]
+
+
+def language_counts(files: list[dict], symbols: list[dict]) -> dict[str, int]:
+    """Indexed files per display language, as `find --lang` sees them.
+
+    A file takes its extension's language. A file with none (Markdown,
+    say) takes the language of its symbols, and a file with neither is
+    "other".
+    """
+    symbol_language: dict[str, str] = {}
+    for symbol in symbols:
+        if symbol.get("language"):
+            symbol_language.setdefault(symbol.get("file_id"), symbol["language"])
+    counts: dict[str, int] = {}
+    for record in files:
+        language = language_for(record.get("rel_path") or "") or symbol_language.get(
+            record.get("file_id")
+        )
+        name = LANGUAGE_LABELS.get(language, language.title()) if language else "other"
+        counts[name] = counts.get(name, 0) + 1
+    return counts
 
 
 def symbol_kind(language: str, node_kind: str) -> str:
