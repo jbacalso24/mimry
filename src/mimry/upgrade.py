@@ -410,6 +410,8 @@ def _stop_windows_servers(pids: list[int]) -> bool:
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
                 check=False,
             )

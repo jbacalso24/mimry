@@ -90,6 +90,8 @@ def _git_commit(root: Path) -> str | None:
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             stdin=subprocess.DEVNULL,
             timeout=5,

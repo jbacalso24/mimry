@@ -2377,3 +2377,129 @@ def test_find_uses_fts_bm25_for_content_hint_phrase(tmp_path):
     assert res.returncode == 0, res.stderr
     assert "src/auth/phrase_flow.py" in res.stdout
     assert "FTS/BM25 match" in res.stdout
+
+
+def test_git_commands_decode_utf8_in_a_non_ascii_repo_path(tmp_path):
+    # Git writes UTF-8; a Windows code page must not break init.
+    repo = tmp_path / "数据 sp"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    (repo / "q.py").write_text("def q():\n    return 1\n", encoding="utf-8")
+    cache = tmp_path / "cache"
+
+    init = run_cli(repo, cache, "init", "--skip-graph")
+    index = run_cli(repo, cache, "index")
+    preflight = run_cli(repo, cache, "preflight", "build commands")
+
+    assert init.returncode == 0, init.stderr
+    assert index.returncode == 0, index.stderr
+    assert preflight.returncode == 0, preflight.stderr
+    assert "Traceback" not in preflight.stderr
+
+
+def test_root_that_is_a_file_fails_cleanly_and_creates_nothing(tmp_path):
+    repo = copy_fixture(tmp_path)
+    target = repo / "src" / "app.ts"
+    cache = tmp_path / "cache"
+
+    for command in ("status", "index", "find login", "preflight login"):
+        args = command.split()
+        res = run_cli(target, cache, *args)
+        assert res.returncode != 0, args
+        assert "Traceback" not in res.stderr, args
+        assert "--root must be a folder, not a file" in res.stderr, args
+        assert not (target / ".mimry").exists(), args
+    assert not (target.parent / "app.ts.mimry").exists()
+
+
+def test_filesystem_root_is_refused_with_one_line(tmp_path):
+    anchor = Path(Path.cwd().anchor)
+    cache = tmp_path / "cache"
+    existed = (anchor / ".mimry").exists()
+
+    try:
+        res = run_cli(anchor, cache, "status")
+        assert res.returncode == 2, res.stderr
+        assert "Traceback" not in res.stderr
+        assert "Refusing to index filesystem root" in res.stderr
+        # Never leave a folder on the drive root, even on a regression.
+        assert existed or not (anchor / ".mimry").exists()
+    finally:
+        if not existed and (anchor / ".mimry").exists():
+            shutil.rmtree(anchor / ".mimry")
+
+
+def test_commands_from_a_subfolder_use_the_repos_index(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    sub = repo / "src" / "auth"
+
+    for args in (
+        ("status",),
+        ("symbol", "create_session"),
+        ("related", "login auth"),
+        ("find", "auth session"),
+    ):
+        res = run_cli_from_cwd(sub, cache, *args)
+        assert res.returncode == 0, (args, res.stdout, res.stderr)
+        assert "is not set up" not in res.stdout + res.stderr, args
+    assert not (sub / ".mimry").exists()
+
+
+def test_preflight_from_a_subfolder_uses_the_parent_index(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    sub = repo / "src" / "auth"
+
+    res = run_cli_from_cwd(sub, cache, "preflight", "login auth session")
+
+    assert res.returncode == 0, res.stderr
+    assert not (sub / ".mimry").exists()
+    assert "Built the index" not in res.stdout
+
+
+def test_status_in_a_folder_never_set_up_creates_no_mimry_folder(tmp_path):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    res = run_cli(plain, tmp_path / "cache", "status")
+
+    assert res.returncode == 1
+    assert "not set up" in res.stdout + res.stderr
+    assert not (plain / ".mimry").exists()
+
+
+def test_find_indexes_a_never_indexed_repo_first(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+
+    res = run_cli(repo, cache, "find", "auth middleware")
+
+    assert res.returncode == 0, res.stderr
+    assert "Indexed first" in res.stdout
+    assert _result_paths(res.stdout)[0] == "src/auth/middleware.py"
+
+
+def test_why_separates_outside_missing_and_skipped_paths(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    (repo / "secrets.txt").write_text("canaryQ7x\n", encoding="utf-8")
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    outside = run_cli(repo, cache, "why", "../outside/secret.txt", "--query", "token")
+    missing = run_cli(repo, cache, "why", "zzz_missing", "--query", "token")
+    skipped = run_cli(repo, cache, "why", "secrets.txt", "--query", "token")
+    unranked = run_cli(repo, cache, "why", "src/auth/session.py", "--query", "token")
+
+    assert "is outside the repository" in outside.stdout + outside.stderr
+    # Missing and skipped files share one message (no secret leaks).
+    assert "is not in the index" in missing.stdout + missing.stderr
+    assert "is not in the index" in skipped.stdout + skipped.stderr
+    assert "canaryQ7x" not in skipped.stdout + skipped.stderr
+    assert "not in the top" in unranked.stdout + unranked.stderr

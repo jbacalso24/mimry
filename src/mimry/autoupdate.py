@@ -108,6 +108,8 @@ def _git(root: Path, *args: str) -> str | None:
             cwd=root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdin=subprocess.DEVNULL,
             check=False,
         )

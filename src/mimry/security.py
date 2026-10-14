@@ -60,17 +60,23 @@ STANDALONE_SECRET_RE = re.compile(
 )
 
 
+class UnsafeRootError(ValueError):
+    """A root MIMRY refuses: a file, a drive root or home."""
+
+
 def safe_root(root: Path):
     r = root.resolve()
     home = Path.home().resolve()
+    if r.exists() and not r.is_dir():
+        raise UnsafeRootError(f"--root must be a folder, not a file: {r}")
     if r == Path(r.anchor):
-        raise ValueError(f"Refusing to index filesystem root: {r}")
+        raise UnsafeRootError(f"Refusing to index filesystem root: {r}")
     if r == home:
-        raise ValueError(f"Refusing to index entire home without explicit target scope: {r}")
+        raise UnsafeRootError(f"Refusing to index entire home without explicit target scope: {r}")
     for relative in SENSITIVE_HOME_DIRS:
         sensitive = (home / relative).resolve()
         if r == sensitive or sensitive in r.parents:
-            raise ValueError(f"Refusing to index sensitive user-data root: {r}")
+            raise UnsafeRootError(f"Refusing to index sensitive user-data root: {r}")
     return r
 
 

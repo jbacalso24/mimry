@@ -519,6 +519,7 @@ def main(argv=None):
     from .cache_safety import IndexOutsideCacheError
     from .commands import INDEX_REBUILT_NOTE, rebuild_outdated_index
     from .plan import PlanError
+    from .security import UnsafeRootError
     from .settings import IndexSettingsError
     from .state import (
         IndexSchemaMigrationError,
@@ -550,6 +551,8 @@ def main(argv=None):
         ui.fail("MIMRY found damaged index data", str(exc))
     except StateLockTimeoutError as exc:
         ui.fail("Another MIMRY command is still using this index", str(exc))
+    except UnsafeRootError as exc:
+        ui.fail(str(exc))
     except RootIdentityError as exc:
         ui.fail(*copied_folder_lines(exc.recorded_root, exc.current_root))
     except IndexOutsideCacheError as exc:

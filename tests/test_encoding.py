@@ -42,3 +42,25 @@ def test_cp1252_human_console_degrades_safely_but_utf8_artifacts_preserve_unicod
     artifact = tmp_path / "artifact.md"
     atomic_write_text(artifact, "original unicode: \u96ea\n")
     assert artifact.read_bytes() == "original unicode: \u96ea\n".encode("utf-8")
+
+
+def test_source_text_subprocess_calls_decode_utf8():
+    # text=True alone decodes with the locale code page (cp1252 on
+    # Windows), which breaks on git output for non-ASCII paths.
+    offenders: list[str] = []
+    for path in (ROOT / "src" / "mimry").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Attribute) and func.attr in {"run", "check_output"}):
+                continue
+            keywords = {kw.arg: kw.value for kw in node.keywords}
+            text_mode = any(
+                name in keywords and getattr(keywords[name], "value", None) is True
+                for name in ("text", "universal_newlines")
+            )
+            if text_mode and "encoding" not in keywords:
+                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+    assert offenders == []

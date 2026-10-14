@@ -11,7 +11,7 @@ from typing import Any
 from . import ui
 from .cache_safety import UnsafeCachePathError, validated_current_root_cache_path
 from .feedback import ensure_feedback_schema
-from .paths import idx_path, pointer_file, roots_file
+from .paths import idx_path, mdir, pointer_file, roots_file
 from .security import sanitize_data
 from .semantic import ensure_semantic_schema
 from .state import (
@@ -109,6 +109,10 @@ def load_pointer(
     validate_active_generation: bool = True,
     validate_root_identity: bool = True,
 ):
+    # A folder never set up has no .mimry/ to lock in. Creating one to
+    # answer "not set up" would leave a stray lock file behind.
+    if not mdir(Path(root)).is_dir():
+        return None
     with exclusive_file_lock(_pointer_lock(Path(root))):
         return _load_pointer_unlocked(
             root,

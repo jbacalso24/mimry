@@ -104,6 +104,8 @@ def _git_toplevel(root: Path) -> Path | None:
         res = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             check=False,
             # Never let a child inherit this process's stdin. Under the
@@ -154,6 +156,8 @@ def ensure_mimry_gitignore(root: Path) -> bool:
         ignored = subprocess.run(
             ["git", "-C", str(git_root), "check-ignore", "--quiet", "--", check_path.as_posix()],
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             check=False,
             stdin=subprocess.DEVNULL,
@@ -314,7 +318,7 @@ def _index_reader(command):
 
     @wraps(command)
     def guarded(a):
-        root = Path(a.root).resolve()
+        root = _command_root(a)
         with active_index_pointer(root):
             return command(a)
 
@@ -658,7 +662,7 @@ def _print_status(
 
 
 def cmd_index(a):
-    root = Path(a.root).resolve()
+    root = _command_root(a)
     full = getattr(a, "full", False)
     started = time.perf_counter()
     stats = write_index(root, require(root, validate=False), full=full)
@@ -681,7 +685,7 @@ def rebuild_outdated_index(root: Path) -> dict:
 
 def cmd_refresh(a):
     """Index, then confirm everything MIMRY serves is current."""
-    root = Path(a.root).resolve()
+    root = _command_root(a)
     ptr = require(root, validate=False)
     full = getattr(a, "full", False)
     started = time.perf_counter()
@@ -764,12 +768,14 @@ def _set_up_new_worktree(root: Path) -> dict | None:
     return stats
 
 
-def refresh_if_stale(root: Path) -> dict | None:
+def refresh_if_stale(root: Path, *, include_missing: bool = False) -> dict | None:
     """Reindex when files changed since the last index.
 
     Returns the index stats, or None when the index was current or
-    MIMRY is not set up. In a new git worktree of a set-up repository
-    it sets MIMRY up instead, and the stats carry ``set_up_worktree``.
+    MIMRY is not set up. With include_missing, a set-up repo that was
+    never indexed is indexed too (find asks for that). In a new git
+    worktree of a set-up repository it sets MIMRY up instead, and the
+    stats carry ``set_up_worktree``.
     Call it before taking the shared reader lock: indexing takes the
     lock exclusively. When git sees the same tree the index recorded,
     the full walk is skipped.
@@ -779,7 +785,8 @@ def refresh_if_stale(root: Path) -> dict | None:
             recorded = active.get("worktreeFingerprint")
             if recorded and recorded == worktree_fingerprint(root):
                 return None  # git sees the same tree that was indexed
-            if index_freshness(root, active)["state"] != "stale":
+            states = ("stale", "missing") if include_missing else ("stale",)
+            if index_freshness(root, active)["state"] not in states:
                 return None
     if active is None:
         return _set_up_new_worktree(root)
@@ -814,13 +821,39 @@ def _indexed_root(start: Path) -> Path:
     return start
 
 
+def _command_root(a) -> Path:
+    """Resolve a.root to the folder whose index answers for it.
+
+    A subfolder of an indexed repo answers from the repo's index. find
+    keeps the subfolder it ran from as its scope in find_directory. The
+    other commands then see the repo as a.root, so none of them locks or
+    writes under a folder that was never set up. Idempotent: a retry
+    after a schema rebuild resolves the same root.
+    """
+    if not hasattr(a, "find_directory"):
+        a.find_directory = Path(a.root).resolve()
+    start = safe_root(Path(a.find_directory))
+    root = _indexed_root(start)
+    a.root = str(root)
+    return root
+
+
 def _fresh_index(command):
     """Reindex first when files changed since the last index."""
+    return _reindex_first(command, include_missing=False)
+
+
+def _fresh_index_or_first(command):
+    """Like _fresh_index, and index a repo that was never indexed."""
+    return _reindex_first(command, include_missing=True)
+
+
+def _reindex_first(command, *, include_missing: bool):
 
     @wraps(command)
     def guarded(a):
         started = time.perf_counter()
-        stats = refresh_if_stale(_indexed_root(Path(a.root).resolve()))
+        stats = refresh_if_stale(_command_root(a), include_missing=include_missing)
         if stats is not None and not getattr(a, "json", False):
             elapsed = ui.took(time.perf_counter() - started)
             if stats.get("set_up_worktree"):
@@ -828,6 +861,8 @@ def _fresh_index(command):
                     "Set up MIMRY for this worktree - indexed"
                     f" {ui.count(stats['files'], 'file')} ({elapsed})"
                 )
+            elif stats.get("changes") is None:
+                ui.ok(f"Indexed first - {ui.count(stats['files'], 'file')} ({elapsed})")
             else:
                 ui.ok(f"Reindexed first - {_change_summary(stats)} ({elapsed})")
         return command(a)
@@ -1373,8 +1408,7 @@ def _write_legacy_context_redirect(root: Path) -> None:
 
 def cmd_preflight(a):
     started_all = time.perf_counter()
-    root = Path(a.root).resolve()
-    safe_root(root)
+    root = _command_root(a)
     root.mkdir(parents=True, exist_ok=True)
 
     init_ran = False
@@ -1725,7 +1759,7 @@ def cmd_semantic(a):
         return 0
 
 
-@_fresh_index
+@_fresh_index_or_first
 def cmd_find(a):
     start = Path(getattr(a, "find_directory", a.root)).resolve()
     root = _indexed_root(start)
@@ -2156,6 +2190,25 @@ def _call_row(result: dict, depth: int) -> tuple:
     return tuple(cells)
 
 
+def _indexed_as(surface: str, rel_path: str) -> bool:
+    """Whether a why surface names this indexed path."""
+    needle = surface.replace("\\", "/").lower()
+    if needle.startswith("./"):
+        needle = needle[2:]
+    return needle in rel_path.lower()
+
+
+def _outside_repo(root: Path, surface: str) -> bool:
+    candidate = Path(surface)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        candidate.resolve().relative_to(root)
+    except ValueError:
+        return True
+    return False
+
+
 @_index_reader
 def cmd_why(a):
     root = Path(a.root).resolve()
@@ -2183,7 +2236,15 @@ def cmd_why(a):
                 exact = next((row for row in rows if row["path"] == path), None)
                 if exact:
                     break
-    if exact is None:
+    if exact is None and _outside_repo(root, surface):
+        ui.warn(f"{surface} is outside the repository")
+    elif exact is None and not any(
+        _indexed_as(surface, f.get("rel_path", "")) for f in visible_files
+    ):
+        # Missing and skipped-as-secret look the same on purpose.
+        ui.warn(f"{surface} is not in the index")
+        ui.detail("Check the path, or run `mimry index` if the file is new.")
+    elif exact is None:
         ui.warn(f"{surface} is not in the top {window} results for {ui.quote(query)}")
         ui.detail(f'Try a narrower query, or `mimry find "{surface}"`.')
     else:
