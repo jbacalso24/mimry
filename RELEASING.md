@@ -112,5 +112,6 @@ evidence of parser compatibility, which is why `tree-sitter` carries an upper bo
 2. Re-run the unlocked-artifact parser and determinism lane before changing `tree-sitter` or `tree-sitter-language-pack`; keep both constrained in project metadata and regenerate `uv.lock`. Widening the `tree-sitter` upper bound requires that lane to pass and the golden determinism values to be re-confirmed, not regenerated to match.
 3. Run the complete release checks above on a clean checkout.
    Run the [token benchmark](benchmarks/tokens/README.md) once on holdout2 for the new version, in each read mode, and publish the results; holdout2 is never run while developing.
+   It runs in CI, not locally: `gh workflow run tokens.yml --ref <release-branch> -f set=holdout2` runs all three read modes, and the `tokens-results-holdout2` artifact holds the three results files already named for the version (`gh run download <run-id> -n tokens-results-holdout2 -D benchmarks/tokens`).
 4. Build twice with the same `SOURCE_DATE_EPOCH`, compare SHA-256 checksums, and review wheel metadata and sdist contents before tagging.
 5. Merge the release pull request, then tag the merged commit and push the tag (`git tag -a vX.Y.Z <sha> -m "mimry X.Y.Z" && git push origin vX.Y.Z`); the release workflow publishes to PyPI and GitHub Releases.

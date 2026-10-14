@@ -289,4 +289,6 @@ The runner clones each repository into the scratch directory, checks out each ta
 `--set` takes dev, holdout, holdout2 or holdout3.
 `--reads sed` charges `grep -n` and `sed -n` windows instead of whole-file reads and writes `results.<set>.sed.json`; `--window` sets the lines read on each side of a match (default 100).
 `--reads ranges` has the MIMRY agent read the line ranges its pack lists first and writes `results.<set>.ranges.json`.
+The [Token benchmark](../../.github/workflows/tokens.yml) workflow runs a set in all three read modes on GitHub Actions (Ubuntu, Python 3.14) and uploads the results named for the version under test; releases use it for holdout2.
+Results up to 0.3.3 were measured on Windows, so files checked out with CRLF line endings may count slightly more tokens than the same files on Linux, for both agents.
 Selecting new tasks needs an authenticated `gh` CLI: `python benchmarks/tokens/select_tasks.py dev`.

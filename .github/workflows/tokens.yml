@@ -1,0 +1,76 @@
+name: Token benchmark
+
+# Manual only. A release runs it once on holdout2 from the release branch,
+# so the benchmark never has to run on a maintainer's machine. holdout2 is
+# never run while developing.
+on:
+  workflow_dispatch:
+    inputs:
+      set:
+        description: "Task set to run"
+        type: choice
+        options:
+          - holdout2
+          - dev
+          - holdout3
+        default: holdout2
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: ${{ inputs.set }} (${{ matrix.reads }} reads)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        reads: [full, sed, ranges]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment
+        run: uv sync --locked --python "3.14"
+
+      - name: Run benchmark
+        run: >-
+          uv run --with tiktoken python benchmarks/tokens/run.py --work /tmp/tokens
+          --set ${{ inputs.set }} --reads ${{ matrix.reads }}
+
+      # Name the results for the version under test, as published:
+      # results.<set>[.<reads>].<version>.json.
+      - name: Name results for this version
+        run: |
+          version=$(uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          suffix=${{ matrix.reads != 'full' && format('.{0}', matrix.reads) || '' }}
+          mkdir -p /tmp/out
+          cp "benchmarks/tokens/results.${{ inputs.set }}${suffix}.json" "/tmp/out/results.${{ inputs.set }}${suffix}.${version}.json"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: tokens-${{ inputs.set }}-${{ matrix.reads }}
+          path: /tmp/out/
+          if-no-files-found: error
+
+  merge:
+    name: Merge results
+    runs-on: ubuntu-latest
+    needs: run
+    steps:
+      - uses: actions/upload-artifact/merge@v4
+        with:
+          name: tokens-results-${{ inputs.set }}
+          pattern: tokens-${{ inputs.set }}-*
+          delete-merged: true
