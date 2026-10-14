@@ -104,3 +104,25 @@ def test_credentials_in_a_function_never_reach_the_pieces_table(tmp_path):
     assert "ping" in [name for name, _body in stored]
     for name, body in stored:
         assert TOKEN_TAIL.lower() not in f"{name} {body}".lower()
+
+
+def test_symbols_sharing_one_line_share_one_piece(monkeypatch):
+    """A minified bundle puts thousands of functions on one line. Each
+    used to tokenize that whole line again, which is quadratic."""
+    import mimry.pieces as pieces_module
+
+    calls = []
+    real_body_terms = pieces_module.body_terms
+
+    def counting(data):
+        calls.append(len(data))
+        return real_body_terms(data)
+
+    monkeypatch.setattr(pieces_module, "body_terms", counting)
+    data = "".join(f"function f{i}(){{return {i}}};" for i in range(3000)).encode() + b"\n"
+    symbols = [{"name": f"f{i}", "line_start": 1, "line_end": 1} for i in range(3000)]
+
+    pieces = file_pieces(data, symbols)
+
+    assert [(start, end) for start, end, _name, _body in pieces] == [(1, 1)]
+    assert len(calls) == 1

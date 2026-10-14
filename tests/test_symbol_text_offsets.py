@@ -11,10 +11,14 @@ here passed, because fixtures written by Python are BOM-free ASCII.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from mimry.commands import cmd_init
 from mimry.core.languages import extract
+from mimry.indexer import write_index
+from mimry.storage import load_pointer
 from mimry.ts_ast_adapter import parse_ts_like
 
 BOM = "﻿"
@@ -123,3 +127,21 @@ def test_every_parsed_language_is_also_scannable_text() -> None:
 
     missing = sorted(set(EXTENSION_LANGUAGE) - set(TEXT_EXTS))
     assert missing == [], f"parsed but not scannable as text: {missing}"
+
+
+def test_python_file_saved_with_a_bom_keeps_its_symbols(tmp_path: Path, monkeypatch) -> None:
+    """Windows editors write a BOM. ast.parse rejects U+FEFF, so the
+    file used to lose every symbol without a warning."""
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "bom.py").write_bytes(
+        BOM.encode("utf-8")
+        + b"def bommed():\n    return helper_bom()\n\ndef helper_bom():\n    return 3\n"
+    )
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    write_index(root, load_pointer(root))
+
+    index = Path(load_pointer(root)["indexPath"])
+    symbols = (index / "symbols.jsonl").read_text(encoding="utf-8")
+    assert '"bommed"' in symbols and '"helper_bom"' in symbols

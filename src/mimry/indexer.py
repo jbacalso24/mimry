@@ -170,6 +170,9 @@ def _symbol_order(symbol: dict) -> tuple:
 SKIPPED = "skipped"
 UNINDEXABLE = "unindexable"
 MISSING_DEPENDENCY = "parse_error:MissingDependency"
+# How many paths the status, doctor and index output name for files the
+# parser rejected.
+PARSE_ERROR_FILES_SHOWN = 5
 # GRAMMAR_UNAVAILABLE (core.languages) is the tree-sitter counterpart:
 # indexed without its grammar, so its stat identity is never trusted.
 # Below this many files, worker start-up (a fresh interpreter importing
@@ -184,6 +187,31 @@ _REFERENCE_KEYS = (
     "dart_package",
     "go_module",
 )
+
+
+def is_code_parse_failure(status: str, adapter: str) -> bool:
+    """True when a code parser raised an exception on the file.
+
+    Only the Python AST path and the tree-sitter extractor for other
+    code count, and only an exception class name as the reason. Skips,
+    documents, grammar gaps and tree-sitter's recovered-error marks
+    (``tree_sitter_has_error``, still indexed) do not.
+    """
+    if not status.startswith("parse_error:"):
+        return False
+    if adapter != "python-ast" and not adapter.startswith("tree-sitter-"):
+        return False
+    reason = status.removeprefix("parse_error:")
+    return reason[:1].isupper() and reason.endswith(("Error", "Exception"))
+
+
+def _parse_error_paths(files: list[dict]) -> list[str]:
+    """Sorted paths of code files a parser failed on."""
+    return sorted(
+        f["rel_path"]
+        for f in files
+        if is_code_parse_failure(str(f.get("parse_status", "")), str(f.get("adapter", "")))
+    )
 
 
 def _adapt_file(
@@ -913,6 +941,8 @@ def write_index(root, ptr, *, full: bool = False):
             unread = sum(f.get("parse_status") == MISSING_DEPENDENCY for f in files)
             # Symbols missing: their grammar could not be downloaded.
             no_grammar = sum(f.get("parse_status") == GRAMMAR_UNAVAILABLE for f in files)
+            # Files the parser rejected; grammar gaps are counted above.
+            parse_errors = _parse_error_paths(files)
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
                 # Nothing to publish, but the tree git sees may have
@@ -931,6 +961,8 @@ def write_index(root, ptr, *, full: bool = False):
                     "unindexable": skipped,
                     "missing_dependency": unread,
                     "grammar_unavailable": no_grammar,
+                    "parse_errors": len(parse_errors),
+                    "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
                 }
             progress("MIMRY: building graph", force=True)
             graph = _build_core_graph(
@@ -1075,6 +1107,8 @@ def write_index(root, ptr, *, full: bool = False):
                 "semantic_chunks": semantic["chunks"],
                 "semantic_backend": semantic["backend"],
                 "grammar_unavailable": no_grammar,
+                "parse_errors": len(parse_errors),
+                "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
             }
             atomic_write_json(staging / GENERATION_MANIFEST, manifest)
             fsync_tree(staging)
@@ -1126,4 +1160,6 @@ def write_index(root, ptr, *, full: bool = False):
         "unindexable": skipped,
         "missing_dependency": unread,
         "grammar_unavailable": no_grammar,
+        "parse_errors": len(parse_errors),
+        "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
     }

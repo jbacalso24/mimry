@@ -85,7 +85,12 @@ from .security import (
 )
 from .semantic import semantic_health, semantic_rows
 from .source_snippets import with_source_snippets
-from .state import StateLockTimeoutError, atomic_write_text, grammar_unavailable_count
+from .state import (
+    StateLockTimeoutError,
+    atomic_write_text,
+    grammar_unavailable_count,
+    parse_error_summary,
+)
 from .storage import (
     active_index_pointer,
     copied_folder_lines,
@@ -457,6 +462,16 @@ def _print_grammar_warning(unavailable: int) -> None:
         )
 
 
+def _print_parse_error_warning(count: int, names: list[str]) -> None:
+    """Name the files the parser could not read, once per run."""
+    if count:
+        more = f" and {count - len(names)} more" if count > len(names) else ""
+        ui.warn(f"{ui.count(count, 'file')} could not be parsed: {', '.join(names)}{more}")
+        ui.detail(
+            "Their parts that parse are still indexed. Fix the syntax, then run `mimry index`."
+        )
+
+
 def _print_index_result(
     root: Path, stats: dict, seconds: float, *, full: bool, verbose: bool = False
 ) -> None:
@@ -498,6 +513,7 @@ def _print_index_result(
             f" missing. Run `{_repair_command()}` to add it."
         )
     _print_grammar_warning(stats.get("grammar_unavailable", 0))
+    _print_parse_error_warning(stats.get("parse_errors", 0), stats.get("parse_error_files", []))
     if verbose:
         ui.table(
             [
@@ -629,6 +645,7 @@ def _print_status(
             " not be read"
         )
     _print_grammar_warning(grammar_unavailable_count(ptr))
+    _print_parse_error_warning(*parse_error_summary(ptr))
     fixes = _print_problems(fresh, graph, semantic)
     if verbose:
         ui.table(
@@ -1431,6 +1448,12 @@ def cmd_preflight(a):
         if stats is not None
         else grammar_unavailable_count(ptr)
     )
+    parse_errors, parse_error_files = (
+        (stats.get("parse_errors", 0), stats.get("parse_error_files", []))
+        if stats is not None
+        else parse_error_summary(ptr)
+    )
+    _print_parse_error_warning(parse_errors, parse_error_files)
     ui.detail(f"Context pack: {ui.display_path(pack_path, root)}")
     _print_index_note(fresh, graph)
     _print_results_section("Start with", rows[:5], verbose=getattr(a, "verbose", False))

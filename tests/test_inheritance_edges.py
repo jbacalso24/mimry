@@ -265,3 +265,37 @@ def test_h_language_override_keeps_the_header_as_c(tmp_path: Path) -> None:
         if e.get("relation") == "inherits"
     }
     assert ("A", "B") not in pairs, sorted(p for p in pairs if p[0])
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "class Child(Base[int]):\n    pass\n",
+        "import mod\n\nclass Child(mod.Base[T]):\n    pass\n",
+        "import mod\n\nclass Child(mod.Base[int][str]):\n    pass\n",
+    ],
+)
+def test_subscripted_python_base_reaches_the_graph(tmp_path: Path, source: str) -> None:
+    """A subscripted base (Base[int]) names the class it subscripts."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "gen.py").write_text(
+        "from typing import Generic, TypeVar\nT = TypeVar('T')\n\n"
+        + source
+        + "\nclass Base(Generic[T]):\n    pass\n",
+        encoding="utf-8",
+    )
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+    write_index(root, load_pointer(root))
+
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    pairs = {
+        (labels.get(e["source"]), labels.get(e["target"]))
+        for e in graph["edges"]
+        if e.get("relation") == "inherits"
+    }
+
+    assert ("Child", "Base") in pairs, sorted(p for p in pairs if p[0])

@@ -27,7 +27,7 @@ from .commands import (
     _repair_command,
 )
 from .paths import pointer_file
-from .state import validate_generation
+from .state import parse_error_summary, validate_generation
 
 _SCOPE = [
     "package metadata and direct runtime dependencies",
@@ -580,6 +580,9 @@ def _root_checks(root: Path, *, verify: bool) -> list[dict[str, Any]]:
 
     state = fresh["state"]
     index_status = "ok" if state == "current" else "warning"
+    # Named in the index check's details; a file that does not parse is
+    # the repo's to fix, so it does not change the exit code.
+    parse_errors, parse_error_files = parse_error_summary(ptr)
     suggestion = None
     if state == "missing":
         suggestion = "Run `mimry index` to build the index."
@@ -595,6 +598,8 @@ def _root_checks(root: Path, *, verify: bool) -> list[dict[str, Any]]:
             changed_count=len(fresh.get("changed", [])),
             missing_count=len(fresh.get("missing", [])),
             unindexable_count=fresh.get("unindexable_count", 0),
+            parse_errors=parse_errors,
+            parse_error_files=parse_error_files,
         )
     ]
     for check_id, label, health, fix in (
@@ -673,6 +678,11 @@ def _detail_lines(check: dict[str, Any]) -> list[str]:
     """Indented lines shown under a check's summary."""
     if check["id"] == "installation.path" and len(check.get("executables", [])) > 1:
         return [f"  {path}" for path in check["executables"]]
+    if check["id"] == "root.index" and check.get("parse_errors"):
+        files = check.get("parse_error_files", [])
+        more = check["parse_errors"] - len(files)
+        suffix = f" and {more} more" if more > 0 else ""
+        return [f"  files that could not be parsed: {', '.join(files)}{suffix}"]
     if check["id"] == "agents.registrations":
         return [
             f"  {agent['label']}: skill {agent['skill'] or 'none'}, MCP {_MCP_TEXT[agent['mcp']]}"

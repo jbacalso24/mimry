@@ -631,11 +631,44 @@ def _xcode_references(pbxproj: dict, rel_path: str) -> list[str]:
     return sorted(refs)
 
 
+def _definition_records(file_id, language, definitions):
+    """Symbol and ``defines`` edge records for tree-sitter output."""
+    symbols = []
+    edges = []
+    for d in definitions:
+        sid = stable_id(file_id, d["name"], d["kind"], d["line_start"] or 0)
+        symbols.append(
+            {
+                "symbol_id": sid,
+                "file_id": file_id,
+                "name": d["name"],
+                "kind": d["kind"],
+                "language": language,
+                "exported": d["exported"],
+                "line_start": d["line_start"],
+                "line_end": d["line_end"],
+            }
+        )
+        edges.append(
+            {
+                "edge_id": stable_id(file_id, sid, "defines"),
+                "source_type": "file",
+                "source_id": file_id,
+                "target_type": "symbol",
+                "target_id": sid,
+                "edge_type": "defines",
+                "confidence": 1.0,
+            }
+        )
+    return symbols, edges
+
+
 def _populate_references(ext, data, references, inherits, path, root, rel_path):
     """Populate references dict for various file types."""
     if inherits:
         references["inherits"] = inherits
-    data_decoded = data.decode("utf-8", errors="ignore")
+    # utf-8-sig drops a leading BOM, which ast.parse rejects (alembic).
+    data_decoded = data.decode("utf-8-sig", errors="ignore")
     if ext == ".py":
         migration = alembic_migration(data_decoded)
         if migration:
@@ -755,7 +788,8 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
     elif ext == ".py":
         f = file_record(path, root, "python-ast", "ok", hint, snapshot)
         try:
-            source = data.decode("utf-8", errors="ignore")
+            # utf-8-sig: a Windows-editor BOM is not part of the source.
+            source = data.decode("utf-8-sig", errors="ignore")
             tree = ast.parse(source)
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -786,7 +820,14 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
                     )
                     if isinstance(node, ast.ClassDef):
                         for base in node.bases:
-                            base_name = getattr(base, "id", None) or getattr(base, "attr", None)
+                            # Base[int] and Generic[T] name the class
+                            # they subscript.
+                            target = base
+                            while isinstance(target, ast.Subscript):
+                                target = target.value
+                            base_name = getattr(target, "id", None) or getattr(
+                                target, "attr", None
+                            )
                             if base_name:
                                 inherits.append(
                                     {
@@ -817,6 +858,12 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
         except SyntaxError as e:
             f = file_record(
                 path, root, "python-ast", f"parse_error:{e.__class__.__name__}", hint, snapshot
+            )
+            # The error stays recorded, but tree-sitter recovers past
+            # it, so the definitions around a typo are still indexed.
+            recovered = extract_language(path, source, language="python")
+            symbols, edges = _definition_records(
+                f["file_id"], "python", recovered.get("definitions", [])
             )
     elif ext in TS_EXTENSIONS:
         f = file_record(path, root, "typescript-ast", "ok", hint, snapshot)
@@ -857,31 +904,9 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
                 result = extract_language(path, source, language=language)
                 if result.get("status") == "ok":
                     f = file_record(path, root, f"tree-sitter-{language}", "ok", hint, snapshot)
-                    for d in result.get("definitions", []):
-                        sid = stable_id(f["file_id"], d["name"], d["kind"], d["line_start"] or 0)
-                        symbols.append(
-                            {
-                                "symbol_id": sid,
-                                "file_id": f["file_id"],
-                                "name": d["name"],
-                                "kind": d["kind"],
-                                "language": language,
-                                "exported": d["exported"],
-                                "line_start": d["line_start"],
-                                "line_end": d["line_end"],
-                            }
-                        )
-                        edges.append(
-                            {
-                                "edge_id": stable_id(f["file_id"], sid, "defines"),
-                                "source_type": "file",
-                                "source_id": f["file_id"],
-                                "target_type": "symbol",
-                                "target_id": sid,
-                                "edge_type": "defines",
-                                "confidence": 1.0,
-                            }
-                        )
+                    symbols, edges = _definition_records(
+                        f["file_id"], language, result.get("definitions", [])
+                    )
                     imports = [i["module"] for i in result.get("imports", [])]
                     calls = result.get("calls", [])
                     inherits = result.get("inherits", [])

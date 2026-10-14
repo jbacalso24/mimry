@@ -4,6 +4,10 @@ One download attempt per process, files marked GrammarUnavailable, never
 trusted by the stat cache, and one warning per index run. No test here
 needs the network: the pack's loader is replaced, except the last one,
 which uses the real pack behind a dead proxy.
+
+The end of the file covers the same wiring for Python files that the
+parser rejects: their definitions come from tree-sitter, and the files
+are named once per run.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import mimry.core.languages as languages
 import mimry.doctor as doctor
 from mimry.commands import cmd_index, cmd_init, cmd_preflight, cmd_status
 from mimry.core.languages import GRAMMAR_UNAVAILABLE, extract
-from mimry.indexer import write_index
+from mimry.indexer import is_code_parse_failure, write_index
 from mimry.state import GENERATION_MANIFEST, grammar_unavailable_count
 from mimry.storage import load_pointer
 from mimry.ts_ast_adapter import parse_ts_like
@@ -309,3 +313,91 @@ def test_real_pack_behind_a_dead_proxy_costs_one_timeout_per_run(tmp_path):
     assert report["first"] == GRAMMAR_UNAVAILABLE
     assert report["second"] == GRAMMAR_UNAVAILABLE
     assert report["second_cost"] < 1.0
+
+
+BROKEN_SOURCE = "def broken(:\n    pass\n\ndef still_ok():\n    return 5\n"
+
+
+def test_python_syntax_error_keeps_the_definitions_around_it(tmp_path, monkeypatch):
+    root = _repo(tmp_path, monkeypatch, {"broken.py": BROKEN_SOURCE})
+
+    write_index(root, load_pointer(root))
+
+    assert '"still_ok"' in _symbol_names(root)
+
+
+def test_index_and_status_name_the_python_files_that_do_not_parse(tmp_path, monkeypatch, capsys):
+    files = {f"bad{i}.py": BROKEN_SOURCE for i in range(7)}
+    files["ok.py"] = PY_SOURCE
+    root = _repo(tmp_path, monkeypatch, files)
+
+    assert cmd_index(SimpleNamespace(root=str(root), full=False)) == 0
+    out = capsys.readouterr().out
+    assert "7 files could not be parsed: bad0.py, bad1.py, bad2.py, bad3.py, bad4.py" in out
+    assert "and 2 more" in out
+
+    cmd_status(SimpleNamespace(root=str(root), verify=False, verbose=False))
+    out = capsys.readouterr().out
+    assert out.count("7 files could not be parsed") == 1
+
+
+def test_clean_python_repo_reports_no_parse_errors(tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path, monkeypatch, {"ok.py": PY_SOURCE})
+    write_index(root, load_pointer(root))
+    capsys.readouterr()
+
+    cmd_status(SimpleNamespace(root=str(root), verify=False, verbose=False))
+
+    assert "could not be parsed" not in capsys.readouterr().out
+
+
+def test_doctor_lists_the_unparsed_files_and_keeps_the_index_check_ok(tmp_path, monkeypatch):
+    root = _repo(tmp_path, monkeypatch, {"broken.py": BROKEN_SOURCE})
+    write_index(root, load_pointer(root))
+
+    checks = doctor._root_checks(root, verify=False)
+    index_check = next(check for check in checks if check["id"] == "root.index")
+
+    assert index_check["status"] == "ok"
+    assert index_check["parse_errors"] == 1
+    assert index_check["parse_error_files"] == ["broken.py"]
+    assert doctor._detail_lines(index_check) == ["  files that could not be parsed: broken.py"]
+
+
+@pytest.mark.parametrize(
+    "status,adapter",
+    [
+        ("parse_error:SyntaxError", "python-ast"),
+        ("parse_error:IndentationError", "python-ast"),
+        ("parse_error:RuntimeError", "tree-sitter-go"),
+    ],
+)
+def test_a_code_parser_exception_counts_as_a_parse_failure(status, adapter):
+    assert is_code_parse_failure(status, adapter)
+
+
+@pytest.mark.parametrize(
+    "status,adapter",
+    [
+        # Skips and recovered trees: the file is not a parse failure.
+        ("parse_error:unsupported_language", "tree-sitter-go"),
+        ("parse_error:unsupported_extension", "office-document"),
+        ("parse_error:non_text", "typescript-ast"),
+        ("parse_error:empty", "pdf-document"),
+        ("parse_error:tree_sitter_has_error", "tree-sitter-go"),
+        ("parse_error:tree_sitter_has_error", "typescript-ast"),
+        # Documents: their reasons are exception names, but not code.
+        ("parse_error:Encrypted", "pdf-document"),
+        ("parse_error:ResourceLimit", "office-document"),
+        ("parse_error:UnsafeXML", "office-document"),
+        ("parse_error:BadZipFile", "office-document"),
+        ("parse_error:MissingDependency", "pdf-document"),
+        # Grammar gaps have their own warning.
+        ("parse_error:GrammarUnavailable", "tree-sitter-go"),
+        ("parse_error:GrammarUnavailable", "python-ast"),
+        ("parse_error:MissingDependency", "tree-sitter-go"),
+        ("ok", "python-ast"),
+    ],
+)
+def test_skips_documents_and_recovered_trees_are_not_parse_failures(status, adapter):
+    assert not is_code_parse_failure(status, adapter)

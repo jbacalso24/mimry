@@ -51,7 +51,8 @@ def enrich_framework_facts(
     facts: list[str] = []
     adapters: list[str] = []
     # Decode source_data once if provided
-    source_text = source_data.decode("utf-8", errors="ignore") if source_data else None
+    # utf-8-sig: ast.parse rejects a leading BOM.
+    source_text = source_data.decode("utf-8-sig", errors="ignore") if source_data else None
 
     if ext in _TS_EXTS:
         next_facts = nextjs_app_router_facts(rel)
@@ -512,7 +513,7 @@ def _line_for_offset(text: str, offset: int) -> int:
 
 def _read_text(path: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8", errors="ignore")
+        return path.read_text(encoding="utf-8-sig", errors="ignore")
     except OSError:
         return ""
 

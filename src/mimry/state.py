@@ -426,6 +426,25 @@ def grammar_unavailable_count(pointer: dict[str, Any]) -> int:
     return count if isinstance(count, int) and count > 0 else 0
 
 
+def parse_error_summary(pointer: dict[str, Any]) -> tuple[int, list[str]]:
+    """Files in the active generation the parser could not read, and
+    the first few of their paths.
+
+    ``(0, [])`` when the manifest or the keys are missing (indexes built
+    before they were recorded) or unreadable.
+    """
+    try:
+        manifest, _ = load_json_state(Path(pointer["indexPath"]) / GENERATION_MANIFEST)
+    except (StateCorruptionError, OSError, KeyError):
+        return 0, []
+    stats = manifest.get("stats") if isinstance(manifest, dict) else None
+    count = stats.get("parse_errors") if isinstance(stats, dict) else None
+    names = stats.get("parse_error_files") if isinstance(stats, dict) else None
+    if not isinstance(count, int) or count <= 0 or not isinstance(names, list):
+        return 0, []
+    return count, [name for name in names if isinstance(name, str)]
+
+
 def validate_generation(pointer: dict[str, Any]) -> None:
     """Validate that all state exposes one generation.
 
