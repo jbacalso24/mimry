@@ -1,0 +1,89 @@
+name: Localization
+
+# Manual only. The full SWE-bench Verified run takes hours, so no push or
+# pull request starts it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shard:
+    name: Shard ${{ matrix.shard }} of 10
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment
+        run: uv sync --locked --python "3.14"
+
+      - name: Run shard
+        run: >-
+          uv run python benchmarks/localization/run.py --work /tmp/loc
+          --shard ${{ matrix.shard }}/10
+          --out /tmp/loc-shard-${{ matrix.shard }}.json
+
+      - name: Upload shard results
+        uses: actions/upload-artifact@v4
+        with:
+          name: localization-shard-${{ matrix.shard }}
+          path: /tmp/loc-shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+  merge:
+    name: Merge shard results
+    runs-on: ubuntu-latest
+    needs: shard
+    if: always()
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment
+        run: uv sync --locked --python "3.14"
+
+      - name: Download shard results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: localization-shard-*
+          path: /tmp/shards
+          merge-multiple: true
+
+      - name: Merge shards
+        run: >-
+          uv run python benchmarks/localization/run.py
+          --merge /tmp/shards/loc-shard-*.json
+          --out /tmp/localization-results.json
+
+      - name: Upload merged results
+        uses: actions/upload-artifact@v4
+        with:
+          name: localization-results
+          path: /tmp/localization-results.json
+          if-no-files-found: error
