@@ -1,0 +1,183 @@
+"""`mimry install` adds MIMRY's patterns to Git's global ignore file
+once per machine, so `mimry init` leaves a repo's tracked .gitignore
+alone."""
+
+from __future__ import annotations
+
+import subprocess
+
+import pytest
+
+from mimry import installer
+from mimry.cli import main
+
+GLOBAL_LINES = "# MIMRY\n.mimry/\nmimry-out/\n"
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    """A fake home and an empty git global config, so nothing real is
+    read or written."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("MIMRY_NO_GLOBAL_GITIGNORE", raising=False)
+    (tmp_path / "gitconfig").write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
+    return fake_home
+
+
+def _install(*flags: str) -> int:
+    return main(["install", "--platform", "claude-code", *flags])
+
+
+def _default_file(home):
+    return home / ".config" / "git" / "ignore"
+
+
+def _skill(home):
+    return home / ".claude" / "skills" / "mimry" / "SKILL.md"
+
+
+def test_fresh_machine_gets_the_patterns_in_the_default_file(home, capsys):
+    assert _install() == 0
+
+    assert _default_file(home).read_text(encoding="utf-8") == GLOBAL_LINES
+    assert "Added MIMRY to the global git ignore" in capsys.readouterr().out
+
+
+def test_existing_file_without_trailing_newline_gets_a_separator(home):
+    path = _default_file(home)
+    path.parent.mkdir(parents=True)
+    path.write_text("node_modules/", encoding="utf-8")
+
+    _install()
+
+    assert path.read_text(encoding="utf-8") == "node_modules/\n" + GLOBAL_LINES
+
+
+def test_only_the_missing_patterns_are_added(home):
+    path = _default_file(home)
+    path.parent.mkdir(parents=True)
+    path.write_text(".mimry/\n", encoding="utf-8")
+
+    _install()
+
+    assert path.read_text(encoding="utf-8") == ".mimry/\n# MIMRY\nmimry-out/\n"
+
+
+def test_custom_core_excludes_file_is_used(home, tmp_path):
+    (tmp_path / "gitconfig").write_text(
+        "[core]\n\texcludesFile = ~/dotfiles/ignore\n", encoding="utf-8"
+    )
+
+    _install()
+
+    assert (home / "dotfiles" / "ignore").read_text(encoding="utf-8") == GLOBAL_LINES
+    assert not _default_file(home).exists()
+
+
+def test_xdg_config_home_is_used_when_no_excludes_file_is_set(home, tmp_path, monkeypatch):
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+
+    _install()
+
+    assert (xdg / "git" / "ignore").read_text(encoding="utf-8") == GLOBAL_LINES
+    assert not _default_file(home).exists()
+
+
+def test_running_twice_changes_nothing(home, capsys):
+    _install()
+    first = _default_file(home).read_bytes()
+    capsys.readouterr()
+
+    _install()
+
+    assert _default_file(home).read_bytes() == first
+    assert "global git ignore" not in capsys.readouterr().out
+
+
+def test_no_global_gitignore_flag_leaves_the_file_alone(home):
+    assert _install("--no-global-gitignore") == 0
+
+    assert not _default_file(home).exists()
+    assert _skill(home).is_file()
+
+
+def test_env_var_skips_it_too(home, monkeypatch):
+    monkeypatch.setenv("MIMRY_NO_GLOBAL_GITIGNORE", "1")
+
+    _install()
+
+    assert not _default_file(home).exists()
+
+
+def test_dry_run_reports_the_file_without_writing_it(home, capsys):
+    assert _install("--dry-run") == 0
+
+    assert not _default_file(home).exists()
+    assert "Would add MIMRY to the global git ignore" in capsys.readouterr().out
+
+
+def test_missing_git_warns_and_install_still_succeeds(home, tmp_path, monkeypatch, capsys):
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+
+    assert _install() == 0
+
+    out = capsys.readouterr()
+    assert "Git is not on PATH" in out.out + out.err
+    assert not _default_file(home).exists()
+    assert _skill(home).is_file()
+
+
+def test_unreadable_file_warns_and_install_still_succeeds(home, capsys):
+    _default_file(home).mkdir(parents=True)  # a folder where the file should be
+
+    assert _install() == 0
+
+    out = capsys.readouterr()
+    assert "Could not read" in out.out + out.err
+    assert _skill(home).is_file()
+
+
+def test_write_failure_warns_with_the_lines_to_add_by_hand(home, monkeypatch, capsys):
+    real_atomic_write = installer._atomic_write
+
+    def refuse_the_ignore_file(path, content):
+        if path.name == "ignore":
+            raise PermissionError(13, "Permission denied")
+        real_atomic_write(path, content)
+
+    monkeypatch.setattr(installer, "_atomic_write", refuse_the_ignore_file)
+
+    assert _install() == 0
+
+    out = capsys.readouterr()
+    assert "Could not write" in out.out + out.err
+    assert "Add these lines to it by hand: .mimry/, mimry-out/" in out.out
+    assert _skill(home).is_file()
+
+
+def test_mimry_init_in_a_fresh_repo_leaves_git_status_clean(home, tmp_path):
+    assert _install() == 0
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, stdin=subprocess.DEVNULL)
+
+    assert main(["--root", str(repo), "init"]) == 0
+
+    status = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+        stdin=subprocess.DEVNULL,
+    ).stdout
+    assert status == ""
+    assert not (repo / ".gitignore").exists()
+    assert (repo / ".mimry").is_dir()

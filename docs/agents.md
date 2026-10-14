@@ -25,6 +25,10 @@ It also reports a skill or always-on block written by an older MIMRY as out of d
 Pass `--no-mcp`, or set `MIMRY_NO_MCP_REGISTRATION=1`, to install the skill without registering the server.
 The agent starts its own `mimry-mcp` when a session begins and stops it when the session ends.
 
+`mimry install` also adds `.mimry/` and `mimry-out/` to Git's global ignore file, once per machine.
+That file is `core.excludesFile` when it is set, otherwise `$XDG_CONFIG_HOME/git/ignore` or `~/.config/git/ignore`.
+Pass `--no-global-gitignore` to leave it alone.
+
 ## OpenCode
 
 Install MIMRY for OpenCode with:

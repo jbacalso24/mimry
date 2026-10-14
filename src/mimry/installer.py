@@ -1590,6 +1590,68 @@ def _plugin_installed() -> bool:
     return isinstance(plugins, dict) and any(str(key).startswith("mimry@") for key in plugins)
 
 
+# Git's global excludes file gets these once per machine, so a repo's
+# tracked .gitignore needs no MIMRY lines.
+_GLOBAL_IGNORE_PATTERNS = (".mimry/", "mimry-out/")
+
+
+def _global_ignore_path() -> Path | None:
+    """The file Git reads as its global excludes, or None when Git
+    cannot say. Asks Git first so a custom core.excludesFile is
+    respected, and never writes the user's git config."""
+    try:
+        res = subprocess.run(
+            ["git", "config", "--global", "--get", "core.excludesFile"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        ui.warn("Git is not on PATH, so the global git ignore file was not updated")
+        return None
+    # Exit 1 means the key is unset; any other failure is a git error.
+    if res.returncode not in (0, 1):
+        ui.warn(f"git could not read core.excludesFile: {res.stderr.strip() or res.returncode}")
+        return None
+    configured = res.stdout.strip()
+    if res.returncode == 0 and configured:
+        return Path(os.path.expanduser(configured))
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    return (Path(xdg) if xdg else _home() / ".config") / "git" / "ignore"
+
+
+def _add_global_ignore(*, dry_run: bool) -> None:
+    """Append the MIMRY patterns that Git's global ignore file lacks. A
+    second run finds them all and writes nothing."""
+    path = _global_ignore_path()
+    if path is None:
+        return
+    shown = ui.display_path(path)
+    try:
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    except (OSError, UnicodeDecodeError) as exc:
+        ui.warn(f"Could not read {shown}: {exc}")
+        return
+    have = {line.strip() for line in existing.splitlines()}
+    missing = [pattern for pattern in _GLOBAL_IGNORE_PATTERNS if pattern not in have]
+    if not missing:
+        return
+    if dry_run:
+        ui.detail(f"Would add MIMRY to the global git ignore: {shown}")
+        return
+    lead = "" if not existing or existing.endswith("\n") else "\n"
+    try:
+        _atomic_write(path, existing + lead + "\n".join(["# MIMRY", *missing]) + "\n")
+    except OSError as exc:
+        ui.warn(f"Could not write {shown}: {exc.strerror or exc}")
+        ui.detail(f"Add these lines to it by hand: {', '.join(missing)}")
+        return
+    ui.ok(f"Added MIMRY to the global git ignore: {shown}")
+
+
 def cmd_install(a) -> int:
     if getattr(a, "list_platforms", False):
         print(platform_table(verbose=getattr(a, "verbose", False)))
@@ -1619,6 +1681,11 @@ def cmd_install(a) -> int:
         hooks=a.hooks,
         mcp=not a.no_mcp,
     )
+    # Once per run, after the install itself, so a refused install
+    # leaves the machine's git ignore file alone.
+    skip = getattr(a, "no_global_gitignore", False) or os.environ.get("MIMRY_NO_GLOBAL_GITIGNORE")
+    if not skip:
+        _add_global_ignore(dry_run=a.dry_run)
     return 0
 
 
