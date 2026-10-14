@@ -12,7 +12,8 @@ jobs:
   release-floor:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # Windows runs take 13-17 minutes; 20 cancelled a healthy run (#227).
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
