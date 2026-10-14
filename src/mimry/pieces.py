@@ -36,10 +36,13 @@ def file_pieces(data: bytes, symbols: list[dict]) -> list[list]:
     """
     lines = data.decode("utf-8", errors="ignore").splitlines()
     pieces = []
-    # Pieces are line ranges, so symbols that share one (a minified
-    # bundle can put thousands on a single line) share one piece. Its
-    # body is the tokens of those lines, tokenized once. Once per symbol
-    # is quadratic on a long line, and stores the same body each time.
+    # Symbols that share their own line range (a minified bundle can
+    # put thousands on a single line) share one piece. Its body is the
+    # tokens of those lines, tokenized once. Doing it per symbol is
+    # quadratic on a long line and stores the same body each time. The
+    # key is the symbol's range before attached lines are taken in, so a
+    # class and its first method (which starts on the next line) keep
+    # separate pieces.
     seen_ranges: set[tuple[int, int]] = set()
     for symbol in symbols:
         start, end = symbol.get("line_start"), symbol.get("line_end")
@@ -48,15 +51,15 @@ def file_pieces(data: bytes, symbols: list[dict]) -> list[list]:
         end = min(end, len(lines))
         if start > end:
             continue
+        if (start, end) in seen_ranges:
+            continue
+        seen_ranges.add((start, end))
         # Doc comments, decorators and attributes sit directly above a
         # symbol; a piece starts at the top of that attached block.
         top = start
         while top > 1 and start - top < ATTACHED_LINES and lines[top - 2].strip():
             top -= 1
         start = top
-        if (start, end) in seen_ranges:
-            continue
-        seen_ranges.add((start, end))
         body = body_terms("\n".join(lines[start - 1 : end]).encode("utf-8"))
         pieces.append([start, end, str(symbol.get("name") or ""), body])
     return pieces

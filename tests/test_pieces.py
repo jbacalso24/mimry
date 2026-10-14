@@ -47,6 +47,19 @@ def test_file_pieces_span_symbols_and_skip_unusable_ones():
     assert [(start, end, name) for start, end, name, _body in pieces] == [(1, 2, "a"), (4, 5, "b")]
 
 
+def test_a_class_and_its_first_method_keep_separate_pieces():
+    """The method starts on the line after ``class``. Its piece must not
+    be dropped as a duplicate of the class's range once attached lines
+    are taken in."""
+    data = b"class Repo:\n    def extend(self):\n        return 1\n"
+    symbols = [
+        {"name": "Repo", "line_start": 1, "line_end": 3},
+        {"name": "extend", "line_start": 2, "line_end": 3},
+    ]
+    pieces = file_pieces(data, symbols)
+    assert [name for _start, _end, name, _body in pieces] == ["Repo", "extend"]
+
+
 def test_best_ranges_skip_overlaps_and_keep_file_order():
     matches = [(-9.0, 40, 60, "method"), (-8.0, 30, 90, "klass"), (-7.0, 5, 10, "early")]
     assert best_ranges(matches) == [
