@@ -16,6 +16,7 @@ import pytest
 from mimry import __version__, installer
 from mimry.commands import _languages_text
 from mimry.core.languages import language_counts
+from mimry.feedback import parse_context_suggested_paths
 
 
 def _posix(text: str) -> str:
@@ -2166,6 +2167,44 @@ testpaths = ["tests"]
     assert "typecheck command uv run mypy ." in files_text
     assert "entrypoints demo=demo.cli:main" in files_text
     assert "repo rules Never print secrets." in files_text
+
+
+def test_feedback_counts_changed_files_outside_the_pack_as_missed(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    assert run_cli(repo, cache, "preflight", "fix auth session ranking").returncode == 0
+    pack = repo / ".mimry" / "mimry-out" / "context" / "latest.md"
+    suggested = parse_context_suggested_paths(pack)
+    assert suggested
+    unsuggested = next(
+        path.relative_to(repo).as_posix()
+        for path in sorted(repo.rglob("*"))
+        if path.is_file()
+        and not {".mimry", ".git"} & set(path.parts)
+        and path.relative_to(repo).as_posix() not in suggested
+    )
+
+    res = run_cli(
+        repo,
+        cache,
+        "feedback",
+        "--query",
+        "fix auth session ranking",
+        "--context",
+        str(pack),
+        "--changed",
+        f"{suggested[0]},{unsuggested}",
+        "--outcome",
+        "passed",
+    )
+
+    assert res.returncode == 0, res.stderr
+    shown = run_cli(repo, cache, "feedback", "show", _row(res.stdout, "ID:"))
+    assert json.loads(shown.stdout)["missed_paths"] == [unsuggested]
+    stats = run_cli(repo, cache, "feedback", "stats")
+    assert "1 missed" in stats.stdout, stats.stdout
 
 
 def test_feedback_records_cli_payload_normalizes_paths_and_stats(tmp_path):

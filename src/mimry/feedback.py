@@ -229,13 +229,26 @@ def feedback_payload(root: Path, data: dict[str, Any]) -> dict[str, Any]:
         if redacted
     ]
 
+    suggested_paths = normalize_paths(root, suggested)
+    changed_paths = normalize_paths(root, data.get("changed") or data.get("changed_paths"))
+    missed_paths = normalize_paths(root, data.get("missed") or data.get("missed_paths"))
+    if suggested_paths:
+        # A changed file the suggestions did not list is a miss, whether
+        # or not the agent said so.
+        listed = set(suggested_paths) | set(missed_paths)
+        missed_paths += [
+            path
+            for path in changed_paths
+            if path not in listed and not path.startswith("external:")
+        ]
+
     return {
         "query": query[:2000],
         "context_path": normalize_context_path(root, context_path),
-        "suggested_paths": normalize_paths(root, suggested),
+        "suggested_paths": suggested_paths,
         "opened_paths": normalize_paths(root, data.get("opened") or data.get("opened_paths")),
-        "changed_paths": normalize_paths(root, data.get("changed") or data.get("changed_paths")),
-        "missed_paths": normalize_paths(root, data.get("missed") or data.get("missed_paths")),
+        "changed_paths": changed_paths,
+        "missed_paths": missed_paths,
         "ignored_paths": normalize_paths(root, data.get("ignored") or data.get("ignored_paths")),
         "verification": verification,
         "outcome": outcome,

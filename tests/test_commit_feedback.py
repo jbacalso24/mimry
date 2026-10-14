@@ -378,7 +378,7 @@ def test_feedback_payload_from_args_is_unchanged(tmp_path):
         "changed_paths": ["src/mimry/autoupdate.py", "external:../outside.txt"],
         "context_path": None,
         "ignored_paths": ["tests/test_autoupdate.py"],
-        "missed_paths": [],
+        "missed_paths": ["src/mimry/autoupdate.py"],
         "notes": "Bearer [REDACTED] and more",
         "opened_paths": ["docs/commands.md"],
         "outcome": "passed",

@@ -126,7 +126,6 @@ def record_commit_feedback(
     if not query:
         return None, "the context pack has no task query"
 
-    suggested_set = set(suggested)
     payload = feedback_payload(
         root,
         {
@@ -134,7 +133,6 @@ def record_commit_feedback(
             "context_path": str(pack),
             "suggested": suggested,
             "changed": changed,
-            "missed": [path for path in changed if path not in suggested_set],
             "opened": [],
             "ignored": [],
             "verification": [],
