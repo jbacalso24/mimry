@@ -9,12 +9,15 @@ from .core.artifacts import graph_available, graph_rows
 from .core.languages import EXTENSION_LANGUAGE, language_for
 from .feedback import apply_feedback_to_rows
 from .intent import (
+    TEST_TERMS,
     apply_exclusion_adjustment,
     apply_intent_adjustment,
     excluded_query_terms,
     intent_terms,
+    is_test_file,
     query_terms,
 )
+from .mentions import named_boost, named_paths
 from .paths import canonical_cached_rel_path
 from .pieces import best_ranges, piece_matches
 from .security import filter_index_records
@@ -183,6 +186,7 @@ def score(
     *,
     terms: list[str] | None = None,
     intent: list[str] | None = None,
+    named: tuple[int, str] | None = None,
 ):
     # find_rows passes both lists in, computed once per query; other
     # callers get them from q.
@@ -212,6 +216,13 @@ def score(
         s += boost
         if reason not in reasons:
             reasons.append(reason)
+
+    if named:
+        # Before the intent adjustment, so a named test file still takes
+        # the test downrank on a source task.
+        boost, reason = named
+        s += boost
+        reasons.append(reason)
 
     if s and f["adapter"] != "generic":
         s += 8
@@ -331,8 +342,23 @@ def find_rows(
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
     terms = query_terms(q)
     intent = intent_terms(q)
+    named = named_paths(q, known_paths)
+    # A test file named only in the body of a source task (a traceback
+    # from the test that failed) is a symptom, not the edit site.
+    tests_asked = bool(set(intent) & TEST_TERMS)
     for f in files:
-        s, rs = score(f, q, fts_scores.get(f["file_id"]), terms=terms, intent=intent)
+        named_reason = named.get(f["rel_path"])
+        if named_reason and not tests_asked and is_test_file(f["rel_path"]):
+            named_reason = None
+        named_match = (named_boost(named_reason), named_reason) if named_reason else None
+        s, rs = score(
+            f,
+            q,
+            fts_scores.get(f["file_id"]),
+            terms=terms,
+            intent=intent,
+            named=named_match,
+        )
 
         if s:
             folder = f["rel_path"].rsplit("/", 1)[0] if "/" in f["rel_path"] else "."

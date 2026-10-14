@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+import pytest
+
+from mimry import mentions
+from mimry.mentions import (
+    FILE_NAME_REASON,
+    MODULE_REASON,
+    NAMED_PATH_BOOST,
+    PATH_REASON,
+    named_boost,
+    named_paths,
+)
+from mimry.search import find_rows
+from mimry.storage import write_jsonl
+
+
+def test_a_repo_relative_path_names_its_file():
+    known = ["src/pkg/core/engine.py", "other/engine.py"]
+
+    assert named_paths("fix the retry loop in src/pkg/core/engine.py", known) == {
+        "src/pkg/core/engine.py": PATH_REASON
+    }
+
+
+def test_a_traceback_line_with_an_absolute_site_packages_path_names_the_repo_file():
+    known = ["django/db/models/query.py", "tests/query.py", "lib/models/query.py"]
+    line = r'File "C:\Python312\Lib\site-packages\django\db\models\query.py", line 42, in get'
+
+    # Four shared components with django/db/models/query.py; two with
+    # lib/models/query.py and one with tests/query.py.
+    assert named_paths(f"Crash in\n  {line}", known) == {"django/db/models/query.py": PATH_REASON}
+
+
+def test_a_windows_style_path_names_its_file():
+    known = ["pkg/core/engine.py", "pkg/core/cache.py"]
+
+    assert named_paths(r"The bug is in pkg\core\engine.py now", known) == {
+        "pkg/core/engine.py": PATH_REASON
+    }
+    assert named_paths(r"Traceback C:\Users\me\repo\pkg\core\engine.py", known) == {
+        "pkg/core/engine.py": PATH_REASON
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "see src/pkg/core/engine.py:42",
+        "see src/pkg/core/engine.py:42:7",
+        "see `src/pkg/core/engine.py`,",
+        '"src/pkg/core/engine.py"),',
+        "see src/pkg/core/engine.py.",
+    ],
+)
+def test_line_numbers_quotes_and_punctuation_do_not_hide_a_path(query):
+    known = ["src/pkg/core/engine.py", "src/pkg/core/cache.py"]
+
+    assert named_paths(query, known) == {"src/pkg/core/engine.py": PATH_REASON}
+
+
+def test_a_dotted_module_with_a_trailing_class_name_resolves_to_the_module_file():
+    known = ["django/db/models/query.py", "django/db/models/sql/query.py"]
+
+    assert named_paths("django.db.models.query.QuerySet is slow", known) == {
+        "django/db/models/query.py": MODULE_REASON
+    }
+
+
+def test_a_dotted_module_resolves_to_its_package_init_file():
+    known = ["src/mypkg/utils/__init__.py", "src/mypkg/other.py"]
+
+    assert named_paths("mypkg.utils.Helper returns None", known) == {
+        "src/mypkg/utils/__init__.py": MODULE_REASON
+    }
+
+
+def test_an_extensionless_import_path_resolves_to_the_file():
+    known = ["web/src/components/Button.tsx", "web/src/components/Card.tsx"]
+
+    assert named_paths("broken import from ./components/Button", known) == {
+        "web/src/components/Button.tsx": PATH_REASON
+    }
+
+
+def test_a_bare_unique_file_name_is_credited_as_a_file_name():
+    known = ["django/db/models/query.py", "x/other.py"]
+
+    named = named_paths("the bug is in query.py", known)
+
+    assert named == {"django/db/models/query.py": FILE_NAME_REASON}
+    assert named_boost(named["django/db/models/query.py"]) == NAMED_PATH_BOOST // 2
+
+
+def test_a_bare_file_name_shared_by_two_files_is_not_credited():
+    known = ["a/query.py", "b/query.py"]
+
+    assert named_paths("the bug is in query.py", known) == {}
+
+
+def test_a_suffix_tied_by_more_than_three_files_is_not_credited():
+    four = ["a/x/c.py", "b/x/c.py", "c/x/c.py", "d/x/c.py"]
+    three = four[:3]
+
+    assert named_paths("look at x/c.py", four) == {}
+    assert named_paths("look at x/c.py", three) == {path: PATH_REASON for path in three}
+
+
+def test_a_query_without_a_mention_builds_no_index(monkeypatch):
+    def fail(_known_paths):
+        raise AssertionError("no suffix index for a query with no mention")
+
+    monkeypatch.setattr(mentions, "_build_index", fail)
+    known = ["src/pkg/core/engine.py"]
+
+    assert named_paths("", known) == {}
+    assert named_paths("retry the engine after a timeout", known) == {}
+
+
+def test_path_and_module_boost_is_full_and_file_name_boost_is_half():
+    assert named_boost(PATH_REASON) == NAMED_PATH_BOOST == 120
+    assert named_boost(MODULE_REASON) == NAMED_PATH_BOOST
+    assert named_boost(FILE_NAME_REASON) == NAMED_PATH_BOOST // 2
+
+
+def _fixture_index(tmp_path, paths):
+    idx = tmp_path / "index"
+    idx.mkdir()
+    write_jsonl(
+        idx / "files.jsonl",
+        [
+            {
+                "file_id": path,
+                "filename": path.rsplit("/", 1)[-1],
+                "rel_path": path,
+                "content_hint": "",
+                "metadata_text": "",
+                "adapter": "python-ast" if path.endswith(".py") else "generic",
+            }
+            for path in paths
+        ],
+    )
+    return idx
+
+
+def test_a_traceback_naming_a_file_ranks_it_first_over_files_sharing_more_words(tmp_path):
+    paths = ["pkg/core/engine.py", "pkg/core/retry_timeout.py", "docs/notes.md"]
+    idx = _fixture_index(tmp_path, paths)
+    issue = "\n".join(
+        [
+            "Engine stops retrying after timeout",
+            "",
+            "The retry loop never resets its timeout counter after a backoff, so the",
+            "engine gives up on the first retry that follows a timeout.",
+            "",
+            "Traceback (most recent call last):",
+            '  File "/usr/lib/python3/site-packages/pkg/core/engine.py", line 42, in retry',
+            "    raise TimeoutError('retry budget exhausted')",
+            "TimeoutError: retry budget exhausted",
+        ]
+    )
+
+    rows = find_rows(idx, issue, limit=5, root=tmp_path)
+
+    assert rows[0]["path"] == "pkg/core/engine.py"
+    assert PATH_REASON in rows[0]["reason"]
+    # Without the boost, retry_timeout.py (two headline words in its
+    # name) scores 298 and the engine 248.
+    assert rows[1]["path"] == "pkg/core/retry_timeout.py"
+
+
+def test_a_test_file_named_only_in_the_body_of_a_source_task_gets_no_boost(tmp_path):
+    paths = ["src/checkout/redirect.py", "tests/test_checkout_redirect.py"]
+    idx = _fixture_index(tmp_path, paths)
+    body_only = (
+        "Checkout redirect loses the return URL\n\n"
+        '  File "tests/test_checkout_redirect.py", line 12, in test_redirect\n'
+    )
+
+    rows = find_rows(idx, body_only, limit=5, root=tmp_path)
+
+    assert rows[0]["path"] == "src/checkout/redirect.py"
+    test_row = next(r for r in rows if r["path"] == "tests/test_checkout_redirect.py")
+    assert "named in query" not in test_row["reason"]
+
+
+def test_a_test_file_named_in_the_headline_of_a_test_task_gets_the_boost(tmp_path):
+    idx = _fixture_index(tmp_path, ["src/checkout/redirect.py", "tests/test_checkout_redirect.py"])
+
+    rows = find_rows(
+        idx, "Fix tests/test_checkout_redirect.py so it redirects", limit=5, root=tmp_path
+    )
+
+    test_row = next(r for r in rows if r["path"] == "tests/test_checkout_redirect.py")
+    assert PATH_REASON in test_row["reason"]
