@@ -21,7 +21,7 @@ from .mentions import named_boost, named_paths
 from .paths import canonical_cached_rel_path
 from .pieces import best_ranges, piece_matches
 from .security import filter_index_records
-from .semantic import merge_semantic_rows, semantic_rows
+from .semantic import embed_model_id, merge_semantic_rows, semantic_rows
 from .storage import connect, load_jsonl, load_pointer
 
 # `--language py` means python: extensions work as language names.
@@ -285,7 +285,10 @@ def _without_excluded(rows, excluded_paths):
 def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded_paths):
     if not semantic:
         return _apply_exclusions(_without_excluded(rows, excluded_paths), q)
-    sem_rows, _health = semantic_rows(idx, root_id, q, limit)
+    # Rank fusion reads the semantic list past the page, so a file
+    # ranked 40th by embeddings can rise. Hashed mode keeps the cut.
+    sem_limit = max(limit, 100) if embed_model_id() else limit
+    sem_rows, _health = semantic_rows(idx, root_id, q, sem_limit)
     merged = merge_semantic_rows(rows, sem_rows, limit=limit)
     ranked = apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)
     return _apply_exclusions(_without_excluded(ranked, excluded_paths), q)

@@ -26,6 +26,10 @@ jobs:
     name: Shard ${{ matrix.shard }} of 10
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    env:
+      MIMRY_EMBED_MODEL: minishlab/potion-code-16M
+      MIMRY_EMBED_WEIGHT: "1.0"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +49,9 @@ jobs:
 
       - name: Sync locked environment
         run: uv sync --locked --python "3.14"
+
+      - name: Install embedding model package
+        run: uv pip install model2vec==0.10.0
 
       - name: Run shard
         run: >-

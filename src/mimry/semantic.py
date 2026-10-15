@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -18,8 +19,30 @@ SEMANTIC_BACKEND = "local-hash-v1"
 SEMANTIC_SCHEMA_VERSION = "0.1.0"
 VECTOR_DIMS = 256
 MAX_PREVIEW = 500
+EMBED_MODEL_ENV = "MIMRY_EMBED_MODEL"
+EMBED_WEIGHT_ENV = "MIMRY_EMBED_WEIGHT"
+RRF_K = 60
+_KIND_LABEL = {
+    "path": "semantic path/symbol match",
+    "symbol": "semantic path/symbol match",
+    "adapter_fact": "semantic adapter-fact match",
+    "doc_heading": "semantic adapter-fact match",
+}
+_embed_model: Any = None
+_embed_model_id: str | None = None
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+
+
+def embed_model_id() -> str:
+    """model2vec model id from the environment, or empty."""
+    return os.environ.get(EMBED_MODEL_ENV, "").strip()
+
+
+def semantic_backend() -> str:
+    """Backend name stored with each chunk. A model change rebuilds."""
+    model = embed_model_id()
+    return f"model2vec:{model}" if model else SEMANTIC_BACKEND
 
 
 def ensure_semantic_schema(con: sqlite3.Connection) -> None:
@@ -87,7 +110,31 @@ def _hash_index(token: str) -> int:
     return int.from_bytes(digest[:4], "big") % VECTOR_DIMS
 
 
+def _embed_vector(text: str) -> dict[str, float]:
+    global _embed_model, _embed_model_id
+    model_id = embed_model_id()
+    if _embed_model is None or _embed_model_id != model_id:
+        from model2vec import StaticModel
+
+        # Each mimry process loads the model: use the hub cache, not the
+        # hub (model2vec defaults to force_download=True).
+        _embed_model = StaticModel.from_pretrained(model_id, force_download=False)
+        _embed_model_id = model_id
+    values = [float(v) for v in _embed_model.encode([text])[0]]
+    norm = math.sqrt(sum(v * v for v in values))
+    if not norm:
+        return {}
+    unit = {}
+    for index, value in enumerate(values):
+        rounded = round(value / norm, 5)
+        if rounded:
+            unit[str(index)] = rounded
+    return unit
+
+
 def vectorize(text: str) -> dict[str, float]:
+    if embed_model_id():
+        return _embed_vector(text)
     counts: dict[int, float] = {}
     for token in _tokens(text):
         index = _hash_index(token)
@@ -137,8 +184,8 @@ def _chunk(
         "chunk_text_hash": _chunk_text_hash(text),
         "chunk_text_preview": preview,
         "vector": vector,
-        "model_name": SEMANTIC_BACKEND,
-        "backend_name": SEMANTIC_BACKEND,
+        "model_name": semantic_backend(),
+        "backend_name": semantic_backend(),
         "created_at": created_at,
         "schema_version": SEMANTIC_SCHEMA_VERSION,
     }
@@ -217,6 +264,7 @@ def build_semantic_index(
     identical.
     """
     precomputed = precomputed or {}
+    backend = semantic_backend()
     files = _load_jsonl(idx / "files.jsonl")
     symbols = _load_jsonl(idx / "symbols.jsonl")
     # Group once: filtering the full symbol list per file was quadratic,
@@ -229,7 +277,9 @@ def build_semantic_index(
     chunks: list[dict[str, Any]] = []
     for file_rec in files:
         known = precomputed.get(file_rec["file_id"])
-        if known is not None:
+        # Reused adapter output may hold another backend's vectors (the
+        # model changed since the adapt cache was written): recompute.
+        if known is not None and all(c.get("backend_name") == backend for c in known):
             chunks.extend(
                 {**chunk, "root_id": root_id, "created_at": created_at} for chunk in known
             )
@@ -287,7 +337,7 @@ def build_semantic_index(
                    ) values(?,?,?,?,?,?,?)""",
                 (
                     root_id,
-                    SEMANTIC_BACKEND,
+                    backend,
                     created_at,
                     len(chunks),
                     SEMANTIC_SCHEMA_VERSION,
@@ -303,7 +353,7 @@ def build_semantic_index(
     finally:
         con.close()
     return {
-        "backend": SEMANTIC_BACKEND,
+        "backend": backend,
         "chunks": len(chunks),
         "indexed_at": created_at,
         "generation": generation_id,
@@ -315,7 +365,12 @@ def semantic_health(
     idx: Path, root_id: str | None, expected_files: int | None = None
 ) -> dict[str, Any]:
     if not root_id or not (idx / "mimry.sqlite").exists():
-        return {"status": "missing", "backend": SEMANTIC_BACKEND, "chunks": 0, "indexed_at": None}
+        return {
+            "status": "missing",
+            "backend": semantic_backend(),
+            "chunks": 0,
+            "indexed_at": None,
+        }
     con = sqlite3.connect(idx / "mimry.sqlite")
     con.row_factory = sqlite3.Row
     try:
@@ -326,7 +381,7 @@ def semantic_health(
         if not row:
             return {
                 "status": "missing",
-                "backend": SEMANTIC_BACKEND,
+                "backend": semantic_backend(),
                 "chunks": 0,
                 "indexed_at": None,
             }
@@ -339,6 +394,8 @@ def semantic_health(
             if path_has_ignored_part(chunk["rel_path"])
         )
         status = "current" if chunks > 0 else "missing"
+        if row["backend_name"] != semantic_backend():
+            status = "stale"
         if policy_excluded_chunks or (
             expected_files is not None and expected_files > 0 and chunks < expected_files
         ):
@@ -376,6 +433,9 @@ def semantic_rows(
     finally:
         con.close()
 
+    if embed_model_id():
+        return _best_chunk_rows(rows, qvec, limit), health
+
     by_file: dict[str, dict[str, Any]] = {}
     for row in rows:
         if path_has_ignored_part(row["rel_path"]):
@@ -398,12 +458,7 @@ def semantic_rows(
             continue
         path = row["rel_path"]
         kind = row["chunk_kind"]
-        label = {
-            "path": "semantic path/symbol match",
-            "symbol": "semantic path/symbol match",
-            "adapter_fact": "semantic adapter-fact match",
-            "doc_heading": "semantic adapter-fact match",
-        }.get(kind, "semantic match")
+        label = _KIND_LABEL.get(kind, "semantic match")
         entry = by_file.setdefault(
             path,
             {
@@ -427,9 +482,73 @@ def semantic_rows(
     return sorted(results, key=lambda r: (-r["score"], r["path"]))[:limit], health
 
 
+def _best_chunk_rows(
+    rows: list[sqlite3.Row], qvec: dict[str, float], limit: int
+) -> list[dict[str, Any]]:
+    """Embedding mode: best chunk per file, no lexical fallback."""
+    best: dict[str, tuple[float, str, str]] = {}
+    for row in rows:
+        if path_has_ignored_part(row["rel_path"]):
+            continue
+        try:
+            vec = json.loads(row["vector_json"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        sim = cosine_sparse(qvec, vec)
+        if sim <= 0:
+            continue
+        path = row["rel_path"]
+        if path not in best or sim > best[path][0]:
+            best[path] = (sim, row["chunk_kind"], row["chunk_text_preview"] or "")
+    ordered = sorted(best.items(), key=lambda item: (-item[1][0], item[0]))[:limit]
+    return [
+        {
+            "path": path,
+            "score": int(round(sim * 100)),
+            "reason": _KIND_LABEL.get(kind, "semantic match"),
+            "details": f"{kind}: {preview[:160]}",
+            "source": "semantic",
+        }
+        for path, (sim, kind, preview) in ordered
+    ]
+
+
+def _fuse_by_rank(
+    base_rows: list[dict[str, Any]], semantic: list[dict[str, Any]], *, limit: int
+) -> list[dict[str, Any]]:
+    """Reciprocal rank fusion of the lexical and semantic lists."""
+    weight = float(os.environ.get(EMBED_WEIGHT_ENV) or 1.0)
+    base = sorted(base_rows, key=lambda r: (-r["score"], r["path"]))
+    base_rank = {row["path"]: rank for rank, row in enumerate(base, start=1)}
+    sem_rank = {row["path"]: rank for rank, row in enumerate(semantic, start=1)}
+    sem_by_path = {row["path"]: row for row in semantic}
+    rows_by_path = {row["path"]: row for row in base}
+    for path, row in sem_by_path.items():
+        rows_by_path.setdefault(path, row)
+    fused: list[tuple[float, dict[str, Any]]] = []
+    for path, row in rows_by_path.items():
+        value = 0.0
+        if path in base_rank:
+            value += 1.0 / (RRF_K + base_rank[path])
+        merged = {**row}
+        if path in sem_rank:
+            value += weight / (RRF_K + sem_rank[path])
+            semantic_reason = f"semantic rank {sem_rank[path]}"
+            merged["reason"] = (
+                f"{row['reason']}, {semantic_reason}" if row.get("reason") else semantic_reason
+            )
+            if sem_by_path[path].get("details") and not merged.get("details"):
+                merged["details"] = sem_by_path[path]["details"]
+        fused.append((value, merged))
+    fused.sort(key=lambda item: (-item[0], item[1]["path"]))
+    return [{**row, "score": int(round(value * 1_000_000))} for value, row in fused[:limit]]
+
+
 def merge_semantic_rows(
     base_rows: list[dict[str, Any]], semantic: list[dict[str, Any]], *, limit: int = 10
 ) -> list[dict[str, Any]]:
+    if embed_model_id():
+        return _fuse_by_rank(base_rows, semantic, limit=limit)
     by_path = {row["path"]: {**row} for row in base_rows}
     for row in semantic:
         if row["path"] in by_path:
