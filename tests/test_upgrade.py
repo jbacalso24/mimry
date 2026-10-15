@@ -253,6 +253,7 @@ def test_windows_script_prints_marks_from_the_ui_module():
         repair="uv tool install --force mimry",
         stopped=0,
         agent_lines=[],
+        refresh_argv=["mimry", "install", "--refresh"],
     )
 
     assert upgrade._ps_quote(ok) in script
@@ -269,6 +270,7 @@ def test_windows_script_says_mimry_is_present_or_removed_and_what_to_run():
         repair="uv tool install --force mimry",
         stopped=0,
         agent_lines=[],
+        refresh_argv=["mimry", "install", "--refresh"],
     )
 
     assert upgrade._ps_quote("  Run `mimry upgrade` to try again.") in script
@@ -285,6 +287,7 @@ def test_windows_script_carries_the_guidance_only_when_agents_are_known():
         repair="uv tool install --force mimry",
         stopped=0,
         agent_lines=[_CLAUDE_LINE],
+        refresh_argv=["mimry", "install", "--refresh"],
     )
 
     assert upgrade._ps_quote(
@@ -301,6 +304,7 @@ def test_windows_script_carries_the_guidance_only_when_agents_are_known():
         repair="uv tool install --force mimry",
         stopped=2,
         agent_lines=[_CLAUDE_LINE],
+        refresh_argv=["mimry", "install", "--refresh"],
     )
 
     assert upgrade._ps_quote("  Stopped 2 MIMRY MCP servers.") in stopped
@@ -336,6 +340,8 @@ def _posix_run(
     upgrade_out="",
     version="mimry 9.9.9\n",
     ps_out="",
+    refresh_code=0,
+    refresh_out="",
 ):
     def fake_run(args, **kwargs):
         calls.append((args, kwargs))
@@ -343,6 +349,8 @@ def _posix_run(
             return subprocess.CompletedProcess(args, 0, ps_out, "")
         if args[-1] == "--version":
             return subprocess.CompletedProcess(args, 0, version, "")
+        if args[-1] == "--refresh":
+            return subprocess.CompletedProcess(args, refresh_code, refresh_out, "")
         return subprocess.CompletedProcess(args, upgrade_code, upgrade_out, "")
 
     return fake_run
@@ -603,3 +611,77 @@ def test_ps_quote_doubles_single_quotes_and_leaves_everything_else_literal():
 
 def _ps_detail(text: str) -> str:
     return f"Write-Output ({upgrade._ps_quote('  ' + text)})"
+
+
+def test_refresh_argv_reaches_the_mimry_on_path(monkeypatch):
+    monkeypatch.setattr(upgrade.shutil, "which", lambda name: "/bin/mimry")
+
+    assert upgrade._refresh_argv() == ["/bin/mimry", "install", "--refresh"]
+    assert upgrade._version_argv() == ["/bin/mimry", "--version"]
+
+
+def test_posix_upgrade_refreshes_with_the_new_mimry_after_success(host, capsys):
+    host.setattr(upgrade.sys, "platform", "linux")
+    calls = []
+    host.setattr(
+        upgrade.subprocess,
+        "run",
+        _posix_run(calls, refresh_out="OK Refreshed the MIMRY skill for Claude Code\n"),
+    )
+
+    assert main(["upgrade"]) == 0
+
+    assert calls[1][0] == ["/bin/mimry", "--version"]
+    assert calls[2][0] == ["/bin/mimry", "install", "--refresh"]
+    out = capsys.readouterr().out
+    upgraded = f"OK Upgraded MIMRY {__version__} -> 9.9.9"
+    assert out.index(upgraded) < out.index("  OK Refreshed the MIMRY skill for Claude Code")
+
+
+def test_posix_failed_upgrade_does_not_refresh(host, capsys):
+    host.setattr(upgrade.sys, "platform", "linux")
+    calls = []
+    host.setattr(
+        upgrade.subprocess, "run", _posix_run(calls, upgrade_code=2, upgrade_out="boom\n")
+    )
+
+    assert main(["upgrade"]) == 1
+
+    assert all(args[-1] != "--refresh" for args, _ in calls)
+
+
+def test_posix_failing_refresh_warns_once_and_still_exits_0(host, capsys):
+    host.setattr(upgrade.sys, "platform", "linux")
+    calls = []
+    host.setattr(upgrade.subprocess, "run", _posix_run(calls, refresh_code=1))
+
+    assert main(["upgrade"]) == 0
+
+    out = capsys.readouterr().out
+    warning = (
+        "Could not refresh the installed MIMRY skills. Run `mimry install --refresh` by hand."
+    )
+    assert out.count(warning) == 1
+    assert f"OK Upgraded MIMRY {__version__} -> 9.9.9" in out
+
+
+def test_windows_script_refreshes_only_inside_the_success_branch():
+    script = upgrade._upgrade_script(
+        ["uv", "tool", "upgrade", "mimry"],
+        ["mimry", "--version"],
+        [1],
+        latest="9.9.9",
+        repair="uv tool install --force mimry",
+        stopped=0,
+        agent_lines=[],
+        refresh_argv=[MIMRY_EXE, "install", "--refresh"],
+    )
+
+    assert script.count("'--refresh'") == 1
+    success = script.index("if ($code -eq 0 -and $new) {")
+    failure = script.index("} else { if ($gone)", success)
+    refresh = script.index("'--refresh'")
+    assert success < refresh < failure
+    quoted = upgrade._ps_quote(MIMRY_EXE) + " 'install' '--refresh'"
+    assert f"$refresh = (& {quoted} 2>&1 | Out-String)" in script
+    assert upgrade._ps_quote(upgrade._refresh_failed_line()) in script[success:failure]

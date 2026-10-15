@@ -1103,19 +1103,30 @@ def _read_json_config(path: Path) -> dict | None:
         return None
 
 
-def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Path | None:
-    if cfg.key not in {"claude-code", "codex"} or cfg.hook_path is None:
-        return None
-    dst = (root / cfg.hook_path).resolve()
-    if dry_run:
-        return dst
+def _merged_hooks_text(dst: Path, cfg: MimryPlatform) -> str:
+    """The hooks file with MIMRY's entries set, everything else kept."""
     existing = _read_hooks_file(dst)
     hooks = existing.setdefault("hooks", {})
     for event, entry in _mimry_hook_entries(cfg).items():
         # Replace, never append: a reinstall must not duplicate entries.
         kept = [h for h in _event_entries(hooks, event) if not _is_mimry_hook(h)]
         hooks[event] = [*kept, entry]
-    _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
+    return json.dumps(existing, indent=2) + "\n"
+
+
+def _hooks_current(root: Path, cfg: MimryPlatform) -> bool:
+    """True when rewriting the hooks file would change nothing."""
+    dst = (root / cfg.hook_path).resolve()
+    return _read_text_or_none(dst) == _merged_hooks_text(dst, cfg)
+
+
+def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Path | None:
+    if cfg.key not in {"claude-code", "codex"} or cfg.hook_path is None:
+        return None
+    dst = (root / cfg.hook_path).resolve()
+    if dry_run:
+        return dst
+    _atomic_write(dst, _merged_hooks_text(dst, cfg))
     return dst
 
 
@@ -1361,7 +1372,7 @@ def install_status_with_code(
         "references": all(
             _is_current(refs / name, content) for name, content in _REFERENCES.items()
         ),
-        "version": skill_current and marker_known,
+        "version": skill_current and marker == __version__,
     }
     always_on_stale = False
     if project and cfg.always_on_file:
@@ -1445,6 +1456,13 @@ def install_status_with_code(
     return result, code
 
 
+def _write_skill_files(dst: Path, key: str) -> None:
+    """The skill, its references and the version marker beside it."""
+    _install_references(dst.parent)
+    _atomic_write(dst, skill_body(key))
+    _atomic_write(dst.parent / ".mimry_version", __version__ + "\n")
+
+
 def install_skill(
     platform_name: str,
     *,
@@ -1498,9 +1516,7 @@ def install_skill(
         if hooks_problem:
             raise SystemExit(1)
         return dst
-    _install_references(dst.parent)
-    _atomic_write(dst, skill_body(key))
-    _atomic_write(dst.parent / ".mimry_version", __version__ + "\n")
+    _write_skill_files(dst, key)
     git_paths = [dst, dst.parent / ".mimry_version", dst.parent / "references"]
     if always_on:
         ao = _install_always_on(root, cfg, dry_run=False)
@@ -1682,7 +1698,148 @@ def _add_global_ignore(*, dry_run: bool) -> None:
     ui.ok(f"Added MIMRY to the global git ignore: {shown}")
 
 
+def _skill_current(dst: Path, key: str) -> bool:
+    """True when the skill, its references and version marker are what
+    this MIMRY writes."""
+    marker = _read_text_or_none(dst.parent / ".mimry_version")
+    return (
+        _is_current(dst, skill_body(key))
+        and all(
+            _is_current(dst.parent / "references" / name, content)
+            for name, content in _REFERENCES.items()
+        )
+        and marker is not None
+        and marker.strip() == __version__
+    )
+
+
+def _project_repo_root(start: Path) -> Path | None:
+    """The Git repository root that holds start, or None outside one."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=start,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        return None
+    top = result.stdout.strip()
+    return Path(top) if result.returncode == 0 and top else None
+
+
+@dataclass(frozen=True)
+class InstallRefresh:
+    """One MIMRY install that was found, and the paths refresh wrote."""
+
+    name: str
+    root: Path
+    project: bool
+    written: tuple[Path, ...]
+
+
+def _install_path(cfg: MimryPlatform, root: Path, project: bool) -> Path:
+    """Where the skill file of one install lives."""
+    return (root / cfg.project_path if project else cfg.global_path).resolve()
+
+
+def _refresh_one(key: str, cfg: MimryPlatform, root: Path, project: bool) -> InstallRefresh:
+    """Rewrite what this one install already has, and nothing else."""
+    dst = _install_path(cfg, root, project)
+    written: list[Path | None] = []
+    if not _skill_current(dst, key):
+        _write_skill_files(dst, key)
+        written.append(dst)
+    if project:
+        # Always-on rules and hooks are project-only; they are rewritten
+        # only where they were added.
+        if cfg.always_on_file and _has_always_on(root, cfg):
+            if not _always_on_current(root, cfg):
+                written.append(_install_always_on(root, cfg, dry_run=False))
+        if cfg.hook_path and _has_any_hook(root, cfg) is True:
+            if not _hooks_current(root, cfg):
+                written.append(_install_hooks(root, cfg))
+    name = f"{cfg.label} (this project)" if project else cfg.label
+    return InstallRefresh(name, root, project, tuple(p for p in written if p is not None))
+
+
+def refresh_installed(start: Path) -> list[InstallRefresh]:
+    """Rewrite each MIMRY install that is already there.
+
+    Covers every platform in the user scope and, when start is inside a
+    Git repository, that repository's project scope. Nothing new is
+    installed: a missing skill, always-on rules or hooks stay missing,
+    and MCP registration and Git's global ignore are not touched.
+    """
+    scopes: list[tuple[Path, bool]] = [(start.resolve(), False)]
+    repo = _project_repo_root(start)
+    if repo is not None:
+        scopes.append((repo.resolve(), True))
+    found = []
+    for key, cfg in platforms().items():
+        for root, project in scopes:
+            if _install_path(cfg, root, project).exists():
+                found.append(_refresh_one(key, cfg, root, project))
+    return found
+
+
+def _join_names(names: list[str]) -> str:
+    unique = list(dict.fromkeys(names))
+    if len(unique) <= 1:
+        return "".join(unique)
+    return f"{', '.join(unique[:-1])} and {unique[-1]}"
+
+
+def _refresh_command(a) -> int:
+    """`mimry install --refresh`: the flags it cannot combine with are
+    refused before anything is written."""
+    clashes = [
+        flag
+        for flag, given in (
+            ("--platform", a.platform),
+            ("--project", a.project),
+            ("--status", getattr(a, "status", False)),
+            ("--dry-run", a.dry_run),
+            ("--list-platforms", getattr(a, "list_platforms", False)),
+            ("--always-on", a.always_on),
+            ("--hooks", a.hooks),
+        )
+        if given
+    ]
+    if clashes:
+        raise SystemExit(
+            ui.error_text(
+                "--refresh only updates the installs that are already there",
+                f"Remove {', '.join(clashes)} to use it.",
+            )
+        )
+    try:
+        found = refresh_installed(Path(a.root))
+    except OSError as exc:
+        ui.fail("Could not refresh the installed MIMRY skills", str(exc))
+        return 1
+    if not found:
+        ui.ok("No MIMRY skills are installed")
+        return 0
+    changed = [install for install in found if install.written]
+    if changed:
+        ui.ok(f"Refreshed the MIMRY skill for {_join_names([i.name for i in changed])}")
+    else:
+        ui.ok("Installed skills are up to date")
+    if getattr(a, "verbose", False):
+        for install in changed:
+            for path in install.written:
+                ui.detail(_shown(path, install.root, install.project))
+    return 0
+
+
 def cmd_install(a) -> int:
+    if getattr(a, "refresh", False):
+        return _refresh_command(a)
     if getattr(a, "list_platforms", False):
         print(platform_table(verbose=getattr(a, "verbose", False)))
         return 0

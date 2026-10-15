@@ -75,9 +75,53 @@ def _editable_source() -> str | None:
     return editable_folder(direct_url(dist))
 
 
-def _version_argv() -> list[str]:
+def _mimry_argv(*args: str) -> list[str]:
+    """Run the mimry on PATH, which after an upgrade is the new one."""
     exe = shutil.which("mimry")
-    return [exe, "--version"] if exe else [sys.executable, "-m", "mimry.cli", "--version"]
+    return [exe, *args] if exe else [sys.executable, "-m", "mimry.cli", *args]
+
+
+def _version_argv() -> list[str]:
+    return _mimry_argv("--version")
+
+
+def _refresh_argv() -> list[str]:
+    return _mimry_argv("install", "--refresh")
+
+
+def _refresh_failed_line() -> str:
+    return ui.headline(
+        "warn",
+        "Could not refresh the installed MIMRY skills. Run `mimry install --refresh` by hand.",
+    )
+
+
+def _refresh_after_upgrade() -> None:
+    """Refresh the installed skills with the new MIMRY.
+
+    This process still has the old templates in memory, so the refresh
+    runs as a new process. Its output is indented under the result line.
+    """
+    try:
+        result = subprocess.run(
+            _refresh_argv(),
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        print(_refresh_failed_line())
+        return
+    if result.returncode != 0:
+        print(_refresh_failed_line())
+        return
+    for line in result.stdout.splitlines():
+        if line.strip():
+            print(f"  {line}")
 
 
 def _installed_version() -> str | None:
@@ -290,6 +334,7 @@ def _upgrade_script(
     repair: str,
     stopped: int,
     agent_lines: list[str],
+    refresh_argv: list[str],
 ) -> str:
     """PowerShell: wait for the locks, upgrade, print the result.
 
@@ -315,6 +360,19 @@ def _upgrade_script(
     # terminal, plain OK and x otherwise.
     ok_mark = _ps_quote(ui.headline("ok", f"Upgraded MIMRY {__version__} -> "))
     success_lines = [f"Write-Output ({ok_mark} + $new)"]
+    # The new mimry refreshes the skills, only after a good upgrade.
+    refresh_failed = _ps_quote(_refresh_failed_line())
+    success_lines.extend(
+        [
+            "$refresh = (& "
+            + " ".join(_ps_quote(part) for part in refresh_argv)
+            + " 2>&1 | Out-String); $refreshCode = $LASTEXITCODE",
+            "if ($refreshCode -eq 0) { $refresh -split '\\r?\\n'"
+            " | Where-Object { $_.Trim() -ne '' }"
+            " | ForEach-Object { Write-Output ('  ' + $_) } }"
+            f" else {{ Write-Output {refresh_failed} }}",
+        ]
+    )
     if stopped:
         success_lines.append(_ps_line("  " + _stopped_line(stopped)))
     if agent_lines:
@@ -372,6 +430,7 @@ def _start_windows_helper(
         repair=repair,
         stopped=stopped,
         agent_lines=agent_lines,
+        refresh_argv=_refresh_argv(),
     )
     subprocess.Popen(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -526,6 +585,7 @@ def _upgrade(stop_servers: bool) -> int:
         )
         return 1
     ui.ok(f"Upgraded MIMRY {__version__} -> {new}")
+    _refresh_after_upgrade()
     if stopped:
         ui.detail(_stopped_line(stopped))
     if agent_lines:

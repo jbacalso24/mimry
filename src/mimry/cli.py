@@ -466,6 +466,14 @@ def build_parser():
         "--status", action="store_true", help="Check install health for the target platform/scope"
     )
     i.add_argument(
+        "--refresh",
+        action="store_true",
+        help=(
+            "Rewrite the MIMRY skills already installed for every platform and this project,"
+            " installing nothing new"
+        ),
+    )
+    i.add_argument(
         "--list-platforms",
         action="store_true",
         help="List supported install platforms and destinations",

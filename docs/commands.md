@@ -33,7 +33,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry plan ...` | Store and render explicit plan trees |
 | `mimry mcp` | Run the MCP server (same as `mimry-mcp`) |
 | `mimry adapters` | List the file-type adapters |
-| `mimry install` / `mimry uninstall` | Manage agent skills |
+| `mimry install` / `mimry uninstall` | Manage agent skills; `mimry install --refresh` rewrites the installed ones to this version |
 | `mimry digest` | Print a canonical digest of the index |
 | `mimry bench` | Replay this repo's recent merged pull requests and score how well MIMRY finds the files each one changed (`--tasks N`, `--json`, `--keep`; local only, no network or model calls) |
 | `mimry report` | Print the graph report, with its Suggested Questions |
@@ -54,6 +54,17 @@ Absolute or `..` globs, non-string filter values and invalid pagination values a
 Pagination is opt-in: pass `--offset 0` (MCP `offset: 0`) for the first page, then raise `--offset` by `--limit` for each later page.
 Without `--offset`, `find` keeps its compact ranking, which can differ from the first page of a paginated search.
 MCP `scope` reports the normalized `offset` and whether pagination was requested.
+
+## Refreshing installed skills
+
+`mimry install --refresh` rewrites the MIMRY skills that are already installed, so they match the version you are running.
+It covers every platform in your user profile and, when the current directory is inside a Git repository, that repository's project install.
+For each install it rewrites the skill and its references, plus the always-on rules and hooks where those were added.
+It installs nothing new: a platform without a skill, or a missing always-on rule or hook, stays missing.
+It does not register MCP servers or change Git's global ignore file, and a second run writes nothing.
+
+`mimry upgrade` runs the refresh with the new version after a successful upgrade, so usually you do not need to run it yourself.
+`--refresh` cannot be combined with `--platform`, `--project`, `--status`, `--dry-run`, `--list-platforms`, `--always-on` or `--hooks`.
 
 ## Diagnosing an install with `doctor`
 
