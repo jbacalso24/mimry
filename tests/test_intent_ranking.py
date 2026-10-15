@@ -6,12 +6,14 @@ from pathlib import Path
 from mimry.core.artifacts import graph_rows
 from mimry.intent import (
     INTENT_TERM_LIMIT,
+    REPO_NOISE_TERMS,
     TEST_TERMS,
     apply_intent_adjustment,
     excluded_query_terms,
     intent_terms,
     is_concept_intent,
     is_edit_intent,
+    is_repo_noise,
     is_source_file,
     is_test_file,
     location_terms,
@@ -600,6 +602,104 @@ def test_benchmark_segment_gets_same_downrank_as_benchmarks():
     assert benchmark_score == benchmarks_score
     assert "supporting code downrank for edit intent" in benchmark_reasons
     assert "supporting code downrank for edit intent" in benchmarks_reasons
+
+
+def test_repo_noise_table_matches_each_category_and_leaves_look_alikes_alone():
+    noise = [
+        ".github/ISSUE_TEMPLATE/bug.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/workflows/ci.yml",
+        ".gitlab/ci/build.yml",
+        ".circleci/config.yml",
+        "astropy/extern/jquery/data/js/jquery-3.1.1.js",
+        "pkg/vendor/lib.py",
+        "pkg/_vendor/lib.py",
+        "src/Third-Party/lib.js",
+        "src/vendored/lib.js",
+        "static/app.min.js",
+        "static/app.min.css",
+        "static/app.min.mjs",
+        "static/jquery-3.1.1-min.js",
+        "static/app.bundle.js",
+        "static/app.js.map",
+        "CONTRIBUTING.md",
+        "CODE_OF_CONDUCT.md",
+        "sub/dir/SECURITY.md",
+        "FUNDING.yml",
+        "CODEOWNERS",
+        "AUTHORS.rst",
+        "maintainers.txt",
+    ]
+    keep = [
+        "src/vendors.py",
+        "src/external_api.py",
+        "pkg/external/api.py",
+        "src/auth/security.py",
+        "lib/support.py",
+        "pkg/authors.py",
+        "src/github_client.py",
+        "src/ci.py",
+        "docs/contributing_guide_notes.md",
+        "app.min.ts",
+        "src/app.js",
+    ]
+
+    assert [path for path in noise if not is_repo_noise(path)] == []
+    assert [path for path in keep if is_repo_noise(path)] == []
+
+
+def test_a_source_file_outranks_an_issue_template_that_matches_the_same_way():
+    terms = intent_terms("Description of the bug in parsing")
+
+    source_score, source_reasons = apply_intent_adjustment(100, "src/parser.py", terms)
+    template_score, template_reasons = apply_intent_adjustment(
+        100, ".github/ISSUE_TEMPLATE/bug.md", terms
+    )
+
+    assert source_score > template_score
+    assert "repository template/vendored downrank" not in source_reasons
+    assert "repository template/vendored downrank" in template_reasons
+
+
+def test_a_headline_about_the_ci_workflow_keeps_the_workflow_file_unpenalised():
+    terms = intent_terms("Fix the CI workflow for releases")
+
+    assert set(terms) & REPO_NOISE_TERMS
+    assert apply_intent_adjustment(100, ".github/workflows/release.yml", terms) == (100, [])
+
+
+def test_a_query_naming_a_workflow_file_ranks_it_first(tmp_path):
+    paths = [".github/workflows/ci.yml", "src/lint/step.py", "src/ci/runner.py"]
+    idx = tmp_path / "index"
+    idx.mkdir()
+    write_jsonl(
+        idx / "files.jsonl",
+        [
+            {
+                "file_id": path,
+                "filename": Path(path).name,
+                "rel_path": path,
+                "content_hint": "",
+                "metadata_text": "",
+                "adapter": "generic",
+            }
+            for path in paths
+        ],
+    )
+
+    query = "Update the lint step in .github/workflows/ci.yml"
+    rows = find_rows(idx, query, limit=5, root=tmp_path)
+
+    assert rows[0]["path"] == ".github/workflows/ci.yml"
+
+
+def test_the_repo_noise_downrank_never_removes_a_file():
+    terms = query_terms("fix widget")
+
+    score, reasons = apply_intent_adjustment(1, "vendor/lib/parser.js", terms)
+
+    assert score >= 1
+    assert "repository template/vendored downrank" in reasons
 
 
 def test_content_match_lifts_a_file_the_graph_ranks_below_the_limit(tmp_path):

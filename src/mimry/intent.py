@@ -112,6 +112,58 @@ NON_PRIMARY_SEGMENTS = {
     *("examples", "example", "samples", "sample", "bench", "benches", "benchmarks", "benchmark"),
     *("vendor", "third_party", "node_modules"),
 }
+# Repository plumbing and copied code no task edits: CI and issue
+# or PR templates, vendored libraries, minified bundles and the
+# project's meta files (contributing guide, security policy, funding).
+REPO_TEMPLATE_DIRS = {".github", ".gitlab", ".circleci"}
+VENDORED_SEGMENTS = {
+    "vendor",
+    "vendored",
+    "_vendor",
+    "extern",
+    "externals",
+    "third_party",
+    "thirdparty",
+    "third-party",
+}
+MINIFIED_SUFFIXES = (".min.js", ".min.css", ".min.mjs", "-min.js", ".bundle.js", ".map")
+REPO_META_STEMS = {
+    "contributing",
+    "code_of_conduct",
+    "security",
+    "support",
+    "funding",
+    "codeowners",
+    "authors",
+    "contributors",
+    "maintainers",
+}
+# Meta files are prose (SECURITY.md, AUTHORS); a module named
+# security.py is code and is not one.
+REPO_META_SUFFIXES = {"", ".md", ".rst", ".txt", ".adoc", ".yml", ".yaml"}
+REPO_NOISE_FACTOR = 0.3
+# A headline that asks for one of these is about the repository plumbing
+# itself, so the repo-noise downrank does not apply.
+REPO_NOISE_TERMS = {
+    "github",
+    "workflow",
+    "workflows",
+    "ci",
+    "action",
+    "actions",
+    "template",
+    "templates",
+    "vendor",
+    "vendored",
+    "contributing",
+    "contributor",
+    "contributors",
+    "codeowners",
+    "minified",
+    "bundle",
+    "funding",
+    "security",
+}
 TEST_SEGMENTS = {"tests", "test", "__tests__", "testdata", "testing"}
 # Per-language test file naming conventions, matched against the file
 # name.
@@ -437,6 +489,21 @@ def is_supporting_code(rel_path: str) -> bool:
     return bool({part.lower() for part in path_parts(rel_path)[:-1]} & NON_PRIMARY_SEGMENTS)
 
 
+def is_repo_noise(rel_path: str) -> bool:
+    """Templates, vendored code, minified bundles and repo meta files.
+
+    Shipped with the repository, but almost never what a task changes.
+    """
+    p = PurePosixPath(rel_path)
+    dirs = {part.lower() for part in path_parts(rel_path)[:-1]}
+    return (
+        bool(dirs & REPO_TEMPLATE_DIRS)
+        or bool(dirs & VENDORED_SEGMENTS)
+        or p.name.lower().endswith(MINIFIED_SUFFIXES)
+        or (p.stem.lower() in REPO_META_STEMS and p.suffix.lower() in REPO_META_SUFFIXES)
+    )
+
+
 def is_source_file(rel_path: str) -> bool:
     """Product code in any parsed language, wherever it lives."""
     if (
@@ -480,6 +547,12 @@ def apply_intent_adjustment(
     if is_retired(rel_path):
         score = int(score * 0.5)
         reasons.append("retired path downrank")
+
+    # Same for repository plumbing: a template or vendored file ranks
+    # lower on every intent, unless the headline asks for that plumbing.
+    if is_repo_noise(rel_path) and not set(terms) & REPO_NOISE_TERMS:
+        score = int(score * REPO_NOISE_FACTOR)
+        reasons.append("repository template/vendored downrank")
 
     if is_edit_intent(terms):
         if is_source_file(rel_path):
