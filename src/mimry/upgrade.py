@@ -20,7 +20,8 @@ import urllib.request
 from importlib import metadata
 
 from . import __version__, ui
-from .commands import (
+from .doctor import _display, _mcp_server_pids
+from .install_info import (
     _command_text,
     _direct_url,
     _editable_folder,
@@ -28,7 +29,6 @@ from .commands import (
     _upgrade_argv,
     _upgrade_command,
 )
-from .doctor import _display, _mcp_server_pids
 
 _PYPI_URL = "https://pypi.org/pypi/mimry/json"
 _IN_USE_MARKERS = ("os error 32", "being used by another process", "Access is denied")

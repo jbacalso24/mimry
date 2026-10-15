@@ -18,10 +18,10 @@ from typing import Any
 
 from . import __version__, installer, ui
 from .cache_safety import IndexOutsideCacheError, validated_current_index_path
-from .commands import (
+from .commands import _health
+from .install_info import (
     _direct_url,
     _editable_folder,
-    _health,
     _install_channel,
     _local_folder,
     _repair_command,
