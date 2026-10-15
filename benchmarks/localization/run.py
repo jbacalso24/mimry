@@ -32,15 +32,18 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
 import sys
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from build_tasks import SETS, fetch_rows, task_path
+
+from mimry.core.artifacts import load_graph, node_source_file
 
 TOP = 10
 # `mimry find` prints "  %2d  <path>" per result. Reason lines are
@@ -50,6 +53,8 @@ RESULT_LINE = re.compile(r"^  ( \d|\d\d)  (.+)$")
 SCORE_LINE = re.compile(r"^      (score -?\d+: .*)$")
 # --diagnose looks this deep for gold files ranked below the top 10.
 DIAGNOSE_DEPTH = 50
+# Diagnosis searches the file graph this many hops for a partner file.
+PARTNER_HOPS = 3
 
 
 def score(ranked: list[str], gold: list[str]) -> dict:
@@ -149,13 +154,83 @@ def parse_find_explained(output: str, depth: int = TOP) -> list[tuple[str, str |
     return results[:depth]
 
 
-def diagnosis(explained: list[tuple[str, str | None]], gold: list[str]) -> dict:
-    """Where each gold file ranked within DIAGNOSE_DEPTH, and why the
-    top 10 and those gold files scored as they did."""
+def partner_links(
+    graph: dict, gold: list[str], top: list[str], rank: dict[str, int | None]
+) -> dict:
+    """How each gold file outside the top 10 links to the top 10.
+
+    `graph` is MIMRY's graph (nodes and links or edges). Edges are taken
+    between files, pairs within one file are dropped, and hops are
+    undirected and searched at most PARTNER_HOPS deep.
+    """
+    top_set = set(top)
+    found = {path for path in gold if path in top_set}
+    file_of = {
+        str(node["id"]): node_source_file(node)
+        for node in graph.get("nodes") or []
+        if node.get("id") is not None
+    }
+
+    def endpoint_file(end: object) -> str | None:
+        return file_of.get(str(end)) if end else None
+
+    neighbours: dict[str, set[str]] = defaultdict(set)
+    relations: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for edge in graph.get("links") or graph.get("edges") or []:
+        source = endpoint_file(edge.get("source") or edge.get("from"))
+        target = endpoint_file(edge.get("target") or edge.get("to"))
+        if not source or not target or source == target:
+            continue
+        relations[(source, target)].add(edge.get("relation") or edge.get("type") or "relates")
+        neighbours[source].add(target)
+        neighbours[target].add(source)
+
+    def nearest(start: str, targets: set[str]) -> int | None:
+        seen = {start}
+        frontier = {start}
+        for hops in range(1, PARTNER_HOPS + 1):
+            frontier = {n for f in frontier for n in neighbours[f]} - seen
+            if frontier & targets:
+                return hops
+            seen |= frontier
+        return None
+
+    partners = {}
+    for path in sorted({path for path in gold if path not in top_set}):
+        direct = []
+        for other in sorted(top_set):
+            out = relations.get((path, other), set())
+            back = relations.get((other, path), set())
+            if out or back:
+                direction = "both" if out and back else "out" if out else "in"
+                direct.append(
+                    {"file": other, "relations": sorted(out | back), "direction": direction}
+                )
+        partners[path] = {
+            "rank": rank.get(path),
+            "hops_to_found_gold": nearest(path, found),
+            "hops_to_top10": nearest(path, top_set),
+            "direct": direct,
+            "same_dir_as_found_gold": any(
+                posixpath.dirname(g) == posixpath.dirname(path) for g in found
+            ),
+        }
+    return partners
+
+
+def diagnosis(
+    explained: list[tuple[str, str | None]], gold: list[str], graph: dict | None = None
+) -> dict:
+    """Where each gold file ranked within DIAGNOSE_DEPTH, how the gold
+    files outside the top 10 connect to the top 10, and why the top 10
+    and those gold files scored as they did."""
     rank = {path: position for position, (path, _) in enumerate(explained, 1)}
     keep = {path for path, _ in explained[:TOP]} | set(gold)
+    gold_rank = {path: rank.get(path) for path in sorted(gold)}
+    top = [path for path, _ in explained[:TOP]]
     return {
-        "gold_rank": {path: rank.get(path) for path in sorted(gold)},
+        "gold_rank": gold_rank,
+        "partners": partner_links(graph or {}, gold, top, gold_rank),
         "explain": [
             {"rank": position, "path": path, "score": line}
             for position, (path, line) in enumerate(explained, 1)
@@ -234,6 +309,9 @@ def run_instance(
             found = mimry(repo, env, "find", "--limit", str(TOP), "--", query)
             ranked = parse_find(found)
         lookup_ms = (time.perf_counter_ns() - started) / 1_000_000
+        # The repo-local graph `mimry index` just wrote, read after the
+        # lookup is timed.
+        graph = load_graph(repo) if diagnose else None
     except (RuntimeError, OSError) as exc:
         return row | {"status": "error", "error": f"{stage} failed: {exc}"}
     return (
@@ -245,7 +323,7 @@ def run_instance(
             "lookup_ms": round(lookup_ms),
         }
         | score(ranked, task["gold"])
-        | ({"diagnosis": diagnosis(explained, task["gold"])} if diagnose else {})
+        | ({"diagnosis": diagnosis(explained, task["gold"], graph)} if diagnose else {})
     )
 
 

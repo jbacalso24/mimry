@@ -196,3 +196,120 @@ def test_parse_find_explained_pairs_paths_with_score_lines():
     diagnosis = run.diagnosis(run.parse_find_explained(output, 50), ["tests/test_b.py", "c.py"])
     assert diagnosis["gold_rank"] == {"c.py": None, "tests/test_b.py": 2}
     assert [item["path"] for item in diagnosis["explain"]] == ["a/b.py", "tests/test_b.py"]
+
+
+def _graph(files, links):
+    """Build a graph from node paths and (source, target, relation)."""
+    return {
+        "nodes": [{"id": node, "source_file": path} for node, path in files.items()],
+        "links": [{"source": s, "target": t, "relation": r} for s, t, r in links],
+    }
+
+
+PARTNER_GRAPH = _graph(
+    {
+        "found": "pkg/found.py",
+        "m1": "pkg/m1.py",
+        "m1b": "pkg/m1.py",
+        "m2": "pkg/m2.py",
+        "m3": "pkg/m3.py",
+        "m4": "pkg/m4.py",
+        "m5": "pkg/m5.py",
+        "m5b": "pkg/m5.py",
+        "m6": "pkg/m6.py",
+        "lone": "far/lone.py",
+        "top2": "x/top2.py",
+    },
+    [
+        ("m1", "found", "calls"),
+        ("m2", "m1", "imports"),
+        ("m3", "m2", "imports"),
+        ("m4", "m3", "imports"),
+        ("found", "m6", "imports"),
+        ("m1b", "m1", "defines"),
+        ("m5", "m5b", "contains"),
+    ],
+)
+PARTNER_TOP = ["pkg/found.py", "x/top2.py"]
+PARTNER_GOLD = [
+    "pkg/found.py",
+    "pkg/m1.py",
+    "pkg/m2.py",
+    "pkg/m3.py",
+    "pkg/m4.py",
+    "pkg/m5.py",
+    "pkg/m6.py",
+    "far/lone.py",
+]
+PARTNER_RANK = {
+    "pkg/found.py": 1,
+    "pkg/m1.py": 11,
+    "pkg/m2.py": 12,
+    "pkg/m3.py": 13,
+    "pkg/m4.py": 14,
+    "pkg/m5.py": None,
+    "pkg/m6.py": 15,
+    "far/lone.py": None,
+}
+
+
+def _partners():
+    return run.partner_links(PARTNER_GRAPH, PARTNER_GOLD, PARTNER_TOP, PARTNER_RANK)
+
+
+def test_partner_one_hop_records_relation_and_direction():
+    m1 = _partners()["pkg/m1.py"]
+    assert m1["rank"] == 11
+    assert m1["hops_to_found_gold"] == 1
+    assert m1["hops_to_top10"] == 1
+    assert m1["direct"] == [{"file": "pkg/found.py", "relations": ["calls"], "direction": "out"}]
+    m6 = _partners()["pkg/m6.py"]
+    assert m6["direct"] == [{"file": "pkg/found.py", "relations": ["imports"], "direction": "in"}]
+
+
+def test_partner_two_and_three_hops():
+    partners = _partners()
+    assert partners["pkg/m2.py"]["hops_to_found_gold"] == 2
+    assert partners["pkg/m2.py"]["direct"] == []
+    assert partners["pkg/m3.py"]["hops_to_found_gold"] == 3
+    assert partners["pkg/m3.py"]["hops_to_top10"] == 3
+
+
+def test_partner_beyond_three_hops_is_null():
+    m4 = _partners()["pkg/m4.py"]
+    assert m4["hops_to_found_gold"] is None
+    assert m4["hops_to_top10"] is None
+    assert m4["rank"] == 14
+
+
+def test_partner_not_connected_is_null():
+    lone = _partners()["far/lone.py"]
+    assert lone == {
+        "rank": None,
+        "hops_to_found_gold": None,
+        "hops_to_top10": None,
+        "direct": [],
+        "same_dir_as_found_gold": False,
+    }
+
+
+def test_partner_no_gold_in_top_ten_still_reaches_top():
+    graph = _graph({"m1": "pkg/m1.py", "top2": "x/top2.py"}, [("m1", "top2", "calls")])
+    m1 = run.partner_links(graph, ["pkg/m1.py"], ["x/top2.py"], {"pkg/m1.py": 12})["pkg/m1.py"]
+    assert m1["hops_to_found_gold"] is None
+    assert m1["hops_to_top10"] == 1
+    assert m1["same_dir_as_found_gold"] is False
+
+
+def test_partner_same_folder_flag():
+    partners = _partners()
+    assert partners["pkg/m1.py"]["same_dir_as_found_gold"] is True
+    assert partners["pkg/m4.py"]["same_dir_as_found_gold"] is True
+    assert partners["far/lone.py"]["same_dir_as_found_gold"] is False
+
+
+def test_partner_edges_inside_one_file_ignored():
+    m5 = _partners()["pkg/m5.py"]
+    assert m5["direct"] == []
+    assert m5["hops_to_found_gold"] is None
+    assert m5["hops_to_top10"] is None
