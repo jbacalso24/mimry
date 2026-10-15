@@ -13,7 +13,6 @@ from typing import Any, Literal
 
 from mimry.adapters import list_adapters
 from mimry.cache_safety import IndexOutsideCacheError
-from mimry.commands import cmd_init, cmd_preflight, cmd_refresh
 from mimry.core.artifacts import CALL_DIRECTIONS, graph_health
 from mimry.core.languages import language_counts
 from mimry.digest import canonical_digest
@@ -26,6 +25,8 @@ from mimry.lifecycle import (
     rebuild_outdated_index,
     refresh_if_stale,
     require,
+    run_init,
+    run_refresh,
 )
 from mimry.mcp_protocol import exit_message, exit_status, tool
 from mimry.paths import context_file, task_context_file
@@ -44,6 +45,7 @@ from mimry.queries import (
     path_payload,
     run_explain,
     run_path,
+    run_preflight,
     run_why,
     symbol_matches,
 )
@@ -395,7 +397,7 @@ def mimry_init(
     """Initialize MIMRY metadata for a root."""
     root_path = _root(root)
     payload = _capture_command(
-        cmd_init, SimpleNamespace(root=str(root_path), root_type=root_type, skip_graph=skip_graph)
+        run_init, SimpleNamespace(root=str(root_path), root_type=root_type, skip_graph=skip_graph)
     )
     payload["status"] = _status_payload(root_path)
     return payload
@@ -406,7 +408,7 @@ def mimry_init(
 def mimry_refresh(root: str | None = None) -> dict[str, Any]:
     """Run MIMRY index, semantic index, then status."""
     root_path = _root(root)
-    payload = _capture_command(cmd_refresh, SimpleNamespace(root=str(root_path)))
+    payload = _capture_command(run_refresh, SimpleNamespace(root=str(root_path)))
     payload["status"] = _status_payload(root_path)
     return payload
 
@@ -420,7 +422,7 @@ def mimry_preflight(
     root_path = _root(root)
     query = sanitize_query(query)
     payload = _capture_command(
-        cmd_preflight,
+        run_preflight,
         SimpleNamespace(root=str(root_path), task=query, force_refresh=force_refresh),
     )
     status = _status_payload(root_path)
