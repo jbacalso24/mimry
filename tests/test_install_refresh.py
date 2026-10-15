@@ -43,7 +43,8 @@ def repo(tmp_path, monkeypatch, home):
 
 
 def _mark_stale(skill: Path) -> None:
-    """Write the version marker an older MIMRY left behind."""
+    """Leave the skill text and version marker an older MIMRY wrote."""
+    skill.write_text(skill.read_text(encoding="utf-8") + "\nOld guidance.\n", encoding="utf-8")
     (skill.parent / ".mimry_version").write_text("0.3.1\n", encoding="utf-8")
 
 

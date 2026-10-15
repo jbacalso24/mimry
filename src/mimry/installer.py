@@ -1372,7 +1372,7 @@ def install_status_with_code(
         "references": all(
             _is_current(refs / name, content) for name, content in _REFERENCES.items()
         ),
-        "version": skill_current and marker == __version__,
+        "version": skill_current and marker_known,
     }
     always_on_stale = False
     if project and cfg.always_on_file:
