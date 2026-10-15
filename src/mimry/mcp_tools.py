@@ -21,7 +21,7 @@ from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.lifecycle import (
     INDEX_REBUILT_NOTE,
-    _change_summary,
+    change_summary,
     rebuild_outdated_index,
     refresh_if_stale,
     require,
@@ -40,7 +40,6 @@ from mimry.plan import (
     render_terminal,
 )
 from mimry.queries import (
-    _write_context_pack,
     calls_payload,
     path_payload,
     run_explain,
@@ -48,6 +47,7 @@ from mimry.queries import (
     run_preflight,
     run_why,
     symbol_matches,
+    write_context_pack,
 )
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows
@@ -291,7 +291,7 @@ def _index_operation(*, exclusive: bool = False, refresh: bool = False):
                     result["set_up_worktree"] = True
                     result["reindexed"] = f"set up this worktree, indexed {stats['files']} files"
                 else:
-                    result["reindexed"] = _change_summary(stats)
+                    result["reindexed"] = change_summary(stats)
             return result
 
         return guarded
@@ -642,7 +642,7 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
     root_path = _root(root)
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows, pack_path = _write_context_pack(root_path, ptr, query, semantic=semantic)
+    rows, pack_path = write_context_pack(root_path, ptr, query, semantic=semantic)
     return sanitize_data(
         {
             "query": redact_sensitive_text(query),

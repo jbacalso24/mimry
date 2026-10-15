@@ -22,12 +22,12 @@ from importlib import metadata
 from . import __version__, ui
 from .doctor import _display, _mcp_server_pids
 from .install_info import (
-    _command_text,
-    _direct_url,
-    _editable_folder,
-    _install_channel,
-    _upgrade_argv,
-    _upgrade_command,
+    command_text,
+    direct_url,
+    editable_folder,
+    install_channel,
+    upgrade_argv,
+    upgrade_command,
 )
 
 _PYPI_URL = "https://pypi.org/pypi/mimry/json"
@@ -72,7 +72,7 @@ def _editable_source() -> str | None:
         dist = metadata.distribution("mimry")
     except metadata.PackageNotFoundError:
         return None
-    return _editable_folder(_direct_url(dist))
+    return editable_folder(direct_url(dist))
 
 
 def _version_argv() -> list[str]:
@@ -105,12 +105,12 @@ def _stopped_line(count: int) -> str:
 
 def _reinstall_command() -> str:
     """The command that repairs a MIMRY with missing executables."""
-    channel = _install_channel()
+    channel = install_channel()
     if channel == "uv tool":
         return "uv tool install --force mimry"
     if channel == "pipx":
         return "pipx reinstall mimry"
-    return _command_text([sys.executable, "-m", "pip", "install", "--force-reinstall", "mimry"])
+    return command_text([sys.executable, "-m", "pip", "install", "--force-reinstall", "mimry"])
 
 
 def _failure_details(output: str) -> list[str]:
@@ -451,7 +451,7 @@ def _upgrade(stop_servers: bool) -> int:
             "Update it with git pull in that folder.",
         )
         return 1
-    command = _upgrade_command()
+    command = upgrade_command()
     try:
         latest = _latest_version()
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -465,8 +465,8 @@ def _upgrade(stop_servers: bool) -> int:
         ui.ok(f"MIMRY {__version__} is the latest version")
         return 0
 
-    channel = _install_channel()
-    argv = _upgrade_argv(channel)
+    channel = install_channel()
+    argv = upgrade_argv(channel)
     if channel in ("uv tool", "pipx"):
         resolved = shutil.which(argv[0])
         if resolved is None:
@@ -539,5 +539,5 @@ def cmd_upgrade(args) -> int:
     try:
         return _upgrade(args.stop_servers)
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
-        ui.fail("The upgrade could not run", str(exc), f"Run `{_upgrade_command()}` to retry.")
+        ui.fail("The upgrade could not run", str(exc), f"Run `{upgrade_command()}` to retry.")
         return 1

@@ -8,7 +8,7 @@ from mimry.commands import cmd_init
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.pieces import best_ranges, file_pieces, piece_matches
-from mimry.queries import _write_context_pack
+from mimry.queries import write_context_pack
 from mimry.search import find_rows
 from mimry.storage import load_pointer
 
@@ -87,7 +87,7 @@ def test_context_pack_lists_the_lines_to_read_first(tmp_path):
     (repo / "src" / "billing.py").write_text(_large_module(match_at=3), encoding="utf-8")
     ptr = _index_repo(repo)
 
-    _write_context_pack(repo, ptr, "change how invoice tax is calculated")
+    write_context_pack(repo, ptr, "change how invoice tax is calculated")
 
     pack = context_file(repo).read_text(encoding="utf-8")
     assert "Read first: lines 10-12 (`calculate_invoice_tax`)" in pack

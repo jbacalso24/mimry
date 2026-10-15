@@ -95,7 +95,7 @@ def test_missing_pypdf_skips_pdf_text_and_names_the_fix(tmp_path: Path):
     assert indexed.returncode == 0, indexed.stderr
     warnings = [line for line in indexed.stdout.splitlines() if "pypdf is missing" in line]
     assert len(warnings) == 1, indexed.stdout
-    assert f"Run `{install_info._repair_command()}`" in warnings[0]
+    assert f"Run `{install_info.repair_command()}`" in warnings[0]
     assert _pdf_record(repo)["parse_status"] == "parse_error:MissingDependency"
     found = _run(repo, cache, "find", "reconcile invoices", block_pypdf=blocked)
     assert "app.py" in found.stdout, found.stdout
@@ -121,7 +121,7 @@ def test_status_names_the_repair_for_missing_metadata(tmp_path, monkeypatch, cap
 
     out = capsys.readouterr().out
     assert "This MIMRY install is incomplete - its package metadata is missing" in out
-    assert f"Run `{install_info._repair_command()}` to repair it." in out
+    assert f"Run `{install_info.repair_command()}` to repair it." in out
 
 
 def test_status_names_dependencies_installed_for_an_older_version(tmp_path, monkeypatch, capsys):
@@ -158,7 +158,7 @@ def test_status_is_quiet_for_a_complete_install(tmp_path, capsys):
 def test_repair_command_matches_the_installer(tmp_path, monkeypatch):
     (tmp_path / "uv-receipt.toml").write_text("[tool]\n", encoding="utf-8")
     monkeypatch.setattr(sys, "prefix", str(tmp_path))
-    assert install_info._repair_command() == "uv tool upgrade mimry"
+    assert install_info.repair_command() == "uv tool upgrade mimry"
 
     monkeypatch.setattr(sys, "prefix", str(tmp_path / "pipx" / "venvs" / "mimry"))
-    assert install_info._repair_command() == "pipx reinstall mimry"
+    assert install_info.repair_command() == "pipx reinstall mimry"

@@ -29,7 +29,7 @@ from mimry.core.artifacts import graph_health
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.paths import context_file
-from mimry.queries import _write_context_pack
+from mimry.queries import write_context_pack
 from mimry.search import find_rows
 from mimry.state import UNINDEXABLE_FILE
 from mimry.storage import active_index_pointer, load_pointer
@@ -250,7 +250,7 @@ def test_changed_file_that_becomes_sensitive_is_hidden_from_stale_context(
     assert all(row["path"] != "app/clean.py" for row in rows)
 
     with active_index_pointer(root) as active:
-        _write_context_pack(root, active, "clean go")
+        write_context_pack(root, active, "clean go")
     stale_context = context_file(root).read_text(encoding="utf-8")
     assert "app/clean.py" not in stale_context
 
@@ -303,7 +303,7 @@ def test_secret_appended_beyond_snapshot_limit_is_stale_and_hidden_from_cached_r
     assert all(row["path"] != "app/boundary.py" for row in rows)
 
     with active_index_pointer(root) as active:
-        _write_context_pack(root, active, "indexed boundary marker")
+        write_context_pack(root, active, "indexed boundary marker")
     stale_context = context_file(root).read_text(encoding="utf-8")
     assert "app/boundary.py" not in stale_context
 
@@ -350,7 +350,7 @@ def test_deleted_indexed_file_is_denied_from_stale_find_and_preflight_context(
     assert all(row["path"] != "src/auth/session.py" for row in rows)
 
     with active_index_pointer(root) as active:
-        _write_context_pack(root, active, "authenticate session indexed marker")
+        write_context_pack(root, active, "authenticate session indexed marker")
     stale_context = context_file(root).read_text(encoding="utf-8")
     assert "Index: stale" in stale_context
     assert "src/auth/session.py" not in stale_context

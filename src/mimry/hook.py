@@ -600,7 +600,7 @@ def _take_refresh_lock(lock: Path) -> bool:
 
 
 def _hook_refresh(root: Path) -> None:
-    from .lifecycle import _indexed_root, refresh_if_stale
+    from .lifecycle import indexed_root, refresh_if_stale
     from .paths import mdir, pointer_file
 
     # The host sends a JSON payload; nothing in it is needed, and a
@@ -609,7 +609,7 @@ def _hook_refresh(root: Path) -> None:
         sys.stdin.buffer.read()
     except Exception:
         pass
-    root = _indexed_root(root.resolve())
+    root = indexed_root(root.resolve())
     # The hook never sets MIMRY up; that is what `mimry init` is for.
     if not pointer_file(root).is_file():
         return

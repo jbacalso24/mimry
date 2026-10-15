@@ -149,7 +149,7 @@ def test_healthy_report_is_structured_and_exit_zero(tmp_path, monkeypatch):
     _install_ok(monkeypatch)
     _write_pointer(tmp_path, _pointer(tmp_path, monkeypatch))
     monkeypatch.setattr(doctor, "validate_generation", lambda pointer: None)
-    monkeypatch.setattr(doctor, "_health", _healthy_health)
+    monkeypatch.setattr(doctor, "health", _healthy_health)
 
     report = doctor.doctor_report(tmp_path, verify=True)
 
@@ -208,7 +208,7 @@ def test_stale_index_and_caches_are_actionable(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "validate_generation", lambda pointer: None)
     monkeypatch.setattr(
         doctor,
-        "_health",
+        "health",
         lambda root, pointer, verify: (
             {
                 "state": "stale",
@@ -544,7 +544,7 @@ def test_path_without_mimry_warns_with_the_repair_command(tmp_path, monkeypatch)
     check = doctor._path_check()
 
     assert check["status"] == "warning"
-    assert check["suggestion"] == f"Run `{doctor._repair_command()}` to install it."
+    assert check["suggestion"] == f"Run `{doctor.repair_command()}` to install it."
 
 
 def test_windows_tasklist_rows_are_the_running_servers(tmp_path, monkeypatch):
@@ -718,7 +718,7 @@ def test_path_warning_is_shown_but_keeps_condition_healthy(tmp_path, monkeypatch
     monkeypatch.setattr(doctor, "_path_check", _REAL_PATH_CHECK)
     _write_pointer(tmp_path, _pointer(tmp_path, monkeypatch))
     monkeypatch.setattr(doctor, "validate_generation", lambda pointer: None)
-    monkeypatch.setattr(doctor, "_health", _healthy_health)
+    monkeypatch.setattr(doctor, "health", _healthy_health)
     first, second = tmp_path / "first", tmp_path / "second"
     _mimry_file(first)
     _mimry_file(second)

@@ -23,14 +23,14 @@ from .indexer import write_index
 from .intent import is_doc_or_plan, is_source_file, is_test_file
 from .lifecycle import (
     STALE_INDEX_HINT,
-    _change_summary,
-    _command_root,
-    _print_grammar_warning,
-    _print_parse_error_warning,
-    _root_name,
-    _stale_summary,
+    change_summary,
+    command_root,
+    print_grammar_warning,
+    print_parse_error_warning,
     require,
+    root_name,
     run_init,
+    stale_summary,
 )
 from .paths import (
     TASK_PACK_PATTERN,
@@ -50,10 +50,10 @@ from .usage import log_preflight
 
 
 def _stale_index_message(fresh: dict) -> str:
-    return f"The index is behind the working tree - {_stale_summary(fresh)}. {STALE_INDEX_HINT}"
+    return f"The index is behind the working tree - {stale_summary(fresh)}. {STALE_INDEX_HINT}"
 
 
-def _index_and_graph_health(root: Path, ptr: dict):
+def index_and_graph_health(root: Path, ptr: dict):
     fresh = index_freshness(root, ptr)
     graph = graph_health(
         root,
@@ -105,7 +105,7 @@ def _extract_matched_terms(reason: str) -> list[str]:
     return matched
 
 
-def _extract_symbol_nodes(reason: str, path: str) -> list[str]:
+def extract_symbol_nodes(reason: str, path: str) -> list[str]:
     """Extract symbol node names, excluding the file itself."""
     file_name = PurePosixPath(path).name
     symbols = []
@@ -116,7 +116,7 @@ def _extract_symbol_nodes(reason: str, path: str) -> list[str]:
     return symbols
 
 
-def _filter_rows_by_score_threshold(rows: list[dict]) -> list[dict]:
+def filter_rows_by_score_threshold(rows: list[dict]) -> list[dict]:
     """Filter rows below 10% of the highest score."""
     if not rows:
         return []
@@ -366,7 +366,7 @@ def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]
     return lines
 
 
-def _write_context_pack(
+def write_context_pack(
     root: Path,
     ptr: dict,
     query: str,
@@ -378,7 +378,7 @@ def _write_context_pack(
 ) -> tuple[list[dict], Path]:
     query = sanitize_query(query)
     if fresh is None or graph is None:
-        fresh, graph = _index_and_graph_health(root, ptr)
+        fresh, graph = index_and_graph_health(root, ptr)
     rows = find_rows(
         Path(ptr["indexPath"]),
         query,
@@ -389,7 +389,7 @@ def _write_context_pack(
         semantic=semantic,
         excluded_paths=fresh["excluded_paths"],
     )
-    rows = _filter_rows_by_score_threshold(rows)
+    rows = filter_rows_by_score_threshold(rows)
 
     semantic_state = semantic_health(
         Path(ptr["indexPath"]), ptr.get("rootId"), expected_files=len(fresh["files"])
@@ -436,7 +436,7 @@ def _write_context_pack(
         if matched:
             why_line += "; matched: " + ", ".join(matched)
 
-        symbols = _extract_symbol_nodes(r["reason"], r["path"])
+        symbols = extract_symbol_nodes(r["reason"], r["path"])
         if symbols:
             why_line += "; symbols: " + ", ".join(symbols)
 
@@ -590,7 +590,7 @@ def _write_legacy_context_redirect(root: Path) -> None:
 
 def run_preflight(a):
     started_all = time.perf_counter()
-    root = _command_root(a)
+    root = command_root(a)
     root.mkdir(parents=True, exist_ok=True)
 
     init_ran = False
@@ -608,7 +608,7 @@ def run_preflight(a):
             with active_index_pointer(root) as active:
                 assert active is not None
                 ptr = active
-                fresh, graph = _index_and_graph_health(root, ptr)
+                fresh, graph = index_and_graph_health(root, ptr)
     except IndexOutsideCacheError:
         # MIMRY_CACHE_HOME changed since the last index; indexing
         # builds a new one in the current cache and leaves the old one.
@@ -628,8 +628,8 @@ def run_preflight(a):
             assert active is not None
             ptr = active
             if stats is not None:
-                fresh, graph = _index_and_graph_health(root, ptr)
-            rows, pack_path = _write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
+                fresh, graph = index_and_graph_health(root, ptr)
+            rows, pack_path = write_context_pack(root, ptr, a.task, fresh=fresh, graph=graph)
 
     total = ui.took(time.perf_counter() - started_all)
     ui.ok(f"Context ready for {ui.quote(sanitize_query(a.task))} ({total})")
@@ -637,12 +637,12 @@ def run_preflight(a):
     if stats is not None:
         action = "Set up MIMRY and built the index" if init_ran else "Built the index"
         if stats.get("changes") is not None:
-            action = f"Reindexed first - {_change_summary(stats)}"
+            action = f"Reindexed first - {change_summary(stats)}"
         ui.detail(f"{action} ({totals}, {ui.took(elapsed)})")
     elif fresh["state"] == "current" and graph["status"] == "current":
         ui.detail(f"Index is up to date ({totals}, indexed {ui.ago(ptr.get('lastIndexedAt'))})")
     # Once per run: this run's count after a reindex, else the index's.
-    _print_grammar_warning(
+    print_grammar_warning(
         stats.get("grammar_unavailable", 0)
         if stats is not None
         else grammar_unavailable_count(ptr)
@@ -652,10 +652,10 @@ def run_preflight(a):
         if stats is not None
         else parse_error_summary(ptr)
     )
-    _print_parse_error_warning(parse_errors, parse_error_files)
+    print_parse_error_warning(parse_errors, parse_error_files)
     ui.detail(f"Context pack: {ui.display_path(pack_path, root)}")
     _print_index_note(fresh, graph)
-    _print_results_section("Start with", rows[:5], verbose=getattr(a, "verbose", False))
+    print_results_section("Start with", rows[:5], verbose=getattr(a, "verbose", False))
     print()
     print(f"Next: read {ui.display_path(pack_path, root)} before opening files.")
     return 0
@@ -670,7 +670,7 @@ def _ranges_text(ranges: list[dict], name=str) -> str:
     return "lines " + ", ".join(f"{r['start']}-{r['end']} ({name(r['name'])})" for r in ranges)
 
 
-def _print_results(rows: list[dict], *, verbose: bool) -> None:
+def print_results(rows: list[dict], *, verbose: bool) -> None:
     for i, row in enumerate(rows, 1):
         print(f"  {i:>2}  {row['path']}")
         print(f"      {ui.faint(ui.reason_summary(row['reason']))}")
@@ -693,11 +693,11 @@ def _print_results(rows: list[dict], *, verbose: bool) -> None:
             print(f"      [snippet unavailable: {snippet['status']}]")
 
 
-def _print_results_section(heading: str, rows: list[dict], *, verbose: bool) -> None:
+def print_results_section(heading: str, rows: list[dict], *, verbose: bool) -> None:
     print()
     ui.title(heading)
     if rows:
-        _print_results(rows, verbose=verbose)
+        print_results(rows, verbose=verbose)
     else:
         ui.detail(
             "No files matched. Try different words, or `mimry symbol <name>` for a function or"
@@ -732,7 +732,7 @@ def _display_commands(commands: list[str]) -> list[str]:
     return shown
 
 
-def _print_verification(commands: list[str], limit: int = 5) -> None:
+def print_verification(commands: list[str], limit: int = 5) -> None:
     print()
     ui.title("Verify with")
     for command in _display_commands(commands)[:limit] or [
@@ -798,7 +798,7 @@ def run_explain(a):
     """The explain answer, for a caller that holds the index lock."""
     root = Path(a.root).resolve()
     ptr = require(root)
-    fresh, graph = _index_and_graph_health(root, ptr)
+    fresh, graph = index_and_graph_health(root, ptr)
     query = sanitize_query(a.query)
     verbose = getattr(a, "verbose", False)
     rows = find_rows(
@@ -809,9 +809,9 @@ def run_explain(a):
         root=root,
         root_id=ptr.get("rootId"),
     )
-    ui.title(f"How {ui.quote(query)} maps to {_root_name(root)}")
+    ui.title(f"How {ui.quote(query)} maps to {root_name(root)}")
     _print_index_note(fresh, graph)
-    _print_results_section("Most relevant files", rows, verbose=verbose)
+    print_results_section("Most relevant files", rows, verbose=verbose)
 
     symbols = _symbol_rows(fresh, rows, limit=6)
     if symbols:
@@ -832,7 +832,7 @@ def run_explain(a):
     if source:
         print()
         print(f"Start with {source['path']} - read it and its tests before editing.")
-    _print_verification(_verification_commands(fresh))
+    print_verification(_verification_commands(fresh))
     return 0
 
 
@@ -844,7 +844,7 @@ def run_path(a, found: list | None = None):
     """
     root = Path(a.root).resolve()
     ptr = require(root)
-    fresh, graph = _index_and_graph_health(root, ptr)
+    fresh, graph = index_and_graph_health(root, ptr)
     source = sanitize_query(a.source)
     target = sanitize_query(a.target)
     as_json = getattr(a, "json", False)
@@ -892,7 +892,7 @@ def run_path(a, found: list | None = None):
         ui.table(
             [
                 (
-                    _relation_text(_step_relation(step)) + _inferred_mark(step["confidence"]),
+                    _relation_text(_step_relation(step)) + inferred_mark(step["confidence"]),
                     _node_text(step["to"]),
                 )
                 for step in steps
@@ -918,7 +918,7 @@ def _step_relation(step: dict) -> str:
     return str(step["edge"].get("relation") or step["edge"].get("type") or "relates")
 
 
-def _inferred_mark(confidence: str) -> str:
+def inferred_mark(confidence: str) -> str:
     """The suffix that marks an inferred row in the CLI tables."""
     return " (inferred)" if confidence == "INFERRED" else ""
 
@@ -950,7 +950,7 @@ def calls_payload(
 ) -> dict:
     """The callers or callees answer, shared by the CLI and MCP. Checks
     graph health first, as ``mimry path`` does."""
-    _fresh, health = _index_and_graph_health(root, ptr)
+    _fresh, health = index_and_graph_health(root, ptr)
     if health["status"] != "current":
         payload = empty_call_payload(name, relation, depth)
         payload["error"] = {
@@ -985,7 +985,7 @@ def run_why(a):
     """The why answer, for a caller that holds the index lock."""
     root = Path(a.root).resolve()
     ptr = require(root)
-    fresh, graph = _index_and_graph_health(root, ptr)
+    fresh, graph = index_and_graph_health(root, ptr)
     idx = Path(ptr["indexPath"])
     query = sanitize_query(a.query)
     window = max(getattr(a, "limit", 25), 25)
@@ -1057,7 +1057,7 @@ def run_why(a):
                         others, evidence["node_count"] - len(evidence["nodes"]) + len(others)
                     )
                 )
-    _print_verification(_verification_commands(fresh))
+    print_verification(_verification_commands(fresh))
     return 0
 
 

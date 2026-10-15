@@ -12,7 +12,7 @@ from .constants import SCHEMA_VERSION
 from .core.artifacts import graph_health
 from .freshness import index_freshness
 from .indexer import write_index
-from .install_info import _repair_command
+from .install_info import repair_command
 from .paths import graph_output_dir, idx_path, mdir, now, output_dir, pointer_file
 from .scanner import _git_output, is_linked_worktree, worktree_fingerprint
 from .security import safe_root
@@ -114,7 +114,7 @@ def run_init(a):
         # from the authoritative root-local pointer.
         register_root(existing)
         gitignore_updated = ensure_mimry_gitignore(root)
-        ui.ok(f"MIMRY is already set up for {_root_name(root)}")
+        ui.ok(f"MIMRY is already set up for {root_name(root)}")
         if gitignore_updated:
             ui.detail("Added .mimry/ to .gitignore")
         ui.detail("Run `mimry status` to check the index.")
@@ -150,7 +150,7 @@ def run_init(a):
     register_root(ptr)
     if getattr(a, "quiet", False):
         return 0
-    ui.ok(f"Set up MIMRY for {_root_name(root)}")
+    ui.ok(f"Set up MIMRY for {root_name(root)}")
     ui.detail("Created .mimry/ for settings and generated context")
     if gitignore_updated:
         ui.detail("Added .mimry/ to .gitignore")
@@ -161,9 +161,9 @@ def run_init(a):
     return 0
 
 
-def _not_set_up(root) -> str:
+def not_set_up(root) -> str:
     return ui.error_text(
-        f"MIMRY is not set up for {_root_name(Path(root))} yet", "Run `mimry init` to set it up."
+        f"MIMRY is not set up for {root_name(Path(root))} yet", "Run `mimry init` to set it up."
     )
 
 
@@ -171,15 +171,15 @@ def require(root, *, validate: bool = True):
     safe_root(root)
     ptr = load_pointer(root, validate_active_generation=validate)
     if not ptr:
-        raise SystemExit(_not_set_up(root))
+        raise SystemExit(not_set_up(root))
     return ptr
 
 
-def _root_name(root: Path) -> str:
+def root_name(root: Path) -> str:
     return root.name or str(root)
 
 
-def _health(root: Path, ptr: dict, *, verify: bool = False) -> tuple[dict, dict, dict]:
+def health(root: Path, ptr: dict, *, verify: bool = False) -> tuple[dict, dict, dict]:
     fresh = index_freshness(root, ptr, verify=verify)
     graph = graph_health(
         root,
@@ -286,7 +286,7 @@ def refresh_if_stale(root: Path, *, include_missing: bool = False) -> dict | Non
     return write_index(root, require(root, validate=False))
 
 
-def _change_summary(stats: dict) -> str:
+def change_summary(stats: dict) -> str:
     changes = stats.get("changes") or {}
     counted = _counted(
         (
@@ -298,7 +298,7 @@ def _change_summary(stats: dict) -> str:
     return counted or "nothing changed"
 
 
-def _indexed_root(start: Path) -> Path:
+def indexed_root(start: Path) -> Path:
     """The nearest folder at or above start that has an index.
 
     The walk stops at the top of a linked git worktree: a worktree
@@ -322,17 +322,17 @@ def _change_rows(changes: dict) -> list[tuple[str, str]]:
     ]
 
 
-def _print_rows_capped(rows: list[tuple], limit: int = 8, indent: int = 4) -> None:
+def print_rows_capped(rows: list[tuple], limit: int = 8, indent: int = 4) -> None:
     ui.table(rows[:limit], indent=indent)
     if len(rows) > limit:
         ui.detail(ui.faint(f"+{len(rows) - limit:,} more"), indent)
 
 
-def _totals(files: int, symbols: int, links: int) -> str:
+def totals(files: int, symbols: int, links: int) -> str:
     return ui.facts(ui.count(files, "file"), ui.count(symbols, "symbol"), ui.count(links, "link"))
 
 
-def _print_grammar_warning(unavailable: int) -> None:
+def print_grammar_warning(unavailable: int) -> None:
     """One warning when files were indexed without symbols."""
     if unavailable:
         ui.warn(
@@ -345,7 +345,7 @@ def _print_grammar_warning(unavailable: int) -> None:
         )
 
 
-def _print_parse_error_warning(count: int, names: list[str]) -> None:
+def print_parse_error_warning(count: int, names: list[str]) -> None:
     """Name the files the parser could not read, once per run."""
     if count:
         more = f" and {count - len(names)} more" if count > len(names) else ""
@@ -355,10 +355,10 @@ def _print_parse_error_warning(count: int, names: list[str]) -> None:
         )
 
 
-def _print_index_result(
+def print_index_result(
     root: Path, stats: dict, seconds: float, *, full: bool, verbose: bool = False
 ) -> None:
-    name = _root_name(root)
+    name = root_name(root)
     changes = stats.get("changes")
     elapsed = ui.took(seconds)
     if changes is None:
@@ -381,10 +381,10 @@ def _print_index_result(
                     )
                 )
             )
-            _print_rows_capped(rows)
+            print_rows_capped(rows)
         else:
             ui.detail("No file contents changed since the last index")
-    ui.detail(_totals(stats["files"], stats["symbols"], stats["edges"]))
+    ui.detail(totals(stats["files"], stats["symbols"], stats["edges"]))
     if stats.get("unindexable"):
         ui.detail(
             f"{ui.count(stats['unindexable'], 'file')} skipped: may contain secrets or could not"
@@ -393,10 +393,10 @@ def _print_index_result(
     if stats.get("missing_dependency"):
         ui.warn(
             f"{ui.count(stats['missing_dependency'], 'PDF')} indexed without text: pypdf is"
-            f" missing. Run `{_repair_command()}` to add it."
+            f" missing. Run `{repair_command()}` to add it."
         )
-    _print_grammar_warning(stats.get("grammar_unavailable", 0))
-    _print_parse_error_warning(stats.get("parse_errors", 0), stats.get("parse_error_files", []))
+    print_grammar_warning(stats.get("grammar_unavailable", 0))
+    print_parse_error_warning(stats.get("parse_errors", 0), stats.get("parse_error_files", []))
     if verbose:
         ui.table(
             [
@@ -414,7 +414,7 @@ def _print_index_result(
         )
 
 
-def _stale_changes(fresh: dict) -> tuple[list[str], list[str]]:
+def stale_changes(fresh: dict) -> tuple[list[str], list[str]]:
     """Split stale paths into (edited, new).
 
     Freshness reports files not in the index as changed too.
@@ -426,8 +426,8 @@ def _stale_changes(fresh: dict) -> tuple[list[str], list[str]]:
     )
 
 
-def _stale_summary(fresh: dict) -> str:
-    edited, new = _stale_changes(fresh)
+def stale_summary(fresh: dict) -> str:
+    edited, new = stale_changes(fresh)
     summary = _counted(
         (
             (len(edited), "changed"),
@@ -446,7 +446,7 @@ def _stale_summary(fresh: dict) -> str:
 STALE_INDEX_HINT = "The next query updates it; `mimry reindex` updates it now."
 
 
-def _print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
+def print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
     """Warn on anything not current; return the commands that fix it."""
     fixes = []
     if fresh["state"] == "stale":
@@ -464,24 +464,24 @@ def _print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
 
 def run_refresh(a):
     """Index, then confirm everything MIMRY serves is current."""
-    root = _command_root(a)
+    root = command_root(a)
     ptr = require(root, validate=False)
     full = getattr(a, "full", False)
     started = time.perf_counter()
     stats = write_index(root, ptr, full=full)
-    _print_index_result(
+    print_index_result(
         root, stats, time.perf_counter() - started, full=full, verbose=getattr(a, "verbose", False)
     )
     with active_index_pointer(root) as active:
-        fresh, graph, semantic = _health(root, active)
+        fresh, graph, semantic = health(root, active)
     if fresh["state"] == "stale":
-        ui.warn(f"Files changed while indexing - {_stale_summary(fresh)}")
-    for fix in _print_problems(fresh, graph, semantic):
+        ui.warn(f"Files changed while indexing - {stale_summary(fresh)}")
+    for fix in print_problems(fresh, graph, semantic):
         ui.detail(f"Run `{fix}` to update it.")
     return 0 if fresh["state"] == "current" else 2
 
 
-def _command_root(a) -> Path:
+def command_root(a) -> Path:
     """Resolve a.root to the folder whose index answers for it.
 
     A subfolder of an indexed repo answers from the repo's index. find
@@ -493,6 +493,6 @@ def _command_root(a) -> Path:
     if not hasattr(a, "find_directory"):
         a.find_directory = Path(a.root).resolve()
     start = safe_root(Path(a.find_directory))
-    root = _indexed_root(start)
+    root = indexed_root(start)
     a.root = str(root)
     return root

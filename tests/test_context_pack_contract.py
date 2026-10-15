@@ -206,7 +206,7 @@ def test_relevant_files_use_why_format(indexed_fixture):
 
 def test_score_filtering_below_threshold(indexed_fixture):
     """Rows scoring below 10% of top score should be filtered out."""
-    from mimry.queries import _filter_rows_by_score_threshold
+    from mimry.queries import filter_rows_by_score_threshold
 
     # Create test rows with varying scores
     rows = [
@@ -214,7 +214,7 @@ def test_score_filtering_below_threshold(indexed_fixture):
         {"path": "mid.py", "score": 15},
         {"path": "low.py", "score": 5},
     ]
-    filtered = _filter_rows_by_score_threshold(rows)
+    filtered = filter_rows_by_score_threshold(rows)
     # 10% of 100 = 10, so rows with score >= 10 are kept
     assert len(filtered) == 2, f"Should keep rows >= 10% of top score (10); got {filtered}"
     assert all(r["score"] >= 10 for r in filtered)
@@ -222,19 +222,19 @@ def test_score_filtering_below_threshold(indexed_fixture):
 
 def test_extract_symbol_nodes_filters_multiword_terms():
     """Symbol extraction skips multiword terms and file name."""
-    from mimry.queries import _extract_symbol_nodes
+    from mimry.queries import extract_symbol_nodes
 
     reason = (
         "graph node label match; nodes: renew_login, LoginForm,"
         " corroborated by MIMRY content index, MIMRY fallback index signal"
     )
-    result = _extract_symbol_nodes(reason, "src/auth/user.py")
+    result = extract_symbol_nodes(reason, "src/auth/user.py")
     assert result == ["renew_login", "LoginForm"], (
         f"Should keep only single-word symbols; got {result}"
     )
     # Test that file itself is excluded
     reason_with_file = "file match; nodes: user.py, renew_login, LoginForm"
-    result2 = _extract_symbol_nodes(reason_with_file, "src/auth/user.py")
+    result2 = extract_symbol_nodes(reason_with_file, "src/auth/user.py")
     assert result2 == ["renew_login", "LoginForm"], f"Should exclude file name; got {result2}"
 
 

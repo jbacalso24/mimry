@@ -19,13 +19,13 @@ from typing import Any
 from . import __version__, installer, ui
 from .cache_safety import IndexOutsideCacheError, validated_current_index_path
 from .install_info import (
-    _direct_url,
-    _editable_folder,
-    _install_channel,
-    _local_folder,
-    _repair_command,
+    direct_url,
+    editable_folder,
+    install_channel,
+    local_folder,
+    repair_command,
 )
-from .lifecycle import _health
+from .lifecycle import health
 from .paths import pointer_file
 from .state import parse_error_summary, validate_generation
 
@@ -55,7 +55,7 @@ def _check(check_id: str, status: str, summary: str, suggestion: str | None = No
 
 
 def _dependency_checks() -> list[dict[str, Any]]:
-    fix = _repair_command()
+    fix = repair_command()
     try:
         installed = metadata.version("mimry")
         requirements = metadata.requires("mimry") or []
@@ -146,7 +146,7 @@ def _public_url(url: str) -> str:
     """The URL without credentials; file URLs show their folder as ~."""
     parts = urllib.parse.urlsplit(url)
     if parts.scheme == "file":
-        return _display(_local_folder(url))
+        return _display(local_folder(url))
     return urllib.parse.urlunsplit(parts._replace(netloc=parts.netloc.rpartition("@")[2]))
 
 
@@ -171,12 +171,12 @@ def _source_check() -> dict[str, Any]:
             installer=None,
             python=python,
         )
-    installer_name = _install_channel() or (dist.read_text("INSTALLER") or "").strip() or "unknown"
-    direct = _direct_url(dist)
+    installer_name = install_channel() or (dist.read_text("INSTALLER") or "").strip() or "unknown"
+    direct = direct_url(dist)
     url = direct.get("url") if direct else None
     url = url if isinstance(url, str) else None
     vcs = direct.get("vcs_info") if direct else None
-    folder = _editable_folder(direct)
+    folder = editable_folder(direct)
     path = commit = shown_url = None
     if direct is None:
         source = "index"
@@ -248,7 +248,7 @@ def _path_check() -> dict[str, Any]:
             "installation.path",
             "warning",
             "no `mimry` executable on PATH",
-            f"Run `{_repair_command()}` to install it.",
+            f"Run `{repair_command()}` to install it.",
             executables=[],
         )
     if len(found) == 1:
@@ -452,7 +452,7 @@ def _parser_check() -> dict[str, Any]:
             "parsers.tree_sitter",
             "error",
             "tree-sitter parser package is unavailable",
-            f"Run `{_repair_command()}`.",
+            f"Run `{repair_command()}`.",
             state="unavailable",
         )
 
@@ -475,7 +475,7 @@ def _parser_check() -> dict[str, Any]:
                 "parsers.tree_sitter",
                 "error",
                 f"installed parser pack does not provide the {language} grammar",
-                f"Run `{_repair_command()}` to restore the pinned parser pack.",
+                f"Run `{repair_command()}` to restore the pinned parser pack.",
                 state="grammar_missing",
                 language=language,
             )
@@ -555,7 +555,7 @@ def _root_checks(root: Path, *, verify: bool) -> list[dict[str, Any]]:
             raise ValueError("pointer belongs to another root")
         validated_current_index_path(Path(ptr["indexPath"]), root)
         validate_generation(ptr)
-        fresh, graph, semantic = _health(root, ptr, verify=verify)
+        fresh, graph, semantic = health(root, ptr, verify=verify)
     except IndexOutsideCacheError:
         return [
             _check(
@@ -602,20 +602,20 @@ def _root_checks(root: Path, *, verify: bool) -> list[dict[str, Any]]:
             parse_error_files=parse_error_files,
         )
     ]
-    for check_id, label, health, fix in (
+    for check_id, label, section, fix in (
         ("root.graph", "graph cache", graph, "mimry refresh"),
         ("root.semantic", "semantic cache", semantic, "mimry refresh"),
     ):
-        current = health.get("status") == "current"
+        current = section.get("status") == "current"
         # Stale because the index is: one refresh fixes both.
         hint = suggestion if state == "stale" else f"Run `{fix}` to rebuild it."
         checks.append(
             _check(
                 check_id,
                 "ok" if current else "warning",
-                f"{label} is {health.get('status', 'unknown')}",
+                f"{label} is {section.get('status', 'unknown')}",
                 None if current else hint,
-                state=health.get("status", "unknown"),
+                state=section.get("status", "unknown"),
             )
         )
     return checks

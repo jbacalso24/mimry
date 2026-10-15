@@ -30,8 +30,8 @@ def host(monkeypatch):
     monkeypatch.setattr(upgrade, "_editable_source", lambda: None)
     monkeypatch.setattr(upgrade, "_latest_version", lambda: "9.9.9")
     monkeypatch.setattr(upgrade, "_mcp_server_pids", lambda: [])
-    monkeypatch.setattr(upgrade, "_install_channel", lambda: "uv tool")
-    monkeypatch.setattr(install_info, "_install_channel", lambda: "uv tool")
+    monkeypatch.setattr(upgrade, "install_channel", lambda: "uv tool")
+    monkeypatch.setattr(install_info, "install_channel", lambda: "uv tool")
     monkeypatch.setattr(upgrade.shutil, "which", lambda name: f"/bin/{name}")
     monkeypatch.setattr(upgrade.subprocess, "run", _no_process)
     monkeypatch.setattr(upgrade.subprocess, "Popen", _no_process)
@@ -66,7 +66,7 @@ def test_pypi_unreachable_names_the_retry_command(host, capsys):
     err = capsys.readouterr().err
     assert "Couldn't check PyPI for the latest version" in err
     assert "no route to host" in err
-    assert f"Run `{install_info._upgrade_command()}` to upgrade anyway." in err
+    assert f"Run `{install_info.upgrade_command()}` to upgrade anyway." in err
 
 
 def test_pypi_answer_is_read_from_info_version(host):
@@ -103,14 +103,14 @@ def test_latest_version_equal_to_current_exits_0_and_runs_nothing(host, capsys):
     ],
 )
 def test_each_channel_maps_to_its_upgrade_command(monkeypatch, channel, argv):
-    monkeypatch.setattr(install_info, "_install_channel", lambda: channel)
+    monkeypatch.setattr(install_info, "install_channel", lambda: channel)
 
-    assert install_info._upgrade_argv(channel) == argv
+    assert install_info.upgrade_argv(channel) == argv
     if channel == "pipx":
-        assert install_info._repair_command() == "pipx reinstall mimry"
+        assert install_info.repair_command() == "pipx reinstall mimry"
     else:
-        assert install_info._repair_command() == install_info._upgrade_command()
-    assert install_info._upgrade_command().split()[-3:] == argv[-3:]
+        assert install_info.repair_command() == install_info.upgrade_command()
+    assert install_info.upgrade_command().split()[-3:] == argv[-3:]
 
 
 def test_uv_missing_from_path_says_what_to_install(host, capsys):

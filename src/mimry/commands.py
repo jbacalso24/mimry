@@ -35,26 +35,26 @@ from .feedback import (
     show_feedback,
 )
 from .indexer import write_index
-from .install_info import _repair_command
+from .install_info import repair_command
 from .lifecycle import (
-    _change_summary,
-    _command_root,
-    _health,
-    _indexed_root,
-    _not_set_up,
-    _print_grammar_warning,
-    _print_index_result,
-    _print_parse_error_warning,
-    _print_problems,
-    _print_rows_capped,
-    _root_name,
-    _stale_changes,
-    _stale_summary,
-    _totals,
+    change_summary,
+    command_root,
+    health,
+    indexed_root,
+    not_set_up,
+    print_grammar_warning,
+    print_index_result,
+    print_parse_error_warning,
+    print_problems,
+    print_rows_capped,
     refresh_if_stale,
     require,
+    root_name,
     run_init,
     run_refresh,
+    stale_changes,
+    stale_summary,
+    totals,
 )
 from .plan import (
     PlanStore,
@@ -66,18 +66,18 @@ from .plan import (
     write_plan_output,
 )
 from .queries import (
-    _index_and_graph_health,
-    _inferred_mark,
-    _print_results,
-    _print_results_section,
-    _print_verification,
-    _write_context_pack,
     calls_payload,
+    index_and_graph_health,
+    inferred_mark,
+    print_results,
+    print_results_section,
+    print_verification,
     run_explain,
     run_path,
     run_preflight,
     run_why,
     symbol_matches,
+    write_context_pack,
 )
 from .routing import route_payload, write_brief
 from .search import find_rows
@@ -179,7 +179,7 @@ def _index_reader(command):
 
     @wraps(command)
     def guarded(a):
-        root = _command_root(a)
+        root = command_root(a)
         with active_index_pointer(root):
             return command(a)
 
@@ -238,20 +238,20 @@ def _install_problem() -> str | None:
 def _print_status(
     root: Path, ptr: dict, fresh: dict, graph: dict, semantic: dict, *, verbose: bool
 ) -> None:
-    name = _root_name(root)
+    name = root_name(root)
     if fresh["state"] == "missing":
         ui.warn(f"{name} has not been indexed yet")
         ui.detail("Run `mimry index` to build the index.")
         return
     if fresh["state"] == "stale":
-        ui.warn(f"{name} is out of date - {_stale_summary(fresh)} since the last index")
-        edited, new = _stale_changes(fresh)
+        ui.warn(f"{name} is out of date - {stale_summary(fresh)} since the last index")
+        edited, new = stale_changes(fresh)
         rows = [
             *(("changed", path) for path in edited),
             *(("new", path) for path in new),
             *(("deleted", path) for path in fresh["missing"]),
         ]
-        _print_rows_capped(rows)
+        print_rows_capped(rows)
     else:
         ui.ok(f"{name} is up to date")
     commit = graph.get("built_from_commit")
@@ -263,7 +263,7 @@ def _print_status(
         )
     )
     ui.detail(
-        _totals(len(fresh["files"]), len(fresh["symbols"]), len(fresh["graph"].get("edges", [])))
+        totals(len(fresh["files"]), len(fresh["symbols"]), len(fresh["graph"].get("edges", [])))
     )
     languages = language_counts(fresh["files"], fresh["symbols"])
     if languages:
@@ -273,9 +273,9 @@ def _print_status(
             f"{ui.count(fresh['unindexable_count'], 'file')} skipped: may contain secrets or could"
             " not be read"
         )
-    _print_grammar_warning(grammar_unavailable_count(ptr))
-    _print_parse_error_warning(*parse_error_summary(ptr))
-    fixes = _print_problems(fresh, graph, semantic)
+    print_grammar_warning(grammar_unavailable_count(ptr))
+    print_parse_error_warning(*parse_error_summary(ptr))
+    fixes = print_problems(fresh, graph, semantic)
     if verbose:
         ui.table(
             [
@@ -305,11 +305,11 @@ def _print_status(
 
 
 def cmd_index(a):
-    root = _command_root(a)
+    root = command_root(a)
     full = getattr(a, "full", False)
     started = time.perf_counter()
     stats = write_index(root, require(root, validate=False), full=full)
-    _print_index_result(
+    print_index_result(
         root, stats, time.perf_counter() - started, full=full, verbose=getattr(a, "verbose", False)
     )
     return 0
@@ -326,13 +326,13 @@ def cmd_status(a):
     problem = _install_problem()
     if problem:
         ui.warn(problem)
-        ui.detail(f"Run `{_repair_command()}` to repair it.")
+        ui.detail(f"Run `{repair_command()}` to repair it.")
     ptr = load_pointer(root)
     if not ptr:
-        ui.warn(f"MIMRY is not set up for {_root_name(root)} yet")
+        ui.warn(f"MIMRY is not set up for {root_name(root)} yet")
         ui.detail("Run `mimry init` to set it up.")
         return 1
-    fresh, graph, semantic = _health(root, ptr, verify=getattr(a, "verify", False))
+    fresh, graph, semantic = health(root, ptr, verify=getattr(a, "verify", False))
     _print_status(root, ptr, fresh, graph, semantic, verbose=getattr(a, "verbose", False))
     return 0 if fresh["state"] == "current" else 2
 
@@ -352,7 +352,7 @@ def _reindex_first(command, *, include_missing: bool):
     @wraps(command)
     def guarded(a):
         started = time.perf_counter()
-        stats = refresh_if_stale(_command_root(a), include_missing=include_missing)
+        stats = refresh_if_stale(command_root(a), include_missing=include_missing)
         if stats is not None and not getattr(a, "json", False):
             elapsed = ui.took(time.perf_counter() - started)
             if stats.get("set_up_worktree"):
@@ -363,7 +363,7 @@ def _reindex_first(command, *, include_missing: bool):
             elif stats.get("changes") is None:
                 ui.ok(f"Indexed first - {ui.count(stats['files'], 'file')} ({elapsed})")
             else:
-                ui.ok(f"Reindexed first - {_change_summary(stats)} ({elapsed})")
+                ui.ok(f"Reindexed first - {change_summary(stats)} ({elapsed})")
         return command(a)
 
     return guarded
@@ -390,7 +390,7 @@ def cmd_feedback(a):
     action = getattr(a, "feedback_action", None)
     with active_index_pointer(root, exclusive=action not in {"stats", "list", "show"}) as ptr:
         if not ptr:
-            raise SystemExit(_not_set_up(root))
+            raise SystemExit(not_set_up(root))
         return _cmd_feedback_active(a, root, ptr, action)
 
 
@@ -571,10 +571,10 @@ def _format_paths(paths: list[str], limit: int = 6) -> str:
 
 def _print_semantic_degrade(idx: Path, root_id: str | None) -> bool:
     """Warn if semantic search cannot answer; return whether it can."""
-    health = semantic_health(idx, root_id)
-    if health["status"] == "current":
+    semantic_info = semantic_health(idx, root_id)
+    if semantic_info["status"] == "current":
         return True
-    ui.warn(f"Semantic search is {health['status']}")
+    ui.warn(f"Semantic search is {semantic_info['status']}")
     ui.detail("Run `mimry refresh` to rebuild it.")
     return False
 
@@ -586,7 +586,7 @@ def _print_search(heading: str, query: str, rows: list[dict], *, verbose: bool) 
         return
     ui.title(f"{heading} {ui.quote(redact_sensitive_text(query))}")
     print()
-    _print_results(rows, verbose=verbose)
+    print_results(rows, verbose=verbose)
 
 
 @_fresh_index
@@ -602,14 +602,14 @@ def cmd_semantic(a):
         return 0
     with active_index_pointer(root) as ptr:
         if not ptr:
-            raise SystemExit(_not_set_up(root))
+            raise SystemExit(not_set_up(root))
         idx = Path(ptr["indexPath"])
         if query == "status":
-            health = semantic_health(idx, ptr.get("rootId"))
+            semantic_info = semantic_health(idx, ptr.get("rootId"))
             if _print_semantic_degrade(idx, ptr.get("rootId")):
                 ui.ok(
-                    f"Semantic search is ready ({ui.count(health['chunks'], 'chunk')},"
-                    f" {health['backend']})"
+                    f"Semantic search is ready ({ui.count(semantic_info['chunks'], 'chunk')},"
+                    f" {semantic_info['backend']})"
                 )
             return 0
         if not query:
@@ -618,7 +618,7 @@ def cmd_semantic(a):
                 'For example: mimry semantic "where do we retry payments"',
             )
             return 2
-        rows, health = semantic_rows(idx, ptr.get("rootId"), query, getattr(a, "limit", 10))
+        rows, semantic_info = semantic_rows(idx, ptr.get("rootId"), query, getattr(a, "limit", 10))
         if not _print_semantic_degrade(idx, ptr.get("rootId")):
             return 0
         _print_search("Similar content for", query, rows, verbose=getattr(a, "verbose", False))
@@ -628,7 +628,7 @@ def cmd_semantic(a):
 @_fresh_index_or_first
 def cmd_find(a):
     start = Path(getattr(a, "find_directory", a.root)).resolve()
-    root = _indexed_root(start)
+    root = indexed_root(start)
     # Pin the owning generation, not an unindexed child directory.
     # Keep the original scope when main retries after a schema rebuild.
     a.find_directory = start
@@ -737,10 +737,10 @@ def cmd_route(a):
             ("Risk", risk + (f" - needs approval: {'; '.join(gates)}" if gates else "")),
         ]
     )
-    _print_results_section(
+    print_results_section(
         "Start with", payload["likely_files"], verbose=getattr(a, "verbose", False)
     )
-    _print_verification(payload["suggested_verification"])
+    print_verification(payload["suggested_verification"])
     print()
     print(f"Next: {payload['next']}")
     return 0
@@ -860,7 +860,7 @@ def _print_calls(a, relation: str) -> int:
 
 
 def _call_row(result: dict, depth: int) -> tuple:
-    name = result["name"] + _inferred_mark(result["confidence"])
+    name = result["name"] + inferred_mark(result["confidence"])
     cells = [name, result["kind"], f":{result['line']}" if result["line"] else ""]
     if depth > 1:
         cells.append("direct" if result["depth"] == 1 else f"{result['depth']} calls away")
@@ -921,7 +921,7 @@ def cmd_context(a):
     ptr = require(root)
     if getattr(a, "semantic", False):
         _print_semantic_degrade(Path(ptr["indexPath"]), ptr.get("rootId"))
-    rows, pack_path = _write_context_pack(
+    rows, pack_path = write_context_pack(
         root, ptr, a.query, semantic=getattr(a, "semantic", False)
     )
     ui.ok(f"Wrote a context pack for {ui.quote(sanitize_query(a.query))}")
@@ -1024,7 +1024,7 @@ def cmd_cache_wipe(a):
             return 2
         initial = load_pointer(root, validate_active_generation=False)
         if not initial:
-            raise SystemExit(_not_set_up(root))
+            raise SystemExit(not_set_up(root))
         if Path(initial["rootPath"]).expanduser().resolve(strict=False) != root:
             raise UnsafeCachePathError(
                 f"Refusing to wipe cache: pointer root {initial['rootPath']} does not match"
@@ -1054,7 +1054,7 @@ def cmd_cache_wipe(a):
             leftovers = [child for child in base.iterdir() if child != operation_lock]
             if leftovers:
                 raise OSError(f"cache wipe left entries behind: {', '.join(map(str, leftovers))}")
-        ui.ok(f"Cleared the index cache for {_root_name(root)}")
+        ui.ok(f"Cleared the index cache for {root_name(root)}")
         ui.detail(ui.faint(str(base)))
         ui.detail("Run `mimry index` to rebuild it.")
         return 0
@@ -1074,7 +1074,7 @@ def cmd_report(a):
     """
     root = Path(a.root).resolve()
     ptr = require(root)
-    _, graph = _index_and_graph_health(root, ptr)
+    _, graph = index_and_graph_health(root, ptr)
 
     if graph["status"] != "current":
         ui.warn(f"The graph files are {graph['status']}, so the report may be out of date")
@@ -1104,7 +1104,7 @@ def cmd_digest(a):
     safe_root(root)
     ptr = load_pointer(root)
     if not ptr:
-        print(_not_set_up(root), file=sys.stderr)
+        print(not_set_up(root), file=sys.stderr)
         return 1
     idx = Path(ptr["indexPath"])
     if getattr(a, "json", False):
@@ -1153,7 +1153,7 @@ def cmd_export(a):
 
     root = Path(a.root).resolve()
     ptr = require(root)
-    _, graph = _index_and_graph_health(root, ptr)
+    _, graph = index_and_graph_health(root, ptr)
 
     if graph["status"] != "current":
         ui.warn(f"The graph files are {graph['status']}, so export cannot proceed")
