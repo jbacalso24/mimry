@@ -1,0 +1,64 @@
+name: Feedback replay
+
+# Manual only. Each repository replays up to `commits` commits with two
+# arms, which takes a while, so no push or pull request starts it.
+on:
+  workflow_dispatch:
+    inputs:
+      commits:
+        description: "Non-merge commits to replay from HEAD, per repository"
+        type: number
+        default: 200
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    name: Replay ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: mimry
+          - name: flask
+            clone: https://github.com/pallets/flask.git
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment
+        run: uv sync --locked --python "3.14"
+
+      - name: Clone the replayed repository
+        if: matrix.clone
+        run: git clone -q "${{ matrix.clone }}" "$RUNNER_TEMP/${{ matrix.name }}"
+
+      - name: Replay feedback
+        env:
+          REPLAY_REPO: ${{ matrix.clone && format('{0}/{1}', runner.temp, matrix.name) || github.workspace }}
+        run: >-
+          uv run python benchmarks/feedback/run.py --repo "$REPLAY_REPO"
+          --commits ${{ inputs.commits }} --work /tmp/replay-${{ matrix.name }}
+          --out /tmp/feedback-replay-${{ matrix.name }}.json
+          --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: feedback-replay-${{ matrix.name }}
+          path: /tmp/feedback-replay-${{ matrix.name }}.json
+          if-no-files-found: error
