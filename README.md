@@ -100,7 +100,7 @@ mimry install --platform claude-code
 ```
 
 > [!TIP]
-> Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` whenever it starts a broad grep. The hooks also refresh the index in the background when a session starts and after each file edit.
+> Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` whenever it starts a broad grep, and answers a grep for a known symbol with its definition and callers. The hooks also refresh the index in the background when a session starts and after each file edit.
 
 ## Features
 
@@ -191,7 +191,7 @@ See [docs/agents.md](docs/agents.md) for where each agent's files go and how its
 |---|---|
 | `--project` | Install into the current repository only, instead of for every repository |
 | `--always-on` | Add a short rules block to the agent's always-read file, such as `AGENTS.md` |
-| `--hooks` | Suggest `mimry find` when the agent starts a broad grep, and refresh the index in the background when a session starts and after each file edit. For Codex, project hooks run after you trust them with `/hooks`. |
+| `--hooks` | Suggest `mimry find` when the agent starts a broad grep, answer a search for a known symbol with its definition and callers, and refresh the index in the background when a session starts and after each file edit. For Codex, project hooks run after you trust them with `/hooks`. |
 | `--no-mcp` | Install the skill without registering the MCP server |
 | `--no-global-gitignore` | Do not add `.mimry/` and `mimry-out/` to Git's global ignore file |
 

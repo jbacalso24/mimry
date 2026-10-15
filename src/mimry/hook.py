@@ -4,9 +4,12 @@ Claude Code runs this before matched tool calls. When an agent starts a
 broad search (a regex or case-insensitive grep, rg, ag, ack or git grep
 over the tree, a Grep call with a regex, or a Glob with a ``**``), it
 names the ``mimry find`` command to run instead. Exact-string searches
-stay quiet. The reminder is printed once per session and query. It must
-stay cheap (stdlib only, nothing from the indexing stack) and must never
-fail the call.
+stay quiet. The reminder is printed once per session and query.
+
+When a search over the tree names a symbol the index knows, the hook
+answers with its definition and top callers instead, read from the
+index. It must stay cheap (stdlib only, nothing from the indexing stack)
+and must never fail the call.
 
 ``hook-refresh`` is the background hook for session start and file
 edits. It reindexes stale files so the next query does not wait.
@@ -21,6 +24,9 @@ import shlex
 import sys
 import time
 from pathlib import Path
+from typing import NamedTuple
+
+from .constants import HEAVY_IGNORES
 
 # Regex constructs that make a pattern broad. A plain identifier, an
 # escaped dot or an exact message is not matched by any of these.
@@ -53,6 +59,34 @@ PLACEHOLDER = "<what you are looking for>"
 # A refresh lock older than this came from a run that died before
 # removing it. A refresh of a large repo finishes well inside it.
 REFRESH_LOCK_STALE_SECONDS = 15 * 60
+# Words that introduce a definition or are control keywords. A pattern
+# such as "def apply_feedback" names apply_feedback, not "def".
+DECLARATION_WORDS = frozenset(
+    (
+        "def class function fn func const let var type interface struct impl enum trait "
+        "async export public private static return import from self this"
+    ).split()
+)
+SYMBOL_LIMIT = 3
+DEFINITION_LIMIT = 3
+CALLER_LIMIT = 5
+# ponytail: only the first 20 names of a pattern are looked up; a longer
+# pattern is rarely a list of symbols.
+SYMBOL_CANDIDATE_LIMIT = 20
+# The largest graph.json the hook reads. Above it the hook names the
+# callers command instead of listing callers.
+# ponytail: a call-edge table in the index lists callers at any size.
+HOOK_GRAPH_MAX_BYTES = 8_000_000
+_HEAVY_IGNORES_CASEFOLD = frozenset(part.casefold() for part in HEAVY_IGNORES)
+
+
+class _Search(NamedTuple):
+    """One shell search: its pattern, flags and the paths it names."""
+
+    pattern: str | None
+    ignore_case: bool
+    recursive: bool
+    paths: list[str]
 
 
 def cmd_hook_check(a) -> int:
@@ -107,8 +141,8 @@ def _next_value(args: list[str], i: int, attached: str = "") -> tuple[str, int]:
     return "", i
 
 
-def _parse_search(words: list[str]) -> tuple[str | None, bool, bool] | None:
-    """Pattern, case-insensitive and recursive flags of one command.
+def _parse_search(words: list[str]) -> _Search | None:
+    """Pattern, flags and paths of one command.
 
     Returns None when the command is not grep, rg, ag, ack or git grep.
     """
@@ -158,41 +192,72 @@ def _parse_search(words: list[str]) -> tuple[str | None, bool, bool] | None:
         elif re.fullmatch(r"[<>]+&?", tok):
             # A redirection and its target are not search arguments.
             i += 1
+        elif tok.isdigit() and i < len(args) and re.fullmatch(r"[<>]+&?", args[i]):
+            # The 2 in 2>/dev/null is a file descriptor, not a path.
+            continue
         else:
             positional.append(tok)
     if explicit is None:
         if not positional:
             return None
-        explicit = positional[0]
-    return explicit, ignore_case, recursive
+        explicit, paths = positional[0], positional[1:]
+    else:
+        paths = positional
+    return _Search(explicit, ignore_case, recursive, paths)
 
 
-def shell_search_pattern(command: str) -> str | None:
-    """Pattern of the first broad search in a shell ``command``.
+def _shell_searches(command: str) -> list[_Search]:
+    """Every grep, rg, ag, ack or git grep segment of a shell command.
 
-    Every ``|``, ``&&``, ``;`` segment is checked. Returns None when no
-    segment is a broad search, or when the command does not parse.
+    Every ``|``, ``&&``, ``;`` segment is checked. Returns [] when the
+    command does not parse.
     """
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;<>")
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
-        return None
+        return []
     segments: list[list[str]] = [[]]
     for tok in tokens:
         if SEPARATOR.fullmatch(tok):
             segments.append([])
         else:
             segments[-1].append(tok)
-    for words in segments:
-        found = _parse_search(words)
-        if found is None:
-            continue
-        pattern, ignore_case, recursive = found
-        if recursive and pattern is not None and (ignore_case or regex_is_broad(pattern)):
-            return pattern
+    found = (_parse_search(words) for words in segments)
+    return [search for search in found if search is not None]
+
+
+def shell_search_pattern(command: str) -> str | None:
+    """Pattern of the first broad search in a shell ``command``.
+
+    Returns None when no segment is a broad search, or when the command
+    does not parse.
+    """
+    for search in _shell_searches(command):
+        if (
+            search.recursive
+            and search.pattern is not None
+            and (search.ignore_case or regex_is_broad(search.pattern))
+        ):
+            return search.pattern
     return None
+
+
+def _is_one_file(paths: list[str], root: Path) -> bool:
+    """Whether every path a search names is a regular file, so the
+    search covers no tree. A search with no path covers the tree."""
+    return bool(paths) and all((root / path).is_file() for path in paths)
+
+
+def shell_tree_patterns(command: str, root: Path) -> list[str]:
+    """Patterns of every recursive search over the tree in ``command``,
+    broad or exact. A search of one named file is left out."""
+    return [
+        search.pattern
+        for search in _shell_searches(command)
+        if search.recursive and search.pattern is not None and not _is_one_file(search.paths, root)
+    ]
 
 
 def broad_search_query(tool_name: str, tool_input: dict, command: str) -> str | None:
@@ -215,6 +280,33 @@ def broad_search_query(tool_name: str, tool_input: dict, command: str) -> str | 
         return query_for(re.sub(r"\.[A-Za-z0-9]+(?=/|$)", "", pattern))
     pattern = shell_search_pattern(command)
     return None if pattern is None else query_for(pattern)
+
+
+def tree_search_patterns(tool_name: str, tool_input: dict, command: str, root: Path) -> list[str]:
+    """Patterns of the searches over the tree in this tool call.
+
+    Broad or exact. A Grep on one named file, and any Glob, give none.
+    """
+    if tool_name == "grep":
+        path = str(tool_input.get("path") or "")
+        if path and (root / path).is_file():
+            return []
+        pattern = str(tool_input.get("pattern") or "")
+        return [pattern] if pattern else []
+    if tool_name == "glob":
+        return []
+    return shell_tree_patterns(command, root)
+
+
+def symbol_candidates(patterns: list[str]) -> list[str]:
+    """Identifiers in ``patterns`` that could name a symbol."""
+    names: list[str] = []
+    for pattern in patterns:
+        for word in WORD.findall(ESCAPED_CLASS.sub(" ", pattern)):
+            if len(word) < 3 or word in DECLARATION_WORDS or word in names:
+                continue
+            names.append(word)
+    return names[:SYMBOL_CANDIDATE_LIMIT]
 
 
 def nudge(query: str) -> str:
@@ -252,6 +344,184 @@ def _first_for_query(mimry_dir: Path, session: str, query: str) -> bool:
     return True
 
 
+def _ignored_path(rel_path: str) -> bool:
+    """Whether a path sits under a heavy-ignored directory.
+
+    The rule of ``path_has_ignored_part`` in security.py, which is not
+    imported because that module costs about 25 ms to load.
+    """
+    parts = rel_path.replace("\\", "/").split("/")
+    return any(
+        part.casefold() in _HEAVY_IGNORES_CASEFOLD for part in parts if part not in ("", ".")
+    )
+
+
+def _definitions(
+    root: Path, index: Path, names: list[str], indexed_at: float
+) -> dict[str, list[tuple[str, str, int]]]:
+    """Visible, fresh definitions of each name, in ``names`` order.
+
+    Reads ``mimry.sqlite`` read-only and matches names exactly. A
+    definition is skipped when its file is gone or was edited after the
+    index was built, because its line may be wrong by now.
+    """
+    import sqlite3
+
+    marks = ",".join("?" * len(names))
+    # A file:///C:/ URI cost ~80 ms to open on Windows; a file:C:/ URI
+    # built from the absolute path opens in under 1 ms. Only the three
+    # characters that end or change a file: URI need escaping.
+    db = os.path.abspath(index / "mimry.sqlite").replace("\\", "/")
+    db = db.replace("%", "%25").replace("?", "%3F").replace("#", "%23")
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.2)
+    try:
+        rows = con.execute(
+            "select s.name, s.kind, f.rel_path, s.line_start from symbols s"
+            " join files f on f.file_id = s.file_id"
+            f" where s.name in ({marks}) order by f.rel_path, s.line_start",
+            names,
+        ).fetchall()
+    finally:
+        con.close()
+    found: dict[str, list[tuple[str, str, int]]] = {}
+    for name, kind, rel_path, line in rows:
+        if line is None or _ignored_path(rel_path):
+            continue
+        try:
+            if (root / rel_path).stat().st_mtime > indexed_at:
+                continue
+        except OSError:
+            continue
+        found.setdefault(name, []).append((kind or "symbol", rel_path, int(line)))
+    return {name: found[name] for name in names if name in found}
+
+
+def _load_graph(index: Path) -> dict | None:
+    """``graph.json``, or None when it is over HOOK_GRAPH_MAX_BYTES.
+
+    Raises when the file is missing or is not a JSON object.
+    """
+    path = index / "graph.json"
+    if path.stat().st_size > HOOK_GRAPH_MAX_BYTES:
+        return None
+    graph = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(graph, dict):
+        raise ValueError("graph.json is not a JSON object")
+    return graph
+
+
+def _callers(graph: dict, name: str, paths: set[str]) -> list[tuple[str, str, int]]:
+    """Callers of the symbol ``name`` defined in ``paths``, one hop out.
+
+    Follows ``calls`` edges into the symbol's nodes, as
+    ``call_relations`` in core/artifacts.py does at depth 1. Returns
+    (label, path, line) sorted by path then line.
+    """
+    symbols = [
+        node
+        for node in graph.get("nodes") or []
+        if isinstance(node, dict) and node.get("type") == "symbol" and node.get("id") is not None
+    ]
+    targets = {
+        str(node["id"])
+        for node in symbols
+        if node.get("label") == name and node.get("source_file") in paths
+    }
+    edge_key = "links" if "links" in graph else "edges"
+    sources: set[str] = set()
+    for edge in graph.get(edge_key) or []:
+        if not isinstance(edge, dict) or (edge.get("relation") or edge.get("type")) != "calls":
+            continue
+        source = str(edge.get("source") or edge.get("from") or "")
+        target = str(edge.get("target") or edge.get("to") or "")
+        if target in targets and source and source not in targets:
+            sources.add(source)
+    # The visibility check runs only on the few callers, not every node.
+    callers: set[tuple[str, str, int]] = set()
+    for node in symbols:
+        src = node.get("source_file")
+        if str(node["id"]) not in sources or not isinstance(src, str) or _ignored_path(src):
+            continue
+        line = node.get("line")
+        callers.add((str(node.get("label")), src, line if isinstance(line, int) else 0))
+    return sorted(callers, key=lambda row: (row[1], row[2], row[0]))
+
+
+def _callers_command(name: str) -> str:
+    """The command that lists every caller: the MCP tool or the CLI."""
+    if os.environ.get("CLAUDE_PLUGIN_ROOT"):
+        return f'call the mimry_symbol tool with name "{name}" and relations "callers"'
+    return f"`mimry callers {name}`"
+
+
+def _where(path: str, line: int) -> str:
+    return f"{path}:{line}" if line else path
+
+
+def _symbol_text(
+    name: str, defs: list[tuple[str, str, int]], callers: list[tuple[str, str, int]] | None
+) -> str:
+    """Two lines: where the symbol is defined, then who calls it.
+
+    ``callers`` is None when the graph is too large to read here.
+    """
+    places = [f"{kind} at {_where(path, line)}" for kind, path, line in defs[:DEFINITION_LIMIT]]
+    more = len(defs) - len(places)
+    where = ", ".join(places) + (f", +{more} more" if more > 0 else "")
+    command = _callers_command(name)
+    if callers is None:
+        called = f"Callers are not listed here, the graph is over the hook size limit: {command}."
+    elif not callers:
+        called = "No callers recorded in the index."
+    else:
+        shown = ", ".join(
+            f"{label} ({_where(path, line)})" for label, path, line in callers[:CALLER_LIMIT]
+        )
+        extra = len(callers) - CALLER_LIMIT
+        called = f"Called by {shown}" + (f", +{extra} more: {command}" if extra > 0 else "") + "."
+    return f"MIMRY knows {name}: {where}.\n{called}"
+
+
+def _symbol_answer(
+    root: Path, session: str, tool_name: str, tool_input: dict, command: str
+) -> str | None:
+    """The definition and callers of the known symbols a search names.
+
+    None when no name is a visible, fresh symbol, or when anything goes
+    wrong, so the caller falls back to the reminder.
+    """
+    try:
+        names = symbol_candidates(tree_search_patterns(tool_name, tool_input, command, root))
+        if not names:
+            return None
+        from datetime import datetime
+
+        pointer = json.loads((root / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+        index = Path(pointer["indexPath"])
+        indexed_at = datetime.fromisoformat(pointer["lastIndexedAt"]).timestamp()
+        defs = _definitions(root, index, names, indexed_at)
+        if not defs:
+            return None
+        graph = _load_graph(index)
+        mimry_dir = root / ".mimry"
+        texts = []
+        for name, found in defs.items():
+            if len(texts) == SYMBOL_LIMIT:
+                break
+            # Once per session, like the reminder: a symbol answered
+            # already is not repeated.
+            if session and not _first_for_query(mimry_dir, session, f"symbol:{name}"):
+                continue
+            callers = None
+            if graph is not None:
+                callers = _callers(graph, name, {path for _, path, _ in found})
+            texts.append(_symbol_text(name, found, callers))
+        return "\n".join(texts) or None
+    except Exception:
+        # The reminder is optional; a broken index must not break it.
+        return None
+
+
 def _hook_check(root: Path) -> None:
     # Hook payloads are UTF-8 JSON. Reading bytes avoids the console
     # code page, which on Windows cannot decode arbitrary command text.
@@ -274,25 +544,30 @@ def _hook_check(root: Path) -> None:
         command = str(tool_input.get("command") or "")
     except Exception:
         command = raw
-    query = broad_search_query(tool_name, tool_input, command)
-    if query is None:
-        return
     mimry_dir = root / ".mimry"
-    if (mimry_dir / "pointer.json").exists() or (
-        mimry_dir / "mimry-out" / "context" / "latest.md"
-    ).exists():
+    if not (
+        (mimry_dir / "pointer.json").exists()
+        or (mimry_dir / "mimry-out" / "context" / "latest.md").exists()
+    ):
+        return
+    answer = _symbol_answer(root, session, tool_name, tool_input, command)
+    if answer is None:
+        query = broad_search_query(tool_name, tool_input, command)
+        if query is None:
+            return
         if session and not _first_for_query(mimry_dir, session, query):
             return
-        print(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "additionalContext": nudge(query),
-                    }
+        answer = nudge(query)
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "additionalContext": answer,
                 }
-            )
+            }
         )
+    )
 
 
 def _take_refresh_lock(lock: Path) -> bool:

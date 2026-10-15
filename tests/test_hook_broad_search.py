@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from mimry import hook
 from mimry.hook import (
     PLACEHOLDER,
     broad_search_query,
@@ -11,6 +12,9 @@ from mimry.hook import (
     query_for,
     regex_is_broad,
     shell_search_pattern,
+    shell_tree_patterns,
+    symbol_candidates,
+    tree_search_patterns,
 )
 
 
@@ -131,3 +135,68 @@ def test_broad_search_query_by_tool_name():
 )
 def test_glob_query_leaves_out_file_extensions(pattern, query):
     assert broad_search_query("glob", {"pattern": pattern}, "") == query
+
+
+@pytest.mark.parametrize(
+    ("patterns", "names"),
+    [
+        (
+            ["def feedback_rank_signals|def apply_feedback_to_rows"],
+            ["feedback_rank_signals", "apply_feedback_to_rows"],
+        ),
+        ([r"\bapply_feedback\b.*x"], ["apply_feedback"]),
+        (["ab|return|self|Foo.bar"], ["Foo", "bar"]),
+        (["leaf", "leaf|main"], ["leaf", "main"]),
+        (["connection refused"], ["connection", "refused"]),
+        (["a1|xy"], []),
+    ],
+)
+def test_symbol_candidates_drop_keywords_and_short_words(patterns, names):
+    assert symbol_candidates(patterns) == names
+
+
+def test_symbol_candidates_are_capped():
+    pattern = "|".join(f"name{i:02d}" for i in range(40))
+    assert len(symbol_candidates([pattern])) == hook.SYMBOL_CANDIDATE_LIMIT
+
+
+@pytest.mark.parametrize(
+    ("command", "patterns"),
+    [
+        ('rg -n "def a_name|def b_name" src', ["def a_name|def b_name"]),
+        ("rg resolve_imports", ["resolve_imports"]),
+        ('git grep "connection refused" -- src', ["connection refused"]),
+        ("grep -r leaf app/one.py", []),
+        ("rg leaf app/one.py 2>/dev/null", []),
+        ("rg leaf app/one.py app/two.py", []),
+        ("grep -n leaf app", []),
+        ("cat app/one.py", []),
+    ],
+)
+def test_shell_tree_patterns_keep_exact_recursive_searches(tmp_path, command, patterns):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "one.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "app" / "two.py").write_text("x = 2\n", encoding="utf-8")
+    assert shell_tree_patterns(command, tmp_path) == patterns
+
+
+def test_grep_tool_patterns_skip_one_named_file(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    assert tree_search_patterns("grep", {"pattern": "leaf", "path": "app.py"}, "", tmp_path) == []
+    assert tree_search_patterns("grep", {"pattern": "leaf", "path": "."}, "", tmp_path) == ["leaf"]
+    assert tree_search_patterns("grep", {"pattern": "leaf"}, "", tmp_path) == ["leaf"]
+    assert tree_search_patterns("glob", {"pattern": "**/*.py"}, "", tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("path", "ignored"),
+    [
+        ("node_modules/pkg/index.js", True),
+        ("src/.git/config", True),
+        ("src\\node_modules\\x.js", True),
+        ("app/one.py", False),
+        ("app/node_modules_notes.md", False),
+    ],
+)
+def test_ignored_paths_match_the_index_policy(path, ignored):
+    assert hook._ignored_path(path) is ignored

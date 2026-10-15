@@ -583,13 +583,15 @@ def skill_body(platform_key: str) -> str:
         "claude-code": (
             "Claude Code: use this skill with project `.claude/skills/mimry/` installs."
             " Optional hooks name the `mimry find` command when the agent starts a broad"
-            " search, and stay quiet for exact-string searches. The hooks also refresh the"
+            " search, answer a search for a known symbol with its definition and callers,"
+            " and stay quiet for other exact-string searches. The hooks also refresh the"
             " index in the background when a session starts and after each file edit."
         ),
         "codex": (
             "Codex: invoke as `$mimry` when command-style skill invocation is available."
             " Optional `.codex/hooks.json` names the `mimry find` command when the agent"
-            " starts a broad shell search, and stays quiet for exact-string searches."
+            " starts a broad shell search, answers a search for a known symbol with its"
+            " definition and callers, and stays quiet for other exact-string searches."
             " The hooks also refresh the index in the background when a session starts and"
             " after each file edit; project hooks run only after you trust them with `/hooks`."
         ),
@@ -1473,8 +1475,8 @@ def install_skill(
     hook_target = _install_hooks(root, cfg, dry_run=True) if hooks else None
     if hook_target:
         extras.append(
-            f"hooks in {cfg.hook_path.as_posix()} that name `mimry find` for broad searches"
-            " and refresh the index in the background"
+            f"hooks in {cfg.hook_path.as_posix()} that name `mimry find` for broad searches,"
+            " answer searches for known symbols, and refresh the index in the background"
         )
     if dry_run:
         print("Dry run - nothing was written")
