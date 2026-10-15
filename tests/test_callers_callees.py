@@ -534,7 +534,7 @@ def test_stale_graph_is_reported_not_answered(tmp_path, monkeypatch):
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     repo = _repo(tmp_path, cache)
     monkeypatch.setattr(
-        "mimry.commands._index_and_graph_health",
+        "mimry.queries._index_and_graph_health",
         lambda root, ptr: ({}, {"status": "stale"}),
     )
 

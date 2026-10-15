@@ -7,8 +7,9 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from mimry.commands import cmd_init, symbol_matches
+from mimry.commands import cmd_init
 from mimry.indexer import write_index
+from mimry.queries import symbol_matches
 from mimry.scanner import markdown_heading_symbols
 from mimry.storage import load_pointer
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from .constants import SCHEMA_VERSION
 from .core.artifacts import graph_health
 from .freshness import index_freshness
 from .indexer import write_index
+from .install_info import _repair_command
 from .paths import graph_output_dir, idx_path, mdir, now, output_dir, pointer_file
 from .scanner import _git_output, is_linked_worktree, worktree_fingerprint
 from .security import safe_root
@@ -310,3 +312,187 @@ def _indexed_root(start: Path) -> Path:
         if is_linked_worktree(folder):
             break
     return start
+
+
+def _change_rows(changes: dict) -> list[tuple[str, str]]:
+    return [
+        *(("changed", path) for path in changes["changed"]),
+        *(("added", path) for path in changes["added"]),
+        *(("removed", path) for path in changes["removed"]),
+    ]
+
+
+def _print_rows_capped(rows: list[tuple], limit: int = 8, indent: int = 4) -> None:
+    ui.table(rows[:limit], indent=indent)
+    if len(rows) > limit:
+        ui.detail(ui.faint(f"+{len(rows) - limit:,} more"), indent)
+
+
+def _totals(files: int, symbols: int, links: int) -> str:
+    return ui.facts(ui.count(files, "file"), ui.count(symbols, "symbol"), ui.count(links, "link"))
+
+
+def _print_grammar_warning(unavailable: int) -> None:
+    """One warning when files were indexed without symbols."""
+    if unavailable:
+        ui.warn(
+            f"{ui.count(unavailable, 'file')} indexed without symbols: tree-sitter"
+            " grammars could not be downloaded."
+        )
+        ui.detail(
+            "MIMRY downloads each grammar once, on first use. Check your network or proxy,"
+            " then run `mimry index`."
+        )
+
+
+def _print_parse_error_warning(count: int, names: list[str]) -> None:
+    """Name the files the parser could not read, once per run."""
+    if count:
+        more = f" and {count - len(names)} more" if count > len(names) else ""
+        ui.warn(f"{ui.count(count, 'file')} could not be parsed: {', '.join(names)}{more}")
+        ui.detail(
+            "Their parts that parse are still indexed. Fix the syntax, then run `mimry index`."
+        )
+
+
+def _print_index_result(
+    root: Path, stats: dict, seconds: float, *, full: bool, verbose: bool = False
+) -> None:
+    name = _root_name(root)
+    changes = stats.get("changes")
+    elapsed = ui.took(seconds)
+    if changes is None:
+        ui.ok(f"Indexed {name} for the first time in {elapsed}")
+    elif stats.get("unchanged"):
+        ui.ok(f"{name} is already up to date - nothing changed since the last index ({elapsed})")
+    elif full:
+        ui.ok(f"Rebuilt the index for {name} from scratch in {elapsed}")
+    else:
+        ui.ok(f"Updated the index for {name} in {elapsed}")
+    if changes is not None and not stats.get("unchanged"):
+        rows = _change_rows(changes)
+        if rows:
+            ui.detail(
+                _counted(
+                    (
+                        (len(changes["changed"]), "changed"),
+                        (len(changes["added"]), "added"),
+                        (len(changes["removed"]), "removed"),
+                    )
+                )
+            )
+            _print_rows_capped(rows)
+        else:
+            ui.detail("No file contents changed since the last index")
+    ui.detail(_totals(stats["files"], stats["symbols"], stats["edges"]))
+    if stats.get("unindexable"):
+        ui.detail(
+            f"{ui.count(stats['unindexable'], 'file')} skipped: may contain secrets or could not"
+            " be read"
+        )
+    if stats.get("missing_dependency"):
+        ui.warn(
+            f"{ui.count(stats['missing_dependency'], 'PDF')} indexed without text: pypdf is"
+            f" missing. Run `{_repair_command()}` to add it."
+        )
+    _print_grammar_warning(stats.get("grammar_unavailable", 0))
+    _print_parse_error_warning(stats.get("parse_errors", 0), stats.get("parse_error_files", []))
+    if verbose:
+        ui.table(
+            [
+                ("Index", stats["index"]),
+                ("Graph", f"{stats['graph_engine']} engine"),
+                (
+                    "Search",
+                    (
+                        f"{ui.count(stats['semantic_chunks'], 'chunk')},"
+                        f" {stats['semantic_backend']} backend"
+                    ),
+                ),
+            ],
+            indent=2,
+        )
+
+
+def _stale_changes(fresh: dict) -> tuple[list[str], list[str]]:
+    """Split stale paths into (edited, new).
+
+    Freshness reports files not in the index as changed too.
+    """
+    indexed = {f.get("rel_path") for f in fresh["files"]}
+    return (
+        [path for path in fresh["changed"] if path in indexed],
+        [path for path in fresh["changed"] if path not in indexed],
+    )
+
+
+def _stale_summary(fresh: dict) -> str:
+    edited, new = _stale_changes(fresh)
+    summary = _counted(
+        (
+            (len(edited), "changed"),
+            (len(new), "new"),
+            (len(fresh["missing"]), "deleted"),
+            (fresh["policy_excluded_count"], "now ignored"),
+        )
+    )
+    if fresh.get("settings_changed"):
+        summary = ", ".join(filter(None, (summary, "mimry.toml changed")))
+    if fresh.get("outdated_build"):
+        return ", ".join(filter(None, (summary, "indexed by a different MIMRY version")))
+    return summary
+
+
+STALE_INDEX_HINT = "The next query updates it; `mimry reindex` updates it now."
+
+
+def _print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
+    """Warn on anything not current; return the commands that fix it."""
+    fixes = []
+    if fresh["state"] == "stale":
+        # The caller has already said what changed.
+        ui.detail(STALE_INDEX_HINT)
+    elif graph["status"] != "current":
+        ui.warn(f"The graph files in .mimry/mimry-out/graph are {graph['status']}")
+        fixes.append("mimry refresh")
+    if fresh["state"] != "missing" and semantic["status"] != "current":
+        ui.warn(f"Semantic search is {semantic['status']}")
+        if "mimry refresh" not in fixes and fresh["state"] != "stale":
+            fixes.append("mimry refresh")
+    return fixes
+
+
+def run_refresh(a):
+    """Index, then confirm everything MIMRY serves is current."""
+    root = _command_root(a)
+    ptr = require(root, validate=False)
+    full = getattr(a, "full", False)
+    started = time.perf_counter()
+    stats = write_index(root, ptr, full=full)
+    _print_index_result(
+        root, stats, time.perf_counter() - started, full=full, verbose=getattr(a, "verbose", False)
+    )
+    with active_index_pointer(root) as active:
+        fresh, graph, semantic = _health(root, active)
+    if fresh["state"] == "stale":
+        ui.warn(f"Files changed while indexing - {_stale_summary(fresh)}")
+    for fix in _print_problems(fresh, graph, semantic):
+        ui.detail(f"Run `{fix}` to update it.")
+    return 0 if fresh["state"] == "current" else 2
+
+
+def _command_root(a) -> Path:
+    """Resolve a.root to the folder whose index answers for it.
+
+    A subfolder of an indexed repo answers from the repo's index. find
+    keeps the subfolder it ran from as its scope in find_directory. The
+    other commands then see the repo as a.root, so none of them locks or
+    writes under a folder that was never set up. Idempotent: a retry
+    after a schema rebuild resolves the same root.
+    """
+    if not hasattr(a, "find_directory"):
+        a.find_directory = Path(a.root).resolve()
+    start = safe_root(Path(a.find_directory))
+    root = _indexed_root(start)
+    a.root = str(root)
+    return root

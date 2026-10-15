@@ -4,10 +4,11 @@ import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
-from mimry.commands import _write_context_pack, cmd_init
+from mimry.commands import cmd_init
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.pieces import best_ranges, file_pieces, piece_matches
+from mimry.queries import _write_context_pack
 from mimry.search import find_rows
 from mimry.storage import load_pointer
 

@@ -13,18 +13,7 @@ from typing import Any, Literal
 
 from mimry.adapters import list_adapters
 from mimry.cache_safety import IndexOutsideCacheError
-from mimry.commands import (
-    _write_context_pack,
-    calls_payload,
-    cmd_init,
-    cmd_preflight,
-    cmd_refresh,
-    path_payload,
-    run_explain,
-    run_path,
-    run_why,
-    symbol_matches,
-)
+from mimry.commands import cmd_init, cmd_preflight, cmd_refresh
 from mimry.core.artifacts import CALL_DIRECTIONS, graph_health
 from mimry.core.languages import language_counts
 from mimry.digest import canonical_digest
@@ -48,6 +37,15 @@ from mimry.plan import (
     plan_digest,
     render_markdown,
     render_terminal,
+)
+from mimry.queries import (
+    _write_context_pack,
+    calls_payload,
+    path_payload,
+    run_explain,
+    run_path,
+    run_why,
+    symbol_matches,
 )
 from mimry.routing import route_payload, write_brief
 from mimry.search import find_rows

@@ -24,11 +24,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from mimry.commands import _write_context_pack, cmd_init, cmd_preflight, cmd_status
+from mimry.commands import cmd_init, cmd_preflight, cmd_status
 from mimry.core.artifacts import graph_health
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.paths import context_file
+from mimry.queries import _write_context_pack
 from mimry.search import find_rows
 from mimry.state import UNINDEXABLE_FILE
 from mimry.storage import active_index_pointer, load_pointer

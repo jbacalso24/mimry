@@ -12,10 +12,11 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from mimry.commands import cmd_init, symbol_matches
+from mimry.commands import cmd_init
 from mimry.core.languages import extract
 from mimry.core.resolve import resolve_imports
 from mimry.indexer import write_index
+from mimry.queries import symbol_matches
 from mimry.storage import load_pointer
 
 

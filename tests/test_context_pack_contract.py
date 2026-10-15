@@ -206,7 +206,7 @@ def test_relevant_files_use_why_format(indexed_fixture):
 
 def test_score_filtering_below_threshold(indexed_fixture):
     """Rows scoring below 10% of top score should be filtered out."""
-    from mimry.commands import _filter_rows_by_score_threshold
+    from mimry.queries import _filter_rows_by_score_threshold
 
     # Create test rows with varying scores
     rows = [
@@ -222,7 +222,7 @@ def test_score_filtering_below_threshold(indexed_fixture):
 
 def test_extract_symbol_nodes_filters_multiword_terms():
     """Symbol extraction skips multiword terms and file name."""
-    from mimry.commands import _extract_symbol_nodes
+    from mimry.queries import _extract_symbol_nodes
 
     reason = (
         "graph node label match; nodes: renew_login, LoginForm,"
