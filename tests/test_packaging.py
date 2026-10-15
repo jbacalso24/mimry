@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import tarfile
 import tomllib
@@ -102,3 +103,15 @@ def test_unlocked_ci_matrix_invokes_only_the_extracted_artifact_script():
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert '"$GITHUB_WORKSPACE/$artifact_root/scripts/determinism_matrix.py"' in workflow
     assert '"$GITHUB_WORKSPACE/scripts/determinism_matrix.py"' not in workflow
+
+
+def test_server_json_passes_mcp_registry_limits():
+    server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
+
+    # The registry rejects a longer description at publish time.
+    assert len(server["description"]) <= 100
+    assert server["version"] == version
+    assert [package["version"] for package in server["packages"]] == [version]
