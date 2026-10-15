@@ -27,8 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     env:
-      MIMRY_EMBED_MODEL: minishlab/potion-code-16M
-      MIMRY_EMBED_WEIGHT: "1.0"
+      MIMRY_EMBED_MODEL: minishlab/potion-retrieval-32M
+      MIMRY_EMBED_WEIGHT: "0.5"
       HF_HUB_DISABLE_PROGRESS_BARS: "1"
     strategy:
       fail-fast: false
