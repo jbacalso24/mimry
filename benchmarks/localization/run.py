@@ -302,7 +302,7 @@ def run_instance(
         if diagnose:
             # The same ranking, deeper and with -v; the top 10 are
             # scored exactly as in a normal run.
-            found = mimry(repo, env, "find", "--limit", str(DIAGNOSE_DEPTH), "-v", "--", query)
+            found = mimry(repo, env, "find", "--semantic", "--limit", str(DIAGNOSE_DEPTH), "-v", "--", query)
             explained = parse_find_explained(found, DIAGNOSE_DEPTH)
             ranked = [path for path, _ in explained[:TOP]]
         else:
