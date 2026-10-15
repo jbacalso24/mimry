@@ -297,7 +297,7 @@ def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded
 # shares no query word is otherwise left behind.
 PARTNER_SEEDS = 3
 PARTNER_PER_SEED = 2
-PARTNER_SHARE = 0.5
+PARTNER_SHARE = 0.3
 PARTNER_NEEDS_MATCH = False
 
 
