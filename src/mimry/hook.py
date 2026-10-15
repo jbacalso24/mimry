@@ -410,12 +410,14 @@ def _load_graph(index: Path) -> dict | None:
     return graph
 
 
-def _callers(graph: dict, name: str, paths: set[str]) -> list[tuple[str, str, int]]:
+def _callers(graph: dict, name: str, paths: set[str]) -> list[tuple[str, str, int, bool]]:
     """Callers of the symbol ``name`` defined in ``paths``, one hop out.
 
     Follows ``calls`` edges into the symbol's nodes, as
     ``call_relations`` in core/artifacts.py does at depth 1. Returns
-    (label, path, line) sorted by path then line.
+    (label, path, line, inferred) sorted by path then line. A caller is
+    inferred only when every calls edge from it is INFERRED, so an
+    EXTRACTED edge wins for the same caller.
     """
     symbols = [
         node
@@ -428,22 +430,31 @@ def _callers(graph: dict, name: str, paths: set[str]) -> list[tuple[str, str, in
         if node.get("label") == name and node.get("source_file") in paths
     }
     edge_key = "links" if "links" in graph else "edges"
-    sources: set[str] = set()
+    inferred_by_source: dict[str, bool] = {}
     for edge in graph.get(edge_key) or []:
         if not isinstance(edge, dict) or (edge.get("relation") or edge.get("type")) != "calls":
             continue
         source = str(edge.get("source") or edge.get("from") or "")
         target = str(edge.get("target") or edge.get("to") or "")
         if target in targets and source and source not in targets:
-            sources.add(source)
+            is_inferred = edge.get("confidence") == "INFERRED"
+            inferred_by_source[source] = inferred_by_source.get(source, True) and is_inferred
     # The visibility check runs only on the few callers, not every node.
-    callers: set[tuple[str, str, int]] = set()
+    callers: set[tuple[str, str, int, bool]] = set()
     for node in symbols:
         src = node.get("source_file")
-        if str(node["id"]) not in sources or not isinstance(src, str) or _ignored_path(src):
+        node_id = str(node["id"])
+        if node_id not in inferred_by_source or not isinstance(src, str) or _ignored_path(src):
             continue
         line = node.get("line")
-        callers.add((str(node.get("label")), src, line if isinstance(line, int) else 0))
+        callers.add(
+            (
+                str(node.get("label")),
+                src,
+                line if isinstance(line, int) else 0,
+                inferred_by_source[node_id],
+            )
+        )
     return sorted(callers, key=lambda row: (row[1], row[2], row[0]))
 
 
@@ -459,7 +470,7 @@ def _where(path: str, line: int) -> str:
 
 
 def _symbol_text(
-    name: str, defs: list[tuple[str, str, int]], callers: list[tuple[str, str, int]] | None
+    name: str, defs: list[tuple[str, str, int]], callers: list[tuple[str, str, int, bool]] | None
 ) -> str:
     """Two lines: where the symbol is defined, then who calls it.
 
@@ -475,7 +486,8 @@ def _symbol_text(
         called = "No callers recorded in the index."
     else:
         shown = ", ".join(
-            f"{label} ({_where(path, line)})" for label, path, line in callers[:CALLER_LIMIT]
+            f"{label} ({_where(path, line)}{', inferred' if inferred else ''})"
+            for label, path, line, inferred in callers[:CALLER_LIMIT]
         )
         extra = len(callers) - CALLER_LIMIT
         called = f"Called by {shown}" + (f", +{extra} more: {command}" if extra > 0 else "") + "."

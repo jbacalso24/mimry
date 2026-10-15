@@ -715,6 +715,12 @@ def resolve_calls(
     class around it. A bare call prefers the module-level symbols of
     its own file, then those of an imported file, and only then a
     method; a method never beats a module-level symbol of the same name.
+
+    Confidence is EXTRACTED for a call resolved within its own file, and
+    for a module-level symbol of a file that the caller imports by an
+    EXTRACTED import edge. Everything else resolved here is INFERRED:
+    a re-export, a heuristic import, a method of an imported file, or a
+    unique owner in an implicit-scope language.
     """
     results = []
 
@@ -727,6 +733,16 @@ def resolve_calls(
             if importer not in imports_by_importer:
                 imports_by_importer[importer] = set()
             imports_by_importer[importer].add(target)
+
+    # Targets each importer reaches by an EXTRACTED import edge. Only an
+    # explicit EXTRACTED counts, so a missing confidence is not exact.
+    # A target reached by two edges is exact if either one is.
+    exact_by_importer: dict[str, set] = {}
+    for edge in import_edges:
+        importer = edge.get("importer")
+        target = edge.get("target")
+        if importer and target and edge.get("confidence") == "EXTRACTED":
+            exact_by_importer.setdefault(importer, set()).add(target)
 
     # Build symbol lookup: file -> {name -> list of symbols}
     # This allows efficient O(1) lookup by name within a file
@@ -760,6 +776,7 @@ def resolve_calls(
 
         # Get imports from this file
         imported_targets = imports_by_importer.get(file_path, set())
+        exact_targets = exact_by_importer.get(file_path, set())
 
         # Many calls share a line; the enclosing symbol depends on the
         # line alone.
@@ -799,6 +816,7 @@ def resolve_calls(
                     imports_by_importer,
                     enclosing_class,
                     qualifier=call.get("qualifier"),
+                    exact_targets=exact_targets,
                 )
                 if target_info:
                     break
@@ -883,6 +901,7 @@ def _resolve_call_candidate(
     imports_by_importer: dict[str, set],
     enclosing_class: dict | None,
     qualifier: str | None = None,
+    exact_targets: set | frozenset = frozenset(),
 ) -> dict | None:
     """Resolve a name used at a call site, by scope.
 
@@ -890,16 +909,20 @@ def _resolve_call_candidate(
     or None. Tiers in order, each one ending the search when it answers:
 
     1. A method of the enclosing class (self/this/cls calls only).
-    2. A module-level symbol of the caller's file.
+       EXTRACTED.
+    2. A module-level symbol of the caller's file. EXTRACTED.
     3. A module-level symbol of exactly one imported file. When the
        imported file is a package __init__ that does not define the
        name, the one file it imports is followed (one level of
        re-export, e.g. `from .core import Engine`). When several
        imported files define it and the call is `qualifier.name(...)`,
        the one whose module name is the qualifier wins, so
-       `service.create()` picks service.py.
-    4. A method of the caller's file.
-    5. A method of exactly one imported file.
+       `service.create()` picks service.py. The result is EXTRACTED
+       only when that file is imported directly, with no re-export and
+       no qualifier tie-break, and the import edge is in exact_targets
+       (an EXTRACTED import). Otherwise INFERRED.
+    4. A method of the caller's file. EXTRACTED.
+    5. A method of exactly one imported file. INFERRED.
 
     A tier that finds names in two files declines rather than pick one.
     """
@@ -919,19 +942,24 @@ def _resolve_call_candidate(
         return _found(caller_file, module_level(caller_file), "EXTRACTED")
 
     definers = {path for path in imported_targets if module_level(path)}
+    via_reexport = False
     if not definers:
+        via_reexport = True
         for path in imported_targets:
             if posixpath.basename(path) == "__init__.py":
                 definers.update(
                     target for target in imports_by_importer.get(path, ()) if module_level(target)
                 )
+    narrowed = False
     if len(definers) > 1 and qualifier:
         named_for_qualifier = {path for path in definers if _module_name(path) == qualifier}
         if len(named_for_qualifier) == 1:
             definers = named_for_qualifier
+            narrowed = True
     if len(definers) == 1:
         path = next(iter(definers))
-        return _found(path, module_level(path), "INFERRED")
+        exact = not via_reexport and not narrowed and path in exact_targets
+        return _found(path, module_level(path), "EXTRACTED" if exact else "INFERRED")
     if len(definers) > 1:
         return None
 

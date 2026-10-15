@@ -30,11 +30,15 @@ def main():
     return helper(1)
 """
 
-TWO = """from app.one import helper
+# helper is reached through the package __init__, a re-export: a guess.
+TWO = """from app import helper
 
 
 def helper2():
     return helper(2)
+"""
+
+INIT = """from app.one import helper
 """
 
 
@@ -70,6 +74,7 @@ def repo(tmp_path, monkeypatch):
     (root / "app").mkdir(parents=True)
     (root / "app" / "one.py").write_text(ONE, encoding="utf-8")
     (root / "app" / "two.py").write_text(TWO, encoding="utf-8")
+    (root / "app" / "__init__.py").write_text(INIT, encoding="utf-8")
     cache = tmp_path / "cache"
     _git(root, "init", "-q")
     _git(root, "config", "user.name", "MIMRY Test")
@@ -121,10 +126,17 @@ def test_shell_rg_with_two_definitions_gets_both_symbols(repo, monkeypatch, caps
     text = _hook(monkeypatch, capsys, repo, _shell('rg -n "def helper|def leaf" app'))
 
     assert "MIMRY knows helper: function at app/one.py:1." in text
-    assert "Called by main (app/one.py:9), helper2 (app/two.py:4)." in text
+    assert "Called by main (app/one.py:9), helper2 (app/two.py:4, inferred)." in text
     assert "MIMRY knows leaf: function at app/one.py:5." in text
     assert text.index("helper:") < text.index("leaf:")
     assert "MIMRY can answer this" not in text
+
+
+def test_inferred_caller_is_marked_and_extracted_caller_is_not(repo, monkeypatch, capsys):
+    text = _hook(monkeypatch, capsys, repo, _grep("helper"))
+
+    assert "Called by main (app/one.py:9), helper2 (app/two.py:4, inferred)." in text
+    assert "main (app/one.py:9, inferred)" not in text
 
 
 def test_several_definitions_of_one_name_are_listed_sorted(repo, monkeypatch, capsys):

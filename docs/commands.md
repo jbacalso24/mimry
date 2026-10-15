@@ -15,7 +15,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry symbol <name>` | Find where a symbol or Markdown heading is defined, or a file by name |
 | `mimry context "<task>"` | Write a context pack without the preflight checks |
 | `mimry explain "<task>"` | Files, key symbols, and how they connect |
-| `mimry path <a> <b>` | Shortest relationship path between two files or symbols |
+| `mimry path <a> <b>` | Shortest relationship path between two files or symbols (`--json` for tools) |
 | `mimry callers <name>` | Functions that call a function, from the graph (`--depth` follows the chain up to 3 calls, `--file` picks one of several, `--json` for tools) |
 | `mimry callees <name>` | Functions that a function calls, with the same options |
 | `mimry why <file> --query "<task>"` | Why a file ranks for a query |
@@ -90,6 +90,17 @@ Every command answers the same way: one line that says what happened, a few inde
 Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons.
 Colour is used only on an interactive terminal, and `NO_COLOR=1` turns it off.
 Piped and captured output always uses plain ASCII marks, so scripts and agents see the same text on every platform.
+
+## Inferred edges
+
+Each graph edge is either `EXTRACTED` or `INFERRED`.
+`EXTRACTED` means MIMRY read the relation directly from the source, such as a call within the same file or to a function imported by an exact import.
+`INFERRED` means MIMRY picked the target without an exact import to back it, such as a call through a package re-export or a method of an imported file.
+`mimry path`, `mimry callers` and `mimry callees` add ` (inferred)` to an inferred row, and print a note when one is shown.
+Extracted rows print exactly as before.
+With `--json`, each result or step carries a `confidence` field set to `EXTRACTED` or `INFERRED`.
+The MCP tools `mimry_symbol` (with `relations`) and `mimry_path` return the same field.
+For `callers` and `callees` at depth 2 or 3, a result is `EXTRACTED` only when some shortest chain to it uses extracted edges throughout.
 
 ## Recursive plan trees
 

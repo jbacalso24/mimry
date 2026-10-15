@@ -437,3 +437,128 @@ class TestEdgeSortKey:
 
         # Keys should be identical regardless of field order in dict
         assert key1 == key2
+
+
+class TestCallConfidence:
+    """A call is EXTRACTED only when an exact import backs it."""
+
+    @staticmethod
+    def _sym(name, kind, start, end, symbol_id):
+        return {
+            "name": name,
+            "kind": kind,
+            "line_start": start,
+            "line_end": end,
+            "symbol_id": symbol_id,
+        }
+
+    @staticmethod
+    def _imp(importer, target, confidence):
+        return {"importer": importer, "target": target, "confidence": confidence}
+
+    def _resolve(self, calls, symbols, imports):
+        from mimry.core.resolve import resolve_calls
+
+        return resolve_calls(calls, symbols, imports)
+
+    def _one_call(self, import_confidence, target_file="app/one.py"):
+        """app/two.py calls helper, which app/one.py defines."""
+        calls = {"app/two.py": [{"name": "helper", "line": 4}]}
+        symbols = {
+            "app/two.py": [self._sym("helper2", "function", 3, 4, "s2")],
+            target_file: [self._sym("helper", "function", 1, 2, "s1")],
+        }
+        imports = [self._imp("app/two.py", target_file, import_confidence)]
+        return self._resolve(calls, symbols, imports)
+
+    def test_function_imported_by_an_exact_import_is_extracted(self):
+        result = self._one_call("EXTRACTED")
+
+        assert [(r["target_file"], r["confidence"]) for r in result] == [
+            ("app/one.py", "EXTRACTED")
+        ]
+
+    def test_function_imported_by_a_heuristic_import_is_inferred(self):
+        result = self._one_call("INFERRED")
+
+        assert [(r["target_file"], r["confidence"]) for r in result] == [
+            ("app/one.py", "INFERRED")
+        ]
+
+    def test_two_import_edges_to_one_target_extracted_wins(self):
+        calls = {"app/two.py": [{"name": "helper", "line": 4}]}
+        symbols = {
+            "app/two.py": [self._sym("helper2", "function", 3, 4, "s2")],
+            "app/one.py": [self._sym("helper", "function", 1, 2, "s1")],
+        }
+        imports = [
+            self._imp("app/two.py", "app/one.py", "INFERRED"),
+            self._imp("app/two.py", "app/one.py", "EXTRACTED"),
+        ]
+
+        result = self._resolve(calls, symbols, imports)
+
+        assert [r["confidence"] for r in result] == ["EXTRACTED"]
+
+    def test_function_reached_through_an_init_reexport_is_inferred(self):
+        calls = {"app/two.py": [{"name": "helper", "line": 4}]}
+        symbols = {
+            "app/two.py": [self._sym("helper2", "function", 3, 4, "s2")],
+            "app/one.py": [self._sym("helper", "function", 1, 2, "s1")],
+        }
+        imports = [
+            self._imp("app/two.py", "app/__init__.py", "EXTRACTED"),
+            self._imp("app/__init__.py", "app/one.py", "EXTRACTED"),
+        ]
+
+        result = self._resolve(calls, symbols, imports)
+
+        assert [(r["target_file"], r["confidence"]) for r in result] == [
+            ("app/one.py", "INFERRED")
+        ]
+
+    def test_method_of_an_imported_file_is_inferred(self):
+        calls = {"app/two.py": [{"name": "run", "line": 4}]}
+        symbols = {
+            "app/two.py": [self._sym("helper2", "function", 3, 4, "s2")],
+            "app/one.py": [
+                self._sym("Box", "class", 1, 6, "c1"),
+                self._sym("run", "function", 2, 3, "m1"),
+            ],
+        }
+        imports = [self._imp("app/two.py", "app/one.py", "EXTRACTED")]
+
+        result = self._resolve(calls, symbols, imports)
+
+        assert [(r["target_symbol"], r["confidence"]) for r in result] == [("run", "INFERRED")]
+
+    def test_qualifier_tie_break_between_two_imports_is_inferred(self):
+        calls = {"app/main.py": [{"name": "create", "line": 4, "qualifier": "service"}]}
+        symbols = {
+            "app/main.py": [self._sym("run", "function", 3, 4, "s3")],
+            "app/service.py": [self._sym("create", "function", 1, 2, "s1")],
+            "app/other.py": [self._sym("create", "function", 1, 2, "s2")],
+        }
+        imports = [
+            self._imp("app/main.py", "app/service.py", "EXTRACTED"),
+            self._imp("app/main.py", "app/other.py", "EXTRACTED"),
+        ]
+
+        result = self._resolve(calls, symbols, imports)
+
+        assert [(r["target_file"], r["confidence"]) for r in result] == [
+            ("app/service.py", "INFERRED")
+        ]
+
+    def test_call_within_the_same_file_stays_extracted(self):
+        calls = {"app/main.py": [{"name": "helper", "line": 4}]}
+        symbols = {
+            "app/main.py": [
+                self._sym("run", "function", 3, 4, "s3"),
+                self._sym("helper", "function", 1, 2, "s1"),
+            ]
+        }
+
+        result = self._resolve(calls, symbols, [])
+
+        assert [r["confidence"] for r in result] == ["EXTRACTED"]

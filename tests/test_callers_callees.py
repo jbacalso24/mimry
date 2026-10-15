@@ -17,6 +17,10 @@ NOTE = (
     "Calls are matched by name, so dynamic calls (callbacks, decorators, reflection) can be"
     " missing."
 )
+INFERRED = (
+    "Inferred means MIMRY picked the target without an exact import to back it (a re-export,"
+    " a method of an imported file, or a name match); check it before relying on it."
+)
 
 ONE = """def helper(x):
     return leaf(x)
@@ -30,11 +34,22 @@ def main():
     return helper(1)
 """
 
-TWO = """from app.one import helper
+# helper is reached through the package __init__, a re-export: a guess.
+TWO = """from app import helper
 
 
 def helper2():
     return helper(2)
+"""
+
+INIT = """from app.one import helper
+"""
+
+DIRECT = """from app.one import helper
+
+
+def direct():
+    return helper(3)
 """
 
 
@@ -160,6 +175,82 @@ def test_lookup_suggests_case_insensitive_matches_when_nothing_matches():
     assert [c["name"] for c in payload["candidates"]] == ["Helper", "helper2"]
 
 
+def _edge(source: str, target: str, confidence: str) -> dict:
+    return {"source": source, "target": target, "relation": "calls", "confidence": confidence}
+
+
+def _graph(names: str, edges: list[dict]) -> dict:
+    return {
+        "nodes": [_symbol(n, f"src/{n}.py", i + 1) for i, n in enumerate(names)],
+        "links": edges,
+    }
+
+
+def _confidence(hits: list[dict]) -> dict[str, tuple[int, str]]:
+    return {hit["node"]["id"]: (hit["depth"], hit["confidence"]) for hit in hits}
+
+
+def test_depth_one_takes_the_confidence_of_its_edge():
+    graph = _graph("abc", [_edge("a", "b", "EXTRACTED"), _edge("a", "c", "INFERRED")])
+
+    got = _confidence(call_relations(graph, {"a"}, "callees", 1))
+
+    assert got == {"b": (1, "EXTRACTED"), "c": (1, "INFERRED")}
+
+
+def test_extracted_edge_wins_over_inferred_for_the_same_pair_in_either_order():
+    for edges in (
+        [_edge("a", "b", "INFERRED"), _edge("a", "b", "EXTRACTED")],
+        [_edge("a", "b", "EXTRACTED"), _edge("a", "b", "INFERRED")],
+    ):
+        got = _confidence(call_relations(_graph("ab", edges), {"a"}, "callees", 1))
+
+        assert got == {"b": (1, "EXTRACTED")}
+
+
+def test_deeper_result_is_inferred_unless_some_shortest_path_is_all_extracted():
+    graph = _graph(
+        "xyzwvpqr",
+        [
+            _edge("x", "y", "EXTRACTED"),
+            _edge("y", "z", "EXTRACTED"),
+            _edge("x", "w", "INFERRED"),
+            _edge("w", "v", "EXTRACTED"),
+            _edge("x", "p", "EXTRACTED"),
+            _edge("p", "q", "INFERRED"),
+            _edge("q", "r", "EXTRACTED"),
+        ],
+    )
+
+    got = _confidence(call_relations(graph, {"x"}, "callees", 3))
+
+    assert got == {
+        "y": (1, "EXTRACTED"),
+        "w": (1, "INFERRED"),
+        "p": (1, "EXTRACTED"),
+        "z": (2, "EXTRACTED"),
+        "v": (2, "INFERRED"),
+        "q": (2, "INFERRED"),
+        "r": (3, "INFERRED"),
+    }
+
+
+def test_an_all_extracted_path_of_the_same_length_wins_at_depth_two():
+    graph = _graph(
+        "xyzq",
+        [
+            _edge("x", "q", "INFERRED"),
+            _edge("q", "z", "EXTRACTED"),
+            _edge("x", "y", "EXTRACTED"),
+            _edge("y", "z", "EXTRACTED"),
+        ],
+    )
+
+    got = _confidence(call_relations(graph, {"x"}, "callees", 2))
+
+    assert got == {"y": (1, "EXTRACTED"), "q": (1, "INFERRED"), "z": (2, "EXTRACTED")}
+
+
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(
         ["git", "-c", "commit.gpgsign=false", *args],
@@ -189,6 +280,7 @@ def _repo(tmp_path: Path, cache: Path) -> Path:
     (repo / "app").mkdir(parents=True)
     (repo / "app" / "one.py").write_text(ONE, encoding="utf-8")
     (repo / "app" / "two.py").write_text(TWO, encoding="utf-8")
+    (repo / "app" / "__init__.py").write_text(INIT, encoding="utf-8")
     _git(repo, "init", "-q")
     _git(repo, "config", "user.name", "MIMRY Test")
     _git(repo, "config", "user.email", "test@example.com")
@@ -212,8 +304,9 @@ def test_callers_lists_each_caller_with_its_file_and_line(tmp_path):
     assert res.returncode == 0, res.stderr
     assert "2 callers of helper (app/one.py:1)" in res.stdout
     assert "app/one.py" in res.stdout and "main" in res.stdout and ":9" in res.stdout
-    assert "app/two.py" in res.stdout and "helper2" in res.stdout and ":4" in res.stdout
-    assert res.stdout.rstrip().endswith(NOTE)
+    assert "app/two.py" in res.stdout and "helper2 (inferred)" in res.stdout and ":4" in res.stdout
+    assert "main (inferred)" not in res.stdout
+    assert res.stdout.rstrip().endswith(f"{NOTE} {INFERRED}")
 
 
 def test_callees_lists_what_the_function_calls(tmp_path):
@@ -348,10 +441,12 @@ def test_json_has_the_documented_shape(tmp_path):
     }
     assert {r["name"] for r in payload["results"]} == {"main", "helper2"}
     assert all(
-        set(r) == {"name", "kind", "path", "line", "depth"} and r["depth"] == 1
+        set(r) == {"name", "kind", "path", "line", "depth", "confidence"} and r["depth"] == 1
         for r in payload["results"]
     )
-    assert payload["note"] == NOTE
+    confidence = {r["name"]: r["confidence"] for r in payload["results"]}
+    assert confidence == {"main": "EXTRACTED", "helper2": "INFERRED"}
+    assert payload["note"] == f"{NOTE} {INFERRED}"
 
 
 def test_json_for_an_ambiguous_name_has_null_target_and_candidates(tmp_path):
@@ -447,6 +542,144 @@ def test_stale_graph_is_reported_not_answered(tmp_path, monkeypatch):
 
     assert payload["error"]["code"] == "graph_not_current"
     assert payload["results"] == []
+
+
+CORE_INIT = """from app.core import base
+"""
+
+CORE_PY = """def base():
+    return 1
+
+
+def mid():
+    return base()
+
+
+def top():
+    return mid()
+"""
+
+# base reaches wrap through the package __init__, a re-export: a guess.
+USE_PY = """from app import base
+
+
+def wrap():
+    return base()
+
+
+def outer():
+    return wrap()
+"""
+
+
+def test_callees_marks_the_inferred_callee_only(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+
+    inferred = _mimry(repo, cache, "callees", "helper2")
+    plain = _mimry(repo, cache, "callees", "helper")
+
+    assert inferred.returncode == 0, inferred.stderr
+    assert "helper (inferred)" in inferred.stdout
+    assert inferred.stdout.rstrip().endswith(f"{NOTE} {INFERRED}")
+    assert "leaf" in plain.stdout and "(inferred)" not in plain.stdout
+    assert plain.stdout.rstrip().endswith(NOTE)
+
+
+def test_note_about_inference_only_appears_when_an_inferred_result_is_shown(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+
+    text = _mimry(repo, cache, "callers", "leaf").stdout
+
+    assert "helper" in text and "(inferred)" not in text and "Inferred means" not in text
+    assert text.rstrip().endswith(NOTE)
+
+
+def test_depth_two_marks_results_reached_through_an_inferred_hop(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {"app/__init__.py": CORE_INIT, "app/core.py": CORE_PY, "app/use.py": USE_PY},
+    )
+
+    callers = json.loads(_mimry(repo, cache, "callers", "base", "--depth", "2", "--json").stdout)
+    callees = json.loads(_mimry(repo, cache, "callees", "outer", "--depth", "2", "--json").stdout)
+    top = json.loads(_mimry(repo, cache, "callees", "top", "--depth", "2", "--json").stdout)
+
+    def by_name(payload):
+        return {r["name"]: (r["depth"], r["confidence"]) for r in payload["results"]}
+
+    assert by_name(callers) == {
+        "mid": (1, "EXTRACTED"),
+        "wrap": (1, "INFERRED"),
+        "top": (2, "EXTRACTED"),
+        "outer": (2, "INFERRED"),
+    }
+    assert by_name(callees) == {"wrap": (1, "EXTRACTED"), "base": (2, "INFERRED")}
+    assert by_name(top) == {"mid": (1, "EXTRACTED"), "base": (2, "EXTRACTED")}
+
+
+def test_direct_exact_import_is_extracted_and_reexport_is_inferred(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "app/one.py": ONE,
+            "app/__init__.py": INIT,
+            "app/two.py": TWO,
+            "app/direct.py": DIRECT,
+        },
+    )
+
+    payload = json.loads(_mimry(repo, cache, "callers", "helper", "--json").stdout)
+
+    assert {r["name"]: r["confidence"] for r in payload["results"]} == {
+        "main": "EXTRACTED",
+        "helper2": "INFERRED",
+        "direct": "EXTRACTED",
+    }
+    text = _mimry(repo, cache, "callers", "helper").stdout
+    assert "direct (inferred)" not in text and "helper2 (inferred)" in text
+
+
+def test_path_marks_an_inferred_step_and_json_carries_confidence(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+
+    text = _mimry(repo, cache, "path", "helper2", "helper")
+    payload = json.loads(_mimry(repo, cache, "path", "helper2", "helper", "--json").stdout)
+    extracted = _mimry(repo, cache, "path", "helper", "leaf")
+
+    assert text.returncode == 0, text.stderr
+    assert "calls (inferred)" in text.stdout
+    assert text.stdout.rstrip().endswith(INFERRED)
+    assert payload["found"] is True
+    assert payload["steps"] == [
+        {"from": "helper2", "relation": "calls", "to": "helper", "confidence": "INFERRED"}
+    ]
+    assert "(inferred)" not in extracted.stdout and "Inferred means" not in extracted.stdout
+
+
+def test_mcp_symbol_and_path_carry_confidence(tmp_path, monkeypatch):
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    repo = _repo(tmp_path, cache)
+
+    symbol = mcp_tools.mimry_symbol("helper", str(repo), relations="callers")
+    path = mcp_tools.mimry_path("helper2", "helper", str(repo))
+
+    assert {r["name"]: r["confidence"] for r in symbol["results"]} == {
+        "main": "EXTRACTED",
+        "helper2": "INFERRED",
+    }
+    assert path["returncode"] == 0
+    assert path["steps"] == [
+        {"from": "helper2", "relation": "calls", "to": "helper", "confidence": "INFERRED"}
+    ]
+    assert "calls (inferred)" in path["stdout"]
 
 
 PKG_SERVICE = """def create(x):

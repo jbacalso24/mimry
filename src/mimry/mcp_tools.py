@@ -21,6 +21,7 @@ from mimry.commands import (
     cmd_init,
     cmd_preflight,
     cmd_refresh,
+    path_payload,
     rebuild_outdated_index,
     refresh_if_stale,
     require,
@@ -671,12 +672,16 @@ def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[s
 def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, Any]:
     """Find a relationship path between two files/symbols/queries."""
     root_path = _root(root)
-    return _capture_command(
-        run_path,
+    found: list[dict] = []
+    payload = _capture_command(
+        lambda args: run_path(args, found),
         SimpleNamespace(
             root=str(root_path), source=sanitize_query(source), target=sanitize_query(target)
         ),
     )
+    if found:
+        payload.update(sanitize_data(path_payload(found[0])))
+    return payload
 
 
 @tool

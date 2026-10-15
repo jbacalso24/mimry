@@ -269,6 +269,14 @@ def _edge_relation(edge: dict) -> str:
     return str(edge.get("relation") or edge.get("type") or "relates")
 
 
+def edge_confidence(edge: dict) -> str:
+    """INFERRED when the graph marks the edge so, otherwise EXTRACTED.
+
+    Same reading as core/report.py: only an explicit INFERRED counts.
+    """
+    return "INFERRED" if edge.get("confidence") == "INFERRED" else "EXTRACTED"
+
+
 def _node_text(node: dict) -> str:
     return " ".join(
         str(node.get(k, ""))
@@ -419,6 +427,7 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
                         "from": id_to_node.get(current, {"id": current}),
                         "edge": edge,
                         "to": id_to_node.get(next_id or "", {"id": next_id}),
+                        "confidence": edge_confidence(edge),
                     }
                 )
                 current = next_id or current
@@ -448,8 +457,19 @@ CALLS_NOTE = (
     "Calls are matched by name, so dynamic calls (callbacks, decorators,"
     " reflection) can be missing."
 )
+INFERRED_NOTE = (
+    "Inferred means MIMRY picked the target without an exact import to back it (a re-export,"
+    " a method of an imported file, or a name match); check it before relying on it."
+)
 # ponytail: substring match, not fuzzy; rank it if the hints miss.
 _SIMILAR_LIMIT = 5
+
+
+def calls_note(results: list[dict]) -> str:
+    """CALLS_NOTE, plus INFERRED_NOTE if a shown result is inferred."""
+    if any(r.get("confidence") == "INFERRED" for r in results):
+        return f"{CALLS_NOTE} {INFERRED_NOTE}"
+    return CALLS_NOTE
 
 
 def call_relations(graph: dict, target_ids: set[str], direction: str, depth: int) -> list[dict]:
@@ -457,37 +477,60 @@ def call_relations(graph: dict, target_ids: set[str], direction: str, depth: int
     (``callees``), following ``calls`` edges breadth-first up to
     ``depth``.
 
-    Returns ``{"node": node, "depth": hops}`` for each symbol, at its
-    shallowest depth. A symbol is reported once, and the targets are
-    never reported, even when a cycle leads back to them.
+    Returns ``{"node": node, "depth": hops, "confidence": c}`` for each
+    symbol, at its shallowest depth. A symbol is reported once, and the
+    targets are never reported, even when a cycle leads back to them.
+
+    Confidence, per result:
+    - Two edges joining the same pair count as one; EXTRACTED wins, the
+      same rule as the dedup in core/build.py.
+    - Depth 1 is the confidence of its edge.
+    - Deeper, each layer is computed from the one before it: a node is
+      EXTRACTED when some shortest path to it (of that many hops) uses
+      only EXTRACTED edges, and INFERRED when every such path needs an
+      inferred edge. Nodes and edges are visited in sorted order, so the
+      answer does not depend on file or dict order.
     """
     if direction not in CALL_DIRECTIONS:
         raise ValueError(f"direction must be callers or callees, not {direction!r}")
     nodes = {str(n["id"]): n for n in graph.get("nodes") or [] if n.get("id") is not None}
-    adjacency: dict[str, list[str]] = defaultdict(list)
+    # adjacency[a][b]: confidence of the calls edge from a to b.
+    adjacency: dict[str, dict[str, str]] = defaultdict(dict)
     for edge in graph.get("links") or graph.get("edges") or []:
         source, target = _edge_endpoints(edge)
         if not source or not target or _edge_relation(edge) != "calls":
             continue
-        if direction == "callers":
-            adjacency[target].append(source)
-        else:
-            adjacency[source].append(target)
+        step_from, step_to = (target, source) if direction == "callers" else (source, target)
+        confidence = edge_confidence(edge)
+        known = adjacency[step_from].get(step_to)
+        if known != "EXTRACTED":
+            adjacency[step_from][step_to] = confidence
     seen = set(target_ids)
-    frontier = sorted(target_ids)
+    frontier = {node_id: "EXTRACTED" for node_id in target_ids}
     found: list[dict] = []
     for hop in range(1, depth + 1):
-        reached = {
-            other
-            for node_id in frontier
-            for other in adjacency.get(node_id, ())
-            if other not in seen and other in nodes
-        }
-        frontier = sorted(reached)
-        if not frontier:
+        reached: dict[str, str] = {}
+        for node_id in sorted(frontier):
+            for other, edge_conf in adjacency.get(node_id, {}).items():
+                if other in seen or other not in nodes:
+                    continue
+                path_conf = (
+                    "EXTRACTED"
+                    if frontier[node_id] == "EXTRACTED" and edge_conf == "EXTRACTED"
+                    else "INFERRED"
+                )
+                if path_conf == "EXTRACTED":
+                    reached[other] = "EXTRACTED"
+                else:
+                    reached.setdefault(other, "INFERRED")
+        if not reached:
             break
-        seen.update(frontier)
-        found.extend({"node": nodes[node_id], "depth": hop} for node_id in frontier)
+        seen.update(reached)
+        frontier = reached
+        found.extend(
+            {"node": nodes[node_id], "depth": hop, "confidence": reached[node_id]}
+            for node_id in sorted(reached)
+        )
     return found
 
 
@@ -560,7 +603,10 @@ def call_lookup(
     target = targets[0]
     payload["target"] = _symbol_row(target)
     hits = call_relations(graph, {str(target["id"])}, relation, depth)
-    rows = [{**_symbol_row(hit["node"]), "depth": hit["depth"]} for hit in hits]
+    rows = [
+        {**_symbol_row(hit["node"]), "depth": hit["depth"], "confidence": hit["confidence"]}
+        for hit in hits
+    ]
     # Files with the most results first, then by path; inside a file by
     # depth, then line.
     per_file: dict[str, int] = defaultdict(int)
@@ -570,6 +616,7 @@ def call_lookup(
         rows,
         key=lambda r: (-per_file[r["path"]], r["path"], r["depth"], r["line"] or 0, r["name"]),
     )
+    payload["note"] = calls_note(payload["results"])
     return payload
 
 

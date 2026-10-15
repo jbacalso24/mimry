@@ -27,7 +27,7 @@ from .cache_safety import (
 from .commit_feedback import record_commit_feedback
 from .constants import SCHEMA_VERSION
 from .core.artifacts import (
-    CALLS_NOTE,
+    INFERRED_NOTE,
     call_lookup,
     empty_call_payload,
     graph_health,
@@ -2091,18 +2091,35 @@ def cmd_path(a):
     return run_path(a)
 
 
-def run_path(a):
-    """The path answer, for a caller that holds the index lock."""
+def run_path(a, found: list | None = None):
+    """The path answer, for a caller that holds the index lock.
+
+    ``found``, when given, receives the raw shortest_path result, so the
+    MCP tool can return the steps as data next to the text.
+    """
     root = Path(a.root).resolve()
     ptr = require(root)
     fresh, graph = _index_and_graph_health(root, ptr)
     source = sanitize_query(a.source)
     target = sanitize_query(a.target)
+    as_json = getattr(a, "json", False)
     if graph["status"] != "current":
-        ui.warn(f"The graph files are {graph['status']}, so connections can't be checked")
+        message = f"The graph files are {graph['status']}, so connections can't be checked"
+        if as_json:
+            error = {"code": "graph_not_current", "message": message}
+            print(
+                json.dumps({"found": False, "steps": [], "error": error}, indent=2, sort_keys=True)
+            )
+            return 0
+        ui.warn(message)
         ui.detail("Run `mimry refresh`, then try again.")
         return 0
     result = shortest_path(root, source, target)
+    if found is not None:
+        found.append(result)
+    if as_json:
+        print(json.dumps(path_payload(result), indent=2, sort_keys=True))
+        return 0
     steps = result["steps"]
     if result["found"]:
         start, end = steps[0]["from"], steps[-1]["to"]
@@ -2130,15 +2147,15 @@ def run_path(a):
         ui.table(
             [
                 (
-                    _relation_text(
-                        str(step["edge"].get("relation") or step["edge"].get("type") or "relates")
-                    ),
+                    _relation_text(_step_relation(step)) + _inferred_mark(step["confidence"]),
                     _node_text(step["to"]),
                 )
                 for step in steps
             ],
             indent=4,
         )
+        if any(step["confidence"] == "INFERRED" for step in steps):
+            ui.detail(INFERRED_NOTE)
         return 0
     ui.warn(f"No connection found between {ui.quote(source)} and {ui.quote(target)}")
     for query, matches in ((source, result["source_matches"]), (target, result["target_matches"])):
@@ -2150,6 +2167,37 @@ def run_path(a):
         ui.detail(f"{ui.quote(query)} matched {found}")
     ui.detail(f'Try `mimry related "{source}"` to see what it connects to.')
     return 0
+
+
+def _step_relation(step: dict) -> str:
+    return str(step["edge"].get("relation") or step["edge"].get("type") or "relates")
+
+
+def _inferred_mark(confidence: str) -> str:
+    """The suffix that marks an inferred row in the CLI tables."""
+    return " (inferred)" if confidence == "INFERRED" else ""
+
+
+def path_payload(result: dict) -> dict:
+    """The path answer as data, for ``mimry path --json`` and MCP."""
+    return {
+        "found": result["found"],
+        "source_matches": [
+            {"label": m["label"], "path": m["path"]} for m in result["source_matches"]
+        ],
+        "target_matches": [
+            {"label": m["label"], "path": m["path"]} for m in result["target_matches"]
+        ],
+        "steps": [
+            {
+                "from": _node_name(step["from"]),
+                "relation": _step_relation(step),
+                "to": _node_name(step["to"]),
+                "confidence": step["confidence"],
+            }
+            for step in result["steps"]
+        ],
+    }
 
 
 def calls_payload(
@@ -2247,12 +2295,13 @@ def _print_calls(a, relation: str) -> int:
         ui.detail(path)
         ui.table([_call_row(r, a.depth) for r in group], indent=4)
     print()
-    ui.detail(ui.faint(CALLS_NOTE))
+    ui.detail(ui.faint(payload["note"]))
     return 0
 
 
 def _call_row(result: dict, depth: int) -> tuple:
-    cells = [result["name"], result["kind"], f":{result['line']}" if result["line"] else ""]
+    name = result["name"] + _inferred_mark(result["confidence"])
+    cells = [name, result["kind"], f":{result['line']}" if result["line"] else ""]
     if depth > 1:
         cells.append("direct" if result["depth"] == 1 else f"{result['depth']} calls away")
     return tuple(cells)

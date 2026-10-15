@@ -310,6 +310,9 @@ def build_parser():
     )
     s.add_argument("source")
     s.add_argument("target")
+    s.add_argument(
+        "--json", action="store_true", help="Print the path as JSON, with each step's confidence"
+    )
     s.set_defaults(func=cmd_path)
     for relation, func in (("callers", cmd_callers), ("callees", cmd_callees)):
         s = sub.add_parser(
