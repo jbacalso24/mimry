@@ -295,8 +295,8 @@ def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded
 # results pulls up to PARTNER_PER_SEED of the files it is joined to
 # by a graph edge, by PARTNER_SHARE of its own score. A partner that
 # shares no query word is otherwise left behind.
-PARTNER_SEEDS = 3
-PARTNER_PER_SEED = 2
+PARTNER_SEEDS = 1
+PARTNER_PER_SEED = 3
 PARTNER_SHARE = 0.5
 PARTNER_NEEDS_MATCH = False
 
