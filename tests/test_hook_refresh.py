@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
-from mimry import commands, installer
+from mimry import installer, lifecycle
 from mimry.cli import main
 from mimry.freshness import index_freshness
 from mimry.hook import cmd_hook_refresh
@@ -108,7 +108,7 @@ def test_fresh_lock_returns_at_once_and_leaves_the_pending_marker(tmp_path, monk
     lock = repo / ".mimry" / "refresh.lock"
     lock.touch()
     calls: list[Path] = []
-    monkeypatch.setattr(commands, "refresh_if_stale", lambda root: calls.append(root))
+    monkeypatch.setattr(lifecycle, "refresh_if_stale", lambda root: calls.append(root))
 
     assert _run_hook(monkeypatch, repo) == 0
 
@@ -141,7 +141,7 @@ def test_a_failing_refresh_prints_nothing_and_still_releases_the_lock(
     def explode(root):
         raise RuntimeError("index exploded")
 
-    monkeypatch.setattr(commands, "refresh_if_stale", explode)
+    monkeypatch.setattr(lifecycle, "refresh_if_stale", explode)
 
     assert _run_hook(monkeypatch, repo) == 0
 

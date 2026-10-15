@@ -600,7 +600,7 @@ def _take_refresh_lock(lock: Path) -> bool:
 
 
 def _hook_refresh(root: Path) -> None:
-    from .commands import _indexed_root, refresh_if_stale
+    from .lifecycle import _indexed_root, refresh_if_stale
     from .paths import mdir, pointer_file
 
     # The host sends a JSON payload; nothing in it is needed, and a

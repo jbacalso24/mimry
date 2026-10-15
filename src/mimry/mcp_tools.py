@@ -14,17 +14,12 @@ from typing import Any, Literal
 from mimry.adapters import list_adapters
 from mimry.cache_safety import IndexOutsideCacheError
 from mimry.commands import (
-    INDEX_REBUILT_NOTE,
-    _change_summary,
     _write_context_pack,
     calls_payload,
     cmd_init,
     cmd_preflight,
     cmd_refresh,
     path_payload,
-    rebuild_outdated_index,
-    refresh_if_stale,
-    require,
     run_explain,
     run_path,
     run_why,
@@ -36,6 +31,13 @@ from mimry.digest import canonical_digest
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
+from mimry.lifecycle import (
+    INDEX_REBUILT_NOTE,
+    _change_summary,
+    rebuild_outdated_index,
+    refresh_if_stale,
+    require,
+)
 from mimry.mcp_protocol import exit_message, exit_status, tool
 from mimry.paths import context_file, task_context_file
 from mimry.plan import (

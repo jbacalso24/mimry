@@ -14,10 +14,10 @@ from pathlib import Path
 import pytest
 
 from mimry import mcp_protocol, mcp_server
-from mimry.commands import refresh_if_stale
 from mimry.feedback import VALID_OUTCOMES
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
+from mimry.lifecycle import refresh_if_stale
 from mimry.mcp_protocol import input_schema, validate
 from mimry.mcp_tools import (
     mimry_brief,
@@ -738,7 +738,7 @@ def test_cli_rebuilds_outdated_index_and_notes_it_on_stderr(tmp_path: Path, monk
 
 def test_rebuild_that_does_not_help_is_retried_once(tmp_path: Path, monkeypatch):
     """A rebuild that does not help is tried once, not looped."""
-    from mimry import commands
+    from mimry import lifecycle
     from mimry.cli import main as cli_main
 
     repo = _indexed_repo(tmp_path, monkeypatch)
@@ -763,7 +763,7 @@ def test_rebuild_that_does_not_help_is_retried_once(tmp_path: Path, monkeypatch)
         cli_calls.append(root)
         return {}
 
-    monkeypatch.setattr(commands, "rebuild_outdated_index", cli_noop)
+    monkeypatch.setattr(lifecycle, "rebuild_outdated_index", cli_noop)
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         code = cli_main(["--root", str(repo), "find", "auth"])
 
@@ -866,14 +866,14 @@ def test_symbol_refreshes_after_a_case_only_rename_on_a_case_insensitive_repo(
 def test_refresh_if_stale_skips_the_walk_when_git_sees_the_indexed_tree(
     tmp_path: Path, monkeypatch
 ):
-    from mimry import commands
+    from mimry import lifecycle
 
     repo = _indexed_repo(tmp_path, monkeypatch, git=True)
 
     def walk_must_not_run(*args, **kwargs):
         raise AssertionError("full freshness walk ran")
 
-    monkeypatch.setattr(commands, "index_freshness", walk_must_not_run)
+    monkeypatch.setattr(lifecycle, "index_freshness", walk_must_not_run)
 
     assert refresh_if_stale(repo) is None
 
@@ -896,7 +896,7 @@ def test_no_op_reindex_records_the_current_fingerprint(tmp_path: Path, monkeypat
     The stale value stands for a tree that moved on since the last
     publish while the indexed content stayed the same.
     """
-    from mimry import commands
+    from mimry import lifecycle
 
     repo = _indexed_repo(tmp_path, monkeypatch, git=True)
     current = load_pointer(repo)["worktreeFingerprint"]
@@ -910,7 +910,7 @@ def test_no_op_reindex_records_the_current_fingerprint(tmp_path: Path, monkeypat
     def walk_must_not_run(*args, **kwargs):
         raise AssertionError("full freshness walk ran")
 
-    monkeypatch.setattr(commands, "index_freshness", walk_must_not_run)
+    monkeypatch.setattr(lifecycle, "index_freshness", walk_must_not_run)
     assert refresh_if_stale(repo) is None
 
 

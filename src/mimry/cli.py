@@ -525,7 +525,7 @@ def main(argv=None):
     from pathlib import Path
 
     from .cache_safety import IndexOutsideCacheError
-    from .commands import INDEX_REBUILT_NOTE, rebuild_outdated_index
+    from .lifecycle import INDEX_REBUILT_NOTE, rebuild_outdated_index
     from .plan import PlanError
     from .security import UnsafeRootError
     from .settings import IndexSettingsError

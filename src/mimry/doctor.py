@@ -18,7 +18,6 @@ from typing import Any
 
 from . import __version__, installer, ui
 from .cache_safety import IndexOutsideCacheError, validated_current_index_path
-from .commands import _health
 from .install_info import (
     _direct_url,
     _editable_folder,
@@ -26,6 +25,7 @@ from .install_info import (
     _local_folder,
     _repair_command,
 )
+from .lifecycle import _health
 from .paths import pointer_file
 from .state import parse_error_summary, validate_generation
 
