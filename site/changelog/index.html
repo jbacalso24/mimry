@@ -36,11 +36,31 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.4.0">
+<header class="release-meta">
+<h2>0.4.0</h2>
+<p class="release-date"><time datetime="2026-10-16">16 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.4.0">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.4.0/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Upgrade notes</h3>
+<ul><li>Upgrade with <code>mimry upgrade</code>, then run <code>mimry install --refresh</code> once to bring the skills, always-on rules and hooks you installed up to date (<a href="https://github.com/jbacalso24/mimry/pull/267">#267</a>). From the next release on, <code>mimry upgrade</code> does this for you.</li><li>The first command after upgrading rebuilds the index, so calls MIMRY resolved through an exact import are no longer marked inferred.</li></ul>
+<h3>New features</h3>
+<ul><li><code>mimry impact &lt;symbol|file&gt;</code> lists callers by depth, the files that import it and the tests to run; <code>--changed</code> does the same for your uncommitted changes (<a href="https://github.com/jbacalso24/mimry/pull/263">#263</a>).</li><li><code>mimry bench</code> measures how well MIMRY finds the files your own merged pull requests changed, locally and without model calls (<a href="https://github.com/jbacalso24/mimry/pull/264">#264</a>).</li><li>When an agent greps for a function or class by name, the hook answers with its definition and callers (<a href="https://github.com/jbacalso24/mimry/pull/260">#260</a>).</li><li><code>path</code>, <code>callers</code> and <code>callees</code> mark calls MIMRY could not resolve exactly as <code>(inferred)</code>, and <code>mimry path --json</code> reports each step's confidence (<a href="https://github.com/jbacalso24/mimry/pull/261">#261</a>).</li><li>Feedback counts changed files more than opened ones, and past tasks more like the current one count more (<a href="https://github.com/jbacalso24/mimry/pull/259">#259</a>).</li><li>A troubleshooting guide, linked from <code>mimry doctor --help</code> (<a href="https://github.com/jbacalso24/mimry/pull/265">#265</a>).</li></ul>
+<h3>Fixes</h3>
+<ul><li><code>explain</code>, <code>path</code> and <code>why</code> update a stale index before answering, and no command tells you to reindex by hand any more (<a href="https://github.com/jbacalso24/mimry/pull/256">#256</a>).</li><li><code>find</code> ranks vendored, minified and repository-template files lower (<a href="https://github.com/jbacalso24/mimry/pull/257">#257</a>).</li><li>The server.json description fits the MCP Registry limit (<a href="https://github.com/jbacalso24/mimry/pull/254">#254</a>).</li></ul>
+<h3>Other changes</h3>
+<ul><li>A feedback replay benchmark (<a href="https://github.com/jbacalso24/mimry/pull/258">#258</a>) and partner-file diagnostics in the localization benchmark (<a href="https://github.com/jbacalso24/mimry/pull/255">#255</a>).</li><li>Shared command logic moved out of <code>commands.py</code> (<a href="https://github.com/jbacalso24/mimry/pull/262">#262</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.3.4">
 <header class="release-meta">
 <h2>0.3.4</h2>
-<p class="release-date"><time datetime="2026-10-15">15 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-15">15 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.3.4">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.3.4/">PyPI</a></li>

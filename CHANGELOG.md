@@ -2,6 +2,34 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.4.0 - 2026-10-16
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`, then run `mimry install --refresh` once to bring the skills, always-on rules and hooks you installed up to date ([#267](https://github.com/jbacalso24/mimry/pull/267)).
+  From the next release on, `mimry upgrade` does this for you.
+- The first command after upgrading rebuilds the index, so calls MIMRY resolved through an exact import are no longer marked inferred.
+
+### New features
+
+- `mimry impact <symbol|file>` lists callers by depth, the files that import it and the tests to run; `--changed` does the same for your uncommitted changes ([#263](https://github.com/jbacalso24/mimry/pull/263)).
+- `mimry bench` measures how well MIMRY finds the files your own merged pull requests changed, locally and without model calls ([#264](https://github.com/jbacalso24/mimry/pull/264)).
+- When an agent greps for a function or class by name, the hook answers with its definition and callers ([#260](https://github.com/jbacalso24/mimry/pull/260)).
+- `path`, `callers` and `callees` mark calls MIMRY could not resolve exactly as `(inferred)`, and `mimry path --json` reports each step's confidence ([#261](https://github.com/jbacalso24/mimry/pull/261)).
+- Feedback counts changed files more than opened ones, and past tasks more like the current one count more ([#259](https://github.com/jbacalso24/mimry/pull/259)).
+- A troubleshooting guide, linked from `mimry doctor --help` ([#265](https://github.com/jbacalso24/mimry/pull/265)).
+
+### Fixes
+
+- `explain`, `path` and `why` update a stale index before answering, and no command tells you to reindex by hand any more ([#256](https://github.com/jbacalso24/mimry/pull/256)).
+- `find` ranks vendored, minified and repository-template files lower ([#257](https://github.com/jbacalso24/mimry/pull/257)).
+- The server.json description fits the MCP Registry limit ([#254](https://github.com/jbacalso24/mimry/pull/254)).
+
+### Other changes
+
+- A feedback replay benchmark ([#258](https://github.com/jbacalso24/mimry/pull/258)) and partner-file diagnostics in the localization benchmark ([#255](https://github.com/jbacalso24/mimry/pull/255)).
+- Shared command logic moved out of `commands.py` ([#262](https://github.com/jbacalso24/mimry/pull/262)).
+
 ## 0.3.4 - 2026-10-15
 
 ### Upgrade notes

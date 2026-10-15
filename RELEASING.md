@@ -102,9 +102,17 @@ script and source from the extracted artifact, never from the checkout. Import s
 evidence of parser compatibility, which is why `tree-sitter` carries an upper bound
 (`>=0.25.2,<0.26`) alongside the exact `tree-sitter-language-pack` pin.
 
+## Choosing the version
+
+MIMRY is pre-1.0, so the minor number marks the bigger changes and the patch number the rest.
+
+- Bump the minor version (0.3.4 to 0.4.0) when the release adds a new command or MCP tool, or breaks something users rely on: a removed or renamed command or flag, output that scripts parse, or a step users must take after upgrading beyond the automatic reindex.
+- Bump the patch version (0.4.0 to 0.4.1) for everything else: fixes, ranking changes, new flags or fields on existing commands, docs, CI and benchmarks.
+- 1.0 is a deliberate decision that the CLI and MCP tools are stable, not something a release reaches on its own.
+
 ## Release policy
 
-1. Update `version` in `pyproject.toml` and the matching changelog section.
+1. Pick the version as described in [Choosing the version](#choosing-the-version), then update `version` in `pyproject.toml` and the matching changelog section.
    Run `uv run python scripts/build_plugin.py` so the Claude Code plugin pins the new version.
    Run `uv run python scripts/build_changelog.py` so the site's changelog shows the new release.
    The plugin reaches users only after the tag is on PyPI, because `uvx` fetches the pinned version from there.
