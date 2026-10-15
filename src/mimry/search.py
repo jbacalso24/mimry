@@ -298,7 +298,7 @@ def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded
 PARTNER_SEEDS = 3
 PARTNER_PER_SEED = 2
 PARTNER_SHARE = 0.5
-PARTNER_NEEDS_MATCH = False
+PARTNER_NEEDS_MATCH = True
 
 
 def _partner_pass(ranked, root, known_paths, excluded_paths, tests_asked):
