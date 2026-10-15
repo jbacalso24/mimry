@@ -5,7 +5,7 @@ import json
 from functools import cache
 from pathlib import Path
 
-from .core.artifacts import graph_available, graph_rows
+from .core.artifacts import file_partners, graph_available, graph_rows
 from .core.languages import EXTENSION_LANGUAGE, language_for
 from .feedback import apply_feedback_to_rows
 from .intent import (
@@ -291,6 +291,66 @@ def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded
     return _apply_exclusions(_without_excluded(ranked, excluded_paths), q)
 
 
+# Partner pass (graph path only). Each of the first PARTNER_SEEDS
+# results pulls up to PARTNER_PER_SEED of the files it is joined to
+# by a graph edge, by PARTNER_SHARE of its own score. A partner that
+# shares no query word is otherwise left behind.
+PARTNER_SEEDS = 3
+PARTNER_PER_SEED = 2
+PARTNER_SHARE = 0.5
+PARTNER_NEEDS_MATCH = False
+
+
+def _partner_pass(ranked, root, known_paths, excluded_paths, tests_asked):
+    seeds = ranked[:PARTNER_SEEDS]
+    seed_paths = {row["path"] for row in seeds}
+    scores = {row["path"]: row["score"] for row in ranked}
+    excluded = {
+        canonical
+        for path in excluded_paths
+        if (canonical := canonical_cached_rel_path(path)) is not None
+    }
+    partners_of = file_partners(root, [row["path"] for row in seeds])
+    # path -> (gain, seed). The largest gain counts once.
+    gains: dict[str, tuple[int, dict]] = {}
+    for seed in seeds:
+        gain = round(PARTNER_SHARE * seed["score"])
+        if gain <= 0:
+            continue
+        eligible = []
+        for path in sorted(partners_of.get(seed["path"], ())):
+            if path in seed_paths or path in excluded or path not in known_paths:
+                continue
+            if is_test_file(path) and not tests_asked:
+                continue
+            if PARTNER_NEEDS_MATCH and path not in scores:
+                continue
+            eligible.append(path)
+        eligible.sort(key=lambda path: (-scores.get(path, 0), path))
+        for path in eligible[:PARTNER_PER_SEED]:
+            if gain > gains.get(path, (0, None))[0]:
+                gains[path] = (gain, seed)
+    if not gains:
+        return ranked
+    # A partner never overtakes the seed that pulled it up: the seed is
+    # the file the query matched, the partner only rides on it.
+    out = []
+    for row in ranked:
+        if row["path"] in gains:
+            gain, seed = gains[row["path"]]
+            score = max(row["score"], min(row["score"] + gain, seed["score"] - 1))
+            reason = ", ".join(filter(None, [row.get("reason", ""), f"partner of {seed['path']}"]))
+            out.append({**row, "score": score, "reason": reason})
+        else:
+            out.append(row)
+    present = {row["path"] for row in ranked}
+    for path, (gain, seed) in sorted(gains.items()):
+        if path not in present:
+            score = min(gain, seed["score"] - 1)
+            out.append({"path": path, "score": score, "reason": f"partner of {seed['path']}"})
+    return sorted(out, key=lambda r: (-r["score"], r["path"]))
+
+
 def find_rows(
     idx,
     q,
@@ -446,6 +506,7 @@ def find_rows(
                 merged.append(extra)
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
+            ranked = _partner_pass(ranked, root, known_paths, excluded_paths, tests_asked)
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
             ranked = _with_semantic(
                 ranked,

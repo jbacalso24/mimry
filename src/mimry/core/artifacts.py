@@ -860,3 +860,31 @@ def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 1
             line += f" [{markdown_inline(e['confidence'])}]"
         lines.append(line)
     return lines
+
+
+def file_partners(root: Path, paths: list[str]) -> dict[str, set[str]]:
+    """Files joined to each of ``paths`` by a graph edge.
+
+    Either direction counts. Edges are read at file level: each
+    endpoint node maps to its source file, and an edge inside one
+    file links nothing.
+    """
+    g = load_graph(root)
+    nodes = g.get("nodes") or []
+    links = g.get("links") or g.get("edges") or []
+    file_of = {
+        str(n["id"]): src
+        for n in nodes
+        if n.get("id") is not None and (src := node_source_file(n))
+    }
+    partners: dict[str, set[str]] = {path: set() for path in paths}
+    for edge in links:
+        source, target = _edge_endpoints(edge)
+        source_file, target_file = file_of.get(source), file_of.get(target)
+        if not source_file or not target_file or source_file == target_file:
+            continue
+        if source_file in partners:
+            partners[source_file].add(target_file)
+        if target_file in partners:
+            partners[target_file].add(source_file)
+    return partners
