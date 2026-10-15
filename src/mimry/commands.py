@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import __version__, ui
 from .adapters import list_adapters
+from .bench import run_bench
 from .cache_safety import (
     UnsafeCachePathError,
     validated_cache_home,
@@ -1119,6 +1120,11 @@ def cmd_digest(a):
         return 0
     print(canonical_digest(idx, ptr.get("rootId")))
     return 0
+
+
+def cmd_bench(a):
+    """Replay the repo's merged pull requests (see mimry.bench)."""
+    return run_bench(Path(a.root), tasks=a.tasks, as_json=a.json, keep=a.keep)
 
 
 def cmd_watch(a):

@@ -274,6 +274,8 @@ See [benchmarks/tokens](benchmarks/tokens/README.md) for the method, per-project
 On the 500 issues of SWE-bench Verified, one `mimry find` with the issue text puts every file the fix changes in the top 10 for 74.6% of issues, in the top 5 for 63.8%, and first for 34.8%.
 See [benchmarks/localization](benchmarks/localization/README.md) for the protocol and per-repository results.
 
+To measure MIMRY on your own repository's merged pull requests, run `mimry bench`; see [Benchmark your repository](docs/commands.md#benchmark-your-repository).
+
 ## How it works
 
 1. **Index.** MIMRY parses each file into symbols and edges for imports, calls and inheritance, and stores the index in your user cache directory, outside the repository.

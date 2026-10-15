@@ -31,6 +31,7 @@ def build_parser():
     from . import __version__
     from .commands import (
         cmd_adapters,
+        cmd_bench,
         cmd_brief,
         cmd_cache_wipe,
         cmd_callees,
@@ -376,6 +377,27 @@ def build_parser():
         help="Print the normalized canonical state instead of its hash",
     )
     s.set_defaults(func=cmd_digest)
+    s = sub.add_parser(
+        "bench",
+        help="Measure MIMRY on this repo's recent merged pull requests (local only)",
+        description=(
+            "Replay the last merged pull requests of this repository: each PR's title is the"
+            " task and its changed files are the answer. Runs entirely locally, in a throwaway"
+            " worktree and cache; no network and no model calls. Your working tree and index"
+            " are not touched."
+        ),
+    )
+    s.add_argument(
+        "--tasks",
+        type=_positive_int,
+        default=20,
+        help="Number of recent merged pull requests to replay (default: 20)",
+    )
+    s.add_argument("--json", action="store_true", help="Print every task and the summary as JSON")
+    s.add_argument(
+        "--keep", action="store_true", help="Keep the temporary checkout and print its path"
+    )
+    s.set_defaults(func=cmd_bench)
     plan = sub.add_parser("plan", help="Store and render deterministic recursive plan trees")
     plan_sub = plan.add_subparsers(dest="plan_command", required=True)
     s = plan_sub.add_parser("new", help="Create a repo-scoped plan tree")

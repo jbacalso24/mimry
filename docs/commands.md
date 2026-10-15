@@ -35,6 +35,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry adapters` | List the file-type adapters |
 | `mimry install` / `mimry uninstall` | Manage agent skills |
 | `mimry digest` | Print a canonical digest of the index |
+| `mimry bench` | Replay this repo's recent merged pull requests and score how well MIMRY finds the files each one changed (`--tasks N`, `--json`, `--keep`; local only, no network or model calls) |
 | `mimry report` | Print the graph report, with its Suggested Questions |
 | `mimry export --format {html,graphml,cypher,obsidian}` | Write the graph as an HTML viewer, GraphML, Cypher, or an Obsidian vault |
 | `mimry cache wipe --current` | Delete this repo's cached index |
@@ -144,6 +145,40 @@ Text output leaves out callers in test files, which already appear under `Tests 
 
 `--json` returns `targets`, `callers` (each with `name`, `kind`, `path`, `line`, `depth`, `confidence` and `test`, and including test callers), `importers`, `tests`, `test_command` and `summary`.
 The MCP tool `mimry_impact(target, file, changed, depth, root)` returns the same payload.
+
+## Benchmark your repository
+
+`mimry bench` checks how well MIMRY finds the files your own changes touched.
+It takes the last 20 merged pull requests on the first-parent history of HEAD (`--tasks` sets the count) and replays each one.
+A merge commit's task is its branch title, which is the first non-empty line of its body.
+A squash commit's task is its subject without ` (#N)`, plus the first paragraph of its body.
+A first paragraph made only of commit bullets or trailers, such as `Co-authored-by:`, is left out.
+The files the pull request modified are the answer, leaving out `CHANGELOG*` and lock files.
+Files it added are not counted, because they do not exist at the base and MIMRY cannot rank them.
+A pull request that touches more than 30 files, or modifies no file left after the exclusions, is skipped and counted.
+For each task, MIMRY indexes the commit's base in a throwaway worktree with its own cache, then runs `mimry find` with the task text.
+The run never touches your working tree or your index, and it makes no network or model calls.
+
+Each task reports:
+
+- **Files**: how many existing files the pull request modified.
+- **First gold rank**: the best position of one of those files in the top 10, or `-` when none is there.
+- **Recall@5**: the share of those files in the top 5.
+- **Tokens**: an estimate of reading files in MIMRY's order, charged up to the last changed file in the top 10. It is `-` when none is in the top 10.
+- **find ms**: the wall time of the `mimry find` process. It includes starting Python, not only the search.
+
+The summary gives the mean recall@5 and recall@10, the median first gold rank (over tasks where a changed file was found), the share of tasks with a changed file at rank 1, the median tokens of those tasks, and the median and 95th-percentile find time, with process start included.
+
+Read it with these limits in mind.
+
+- Changed files are a proxy for "the files the task needed". A pull request can touch files that were not needed, and a needed file can be missing from its diff.
+- Files the pull request adds are not counted at all, since MIMRY cannot rank a file that does not exist at the base.
+- Tokens are an estimate at 4 bytes per token, charged for each file's first 2,000 lines at the base commit.
+- Times depend on the machine, so compare runs made on the same one.
+- The history needs merge commits or squash commits whose subject ends with `(#N)`. Otherwise the command says so and exits 0.
+
+Pass `--keep` to keep the temporary checkout and print its path, which is useful for checking a task by hand.
+Pass `--json` for every task and the summary as JSON.
 
 ## Recursive plan trees
 
