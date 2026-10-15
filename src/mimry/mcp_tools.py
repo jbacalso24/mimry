@@ -18,15 +18,15 @@ from mimry.commands import (
     _change_summary,
     _write_context_pack,
     calls_payload,
-    cmd_explain,
     cmd_init,
-    cmd_path,
     cmd_preflight,
     cmd_refresh,
-    cmd_why,
     rebuild_outdated_index,
     refresh_if_stale,
     require,
+    run_explain,
+    run_path,
+    run_why,
     symbol_matches,
 )
 from mimry.core.artifacts import CALL_DIRECTIONS, graph_health
@@ -653,6 +653,7 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
 
 @tool
 @_state_guard
+@_index_operation(refresh=True)
 def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[str, Any]:
     """Explain the top files and symbols for a task.
 
@@ -660,17 +661,18 @@ def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[s
     """
     root_path = _root(root)
     return _capture_command(
-        cmd_explain, SimpleNamespace(root=str(root_path), query=sanitize_query(query), limit=limit)
+        run_explain, SimpleNamespace(root=str(root_path), query=sanitize_query(query), limit=limit)
     )
 
 
 @tool
 @_state_guard
+@_index_operation(refresh=True)
 def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, Any]:
     """Find a relationship path between two files/symbols/queries."""
     root_path = _root(root)
     return _capture_command(
-        cmd_path,
+        run_path,
         SimpleNamespace(
             root=str(root_path), source=sanitize_query(source), target=sanitize_query(target)
         ),
@@ -679,13 +681,14 @@ def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, A
 
 @tool
 @_state_guard
+@_index_operation(refresh=True)
 def mimry_why(
     surface: str, query: str, root: str | None = None, limit: int = 25
 ) -> dict[str, Any]:
     """Explain why a file or symbol ranked for a task query."""
     root_path = _root(root)
     return _capture_command(
-        cmd_why,
+        run_why,
         SimpleNamespace(
             root=str(root_path),
             surface=sanitize_query(surface),

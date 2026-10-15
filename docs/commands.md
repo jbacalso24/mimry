@@ -22,7 +22,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry route "<task>"` | Recommend an agent role (`--json` for tools) |
 | `mimry brief "<task>" --agent <role>` | Write a role-specific brief |
 | `mimry init` / `mimry index` | Set up a repo and build the index |
-| `mimry reindex` / `mimry refresh` | Update the index (`--full` re-parses everything) |
+| `mimry reindex` / `mimry refresh` | Update the index ahead of time (`--full` re-parses everything); query commands update a stale index on their own |
 | `mimry status` | Is the index current? (`--verify` re-hashes every file) |
 | `mimry doctor` | Read-only install, parser, index, and cache diagnostics (`--json` for tools) |
 | `mimry watch` | Poll for changes and refresh when they settle |
@@ -70,7 +70,7 @@ $ mimry status
   Indexed 5 minutes ago · at commit d7bf046
   3,105 files · 6,859 symbols · 10,749 links
   Languages: Python 1,840, TypeScript 610, Markdown 300, Go 150, Rust 90, Java 45, and 4 more
-  Run `mimry reindex` to update it.
+! The index is behind the working tree - 1 file changed, 1 new. The next query updates it; `mimry reindex` updates it now.
 
 $ mimry reindex
 ✓ Updated the index for my-app in 2.2s
@@ -79,6 +79,10 @@ $ mimry reindex
     added    src/auth/magic_link.py
   3,106 files · 6,871 symbols · 10,762 links
 ```
+
+Query commands check the index first.
+When files changed since the last index, `find`, `explain`, `path`, `why` and the other lookups update it before they answer, and print `Reindexed first`.
+`mimry reindex` is for updating the index ahead of time, not a step you must run after each change.
 
 ## Output
 

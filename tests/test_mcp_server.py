@@ -810,6 +810,32 @@ def test_find_reindexes_a_file_added_since_the_last_index(tmp_path: Path, monkey
     assert "reindexed" not in mimry_find("zebraquokka", str(repo))
 
 
+def test_explain_path_and_why_reindex_a_file_added_since_the_last_index(
+    tmp_path: Path, monkeypatch
+):
+    repo = _indexed_repo(tmp_path, monkeypatch, git=True)
+    zebra = repo / "src" / "zebra.py"
+    zebra.write_text(ZEBRA, encoding="utf-8")
+
+    explained = mimry_explain("zebra", str(repo))
+
+    assert "reindexed" in explained
+    assert "src/zebra.py" in explained["stdout"]
+    assert "may be out of date" not in explained["stdout"]
+
+    zebra.write_text(ZEBRA + "\ndef zebra_two():\n    return 2\n", encoding="utf-8")
+    why = mimry_why("src/zebra.py", "zebra", str(repo))
+
+    assert "reindexed" in why
+    assert "not in the top" not in why["stdout"]
+
+    zebra.write_text(ZEBRA + "\ndef zebra_three():\n    return 3\n", encoding="utf-8")
+    path = mimry_path("src/zebra.py", "src/auth/session.py", str(repo))
+
+    assert "reindexed" in path
+    assert "graph files" not in path["stdout"]
+
+
 def test_cli_find_reindexes_a_file_added_since_the_last_index(tmp_path: Path, monkeypatch):
     from mimry.cli import main as cli_main
 

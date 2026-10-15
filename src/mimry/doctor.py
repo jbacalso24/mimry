@@ -587,7 +587,7 @@ def _root_checks(root: Path, *, verify: bool) -> list[dict[str, Any]]:
     if state == "missing":
         suggestion = "Run `mimry index` to build the index."
     elif state == "stale":
-        suggestion = "Run `mimry reindex` to update the index."
+        suggestion = "The next query updates it; `mimry reindex` updates it now."
     checks = [
         _check(
             "root.index",
@@ -607,12 +607,14 @@ def _root_checks(root: Path, *, verify: bool) -> list[dict[str, Any]]:
         ("root.semantic", "semantic cache", semantic, "mimry refresh"),
     ):
         current = health.get("status") == "current"
+        # Stale because the index is: one refresh fixes both.
+        hint = suggestion if state == "stale" else f"Run `{fix}` to rebuild it."
         checks.append(
             _check(
                 check_id,
                 "ok" if current else "warning",
                 f"{label} is {health.get('status', 'unknown')}",
-                None if current else f"Run `{fix}` to rebuild it.",
+                None if current else hint,
                 state=health.get("status", "unknown"),
             )
         )

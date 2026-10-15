@@ -645,7 +645,8 @@ mimry feedback --query "<task>" --context <context pack path> --opened "<files o
 ## Stale/missing state rules
 
 - If MIMRY is not initialized for an owned repo, run `mimry preflight "<task>"`; it initializes and builds useful local context.
-- `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related` and `semantic` reindex first when files changed since the last index, so they never answer from a stale one. The other lookups warn instead; run `mimry reindex` when they do.
+- `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related`, `semantic`, `explain`, `path`, `why`, `callers` and `callees` reindex first when files changed since the last index, so they never answer from a stale one.
+- `status` and `doctor` report a stale index; the next query updates it, and `mimry reindex` updates it ahead of time.
 - Use `mimry refresh` or `mimry preflight --force-refresh "<task>"` when graph freshness matters more than speed.
 - If graph artifacts are stale/missing, say so. Do not invent relationship paths.
 

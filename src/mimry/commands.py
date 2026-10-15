@@ -614,17 +614,25 @@ def _stale_summary(fresh: dict) -> str:
     return summary
 
 
+STALE_INDEX_HINT = "The next query updates it; `mimry reindex` updates it now."
+
+
+def _stale_index_message(fresh: dict) -> str:
+    return f"The index is behind the working tree - {_stale_summary(fresh)}. {STALE_INDEX_HINT}"
+
+
 def _print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
     """Warn on anything not current; return the commands that fix it."""
     fixes = []
     if fresh["state"] == "stale":
-        fixes.append("mimry reindex")
+        # The caller has already said what changed.
+        ui.detail(STALE_INDEX_HINT)
     elif graph["status"] != "current":
         ui.warn(f"The graph files in .mimry/mimry-out/graph are {graph['status']}")
         fixes.append("mimry refresh")
     if fresh["state"] != "missing" and semantic["status"] != "current":
         ui.warn(f"Semantic search is {semantic['status']}")
-        if "mimry refresh" not in fixes and "mimry reindex" not in fixes:
+        if "mimry refresh" not in fixes and fresh["state"] != "stale":
             fixes.append("mimry refresh")
     return fixes
 
@@ -912,9 +920,7 @@ def _print_index_note(fresh: dict, graph: dict) -> None:
     if fresh["state"] == "missing":
         ui.warn("This folder has not been indexed yet. Run `mimry index` first.")
     elif fresh["state"] == "stale":
-        ui.warn(
-            f"Results may be out of date - {_stale_summary(fresh)}. Run `mimry reindex` to update."
-        )
+        ui.warn(_stale_index_message(fresh))
     elif graph["status"] != "current":
         ui.warn(f"Graph files are {graph['status']}. Run `mimry refresh` to rebuild them.")
 
@@ -2031,8 +2037,14 @@ def _symbol_rows(
     return found
 
 
+@_fresh_index
 @_index_reader
 def cmd_explain(a):
+    return run_explain(a)
+
+
+def run_explain(a):
+    """The explain answer, for a caller that holds the index lock."""
     root = Path(a.root).resolve()
     ptr = require(root)
     fresh, graph = _index_and_graph_health(root, ptr)
@@ -2073,8 +2085,14 @@ def cmd_explain(a):
     return 0
 
 
+@_fresh_index
 @_index_reader
 def cmd_path(a):
+    return run_path(a)
+
+
+def run_path(a):
+    """The path answer, for a caller that holds the index lock."""
     root = Path(a.root).resolve()
     ptr = require(root)
     fresh, graph = _index_and_graph_health(root, ptr)
@@ -2259,8 +2277,14 @@ def _outside_repo(root: Path, surface: str) -> bool:
     return False
 
 
+@_fresh_index
 @_index_reader
 def cmd_why(a):
+    return run_why(a)
+
+
+def run_why(a):
+    """The why answer, for a caller that holds the index lock."""
     root = Path(a.root).resolve()
     ptr = require(root)
     fresh, graph = _index_and_graph_health(root, ptr)

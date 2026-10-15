@@ -1632,6 +1632,40 @@ def test_find_from_a_subfolder_reindexes_the_repo_first(tmp_path):
     assert run_cli(repo, cache, "status").returncode == 0
 
 
+def test_explain_path_and_why_reindex_a_stale_index_first(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graph_artifacts(repo)
+    target = repo / "src" / "auth" / "session.py"
+
+    def add_function(name):
+        target.write_text(
+            target.read_text(encoding="utf-8") + f"\ndef {name}():\n    return True\n",
+            encoding="utf-8",
+        )
+
+    add_function("explain_marker")
+    explain = run_cli(repo, cache, "explain", "explain_marker")
+    assert explain.returncode == 0, explain.stderr
+    assert "Reindexed first - 1 file changed" in explain.stdout
+    assert "explain_marker" in explain.stdout
+    assert "may be out of date" not in explain.stdout
+
+    add_function("path_marker")
+    path = run_cli(repo, cache, "path", "src/auth/session.py", "src/auth/middleware.py")
+    assert path.returncode == 0, path.stderr
+    assert "Reindexed first - 1 file changed" in path.stdout
+    assert "graph files" not in path.stdout
+
+    add_function("why_marker")
+    why = run_cli(repo, cache, "why", "src/auth/session.py", "--query", "why_marker")
+    assert why.returncode == 0, why.stderr
+    assert "Reindexed first - 1 file changed" in why.stdout
+    assert "not in the top" not in why.stdout
+
+
 def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
     repo = tmp_path / "new_repo"
     repo.mkdir()
@@ -1864,6 +1898,9 @@ def test_status_detects_new_indexable_file(tmp_path):
     assert stale.returncode == 2
     assert "is out of date - 1 new file since the last index" in stale.stdout
     assert "new  src/auth/new_flow.py" in stale.stdout
+    assert "behind the working tree" not in stale.stdout
+    assert "The next query updates it; `mimry reindex` updates it now." in stale.stdout
+    assert "Run `mimry reindex`" not in stale.stdout
 
 
 def test_index_normalizes_stale_pointer_index_path(tmp_path):

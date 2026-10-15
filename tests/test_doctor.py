@@ -229,8 +229,11 @@ def test_stale_index_and_caches_are_actionable(tmp_path, monkeypatch):
     checks = {check["id"]: check for check in report["checks"]}
     assert checks["root.index"]["changed_count"] == 1
     assert checks["root.index"]["missing_count"] == 1
-    assert checks["root.index"]["suggestion"] == "Run `mimry reindex` to update the index."
-    assert checks["root.graph"]["suggestion"] == "Run `mimry refresh` to rebuild it."
+    assert (
+        checks["root.index"]["suggestion"]
+        == "The next query updates it; `mimry reindex` updates it now."
+    )
+    assert checks["root.graph"]["suggestion"] == checks["root.index"]["suggestion"]
 
 
 def test_corrupt_pointer_does_not_leak_contents_or_paths(tmp_path, monkeypatch):
