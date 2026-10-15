@@ -121,7 +121,12 @@ def build_parser():
     )
     s.set_defaults(func=cmd_status)
     s = sub.add_parser(
-        "doctor", help="Run read-only installation, parser, index, and cache diagnostics"
+        "doctor",
+        help="Run read-only installation, parser, index, and cache diagnostics",
+        description=(
+            "Run read-only installation, parser, index, and cache diagnostics."
+            " Troubleshooting: https://github.com/jbacalso24/mimry/blob/main/docs/troubleshooting.md"
+        ),
     )
     s.add_argument("--json", action="store_true", help="Print a stable structured JSON report")
     s.add_argument(

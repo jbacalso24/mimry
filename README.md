@@ -242,6 +242,7 @@ mimry doctor                        # diagnose the install and the index
 ```
 
 See [docs/commands.md](docs/commands.md) for every command and option.
+When something misbehaves, see [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Configuration
 
