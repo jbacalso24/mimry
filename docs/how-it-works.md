@@ -90,7 +90,7 @@ If a hook manager such as husky owns your hooks, add `mimry refresh` to its post
 ## Feedback learning
 
 `mimry feedback` records which files an agent actually used after a task.
-It is stored in the repo's local cache, is not telemetry, and becomes a modest, explainable ranking signal for similar future queries.
+It is stored in the repo's local cache, is not telemetry, and becomes an explainable ranking signal for similar future queries.
 
 ```bash
 mimry feedback --query "fix board card click" \
@@ -103,8 +103,19 @@ mimry feedback --query "fix board card click" \
   --outcome passed
 ```
 
-Exact filename, symbol, graph, and source evidence stay primary.
-Feedback breaks ties and recovers previously missed files; it does not override source-truth signals.
+Feedback is added to the source ranking, so it can outrank a weaker exact filename, symbol or graph match.
+A file can gain up to half the top score of the query, scaled by how closely the past task matched.
+
+Each signal counts like this:
+
+- `--changed` and `--missed` count fully, whatever the outcome, because they are facts about the code.
+- `--opened` counts 0.4 for a passed task, 0.24 for partial or unknown, and 0.12 for failed or blocked.
+- `--ignored` counts -0.3, and lowers a file by at most a quarter of the top score, never below 1.
+- A file counts once per similar task, with its largest value, and each task counts by how closely its query matches yours, squared, so a loose match counts far less than a near-identical task.
+- A suggestion that three similar tasks left unused, while those tasks changed or opened other files, drops 20%, unless a similar task changed, opened or missed it.
+
+`--outcome` says whether the task succeeded.
+Changed and missed files count fully whatever the outcome, and the outcome only weights files that were opened.
 
 ## Structured adapters
 

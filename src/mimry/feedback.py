@@ -13,6 +13,23 @@ from .paths import now
 from .state import exclusive_file_lock
 
 VALID_OUTCOMES = {"passed", "failed", "blocked", "partial", "unknown"}
+# Feedback ranking. A changed or missed file is a fact about the code,
+# so it counts fully whatever the outcome. Only opened files depend on
+# the outcome.
+FEEDBACK_SHARE = 0.5
+FEEDBACK_DECAY = 0.8
+FEEDBACK_UNUSED_RECORDS = 3
+FEEDBACK_FACT_EVIDENCE = 1.0
+FEEDBACK_OPENED_EVIDENCE = 0.4
+FEEDBACK_IGNORED_EVIDENCE = -0.3
+OUTCOME_WEIGHT = {"passed": 1.0, "partial": 0.6, "unknown": 0.6, "failed": 0.3, "blocked": 0.3}
+FEEDBACK_LABELS = {
+    "changed_paths": "feedback changed-file boost",
+    "opened_paths": "feedback opened-file boost",
+    "missed_paths": "feedback missed-file recovery boost",
+    "ignored_paths": "feedback ignored suggestion downrank",
+}
+FEEDBACK_UNUSED_LABEL = "feedback unused suggestion decay"
 FEEDBACK_SCHEMA_VERSION = "0.1.0"
 COMMIT_NOTE_PREFIX = "Recorded from commit "
 SECRET_ASSIGNMENT_RE = re.compile(
@@ -390,26 +407,66 @@ def _similarity(query: str, past_query: str) -> float:
 def feedback_rank_signals(
     idx: Path, root_id: str | None, query: str, *, limit: int = 200
 ) -> dict[str, dict[str, Any]]:
+    """Per path: summed evidence from similar records, and unused state.
+
+    Changed and missed files are facts about the code, so they count
+    fully whatever the outcome. Opened files are weighted by outcome,
+    and ignored files count against the path. A path counts once per
+    record, with its largest evidence.
+    """
     if not root_id:
         return {}
-    signals: dict[str, dict[str, Any]] = {}
+    weights: dict[str, float] = {}
+    reasons: dict[str, set[str]] = {}
+    touched: set[str] = set()
+    suggested_unused: dict[str, int] = {}
     for row in list_feedback(idx, root_id, limit=limit):
         sim = _similarity(query, row["query"])
         if sim <= 0:
             continue
-        multiplier = 1.0 if row["outcome"] == "passed" else 0.6
-        for key, delta, label in (
-            ("changed_paths", 18, "feedback changed-file boost"),
-            ("opened_paths", 12, "feedback opened-file boost"),
-            ("missed_paths", 20, "feedback missed-file recovery boost"),
-            ("ignored_paths", -8, "feedback ignored suggestion downrank"),
+        outcome_weight = OUTCOME_WEIGHT.get(row["outcome"], OUTCOME_WEIGHT["unknown"])
+        best: dict[str, float] = {}
+        for key, value in (
+            ("changed_paths", FEEDBACK_FACT_EVIDENCE),
+            ("missed_paths", FEEDBACK_FACT_EVIDENCE),
+            ("opened_paths", FEEDBACK_OPENED_EVIDENCE * outcome_weight),
+            ("ignored_paths", FEEDBACK_IGNORED_EVIDENCE),
         ):
             for path in row[key]:
                 if path.startswith("external:"):
                     continue
-                entry = signals.setdefault(path, {"score": 0, "reasons": set()})
-                entry["score"] += int(delta * multiplier)
-                entry["reasons"].add(label)
+                reasons.setdefault(path, set()).add(FEEDBACK_LABELS[key])
+                best[path] = max(best.get(path, value), value)
+        # Squared, so a loose match (two shared words) counts far less
+        # than a near-identical task; the feedback replay benchmark
+        # showed loose matches pushing correct files out of the top 5.
+        for path in sorted(best):
+            weights[path] = weights.get(path, 0.0) + sim * sim * best[path]
+
+        used = {
+            path for key in ("changed_paths", "opened_paths", "missed_paths") for path in row[key]
+        }
+        touched |= used
+        if row["changed_paths"] or row["opened_paths"]:
+            for path in sorted(set(row["suggested_paths"]) - used):
+                if not path.startswith("external:"):
+                    suggested_unused[path] = suggested_unused.get(path, 0) + 1
+
+    unused = {
+        path
+        for path, count in suggested_unused.items()
+        if count >= FEEDBACK_UNUSED_RECORDS and path not in touched
+    }
+    signals: dict[str, dict[str, Any]] = {}
+    for path in sorted(set(weights) | unused):
+        labels = set(reasons.get(path, set()))
+        if path in unused:
+            labels.add(FEEDBACK_UNUSED_LABEL)
+        signals[path] = {
+            "weight": weights.get(path, 0.0),
+            "unused": path in unused,
+            "reasons": labels,
+        }
     return signals
 
 
@@ -424,21 +481,32 @@ def apply_feedback_to_rows(
     signals = feedback_rank_signals(idx, root_id, query)
     if not signals:
         return rows
+    # Feedback moves a row by a share of the top score, so it is large
+    # enough to matter next to the score scale of this query.
+    top = max((row["score"] for row in rows), default=100)
     by_path = {row["path"]: {**row} for row in rows}
     indexed_paths = known_paths or set(by_path)
     for path, signal in signals.items():
+        weight = signal["weight"]
+        labels = ", ".join(sorted(signal["reasons"]))
         if path in by_path:
-            by_path[path]["score"] += signal["score"]
-            if by_path[path]["score"] <= 0:
-                by_path[path]["score"] = 1
+            score = by_path[path]["score"]
+            if weight > 0:
+                score += round(FEEDBACK_SHARE * min(weight, 1.0) * top)
+            elif weight < 0:
+                score = max(1, score + round(FEEDBACK_SHARE * max(weight, -1.0) * top * 0.5))
+            if signal["unused"]:
+                score = max(1, round(score * FEEDBACK_DECAY))
+            by_path[path]["score"] = max(1, score)
             reason = by_path[path].get("reason", "")
-            labels = ", ".join(sorted(signal["reasons"]))
             by_path[path]["reason"] = f"{reason}, {labels}" if reason else labels
-        elif path in indexed_paths and signal["score"] > 0:
-            by_path[path] = {
-                "path": path,
-                "score": signal["score"],
-                "reason": ", ".join(sorted(signal["reasons"])),
-                "source": "feedback",
-            }
+        elif path in indexed_paths and weight > 0:
+            gain = round(FEEDBACK_SHARE * min(weight, 1.0) * top)
+            if gain > 0:
+                by_path[path] = {
+                    "path": path,
+                    "score": gain,
+                    "reason": labels,
+                    "source": "feedback",
+                }
     return sorted(by_path.values(), key=lambda r: (-r["score"], r["path"]))
