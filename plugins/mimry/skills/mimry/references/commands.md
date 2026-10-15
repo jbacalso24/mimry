@@ -17,6 +17,7 @@ mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
 mimry callers "<name>"
 mimry callees "<name>"
+mimry impact "<name or path>"
 mimry semantic "<query>"
 ```
 

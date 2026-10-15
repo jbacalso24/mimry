@@ -534,6 +534,32 @@ def call_relations(graph: dict, target_ids: set[str], direction: str, depth: int
     return found
 
 
+def call_rows(hits: list[dict]) -> list[dict]:
+    """``call_relations`` hits as the rows the callers answer prints."""
+    return [
+        {**_symbol_row(hit["node"]), "depth": hit["depth"], "confidence": hit["confidence"]}
+        for hit in hits
+    ]
+
+
+def importing_files(graph: dict, target_files: set[str]) -> list[str]:
+    """Files with an ``imports`` edge into one of ``target_files``.
+
+    Only direct imports count, and the targets are left out.
+    """
+    nodes = {str(n["id"]): n for n in graph.get("nodes") or [] if n.get("id") is not None}
+    found: set[str] = set()
+    for edge in graph.get("links") or graph.get("edges") or []:
+        source, target = _edge_endpoints(edge)
+        if _edge_relation(edge) != "imports" or not source or not target:
+            continue
+        importer = node_source_file(nodes.get(source, {}))
+        imported = node_source_file(nodes.get(target, {}))
+        if importer and imported in target_files and importer not in target_files:
+            found.add(importer)
+    return sorted(found)
+
+
 def _symbol_label(node: dict) -> str:
     return str(node.get("label") or node.get("id"))
 
@@ -603,10 +629,7 @@ def call_lookup(
     target = targets[0]
     payload["target"] = _symbol_row(target)
     hits = call_relations(graph, {str(target["id"])}, relation, depth)
-    rows = [
-        {**_symbol_row(hit["node"]), "depth": hit["depth"], "confidence": hit["confidence"]}
-        for hit in hits
-    ]
+    rows = call_rows(hits)
     # Files with the most results first, then by path; inside a file by
     # depth, then line.
     per_file: dict[str, int] = defaultdict(int)

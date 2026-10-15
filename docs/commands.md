@@ -18,6 +18,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry path <a> <b>` | Shortest relationship path between two files or symbols (`--json` for tools) |
 | `mimry callers <name>` | Functions that call a function, from the graph (`--depth` follows the chain up to 3 calls, `--file` picks one of several, `--json` for tools) |
 | `mimry callees <name>` | Functions that a function calls, with the same options |
+| `mimry impact <name-or-path>` | What a change touches: callers by depth, the files that import it, and the tests to run (`--changed` checks the working tree against HEAD, `--depth` follows up to 5 calls, `--file` picks one of several, `--json` for tools) |
 | `mimry why <file> --query "<task>"` | Why a file ranks for a query |
 | `mimry route "<task>"` | Recommend an agent role (`--json` for tools) |
 | `mimry brief "<task>" --agent <role>` | Write a role-specific brief |
@@ -96,11 +97,53 @@ Piped and captured output always uses plain ASCII marks, so scripts and agents s
 Each graph edge is either `EXTRACTED` or `INFERRED`.
 `EXTRACTED` means MIMRY read the relation directly from the source, such as a call within the same file or to a function imported by an exact import.
 `INFERRED` means MIMRY picked the target without an exact import to back it, such as a call through a package re-export or a method of an imported file.
-`mimry path`, `mimry callers` and `mimry callees` add ` (inferred)` to an inferred row, and print a note when one is shown.
+`mimry path`, `mimry callers`, `mimry callees` and `mimry impact` add ` (inferred)` to an inferred row, and print a note when one is shown.
 Extracted rows print exactly as before.
 With `--json`, each result or step carries a `confidence` field set to `EXTRACTED` or `INFERRED`.
-The MCP tools `mimry_symbol` (with `relations`) and `mimry_path` return the same field.
+The MCP tools `mimry_symbol` (with `relations`), `mimry_path` and `mimry_impact` return the same field.
 For `callers` and `callees` at depth 2 or 3, a result is `EXTRACTED` only when some shortest chain to it uses extracted edges throughout.
+
+## Impact
+
+`mimry impact` answers what breaks if a change lands, before you make it.
+Give it a symbol name or a repo-relative file path, or pass `--changed` to check the symbols and files that differ from HEAD.
+A file path covers every symbol defined in it.
+`--changed` checks each edited symbol, whose line range overlaps a changed hunk, and each untracked file, whose symbols all count.
+Document headings and SQL tables are not code, so they are never targets; a changed Markdown file still counts for importers.
+
+The answer starts with a summary line, then the targets, the callers grouped by how many calls away they are, the files that import the target file directly, and the tests to run.
+Test files are those among the callers or importers, and the test command is the project's own (`uv run pytest` runs with the test files appended).
+
+```bash
+mimry impact a
+mimry impact app/chain.py --depth 2
+mimry impact --changed --json
+```
+
+```text
+a: 1 direct source caller, 2 source callers within 3 calls, 2 importing files, 1 test file.
+
+Targets (1)
+  a (app/chain.py:1)
+
+Direct callers (1)
+  b (app/chain.py:5)
+
+Callers 2 calls away (1, +1 in tests)
+  c (app/chain.py:9)
+
+Importing files (2)
+  app/importer.py
+  tests/test_chain.py
+
+Tests to run (1)
+  uv run pytest tests/test_chain.py
+```
+
+Text output leaves out callers in test files, which already appear under `Tests to run`; their count is shown in each depth heading.
+
+`--json` returns `targets`, `callers` (each with `name`, `kind`, `path`, `line`, `depth`, `confidence` and `test`, and including test callers), `importers`, `tests`, `test_command` and `summary`.
+The MCP tool `mimry_impact(target, file, changed, depth, root)` returns the same payload.
 
 ## Recursive plan trees
 

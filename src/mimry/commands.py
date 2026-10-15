@@ -73,6 +73,7 @@ from .queries import (
     print_results_section,
     print_verification,
     run_explain,
+    run_impact,
     run_path,
     run_preflight,
     run_why,
@@ -775,6 +776,12 @@ def cmd_explain(a):
 @_index_reader
 def cmd_path(a):
     return run_path(a)
+
+
+@_fresh_index
+@_index_reader
+def cmd_impact(a):
+    return run_impact(a)
 
 
 def _location(path: str, line) -> str:

@@ -42,6 +42,7 @@ def build_parser():
         cmd_feedback,
         cmd_find,
         cmd_git_hooks,
+        cmd_impact,
         cmd_index,
         cmd_init,
         cmd_path,
@@ -333,6 +334,28 @@ def build_parser():
         )
         s.add_argument("--json", action="store_true", help="Print the structured answer as JSON")
         s.set_defaults(func=func)
+    s = sub.add_parser(
+        "impact",
+        help="Show what a change touches: callers by depth, importing files, and the tests to run",
+    )
+    s.add_argument("target", nargs="?", help="A symbol name, or a repo-relative file path")
+    s.add_argument(
+        "--changed",
+        action="store_true",
+        help="Use the symbols and files changed in the working tree against HEAD, instead",
+    )
+    s.add_argument(
+        "--file", help="Keep only the symbol defined in this file, when the name is shared"
+    )
+    s.add_argument(
+        "--depth",
+        type=int,
+        choices=(1, 2, 3, 4, 5),
+        default=3,
+        help="How many calls away to follow, 1 to 5 (default 3)",
+    )
+    s.add_argument("--json", action="store_true", help="Print the structured answer as JSON")
+    s.set_defaults(func=cmd_impact)
     s = sub.add_parser("why", help="Explain why a file or symbol ranked for a task query")
     s.add_argument("surface")
     s.add_argument("--query", required=True)

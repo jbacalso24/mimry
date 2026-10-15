@@ -40,7 +40,9 @@ from mimry.plan import (
     render_terminal,
 )
 from mimry.queries import (
+    IMPACT_MAX_DEPTH,
     calls_payload,
+    impact_payload,
     path_payload,
     run_explain,
     run_path,
@@ -684,6 +686,40 @@ def mimry_path(source: str, target: str, root: str | None = None) -> dict[str, A
     if found:
         payload.update(sanitize_data(path_payload(found[0])))
     return payload
+
+
+@tool
+@_state_guard
+@_index_operation(refresh=True)
+def mimry_impact(
+    target: str | None = None,
+    file: str | None = None,
+    changed: bool = False,
+    depth: int = 3,
+    root: str | None = None,
+) -> dict[str, Any]:
+    """What a change touches: callers, importers and tests to run.
+
+    target is a symbol name (file picks one when several share it) or a
+    repo-relative file path. changed=True uses the working tree against
+    HEAD instead. depth is 1 to 5, how many calls back to follow.
+    """
+    if not 1 <= depth <= IMPACT_MAX_DEPTH:
+        return {
+            "returncode": 2,
+            "error": {"code": "invalid_depth", "message": "depth must be 1 to 5"},
+        }
+    root_path = _root(root)
+    ptr = require(root_path)
+    payload = impact_payload(
+        root_path,
+        ptr,
+        target=sanitize_query(target) if target else None,
+        file=sanitize_query(file) if file else None,
+        changed=changed,
+        depth=depth,
+    )
+    return sanitize_data(payload)
 
 
 @tool

@@ -70,6 +70,7 @@ mimry related "<query>"
 mimry symbol "<name>"
 mimry callers "<name>"
 mimry callees "<name>"
+mimry impact "<name or path>"
 mimry explain "<task>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
@@ -89,6 +90,7 @@ If MCP tools are loaded, prefer them over shell for lookup/context/workflow:
 - `mimry_related`
 - `mimry_symbol`
 - `mimry_path`
+- `mimry_impact`
 - `mimry_why`
 - `mimry_feedback`
 

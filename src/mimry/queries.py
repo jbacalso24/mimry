@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 import time
+from collections import defaultdict
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
@@ -10,9 +13,14 @@ from .cache_safety import IndexOutsideCacheError
 from .core.artifacts import (
     INFERRED_NOTE,
     call_lookup,
+    call_relations,
+    call_rows,
+    calls_note,
     empty_call_payload,
     graph_health,
+    importing_files,
     load_graph,
+    node_source_file,
     relationship_edges,
     relationship_lines,
     shortest_path,
@@ -40,7 +48,7 @@ from .paths import (
     output_dir,
     task_context_file,
 )
-from .routing import verification_commands
+from .routing import project_test_command, verification_commands
 from .search import find_rows
 from .security import filter_index_records, markdown_inline, redact_sensitive_text, sanitize_query
 from .semantic import semantic_health
@@ -960,6 +968,335 @@ def calls_payload(
         return payload
     wanted = normalize_file_filter(file, root) if file else None
     return call_lookup(load_graph(root), name, relation, depth, wanted)
+
+
+IMPACT_MAX_DEPTH = 5
+IMPACT_SHOWN = 20
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
+_OPEN_END = 10**9
+# Symbols that are not code: Markdown headings and SQL tables.
+NON_CODE_KINDS = frozenset({"heading", "sql_table"})
+
+
+def impact_usage(target: str | None, file: str | None, changed: bool) -> str | None:
+    """Why these arguments cannot go together, or None when they can."""
+    if changed and (target or file):
+        return "Pass a symbol or file, or --changed, not both."
+    if not changed and not target:
+        return "Name a symbol or file to check, or pass --changed."
+    return None
+
+
+def _git_stdout(root: Path, *args: str) -> str | None:
+    """Output of a git command in ``root``, or None if git fails."""
+    try:
+        done = subprocess.run(
+            ["git", "-c", "core.quotepath=off", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except OSError:
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def _working_tree_changes(root: Path) -> dict | None:
+    """Changed paths against HEAD, with each file's changed line ranges
+    on the new side. None when git cannot make that comparison."""
+    names = _git_stdout(root, "diff", "HEAD", "--relative", "--name-only")
+    diff = _git_stdout(root, "diff", "HEAD", "--relative", "-U0", "--no-color", "--no-ext-diff")
+    untracked = _git_stdout(root, "ls-files", "--others", "--exclude-standard")
+    if names is None or diff is None or untracked is None:
+        return None
+    ranges: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    current, in_header = None, False
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            current, in_header = None, True
+        elif in_header and line.startswith("+++ "):
+            path = line[4:].rstrip("\t").removeprefix("b/")
+            current = None if path == "/dev/null" else path
+        elif line.startswith("@@"):
+            in_header = False
+            match = _HUNK_RE.match(line)
+            if match and current is not None:
+                start, count = int(match["start"]), int(match["count"] or 1)
+                # A pure deletion (count 0) marks the line it followed.
+                ranges[current].append((start, start + max(count, 1) - 1))
+    return {
+        "names": set(names.splitlines()),
+        "untracked": set(untracked.splitlines()),
+        "ranges": ranges,
+    }
+
+
+def _symbol_spans(symbols: list[dict]) -> list[tuple[dict, int, int]]:
+    """Each symbol with its first and last line. A symbol without a
+    line_end runs up to the line before the next symbol in its file."""
+    starts = sorted(s["line_start"] for s in symbols if s.get("line_start") is not None)
+    spans = []
+    for sym in symbols:
+        start = sym.get("line_start")
+        if start is None:
+            continue
+        end = sym.get("line_end")
+        if end is None:
+            later = [s for s in starts if s > start]
+            end = later[0] - 1 if later else _OPEN_END
+        spans.append((sym, start, end))
+    return spans
+
+
+def _graph_symbol_ids(graph: dict) -> dict[tuple, str]:
+    """Graph symbol node ids, keyed by (path, name, line)."""
+    return {
+        (node_source_file(n), str(n.get("label") or n.get("id")), n.get("line")): str(n["id"])
+        for n in graph.get("nodes") or []
+        if n.get("type") == "symbol" and n.get("id") is not None
+    }
+
+
+def _impact_summary(
+    label: str, callers: list[dict], importers: list[str], tests: list[str], depth: int
+) -> str:
+    """One line. Caller counts leave out callers in test files."""
+    source = [c for c in callers if not c["test"]]
+    direct = sum(1 for c in source if c["depth"] == 1)
+    parts = [ui.count(direct, "direct source caller")]
+    if depth > 1:
+        parts.append(f"{len(source):,} source callers within {depth} calls")
+    parts += [ui.count(len(importers), "importing file"), ui.count(len(tests), "test file")]
+    return f"{label}: {', '.join(parts)}."
+
+
+def _impact_error(payload: dict, code: str, message: str, **extra) -> dict:
+    payload.update(summary=message, error={"code": code, "message": message, **extra})
+    return payload
+
+
+def impact_payload(
+    root: Path,
+    ptr: dict,
+    *,
+    target: str | None,
+    file: str | None,
+    changed: bool,
+    depth: int,
+) -> dict:
+    """What a change touches, for ``mimry impact`` and MCP alike.
+
+    ``target`` is a symbol name (narrowed by ``file``) or a
+    repo-relative file path; ``changed`` uses the working tree against
+    HEAD instead.
+    Callers are followed ``depth`` calls back. Importers are the files
+    that import a target file directly. Tests are the test files among
+    the callers and importers.
+    """
+    payload: dict = {
+        "targets": [],
+        "callers": [],
+        "importers": [],
+        "tests": [],
+        "test_command": None,
+        "summary": "",
+    }
+    usage = impact_usage(target, file, changed)
+    if usage:
+        return _impact_error(payload, "usage", usage)
+    fresh, health = index_and_graph_health(root, ptr)
+    payload["test_command"] = project_test_command(fresh)
+    if health["status"] != "current":
+        message = f"The graph files are {health['status']}, so impact can't be checked"
+        return _impact_error(payload, "graph_not_current", message)
+    graph = load_graph(root)
+    files_by_id = {f["file_id"]: f["rel_path"] for f in fresh["files"]}
+    indexed = set(files_by_id.values())
+    symbols_by_path: dict[str, list[dict]] = defaultdict(list)
+    for sym in fresh["symbols"]:
+        if sym.get("kind") in NON_CODE_KINDS:
+            continue
+        if (rel := files_by_id.get(sym.get("file_id"))) is not None:
+            symbols_by_path[rel].append(sym)
+
+    # Each pick is (path, symbol record) for one target symbol.
+    picks: list[tuple[str, dict]] = []
+    if changed:
+        changes = _working_tree_changes(root)
+        if changes is None:
+            message = (
+                "git could not compare the working tree with HEAD, so there is nothing to check"
+            )
+            return _impact_error(payload, "no_git", message)
+        touched = changes["names"] | (changes["untracked"] & indexed)
+        if not touched:
+            return _impact_error(
+                payload, "no_changes", "No changes in the working tree against HEAD."
+            )
+        for rel in sorted(touched):
+            syms = symbols_by_path.get(rel, [])
+            if rel in changes["untracked"]:
+                picks += [(rel, sym) for sym in syms]
+                continue
+            ranges = changes["ranges"].get(rel, [])
+            picks += [
+                (rel, sym)
+                for sym, start, end in _symbol_spans(syms)
+                if any(start <= hi and lo <= end for lo, hi in ranges)
+            ]
+        target_files, label = touched, "the working tree"
+    elif not file and (rel := normalize_file_filter(target, root)) in indexed:
+        picks = [(rel, sym) for sym in symbols_by_path.get(rel, [])]
+        target_files, label = {rel}, rel
+    else:
+        wanted = normalize_file_filter(file, root) if file else None
+        lookup = call_lookup(graph, target, "callers", depth, wanted)
+        if lookup["target"] is None:
+            candidates = lookup["candidates"]
+            if lookup["ambiguous"]:
+                message = f'Several symbols are named "{target}"; add --file <path> to pick one.'
+                code = "ambiguous"
+            elif file and lookup.get("file_matched") is False:
+                message, code = f'No file in the graph matches "{file}".', "unknown_file"
+            elif file:
+                message = f'No function or method named "{target}" is in {file}.'
+                code = "unknown_symbol"
+            else:
+                message = f'No function, method or file named "{target}" is in the graph.'
+                code = "unknown_symbol"
+            return _impact_error(payload, code, message, candidates=candidates)
+        row = lookup["target"]
+        picks = [
+            (row["path"], {"name": row["name"], "kind": row["kind"], "line_start": row["line"]})
+        ]
+        target_files, label = {row["path"]}, row["name"]
+
+    ids = _graph_symbol_ids(graph)
+    targets = sorted(
+        (
+            {
+                "name": sym["name"],
+                "kind": sym["kind"],
+                "path": rel,
+                "line": sym.get("line_start"),
+            }
+            for rel, sym in picks
+        ),
+        key=lambda t: (t["path"], t["line"] or 0, t["name"]),
+    )
+    target_ids = {
+        ids[key] for key in ((t["path"], t["name"], t["line"]) for t in targets) if key in ids
+    }
+    callers = sorted(
+        call_rows(call_relations(graph, target_ids, "callers", depth)),
+        key=lambda r: (r["depth"], r["path"], r["line"] or 0, r["name"]),
+    )
+    for row in callers:
+        row["test"] = is_test_file(row["path"])
+    importers = importing_files(graph, target_files)
+    tests = sorted(
+        {c["path"] for c in callers if c["test"]} | {p for p in importers if is_test_file(p)}
+    )
+    payload.update(
+        targets=targets,
+        callers=callers,
+        importers=importers,
+        tests=tests,
+        summary=_impact_summary(label, callers, importers, tests, depth),
+    )
+    return payload
+
+
+def _at(path: str, line) -> str:
+    return f"{path}:{line}" if line else path
+
+
+def _print_impact(payload: dict) -> None:
+    error = payload.get("error")
+    if error and error["code"] == "graph_not_current":
+        ui.warn(error["message"])
+        ui.detail("Run `mimry refresh`, then try again.")
+        return
+    if error and error["code"] == "no_git":
+        ui.warn(error["message"])
+        return
+    if error and error["code"] == "no_changes":
+        print(error["message"])
+        return
+    if error and error["code"] == "usage":
+        ui.warn(error["message"])
+        return
+    if error:
+        print(error["message"])
+        candidates = error.get("candidates") or []
+        if error["code"] == "ambiguous":
+            ui.table(
+                [(c["name"], c["kind"], _at(c["path"], c["line"])) for c in candidates], indent=4
+            )
+        elif candidates:
+            ui.detail("Did you mean:")
+            ui.table([(c["name"], _at(c["path"], c["line"])) for c in candidates], indent=4)
+        return
+    ui.title(payload["summary"])
+    if payload["targets"]:
+        print()
+        ui.title(f"Targets ({len(payload['targets']):,})")
+        ui.listing(
+            [f"{t['name']} ({_at(t['path'], t['line'])})" for t in payload["targets"]],
+            IMPACT_SHOWN,
+        )
+    by_depth: dict[int, list[dict]] = defaultdict(list)
+    for row in payload["callers"]:
+        by_depth[row["depth"]].append(row)
+    for depth in sorted(by_depth):
+        source = [r for r in by_depth[depth] if not r["test"]]
+        in_tests = len(by_depth[depth]) - len(source)
+        heading = "Direct callers" if depth == 1 else f"Callers {depth} calls away"
+        counts = f"{len(source):,}" + (f", +{in_tests:,} in tests" if in_tests else "")
+        print()
+        ui.title(f"{heading} ({counts})")
+        ui.listing(
+            [
+                f"{r['name']} ({_at(r['path'], r['line'])}){inferred_mark(r['confidence'])}"
+                for r in source
+            ],
+            IMPACT_SHOWN,
+        )
+    if payload["importers"]:
+        print()
+        ui.title(f"Importing files ({len(payload['importers']):,})")
+        ui.listing(payload["importers"], IMPACT_SHOWN)
+    tests, command = payload["tests"], payload["test_command"]
+    print()
+    if not tests:
+        ui.warn("No tests reach these changes.")
+        return
+    ui.title(f"Tests to run ({len(tests):,})")
+    if command and "pytest" in command:
+        ui.detail(f"{command} {' '.join(tests)}")
+    else:
+        if command:
+            ui.detail(command)
+        ui.listing(tests, IMPACT_SHOWN)
+    if payload["callers"]:
+        print()
+        ui.detail(ui.faint(calls_note(payload["callers"])))
+
+
+def run_impact(a):
+    """The impact answer, for a caller that holds the index lock."""
+    root = Path(a.root).resolve()
+    ptr = require(root)
+    target = sanitize_query(a.target) if a.target else None
+    file = sanitize_query(a.file) if a.file else None
+    payload = impact_payload(root, ptr, target=target, file=file, changed=a.changed, depth=a.depth)
+    if getattr(a, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_impact(payload)
+    return 2 if payload.get("error", {}).get("code") == "usage" else 0
 
 
 def _indexed_as(surface: str, rel_path: str) -> bool:

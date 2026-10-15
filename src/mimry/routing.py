@@ -299,6 +299,20 @@ def risk_severity(gates: list[str]) -> dict[str, Any]:
     }
 
 
+_TEST_COMMAND_RE = re.compile(r"(?:^|\| )test command (?P<cmd>[^|]+)")
+
+
+def project_test_command(fresh: dict[str, Any]) -> str | None:
+    """The project's test command, as its config manifest records it."""
+    for f in fresh.get("files", []):
+        if "config-manifest" not in f.get("adapter", ""):
+            continue
+        match = _TEST_COMMAND_RE.search(f.get("metadata_text", ""))
+        if match:
+            return match.group("cmd").split(";")[0].strip() or None
+    return None
+
+
 def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[str]:
     commands: list[str] = []
     command_re = re.compile(

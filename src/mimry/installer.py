@@ -134,6 +134,7 @@ _REFERENCES: dict[str, str] = {
         """mimry path \"<source>\" \"<target>\"\n"""
         """mimry callers \"<name>\"\n"""
         """mimry callees \"<name>\"\n"""
+        """mimry impact \"<name or path>\"\n"""
         """mimry semantic \"<query>\"\n"""
         """```\n"""
         """\n"""
@@ -158,6 +159,7 @@ _REFERENCES: dict[str, str] = {
         """  relations \"callers\" or \"callees\" lists the calls around a symbol; each """
         """result's `confidence` is `EXTRACTED` or `INFERRED`; check INFERRED ones first\n"""
         """- `mimry_path(source, target, root?)`\n"""
+        """- `mimry_impact(target?, file?, changed?, depth?, root?)`\n"""
         """- `mimry_why(surface, query, root?, limit?)`\n"""
         """\n"""
         """Feedback/tooling tools:\n"""
@@ -690,6 +692,7 @@ mimry related "<query>"
 mimry symbol "<name>"
 mimry callers "<name>"
 mimry callees "<name>"
+mimry impact "<name or path>"
 mimry explain "<task>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
@@ -709,6 +712,7 @@ If MCP tools are loaded, prefer them over shell for lookup/context/workflow:
 - `mimry_related`
 - `mimry_symbol`
 - `mimry_path`
+- `mimry_impact`
 - `mimry_why`
 - `mimry_feedback`
 
@@ -768,7 +772,7 @@ Rules:
 - Use `mimry brief "<task>" --agent <role>` for delegation/handoff.
 - Read the context pack that preflight names (`context_path` over MCP) or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
 - Where a file lists `Read first: lines X-Y`, read those lines before the rest of the file.
-- Use `mimry find`, `mimry related`, `mimry symbol`, `mimry callers`, `mimry callees`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
+- Use `mimry find`, `mimry related`, `mimry symbol`, `mimry callers`, `mimry callees`, `mimry impact`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
 """  # noqa: E501 - Markdown written verbatim; its line breaks are content

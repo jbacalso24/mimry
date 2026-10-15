@@ -48,6 +48,7 @@ ALL_TOOL_NAMES = [
     "mimry_context",
     "mimry_explain",
     "mimry_path",
+    "mimry_impact",
     "mimry_why",
     "mimry_feedback",
     "mimry_digest",
