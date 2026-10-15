@@ -36,11 +36,31 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.3.4">
+<header class="release-meta">
+<h2>0.3.4</h2>
+<p class="release-date"><time datetime="2026-10-15">15 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.3.4">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.3.4/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Upgrade notes</h3>
+<ul><li>Upgrade with <code>mimry upgrade</code>. The first command after upgrading rebuilds the index, so Python <code>from pkg import module</code> imports and tsconfig path aliases link files.</li></ul>
+<h3>New features</h3>
+<ul><li><code>mimry status</code> lists indexed files per language (<a href="https://github.com/jbacalso24/mimry/pull/231">#231</a>).</li></ul>
+<h3>Fixes</h3>
+<ul><li><code>find</code>, <code>preflight</code> and the context pack rank files better for long task texts such as issue bodies (<a href="https://github.com/jbacalso24/mimry/pull/239">#239</a>, <a href="https://github.com/jbacalso24/mimry/pull/240">#240</a>, <a href="https://github.com/jbacalso24/mimry/pull/241">#241</a>). Intent is read from the task's first line, so a test word in a traceback no longer pulls test files up. A file the task names by path, module or unique file name ranks first. On SWE-bench Verified, the right file is in the top 10 for 74.6% of tasks, up from 66.2%.</li><li><code>mimry callers</code> finds calls through <code>from pkg import module</code> and through tsconfig and jsconfig <code>paths</code> aliases, and no longer says a function is unused when it found no callers (<a href="https://github.com/jbacalso24/mimry/pull/243">#243</a>).</li><li>Feedback keeps ordinary words after "pass" and "password" ("pass the duplicate flag", "password reset") instead of redacting them (<a href="https://github.com/jbacalso24/mimry/pull/244">#244</a>).</li><li>Feedback with a context pack records the changed files the pack did not suggest as missed, so <code>mimry feedback stats</code> counts misses (<a href="https://github.com/jbacalso24/mimry/pull/245">#245</a>).</li></ul>
+<h3>Other changes</h3>
+<ul><li>A SWE-bench Verified file localization benchmark, with a separate dev set for tuning (<a href="https://github.com/jbacalso24/mimry/pull/226">#226</a>, <a href="https://github.com/jbacalso24/mimry/pull/230">#230</a>, <a href="https://github.com/jbacalso24/mimry/pull/233">#233</a>, <a href="https://github.com/jbacalso24/mimry/pull/234">#234</a>, <a href="https://github.com/jbacalso24/mimry/pull/235">#235</a>, <a href="https://github.com/jbacalso24/mimry/pull/242">#242</a>).</li><li>The token benchmark reports recall@k and missed files (<a href="https://github.com/jbacalso24/mimry/pull/229">#229</a>) and runs in a GitHub workflow (<a href="https://github.com/jbacalso24/mimry/pull/246">#246</a>).</li><li>The README introduces MIMRY as a local context engine for AI coding agents (<a href="https://github.com/jbacalso24/mimry/pull/225">#225</a>, <a href="https://github.com/jbacalso24/mimry/pull/214">#214</a>).</li><li>CI jobs may run for 30 minutes (<a href="https://github.com/jbacalso24/mimry/pull/228">#228</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.3.3">
 <header class="release-meta">
 <h2>0.3.3</h2>
-<p class="release-date"><time datetime="2026-10-14">14 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-14">14 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.3.3">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.3.3/">PyPI</a></li>

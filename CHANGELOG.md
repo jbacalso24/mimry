@@ -2,6 +2,34 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.3.4 - 2026-10-15
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`.
+  The first command after upgrading rebuilds the index, so Python `from pkg import module` imports and tsconfig path aliases link files.
+
+### New features
+
+- `mimry status` lists indexed files per language ([#231](https://github.com/jbacalso24/mimry/pull/231)).
+
+### Fixes
+
+- `find`, `preflight` and the context pack rank files better for long task texts such as issue bodies ([#239](https://github.com/jbacalso24/mimry/pull/239), [#240](https://github.com/jbacalso24/mimry/pull/240), [#241](https://github.com/jbacalso24/mimry/pull/241)).
+  Intent is read from the task's first line, so a test word in a traceback no longer pulls test files up.
+  A file the task names by path, module or unique file name ranks first.
+  On SWE-bench Verified, the right file is in the top 10 for 74.6% of tasks, up from 66.2%.
+- `mimry callers` finds calls through `from pkg import module` and through tsconfig and jsconfig `paths` aliases, and no longer says a function is unused when it found no callers ([#243](https://github.com/jbacalso24/mimry/pull/243)).
+- Feedback keeps ordinary words after "pass" and "password" ("pass the duplicate flag", "password reset") instead of redacting them ([#244](https://github.com/jbacalso24/mimry/pull/244)).
+- Feedback with a context pack records the changed files the pack did not suggest as missed, so `mimry feedback stats` counts misses ([#245](https://github.com/jbacalso24/mimry/pull/245)).
+
+### Other changes
+
+- A SWE-bench Verified file localization benchmark, with a separate dev set for tuning ([#226](https://github.com/jbacalso24/mimry/pull/226), [#230](https://github.com/jbacalso24/mimry/pull/230), [#233](https://github.com/jbacalso24/mimry/pull/233), [#234](https://github.com/jbacalso24/mimry/pull/234), [#235](https://github.com/jbacalso24/mimry/pull/235), [#242](https://github.com/jbacalso24/mimry/pull/242)).
+- The token benchmark reports recall@k and missed files ([#229](https://github.com/jbacalso24/mimry/pull/229)) and runs in a GitHub workflow ([#246](https://github.com/jbacalso24/mimry/pull/246)).
+- The README introduces MIMRY as a local context engine for AI coding agents ([#225](https://github.com/jbacalso24/mimry/pull/225), [#214](https://github.com/jbacalso24/mimry/pull/214)).
+- CI jobs may run for 30 minutes ([#228](https://github.com/jbacalso24/mimry/pull/228)).
+
 ## 0.3.3 - 2026-10-14
 
 ### Upgrade notes
