@@ -116,6 +116,7 @@ Five versions are compared, each developed against the dev set only.
 | holdout2, 44 tasks | 0.3.1 | 31.2% | 28 / 33 | 45.3% | 33.4% (25 tasks) |
 | holdout2, 44 tasks | 0.3.2 | 31.2% | 28 / 33 | 45.3% | 33.4% (25 tasks) |
 | holdout2, 44 tasks | 0.3.3 | 31.0% | 28 / 32 | 45.3% | 29.8% (24 tasks) |
+| holdout2, 44 tasks | 0.3.4 | 30.9% | 28 / 32 | 45.3% | 29.8% (24 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 57.8% | 21 / 32 | 69.6% | 69.4% (19 tasks) |
 
 At the baseline MIMRY read more tokens than grep and fully located fewer tasks.
@@ -167,6 +168,13 @@ The task was not inspected, since holdout2 is never used to tune.
 honojs/hono#5446 reads 13,000 to 19,000 fewer tokens, and fastapi/typer#1904 reads 2,000 to 17,000 more; across all tasks MIMRY reads about as much as 0.3.2.
 Per-task numbers are in [results.holdout2.0.3.3.json](results.holdout2.0.3.3.json), [results.holdout2.sed.0.3.3.json](results.holdout2.sed.0.3.3.json) and [results.holdout2.ranges.0.3.3.json](results.holdout2.ranges.0.3.3.json).
 
+0.3.4 was run once in each read mode at release, on commit 6bfd661, by the Token benchmark workflow on Linux.
+Every task is located or missed as with 0.3.3, and every task reads the same files.
+Token counts move by a few tokens on most uvicorn tasks and by up to 950 on two missed tasks, so across all tasks MIMRY reads about as much as 0.3.3.
+The ranking changes in 0.3.4 target long task texts such as issue bodies, and holdout2's tasks are short titles.
+grep reads exactly the same tokens as on Windows, so results measured on either system compare directly.
+Per-task numbers are in [results.holdout2.0.3.4.json](results.holdout2.0.3.4.json), [results.holdout2.sed.0.3.4.json](results.holdout2.sed.0.3.4.json) and [results.holdout2.ranges.0.3.4.json](results.holdout2.ranges.0.3.4.json).
+
 **Rank before the cut** fixes a bug in how graph and content matches combine.
 The graph's matches were cut to the result limit (8 for a context pack) before each file's content score was added, so a file the graph ranked ninth could never lead, however well its content matched.
 Now every graph match gets its content score first, and the cut comes after.
@@ -197,6 +205,7 @@ With `--reads sed`:
 | holdout2, 44 tasks | 0.3.1 | 27.3% | 27 / 31 | 45.4% | 39.7% (24 tasks) |
 | holdout2, 44 tasks | 0.3.2 | 27.3% | 27 / 31 | 45.4% | 39.7% (24 tasks) |
 | holdout2, 44 tasks | 0.3.3 | 27.5% | 27 / 30 | 45.4% | 37.8% (23 tasks) |
+| holdout2, 44 tasks | 0.3.4 | 27.5% | 27 / 30 | 45.4% | 37.8% (23 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 54.1% | 19 / 30 | 62.4% | 71.7% (17 tasks) |
 
 On holdout2, 0.3.0 still reads 37% fewer tokens than grep, against 40% with whole-file reads, and its per-task median barely moves.
@@ -237,6 +246,7 @@ For the rebase-merged tasks above, a gold file the last commit does not touch co
 | holdout2, 44 tasks | 0.3.1 | 63.6% | 28 / 33 | 74.8% | 58.3% (25 tasks) |
 | holdout2, 44 tasks | 0.3.2 | 63.6% | 28 / 33 | 74.8% | 58.3% (25 tasks) |
 | holdout2, 44 tasks | 0.3.3 | 63.8% | 28 / 32 | 75.0% | 56.4% (24 tasks) |
+| holdout2, 44 tasks | 0.3.4 | 63.8% | 28 / 32 | 75.0% | 56.4% (24 tasks) |
 
 On dev, reading the listed ranges halves what MIMRY reads: 677,799 tokens against 0.3.0's 1,285,495 with whole-file reads, while grep reads 1,894,477.
 It locates one task fewer than with whole-file reads (32 against 33): in ripgrep#3472 the ranges missed the change in several of the four gold files, and the second reads used up the budget.
@@ -290,5 +300,4 @@ The runner clones each repository into the scratch directory, checks out each ta
 `--reads sed` charges `grep -n` and `sed -n` windows instead of whole-file reads and writes `results.<set>.sed.json`; `--window` sets the lines read on each side of a match (default 100).
 `--reads ranges` has the MIMRY agent read the line ranges its pack lists first and writes `results.<set>.ranges.json`.
 The [Token benchmark](../../.github/workflows/tokens.yml) workflow runs a set in all three read modes on GitHub Actions (Ubuntu, Python 3.14) and uploads the results named for the version under test; releases use it for holdout2.
-Results up to 0.3.3 were measured on Windows, so files checked out with CRLF line endings may count slightly more tokens than the same files on Linux, for both agents.
 Selecting new tasks needs an authenticated `gh` CLI: `python benchmarks/tokens/select_tasks.py dev`.
