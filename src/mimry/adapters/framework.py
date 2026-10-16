@@ -7,8 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .config_manifest_adapter import extract_config_metadata, is_config_manifest
-from .paths import stable_id
+from ..paths import stable_id
+from .config_manifest import extract_config_metadata, is_config_manifest
 from .xcode import extract_xcode_targets, parse_pbxproj
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}

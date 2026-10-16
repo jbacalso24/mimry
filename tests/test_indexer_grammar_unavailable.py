@@ -24,12 +24,12 @@ from tree_sitter_language_pack import DownloadError
 
 import mimry.core.languages as languages
 import mimry.doctor as doctor
+from mimry.adapters.ts_ast import parse_ts_like
 from mimry.commands import cmd_index, cmd_init, cmd_preflight, cmd_status
 from mimry.core.languages import GRAMMAR_UNAVAILABLE, extract
 from mimry.indexer import is_code_parse_failure, write_index
 from mimry.state import GENERATION_MANIFEST, grammar_unavailable_count
 from mimry.storage import load_pointer
-from mimry.ts_ast_adapter import parse_ts_like
 
 OLD_NS = 1_600_000_000 * 10**9
 GO_SOURCE = 'package main\n\nfunc Hello() string { return "hi" }\n'

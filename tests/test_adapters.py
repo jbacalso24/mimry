@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from mimry.adapters import adapter_for_extension, list_adapters
-from mimry.framework_adapters import markdown_doc_facts, nextjs_app_router_facts
+from mimry.adapters.framework import markdown_doc_facts, nextjs_app_router_facts
 
 
 def test_adapter_registry_lists_all_active_adapters():
@@ -75,7 +75,7 @@ def test_markdown_docs_extracts_frontmatter_headings_and_wiki_links(tmp_path):
 
 
 def test_alembic_migration_facts_detects_migration(tmp_path):
-    from mimry.framework_adapters import alembic_migration_facts
+    from mimry.adapters.framework import alembic_migration_facts
 
     migration = tmp_path / "migration.py"
     migration.write_text(
@@ -91,7 +91,7 @@ def test_alembic_migration_facts_detects_migration(tmp_path):
 
 
 def test_alembic_migration_without_marker_returns_empty(tmp_path):
-    from mimry.framework_adapters import alembic_migration_facts
+    from mimry.adapters.framework import alembic_migration_facts
 
     non_migration = tmp_path / "regular.py"
     non_migration.write_text("revision = 'test'\nx = 1\n", encoding="utf-8")
@@ -102,7 +102,7 @@ def test_alembic_migration_without_marker_returns_empty(tmp_path):
 
 
 def test_plist_facts_extraction(tmp_path):
-    from mimry.framework_adapters import plist_facts
+    from mimry.adapters.framework import plist_facts
 
     info_plist = tmp_path / "Info.plist"
     plist_content = (
@@ -123,7 +123,7 @@ def test_plist_facts_extraction(tmp_path):
 
 
 def test_entitlements_facts_extraction(tmp_path):
-    from mimry.framework_adapters import plist_facts
+    from mimry.adapters.framework import plist_facts
 
     entitlements = tmp_path / "app.entitlements"
     plist_content = (
@@ -149,7 +149,7 @@ def test_entitlements_facts_extraction(tmp_path):
 def test_js_ts_regex_fallback_recovers_declarations():
     import textwrap
 
-    from mimry.ts_ast_adapter import _fallback_symbols_regex
+    from mimry.adapters.ts_ast import _fallback_symbols_regex
 
     source = textwrap.dedent(
         """

@@ -5,7 +5,7 @@ import shlex
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .config_manifest_adapter import DOC_NAMES, check_source_rank
+from .adapters.config_manifest import DOC_NAMES, check_source_rank
 from .freshness import index_freshness
 from .intent import is_likely_edit_surface, start_order
 from .paths import output_dir

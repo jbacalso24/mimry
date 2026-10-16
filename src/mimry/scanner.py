@@ -12,12 +12,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import __version__
-from .config_manifest_adapter import (
+from .adapters.config_manifest import (
     extract_config_metadata,
     is_check_source,
     is_config_manifest,
     safe_hint,
 )
+from .adapters.framework import (
+    alembic_migration,
+    enrich_framework_facts,
+    markdown_link_targets,
+    sql_table_references,
+)
+from .adapters.ts_ast import TS_EXTENSIONS, parse_ts_like
+from .adapters.xcode import extract_xcode_targets, parse_pbxproj
 from .constants import SCHEMA_VERSION, SETTINGS_FILE
 from .core.documents import (
     DOCUMENT_ADAPTERS,
@@ -29,12 +37,6 @@ from .core.documents import (
 from .core.languages import EXTENSION_LANGUAGE, is_objc_header
 from .core.languages import extract as extract_language
 from .core.tsconfig import CONFIG_NAMES, parse_tsconfig
-from .framework_adapters import (
-    alembic_migration,
-    enrich_framework_facts,
-    markdown_link_targets,
-    sql_table_references,
-)
 from .intent import CAMEL_BOUNDARY_RE, CJK_RUN_RE, STOPWORDS, TOKEN_RE, cjk_bigrams
 from .paths import canonical_rel_path, stable_id
 from .reuse import code_fingerprint
@@ -49,8 +51,6 @@ from .security import (
     safe_root,
 )
 from .state import scoped
-from .ts_ast_adapter import TS_EXTENSIONS, parse_ts_like
-from .xcode import extract_xcode_targets, parse_pbxproj
 
 if TYPE_CHECKING:
     # A runtime import would cycle back through pieces.py.

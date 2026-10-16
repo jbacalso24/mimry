@@ -977,7 +977,7 @@ def test_method_names_survive_the_objc_method_branch(tmp_path):
     of _definition_name must not catch method_declaration or
     method_definition in other languages.
     """
-    from mimry.ts_ast_adapter import parse_ts_like
+    from mimry.adapters.ts_ast import parse_ts_like
 
     php = _extract(
         tmp_path,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-from .core.languages import EXTENSION_LANGUAGE
+from ..core.languages import EXTENSION_LANGUAGE
 
 AdapterStatus = Literal["active", "planned"]
 AdapterKind = Literal["code", "document", "data", "media", "project"]

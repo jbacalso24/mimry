@@ -15,11 +15,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from mimry.adapters.ts_ast import parse_ts_like
 from mimry.commands import cmd_init
 from mimry.core.languages import extract
 from mimry.indexer import write_index
 from mimry.storage import load_pointer
-from mimry.ts_ast_adapter import parse_ts_like
 
 BOM = "﻿"
 

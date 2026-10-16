@@ -242,7 +242,7 @@ class GraphEngine:
                 "type": "symbol",
                 "kind": s["kind"],
                 "file_type": s["language"],
-                # Scanners already carry line_start (ts_ast_adapter,
+                # Scanners already carry line_start (adapters/ts_ast.py,
                 # core.languages); without it every graph answer points
                 # at a file, not a location.
                 "line": s.get("line_start"),

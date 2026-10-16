@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from mimry import __version__, installer, lifecycle
+from mimry.adapters.config_manifest import extract_config_metadata
 from mimry.commands import _languages_text
-from mimry.config_manifest_adapter import extract_config_metadata
 from mimry.core.languages import language_counts
 from mimry.feedback import parse_context_suggested_paths
 from mimry.queries import _display_commands

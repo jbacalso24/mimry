@@ -8,10 +8,10 @@ import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
+from mimry.adapters.xcode import parse_pbxproj
 from mimry.commands import cmd_init
 from mimry.indexer import write_index
 from mimry.storage import load_pointer
-from mimry.xcode import parse_pbxproj
 
 
 class TestAlembicMigrations:
@@ -191,7 +191,7 @@ class TestAlembicMigrations:
 
     def test_annotated_template_works(self, tmp_path: Path) -> None:
         """Type-annotated template extracts revision correctly."""
-        from mimry.framework_adapters import alembic_migration
+        from mimry.adapters.framework import alembic_migration
 
         source = textwrap.dedent(
             """
@@ -210,7 +210,7 @@ class TestAlembicMigrations:
 
     def test_operator_import_no_facts(self, tmp_path: Path) -> None:
         """import operator doesn't trigger alembic facts."""
-        from mimry.framework_adapters import alembic_migration
+        from mimry.adapters.framework import alembic_migration
 
         source = "import operator\nrevision = 'x'\n"
 
@@ -220,7 +220,7 @@ class TestAlembicMigrations:
 
     def test_revision_in_function_not_counted(self, tmp_path: Path) -> None:
         """Revision assigned inside a function is not counted."""
-        from mimry.framework_adapters import alembic_migration
+        from mimry.adapters.framework import alembic_migration
 
         source = textwrap.dedent(
             """
@@ -240,7 +240,7 @@ class TestAlembicMigrations:
 
     def test_op_create_table_and_index(self, tmp_path: Path) -> None:
         """op.create_table and op.create_index extract table names."""
-        from mimry.framework_adapters import alembic_migration
+        from mimry.adapters.framework import alembic_migration
 
         source = textwrap.dedent(
             """
@@ -418,7 +418,7 @@ class TestXcodeParser:
 
     def test_pbxproj_size_cap(self) -> None:
         """pbxproj over size cap gives no facts."""
-        from mimry.xcode import MAX_PLIST_SIZE
+        from mimry.adapters.xcode import MAX_PLIST_SIZE
 
         oversized = "x" * (MAX_PLIST_SIZE + 1)
         result = parse_pbxproj(oversized)
@@ -445,7 +445,7 @@ class TestPlists:
 
     def test_xml_plist_with_entity_refused(self) -> None:
         """XML plist with <!ENTITY is refused."""
-        from mimry.framework_adapters import plist_facts
+        from mimry.adapters.framework import plist_facts
 
         plist_content = textwrap.dedent(
             """
@@ -472,7 +472,7 @@ class TestPlists:
 
     def test_binary_plist_gives_facts(self, tmp_path: Path) -> None:
         """Binary plist gives facts."""
-        from mimry.framework_adapters import plist_facts
+        from mimry.adapters.framework import plist_facts
 
         data_dict = {"CFBundleIdentifier": "com.example.app"}
         binary_data = plistlib.dumps(data_dict, fmt=plistlib.FMT_BINARY)
@@ -488,7 +488,7 @@ class TestPlists:
 
     def test_settings_plist_no_facts(self, tmp_path: Path) -> None:
         """Settings.plist gives no facts."""
-        from mimry.framework_adapters import plist_facts
+        from mimry.adapters.framework import plist_facts
 
         data_dict = {"CFBundleIdentifier": "com.example.app"}
         binary_data = plistlib.dumps(data_dict, fmt=plistlib.FMT_BINARY)
@@ -508,7 +508,7 @@ class TestJsTsRegex:
 
     def test_fallback_recovers_top_level_declarations(self) -> None:
         """Fallback recovers top-level declarations."""
-        from mimry.ts_ast_adapter import _fallback_symbols_regex
+        from mimry.adapters.ts_ast import _fallback_symbols_regex
 
         source = textwrap.dedent(
             """
@@ -530,7 +530,7 @@ class TestJsTsRegex:
 
     def test_fallback_skips_indented_declarations(self) -> None:
         """Indented declarations are not recorded in fallback."""
-        from mimry.ts_ast_adapter import _fallback_symbols_regex
+        from mimry.adapters.ts_ast import _fallback_symbols_regex
 
         source = textwrap.dedent(
             """
@@ -555,7 +555,7 @@ class TestJsTsRegex:
 
     def test_fallback_uses_tree_sitter_kinds(self) -> None:
         """Fallback uses tree-sitter kinds for arrow functions."""
-        from mimry.ts_ast_adapter import _fallback_symbols_regex
+        from mimry.adapters.ts_ast import _fallback_symbols_regex
 
         source = "const MyComponent = () => <div/>"
 
@@ -573,7 +573,7 @@ class TestJsTsRegex:
 
     def test_ts_fallback_and_tree_sitter_match_kinds(self, tmp_path: Path) -> None:
         """Tree-sitter and fallback emit same TS declaration kinds."""
-        from mimry.ts_ast_adapter import parse_ts_like
+        from mimry.adapters.ts_ast import parse_ts_like
 
         source = textwrap.dedent(
             """
@@ -599,7 +599,7 @@ class TestJsTsRegex:
         ts_kinds = {(s["name"], s["kind"]) for s in ts_symbols}
 
         # Parse through fallback by forcing it
-        from mimry.ts_ast_adapter import _fallback_symbols_regex
+        from mimry.adapters.ts_ast import _fallback_symbols_regex
 
         fallback_symbols, _ = _fallback_symbols_regex(source, file_record, ts_file)
         fallback_kinds = {(s["name"], s["kind"]) for s in fallback_symbols}
@@ -611,7 +611,7 @@ class TestJsTsRegex:
 
     def test_jsx_parses_through_tree_sitter(self, tmp_path: Path) -> None:
         """JSX files parse through tree-sitter, not regex fallback."""
-        from mimry.ts_ast_adapter import parse_ts_like
+        from mimry.adapters.ts_ast import parse_ts_like
 
         source = "export const Component = () => <div>test</div>;"
 
@@ -630,7 +630,7 @@ class TestJsTsRegex:
 
     def test_pbxproj_with_string_target_no_error(self) -> None:
         """pbxproj with string buildConfigurationList gives no error."""
-        from mimry.xcode import extract_xcode_targets
+        from mimry.adapters.xcode import extract_xcode_targets
 
         pbxproj_dict = {
             "objects": {
@@ -650,7 +650,7 @@ class TestJsTsRegex:
 
     def test_shop_create_table_not_counted(self) -> None:
         """shop.create_table() is not counted as Alembic operation."""
-        from mimry.framework_adapters import alembic_migration
+        from mimry.adapters.framework import alembic_migration
 
         source = textwrap.dedent(
             """
@@ -673,7 +673,7 @@ class TestJsTsRegex:
 
     def test_plist_with_draft_string_gives_facts(self) -> None:
         """Info.plist with <string>[draft]</string> gives facts."""
-        from mimry.framework_adapters import plist_facts
+        from mimry.adapters.framework import plist_facts
 
         plist_content = (
             '<?xml version="1.0" encoding="UTF-8"?>'
@@ -696,7 +696,7 @@ class TestJsTsRegex:
 
     def test_plist_with_internal_subset_refused(self) -> None:
         """Info.plist with <!DOCTYPE plist [ ... ]> is refused."""
-        from mimry.framework_adapters import plist_facts
+        from mimry.adapters.framework import plist_facts
 
         plist_content = textwrap.dedent(
             """

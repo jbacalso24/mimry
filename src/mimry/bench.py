@@ -32,8 +32,8 @@ from statistics import median
 from typing import Any
 
 from . import ui
+from .adapters.config_manifest import CONFIG_FILENAMES
 from .benchmark import _env, _paths, _run, percentile, recall_at_k, token_proxy
-from .config_manifest_adapter import CONFIG_FILENAMES
 
 DEFAULT_TASKS = 20
 MAX_FILES = 30

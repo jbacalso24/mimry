@@ -4,10 +4,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .constants import EXPORT_RE, IMPORT_RE, REQUIRE_RE
-from .core.languages import GRAMMAR_UNAVAILABLE, GrammarUnavailableError, load_parser
-from .paths import stable_id
-from .security import is_text
+from ..constants import EXPORT_RE, IMPORT_RE, REQUIRE_RE
+from ..core.languages import GRAMMAR_UNAVAILABLE, GrammarUnavailableError, load_parser
+from ..paths import stable_id
+from ..security import is_text
 
 TS_EXTENSIONS = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 
