@@ -18,7 +18,7 @@ Required sections:
 - reading order with roles (no duplicate reasons)
 - edit surfaces and support files (path lists only)
 - risks: generated/cache/dirty paths and degradation warnings (condensed)
-- verify with: suggested verification commands detected from config manifests and repo docs
+- verify with: suggested verification commands detected from package.json, pyproject.toml, Makefile and justfile targets, tox and nox sessions, and CI workflow run steps
   A nested package's command runs from its own directory (`cd adapters/bun && bun run test`) with its own package manager.
 
 Rules:

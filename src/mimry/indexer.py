@@ -204,6 +204,8 @@ def is_code_parse_failure(status: str, adapter: str) -> bool:
     """
     if not status.startswith("parse_error:"):
         return False
+    # A noxfile.py adapter reads "python-ast+config-manifest".
+    adapter = adapter.split("+", 1)[0]
     if adapter != "python-ast" and not adapter.startswith("tree-sitter-"):
         return False
     reason = status.removeprefix("parse_error:")

@@ -20,6 +20,7 @@ from mimry.core.languages import language_counts
 from mimry.feedback import parse_context_suggested_paths
 from mimry.queries import _display_commands
 from mimry.routing import _is_setup_command, project_test_command, verification_commands
+from mimry.scanner import adapt
 
 
 def _posix(text: str) -> str:
@@ -2487,6 +2488,200 @@ def test_root_manifest_commands_come_before_nested_ones():
         ]
     }
     assert verification_commands(fresh) == ["pnpm build", "pnpm test", "bun run test"]
+
+
+def _check_text(tmp_path: Path, rel: str, body: str) -> str:
+    _write(tmp_path / rel, body)
+    return extract_config_metadata(tmp_path / rel, tmp_path)
+
+
+def test_makefile_targets_become_make_commands(tmp_path):
+    text = _check_text(
+        tmp_path,
+        "Makefile",
+        "PYTHON := python3\n"
+        "VAR ?= 1\n"
+        ".PHONY: test lint\n"
+        "test: deps\n"
+        "\tpytest\n"
+        "lint:\n"
+        "\truff check .\n"
+        "check: test\n"
+        "build-docs:\n"
+        "\techo docs\n"
+        "%.o: %.c\n"
+        "\tcc $<\n"
+        "check-all ::= 1\n",
+    )
+    assert "test command make test; make check" in text
+    assert "lint command make lint" in text
+    assert "build command make build-docs" in text
+    assert "check-all" not in text and "PYTHON" not in text and "VAR" not in text
+
+
+def test_justfile_only_suggests_recipes_that_run_without_arguments(tmp_path):
+    text = _check_text(
+        tmp_path,
+        "justfile",
+        'set shell := ["bash"]\n'
+        "alias t := test\n"
+        "test *ARGS:\n"
+        "    pytest {{ARGS}}\n"
+        "\n"
+        "lint:\n"
+        "    ruff check .\n"
+        'fmt flag="x":\n'
+        "    echo\n"
+        "_test-helper:\n"
+        "    echo\n",
+    )
+    assert "lint command just lint" in text
+    assert "test command" not in text
+    assert "fmt" not in text and "helper" not in text
+
+
+def test_nested_tox_envs_carry_their_directory_and_only_check_envs(tmp_path):
+    text = _check_text(
+        tmp_path,
+        "svc/tox.ini",
+        "[tox]\nenvlist = py312, lint, {py311,py312}-test\n\n"
+        "[testenv:test-unit]\ncommands = pytest\n\n"
+        "[testenv:docs]\ncommands = sphinx\n",
+    )
+    assert "test command cd svc && tox -e test-unit" in text
+    assert "lint command cd svc && tox -e lint" in text
+    assert "docs" not in text and "py312" not in text
+
+
+def test_nested_makefile_targets_carry_their_directory(tmp_path):
+    text = _check_text(tmp_path, "tools/cli/Makefile", "test:\n\tpytest\n")
+    assert "test command cd tools/cli && make test" in text
+
+
+def test_nox_sessions_use_the_name_argument_or_the_function_name(tmp_path):
+    text = _check_text(
+        tmp_path,
+        "noxfile.py",
+        "import nox\n\n"
+        '@nox.session(python=["3.12"])\n'
+        "def tests(session):\n    pass\n\n"
+        '@nox.session(name="lint")\n'
+        "def style(session):\n    pass\n\n"
+        "@nox.session\n"
+        "async def typecheck(session):\n    pass\n\n"
+        "@nox.session\n"
+        "def docs(session):\n    pass\n",
+    )
+    assert "test command nox -s tests" in text
+    assert "lint command nox -s lint" in text
+    assert "typecheck command nox -s typecheck" in text
+    assert "nox -s style" not in text and "docs" not in text
+
+
+def test_noxfile_keeps_its_python_symbols_and_adds_its_sessions(tmp_path):
+    _write(tmp_path / "noxfile.py", "@nox.session\ndef tests(session):\n    pass\n")
+    f, symbols, *_rest = adapt(tmp_path / "noxfile.py", tmp_path)
+    assert f["adapter"] == "python-ast+config-manifest"
+    assert "test command nox -s tests" in f["metadata_text"]
+    assert "tests" in {symbol["name"] for symbol in symbols}
+
+
+def test_check_source_hint_stays_the_file_text(tmp_path):
+    _write(tmp_path / ".github" / "workflows" / "ci.yml", "name: Quality gate\n")
+    f, *_rest = adapt(tmp_path / ".github" / "workflows" / "ci.yml", tmp_path)
+    assert f["adapter"] == "config-manifest"
+    assert f["content_hint"] == "name: Quality gate"
+    assert "config-manifest" not in f["content_hint"]
+
+
+def test_ci_steps_keep_only_plain_single_line_checks(tmp_path):
+    text = _check_text(
+        tmp_path,
+        ".github/workflows/ci.yml",
+        "name: CI\n"
+        "jobs:\n"
+        "  test:\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+        "      - name: Install\n"
+        "        run: uv sync\n"
+        "      - run: uv run pytest -q\n"
+        "      - run: npm run lint\n"
+        "        working-directory: web\n"
+        "      - run: |\n"
+        "          pytest\n"
+        "          ruff check .\n"
+        "      - run: ${{ secrets.TOKEN }} pytest\n"
+        "      - run: pytest | tee out.txt\n"
+        "      - run: npm ci && npm test\n"
+        "      - run: make test\n"
+        "      - run: ruff format --check .\n",
+    )
+    assert "test command uv run pytest -q; make test" in text
+    assert "lint command cd web && npm run lint" in text
+    assert "format command ruff format --check ." in text
+    assert "secret" not in text and "tee" not in text and "uv sync" not in text
+    assert "ruff check" not in text and "npm test" not in text
+
+
+def test_ci_workflow_with_job_defaults_is_not_read(tmp_path):
+    text = _check_text(
+        tmp_path,
+        ".github/workflows/ci.yml",
+        "jobs:\n  test:\n    defaults:\n      run:\n        working-directory: app\n"
+        "    steps:\n      - run: pytest\n",
+    )
+    assert "test command" not in text
+
+
+def test_check_sources_are_ordered_manifests_make_tox_then_ci():
+    fresh = {
+        "files": [
+            _manifest(".github/workflows/ci.yml", "test command pytest -q"),
+            _manifest("tox.ini", "test command tox -e test"),
+            _manifest("Makefile", "test command make test"),
+            _manifest("pkg/package.json", "test command npm run test"),
+            _manifest("package.json", "test command npm test"),
+        ]
+    }
+    assert verification_commands(fresh) == [
+        "npm test",
+        "npm run test",
+        "make test",
+        "tox -e test",
+        "pytest -q",
+    ]
+
+
+def test_route_suggests_make_test_for_a_makefile_only_repo(tmp_path):
+    repo = tmp_path / "repo"
+    _write(repo / "Makefile", "test:\n\tpytest -q\n")
+    _write(repo / "src" / "app.py", "def run():\n    return 1\n")
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "route", "fix the ranking of test files", "--json")
+
+    assert res.returncode == 0, res.stderr
+    assert json.loads(res.stdout)["suggested_verification"] == ["make test"]
+
+
+def test_route_suggests_a_ci_step_for_a_repo_with_only_a_workflow(tmp_path):
+    repo = tmp_path / "repo"
+    _write(
+        repo / ".github" / "workflows" / "ci.yml",
+        "jobs:\n  test:\n    steps:\n      - run: pytest -q\n",
+    )
+    _write(repo / "src" / "app.py", "def run():\n    return 1\n")
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "route", "fix the ranking of test files", "--json")
+
+    assert res.returncode == 0, res.stderr
+    assert json.loads(res.stdout)["suggested_verification"] == ["pytest -q"]
 
 
 def test_preferred_uv_checks_lead_the_pyproject_commands():

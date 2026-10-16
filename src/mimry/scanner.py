@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import __version__
-from .config_manifest_adapter import extract_config_metadata, is_config_manifest, safe_hint
+from .config_manifest_adapter import (
+    extract_config_metadata,
+    is_check_source,
+    is_config_manifest,
+    safe_hint,
+)
 from .constants import SCHEMA_VERSION, SETTINGS_FILE
 from .core.documents import (
     DOCUMENT_ADAPTERS,
@@ -798,9 +803,11 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
     # same content.
     if has_sensitive_content(path, data=data):
         raise SensitiveContentError("secret-bearing content is not indexable")
+    # Check sources keep the file text as their hint, so content search
+    # is unchanged; their commands are carried in metadata_text.
     hint = (
         safe_hint(path, data=data, root=root)
-        if is_config_manifest(path)
+        if is_config_manifest(path) and not is_check_source(path)
         else text_hint(path, data=data)
     )
     f = file_record(path, root, "generic", "ok", hint, snapshot)
@@ -811,7 +818,7 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
     calls = []
     inherits = []
     references = {"doc_links": [], "table_refs": []}
-    if is_config_manifest(path):
+    if is_config_manifest(path) and ext != ".py":
         metadata = extract_config_metadata(path, root, data=data)
         f = file_record(path, root, "config-manifest", "ok", hint, snapshot)
         f["metadata_text"] = metadata
@@ -964,6 +971,17 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
         )
     rel_path = canonical_rel_path(path, root)
     _populate_references(ext, data, references, inherits, path, root, rel_path)
+    if is_config_manifest(path) and ext == ".py":
+        # noxfile.py keeps its symbols; sessions join the metadata.
+        f["adapter"] = f"{f['adapter']}+config-manifest"
+        f["metadata_text"] = " | ".join(
+            part
+            for part in (
+                f.get("metadata_text", ""),
+                extract_config_metadata(path, root, data=data),
+            )
+            if part
+        )
     f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
     verify_unchanged(path, _st, root=root)
     if contains_sensitive_data(

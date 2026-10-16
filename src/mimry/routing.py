@@ -5,7 +5,7 @@ import shlex
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .config_manifest_adapter import DOC_NAMES
+from .config_manifest_adapter import DOC_NAMES, check_source_rank
 from .freshness import index_freshness
 from .intent import start_order
 from .paths import output_dir
@@ -353,10 +353,13 @@ def _is_check_manifest(f: dict[str, Any]) -> bool:
 
 
 def _check_manifests(fresh: dict[str, Any]) -> list[dict[str, Any]]:
-    """Root manifests first, so the root wins over nested packages."""
+    """Manifests, make/just, tox/nox, CI; root before nested."""
     return sorted(
         (f for f in fresh.get("files", []) if _is_check_manifest(f)),
-        key=lambda f: f.get("rel_path", "").count("/"),
+        key=lambda f: (
+            check_source_rank(PurePosixPath(f.get("rel_path", ""))),
+            f.get("rel_path", "").count("/"),
+        ),
     )
 
 
