@@ -798,7 +798,11 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
     # same content.
     if has_sensitive_content(path, data=data):
         raise SensitiveContentError("secret-bearing content is not indexable")
-    hint = safe_hint(path, data=data) if is_config_manifest(path) else text_hint(path, data=data)
+    hint = (
+        safe_hint(path, data=data, root=root)
+        if is_config_manifest(path)
+        else text_hint(path, data=data)
+    )
     f = file_record(path, root, "generic", "ok", hint, snapshot)
     symbols = []
     edges = []

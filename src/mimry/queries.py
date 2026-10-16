@@ -745,10 +745,16 @@ def print_results_section(heading: str, rows: list[dict], *, verbose: bool) -> N
 
 
 def _display_commands(commands: list[str]) -> list[str]:
-    """One entry per command, ignoring flags such as -q."""
+    """One entry per command, ignoring flags such as -q.
+
+    A nested package's `cd <dir> && ` prefix is kept whole, so two
+    packages with the same script stay two entries.
+    """
     shown, seen = [], set()
     for command in commands:
-        base = " ".join(word for word in command.split() if not word.startswith("-"))
+        prefix, sep, run = command.rpartition(" && ")
+        run = " ".join(word for word in run.split() if not word.startswith("-"))
+        base = prefix + sep + run
         if base not in seen:
             seen.add(base)
             shown.append(command)

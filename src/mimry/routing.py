@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -305,9 +306,7 @@ _TEST_COMMAND_RE = re.compile(r"(?:^|\| )test command (?P<cmd>[^|]+)")
 
 def project_test_command(fresh: dict[str, Any]) -> str | None:
     """The project's test command, as its config manifest records it."""
-    for f in fresh.get("files", []):
-        if "config-manifest" not in f.get("adapter", ""):
-            continue
+    for f in _check_manifests(fresh):
         match = _TEST_COMMAND_RE.search(f.get("metadata_text", ""))
         if match:
             return match.group("cmd").split(";")[0].strip() or None
@@ -325,9 +324,20 @@ _SETUP_SUBCOMMANDS = {
 }
 
 
+def _without_cd(cmd: str) -> str:
+    """The command after a nested package's `cd <dir> && ` prefix."""
+    try:
+        words = shlex.split(cmd)
+    except ValueError:
+        return cmd
+    if len(words) > 3 and words[0] == "cd" and words[2] == "&&":
+        return shlex.join(words[3:])
+    return cmd
+
+
 def _is_setup_command(cmd: str) -> bool:
-    """Install or scaffold line, e.g. `npm i x`."""
-    words = cmd.split()
+    """Install or scaffold line, e.g. `npm i x`; cd prefix ignored."""
+    words = _without_cd(cmd).split()
     if len(words) < 2:
         return False
     head, sub = words[0], words[1]
@@ -341,17 +351,20 @@ def _is_check_manifest(f: dict[str, Any]) -> bool:
     return PurePosixPath(f.get("rel_path", "")).name not in DOC_NAMES
 
 
+def _check_manifests(fresh: dict[str, Any]) -> list[dict[str, Any]]:
+    """Root manifests first, so the root wins over nested packages."""
+    return sorted(
+        (f for f in fresh.get("files", []) if _is_check_manifest(f)),
+        key=lambda f: f.get("rel_path", "").count("/"),
+    )
+
+
 def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[str]:
     commands: list[str] = []
     command_re = re.compile(
         r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) command (?P<cmd>[^|]+)"
     )
-    # Root manifests first, so the root wins over nested packages.
-    manifests = sorted(
-        (f for f in fresh.get("files", []) if _is_check_manifest(f)),
-        key=lambda f: f.get("rel_path", "").count("/"),
-    )
-    for f in manifests:
+    for f in _check_manifests(fresh):
         for match in command_re.finditer(f.get("metadata_text", "")):
             for cmd in match.group("cmd").split(";"):
                 cmd = cmd.strip()

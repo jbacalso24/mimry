@@ -19,6 +19,7 @@ Required sections:
 - edit surfaces and support files (path lists only)
 - risks: generated/cache/dirty paths and degradation warnings (condensed)
 - verify with: suggested verification commands detected from config manifests and repo docs
+  A nested package's command runs from its own directory (`cd adapters/bun && bun run test`) with its own package manager.
 
 Rules:
 

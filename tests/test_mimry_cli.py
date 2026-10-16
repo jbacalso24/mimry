@@ -15,9 +15,11 @@ import pytest
 
 from mimry import __version__, installer
 from mimry.commands import _languages_text
+from mimry.config_manifest_adapter import extract_config_metadata
 from mimry.core.languages import language_counts
 from mimry.feedback import parse_context_suggested_paths
-from mimry.routing import _is_setup_command, verification_commands
+from mimry.queries import _display_commands
+from mimry.routing import _is_setup_command, project_test_command, verification_commands
 
 
 def _posix(text: str) -> str:
@@ -2296,6 +2298,111 @@ testpaths = ["tests"]
     assert "repo rules Never print secrets." in files_text
 
 
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_root_manifest_metadata_has_no_directory_prefix(tmp_path):
+    _write(tmp_path / "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+    _write(
+        tmp_path / "package.json",
+        json.dumps({"scripts": {"build": "tsc", "test": "vitest run"}}),
+    )
+    assert extract_config_metadata(tmp_path / "package.json", tmp_path) == (
+        "config-manifest | file package.json | package manager pnpm"
+        " | package scripts build test | build command pnpm build"
+        " | test command pnpm test"
+    )
+
+
+def test_nested_package_uses_its_own_lockfile_and_directory(tmp_path):
+    _write(tmp_path / "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+    _write(tmp_path / "adapters" / "bun" / "bun.lock", "{}\n")
+    _write(
+        tmp_path / "adapters" / "bun" / "package.json",
+        json.dumps({"scripts": {"test": "bun test"}}),
+    )
+    text = extract_config_metadata(tmp_path / "adapters" / "bun" / "package.json", tmp_path)
+    assert "package manager bun" in text
+    assert "test command cd adapters/bun && bun run test" in text
+
+
+def test_nested_package_without_lockfile_inherits_the_root_manager(tmp_path):
+    _write(tmp_path / "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+    _write(
+        tmp_path / "packages" / "web" / "package.json", json.dumps({"scripts": {"test": "vitest"}})
+    )
+    text = extract_config_metadata(tmp_path / "packages" / "web" / "package.json", tmp_path)
+    assert "package manager pnpm" in text
+    assert "test command cd packages/web && pnpm test" in text
+
+
+def test_nested_package_manager_field_wins_over_root_lockfile(tmp_path):
+    _write(tmp_path / "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+    _write(
+        tmp_path / "tools" / "site" / "package.json",
+        json.dumps({"packageManager": "yarn@4", "scripts": {"test": "jest"}}),
+    )
+    text = extract_config_metadata(tmp_path / "tools" / "site" / "package.json", tmp_path)
+    assert "package manager yarn" in text
+    assert "test command cd tools/site && yarn test" in text
+
+
+def test_nested_pyproject_commands_carry_their_directory(tmp_path):
+    _write(
+        tmp_path / "tools" / "cli" / "pyproject.toml",
+        '[project]\ndependencies = []\n\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+    )
+    text = extract_config_metadata(tmp_path / "tools" / "cli" / "pyproject.toml", tmp_path)
+    assert "test command cd tools/cli && uv run pytest" in text
+    assert "package manager uv python" in text
+
+
+def test_nested_directory_with_a_space_is_quoted(tmp_path):
+    _write(tmp_path / "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+    _write(tmp_path / "my app" / "package.json", json.dumps({"scripts": {"test": "vitest"}}))
+    text = extract_config_metadata(tmp_path / "my app" / "package.json", tmp_path)
+    assert "test command cd 'my app' && pnpm test" in text
+
+
+def test_nested_setup_script_is_dropped_from_verification():
+    fresh = {
+        "files": [
+            _manifest(
+                "packages/web/package.json",
+                "package manager npm | build command cd packages/web && npm i foo"
+                " ; cd packages/web && npm run build",
+            )
+        ]
+    }
+    assert verification_commands(fresh) == ["cd packages/web && npm run build"]
+
+
+def test_project_test_command_prefers_the_root_manifest():
+    fresh = {
+        "files": [
+            _manifest("adapters/bun/package.json", "test command cd adapters/bun && bun run test"),
+            _manifest("package.json", "package manager pnpm | test command pnpm test"),
+        ]
+    }
+    assert project_test_command(fresh) == "pnpm test"
+
+
+def test_display_keeps_same_script_in_two_packages_apart():
+    commands = [
+        "cd adapters/bun && bun run test",
+        "cd packages/web && bun run test",
+        "bun run test -q",
+        "bun run test",
+    ]
+    assert _display_commands(commands) == [
+        "cd adapters/bun && bun run test",
+        "cd packages/web && bun run test",
+        "bun run test -q",
+    ]
+
+
 GENERAL_FALLBACK = "run nearest tests/typecheck/build for affected files"
 
 
@@ -2321,6 +2428,8 @@ def _manifest(rel_path, metadata, adapter="config-manifest"):
         "uv sync",
         "uv pip install httpx",
         "pip install -e .",
+        "cd packages/web && npm i foo",
+        "cd 'my app' && pnpm add zod",
     ],
 )
 def test_install_and_scaffold_lines_are_not_checks(cmd):

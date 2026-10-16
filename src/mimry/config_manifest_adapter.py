@@ -2,11 +2,22 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 COMMAND_KEYS = ("build", "test", "lint", "typecheck", "dev", "start", "migrate")
+LOCK_HINTS = (
+    ("pnpm-lock.yaml", "pnpm"),
+    ("yarn.lock", "yarn"),
+    ("bun.lockb", "bun"),
+    ("bun.lock", "bun"),
+    ("package-lock.json", "npm"),
+)
+# Separators of the metadata line; a directory holding one
+# cannot be written into a command safely.
+UNSAFE_DIR_CHARS = (";", "|", "\n", "\r")
 DOC_NAMES = {"AGENTS.md", "CLAUDE.md", "README.md"}
 ENV_EXAMPLE_NAMES = {".env.example", ".env.sample", ".env.template", "env.example"}
 CONFIG_FILENAMES = {
@@ -31,8 +42,8 @@ def is_config_manifest(path: Path) -> bool:
     )
 
 
-def safe_hint(path: Path, data: bytes | None = None) -> str:
-    metadata = extract_config_metadata(path, path.parent, data=data)
+def safe_hint(path: Path, data: bytes | None = None, root: Path | None = None) -> str:
+    metadata = extract_config_metadata(path, root or path.parent, data=data)
     return metadata.replace("\n", " ")[:2000]
 
 
@@ -42,6 +53,7 @@ def extract_config_metadata(path: Path, root: Path, data: bytes | None = None) -
     except ValueError:
         rel = path.name
     name = path.name
+    rel_dir = PurePosixPath(rel).parent.as_posix()
     if data is not None:
         text = data.decode("utf-8", errors="ignore")
     else:
@@ -53,9 +65,9 @@ def extract_config_metadata(path: Path, root: Path, data: bytes | None = None) -
     parts = ["config-manifest", f"file {rel}"]
     try:
         if name == "package.json":
-            parts.extend(_package_json(text, root))
+            parts.extend(_package_json(text, root, rel_dir))
         elif name == "pyproject.toml":
-            parts.extend(_pyproject_toml(text))
+            parts.extend(_pyproject_toml(text, rel_dir))
         elif name == "tsconfig.json":
             parts.extend(_tsconfig_json(text))
         elif name.startswith("vite.config."):
@@ -73,21 +85,38 @@ def extract_config_metadata(path: Path, root: Path, data: bytes | None = None) -
     return " | ".join(p for p in parts if p)
 
 
-def _package_manager(root: Path, data: dict[str, Any]) -> str:
+def _package_manager(root: Path, data: dict[str, Any], rel_dir: str = ".") -> str:
     pm = str(data.get("packageManager") or "").split("@", 1)[0]
     if pm:
         return pm
-    lock_hints = (
-        ("pnpm-lock.yaml", "pnpm"),
-        ("yarn.lock", "yarn"),
-        ("bun.lockb", "bun"),
-        ("bun.lock", "bun"),
-        ("package-lock.json", "npm"),
-    )
-    for filename, manager in lock_hints:
-        if (root / filename).exists():
-            return manager
-    return "npm"
+    return _lockfile_manager(root, rel_dir) or "npm"
+
+
+def _lockfile_manager(root: Path, rel_dir: str) -> str | None:
+    """Nearest lockfile's manager, from the package up to root."""
+    directory = root / rel_dir
+    while True:
+        for filename, manager in LOCK_HINTS:
+            if (directory / filename).exists():
+                return manager
+        if directory == root or directory.parent == directory:
+            return None
+        directory = directory.parent
+
+
+def _command_prefix(rel_dir: str) -> str | None:
+    """`cd <dir> && ` below the repo root, "" at the root.
+
+    None when the directory has a character the metadata line
+    cannot carry.
+    """
+    if rel_dir == ".":
+        return ""
+    if any(char in rel_dir for char in UNSAFE_DIR_CHARS):
+        return None
+    # A leading dash would be read as an option by cd.
+    target = f"./{rel_dir}" if rel_dir.startswith("-") else rel_dir
+    return f"cd {shlex.quote(target)} && "
 
 
 def _script_command(manager: str, script: str) -> str:
@@ -100,7 +129,7 @@ def _script_command(manager: str, script: str) -> str:
     return f"npm run {script}"
 
 
-def _package_json(text: str, root: Path) -> list[str]:
+def _package_json(text: str, root: Path, rel_dir: str = ".") -> list[str]:
     data = json.loads(text or "{}")
     scripts = data.get("scripts") if isinstance(data.get("scripts"), dict) else {}
     deps = {}
@@ -108,17 +137,18 @@ def _package_json(text: str, root: Path) -> list[str]:
         value = data.get(key)
         if isinstance(value, dict):
             deps.update(value)
-    manager = _package_manager(root, data)
+    manager = _package_manager(root, data, rel_dir)
+    prefix = _command_prefix(rel_dir)
     parts = [f"package manager {manager}"]
     if scripts:
         script_names = sorted(str(k) for k in scripts)
         parts.append("package scripts " + " ".join(script_names))
         for command_key in COMMAND_KEYS:
             matches = [name for name in script_names if name == command_key or command_key in name]
-            if matches:
+            if matches and prefix is not None:
                 parts.append(
                     f"{command_key} command "
-                    + "; ".join(_script_command(manager, name) for name in matches[:4])
+                    + "; ".join(prefix + _script_command(manager, name) for name in matches[:4])
                 )
     frameworks = _frameworks_from_deps(set(deps))
     if frameworks:
@@ -150,7 +180,7 @@ def _frameworks_from_deps(deps: set[str]) -> list[str]:
     return hints
 
 
-def _pyproject_toml(text: str) -> list[str]:
+def _pyproject_toml(text: str, rel_dir: str = ".") -> list[str]:
     data = tomllib.loads(text or "")
     parts = []
     build_backend = (
@@ -184,15 +214,17 @@ def _pyproject_toml(text: str) -> list[str]:
             + " ".join(f"{name}={target}" for name, target in sorted(scripts.items()))
         )
     tool = data.get("tool", {}) if isinstance(data.get("tool"), dict) else {}
-    commands = []
+    checks = []
     if "pytest" in tool or "pytest" in deps:
-        commands.append("test command uv run pytest")
+        checks.append(("test", "uv run pytest"))
     if "ruff" in tool or "ruff" in deps:
-        commands.append("lint command uv run ruff check .")
-        commands.append("format command uv run ruff format .")
+        checks.append(("lint", "uv run ruff check ."))
+        checks.append(("format", "uv run ruff format ."))
     if "mypy" in tool or "mypy" in deps:
-        commands.append("typecheck command uv run mypy .")
-    parts.extend(commands)
+        checks.append(("typecheck", "uv run mypy ."))
+    prefix = _command_prefix(rel_dir)
+    if prefix is not None:
+        parts.extend(f"{label} command {prefix}{cmd}" for label, cmd in checks)
     parts.append("package manager uv python")
     return parts
 
