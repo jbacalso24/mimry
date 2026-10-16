@@ -595,3 +595,26 @@ def apply_intent_adjustment(
     # A downrank reorders a matched file; it never removes it from the
     # results.
     return max(score, 1), reasons
+
+
+def is_likely_edit_surface(rel_path: str) -> bool:
+    lower = rel_path.lower()
+    if lower.startswith(".mimry/") or is_doc_or_plan(rel_path) or is_test_file(rel_path):
+        return False
+    if lower in {"package.json", "pyproject.toml", "readme.md", "agents.md", "claude.md"}:
+        return False
+    return is_source_file(rel_path) or lower.endswith((".sql", ".toml", ".json", ".yaml", ".yml"))
+
+
+def start_order(rows: list[dict], query: str) -> list[dict]:
+    """The one order every surface shows the selected files in.
+
+    Likely edit surfaces come first, then the rest, each group keeping
+    its ranked order. A task about tests keeps the ranked order, because
+    there the test file is the edit surface.
+    """
+    if set(intent_terms(query)) & TEST_TERMS:
+        return list(rows)
+    return [r for r in rows if is_likely_edit_surface(r["path"])] + [
+        r for r in rows if not is_likely_edit_surface(r["path"])
+    ]

@@ -31,7 +31,7 @@ from .core.languages import EXTENSION_LANGUAGE
 from .freshness import index_freshness
 from .history import history_mentions
 from .indexer import write_index
-from .intent import is_doc_or_plan, is_source_file, is_test_file
+from .intent import is_doc_or_plan, is_likely_edit_surface, is_test_file, start_order
 from .lifecycle import (
     STALE_INDEX_HINT,
     change_summary,
@@ -150,18 +150,9 @@ def _symbol_lines(fresh: dict, rows: list[dict], limit: int = 12) -> list[str]:
     ]
 
 
-def _is_likely_edit_surface(path: str) -> bool:
-    lower = path.lower()
-    if lower.startswith(".mimry/") or is_doc_or_plan(path) or is_test_file(path):
-        return False
-    if lower in {"package.json", "pyproject.toml", "readme.md", "agents.md", "claude.md"}:
-        return False
-    return is_source_file(path) or lower.endswith((".sql", ".toml", ".json", ".yaml", ".yml"))
-
-
 def _file_role(path: str) -> str:
     lower = path.lower()
-    if _is_likely_edit_surface(path):
+    if is_likely_edit_surface(path):
         return "likely edit surface"
     if is_test_file(path):
         return "test/verification support"
@@ -233,26 +224,18 @@ def _status_summary_not_current(
 
 
 def _reading_order_lines(rows: list[dict]) -> list[str]:
+    """Rows arrive in start_order, so the sections give this order."""
     if not rows:
         return [
             "- No relevant files were selected; rerun with a narrower query or inspect repo"
             " entrypoints directly."
         ]
-    source_rows = [r for r in rows if _is_likely_edit_surface(r["path"])]
-    support_rows = [r for r in rows if not _is_likely_edit_surface(r["path"])]
-    ordered = source_rows + support_rows
-
-    ordered_paths = [r["path"] for r in ordered]
-    rows_paths = [r["path"] for r in rows]
-    if ordered_paths == rows_paths:
-        return [f"Read Relevant Files 1-{len(rows)} in order."]
-
-    return [f"{i}. `{markdown_inline(row['path'])}`" for i, row in enumerate(ordered, 1)]
+    return [f"Read Relevant Files 1-{len(rows)} in order."]
 
 
 def _surface_paths(rows: list[dict], *, edit: bool) -> list[str]:
     """Filter rows by whether they are edit surfaces."""
-    return [r["path"] for r in rows if _is_likely_edit_surface(r["path"]) is edit]
+    return [r["path"] for r in rows if is_likely_edit_surface(r["path"]) is edit]
 
 
 FRAMEWORK_FACT_MARKERS = (
@@ -424,7 +407,7 @@ def write_context_pack(
         semantic=semantic,
         excluded_paths=fresh["excluded_paths"],
     )
-    rows = filter_rows_by_score_threshold(rows)
+    rows = start_order(filter_rows_by_score_threshold(rows), query)
 
     semantic_state = semantic_health(
         Path(ptr["indexPath"]), ptr.get("rootId"), expected_files=len(fresh["files"])
@@ -852,13 +835,16 @@ def run_explain(a):
     fresh, graph = index_and_graph_health(root, ptr)
     query = sanitize_query(a.query)
     verbose = getattr(a, "verbose", False)
-    rows = find_rows(
-        Path(ptr["indexPath"]),
+    rows = start_order(
+        find_rows(
+            Path(ptr["indexPath"]),
+            query,
+            getattr(a, "limit", 5),
+            True,
+            root=root,
+            root_id=ptr.get("rootId"),
+        ),
         query,
-        getattr(a, "limit", 5),
-        True,
-        root=root,
-        root_id=ptr.get("rootId"),
     )
     ui.title(f"How {ui.quote(query)} maps to {root_name(root)}")
     _print_index_note(fresh, graph)
@@ -877,9 +863,7 @@ def run_explain(a):
             ui.title("How they connect")
             ui.table([(e["source"], e["relation"], e["target"]) for e in edges])
 
-    source = next(
-        (r for r in rows if _is_likely_edit_surface(r["path"])), rows[0] if rows else None
-    )
+    source = rows[0] if rows else None
     if source:
         print()
         print(f"Start with {source['path']} - read it and its tests before editing.")

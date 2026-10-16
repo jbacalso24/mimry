@@ -7,6 +7,7 @@ from typing import Any
 
 from .config_manifest_adapter import DOC_NAMES
 from .freshness import index_freshness
+from .intent import start_order
 from .paths import output_dir
 from .search import find_rows
 from .security import redact_sensitive_text, sanitize_data, sanitize_query
@@ -395,7 +396,9 @@ def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[
 def route_payload(root: Path, ptr: dict[str, Any], query: str, limit: int = 8) -> dict[str, Any]:
     query = sanitize_query(query)
     idx = Path(ptr["indexPath"])
-    rows = find_rows(idx, query, limit, True, root=root, root_id=ptr.get("rootId"))
+    rows = start_order(
+        find_rows(idx, query, limit, True, root=root, root_id=ptr.get("rootId")), query
+    )
     fresh = index_freshness(root, ptr)
     scores, reasons_by_role = _score_roles(query, fresh, rows, root=root)
     ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
