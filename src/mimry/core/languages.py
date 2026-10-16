@@ -44,6 +44,13 @@ EXTENSION_LANGUAGE = {
     ".dart": "dart",
     ".m": "objc",
     ".zig": "zig",
+    ".ex": "elixir",
+    ".exs": "elixir",
+    ".hs": "haskell",
+    ".ml": "ocaml",
+    ".mli": "ocaml_interface",
+    ".r": "r",
+    ".jl": "julia",
 }
 
 # Display name for each EXTENSION_LANGUAGE value.
@@ -72,9 +79,31 @@ LANGUAGE_LABELS: dict[str, str] = {
     "dart": "Dart",
     "objc": "Objective-C",
     "zig": "Zig",
+    "elixir": "Elixir",
+    "haskell": "Haskell",
+    "ocaml": "OCaml",
+    "ocaml_interface": "OCaml",
+    "r": "R",
+    "julia": "Julia",
     # Symbol-only languages, with no extension entry.
     "markdown": "Markdown",
     "sql": "SQL",
+}
+
+# Shared by .ml and .mli: the interface grammar names the same forms.
+# value_specification is a `val` declaration in a signature.
+_OCAML_NODE_TYPES = {
+    "definitions": frozenset(
+        [
+            "let_binding",
+            "module_binding",
+            "module_type_definition",
+            "type_binding",
+            "value_specification",
+        ]
+    ),
+    "imports": frozenset(["open_module", "include_module"]),
+    "calls": frozenset(["application_expression"]),
 }
 
 NODE_TYPES = {
@@ -353,6 +382,52 @@ NODE_TYPES = {
         "imports": frozenset(["BUILTINIDENTIFIER"]),  # @import is a builtin call
         "calls": frozenset(["FnCallArguments"]),
     },
+    "elixir": {
+        # Every Elixir form is a `call`: def, defmodule, alias and plain
+        # function calls alike. The readers tell them apart by the
+        # keyword the call starts with.
+        "definitions": frozenset(["call"]),
+        "imports": frozenset(["call"]),
+        "calls": frozenset(["call"]),
+    },
+    "haskell": {
+        # One symbol per top-level name: a function with several
+        # equations is merged after the walk. `instance` is not a
+        # symbol, but its methods are. The grammar spells it
+        # type_synomym.
+        "definitions": frozenset(
+            ["header", "data_type", "newtype", "type_synomym", "class", "function", "bind"]
+        ),
+        "imports": frozenset(["import"]),
+        "calls": frozenset(["apply"]),
+    },
+    "ocaml": _OCAML_NODE_TYPES,
+    "ocaml_interface": _OCAML_NODE_TYPES,
+    "r": {
+        # `name <- function(...)` is a binary_operator. Class
+        # constructors and every call are calls.
+        "definitions": frozenset(["binary_operator", "call"]),
+        "imports": frozenset(["call"]),
+        "calls": frozenset(["call"]),
+    },
+    "julia": {
+        # `f(x) = ...` is an assignment whose target is a call. Julia
+        # calls are call_expression nodes, which include `include`.
+        "definitions": frozenset(
+            [
+                "module_definition",
+                "struct_definition",
+                "abstract_definition",
+                "function_definition",
+                "macro_definition",
+                "assignment",
+            ]
+        ),
+        "imports": frozenset(["using_statement", "import_statement", "call_expression"]),
+        # `sin.(xs)` is a broadcast_call_expression, same callee shape.
+        "calls": frozenset(["call_expression", "broadcast_call_expression"]),
+        "bases": frozenset(["type_head"]),
+    },
 }
 
 
@@ -418,9 +493,10 @@ def symbol_kind(language: str, node_kind: str) -> str:
     # function, not a class.
     if node_kind == "class_method_definition":
         return "function"
-    if node_kind == "interface_declaration":
+    if node_kind in ("interface_declaration", "protocol_declaration", "module_type_definition"):
         return "interface"
-    if node_kind == "protocol_declaration":
+    # Haskell's class and Julia's abstract type are interface-like.
+    if (language, node_kind) in (("haskell", "class"), ("julia", "abstract_definition")):
         return "interface"
     if node_kind in ("enum_declaration", "enum_specifier"):
         return "enum"
@@ -443,9 +519,19 @@ def symbol_kind(language: str, node_kind: str) -> str:
         "module",
         "mod_item",
         "package_statement",
+        "module_definition",
+        "module_binding",
+        "header",
     ):
         return "module"
-    if node_kind in ("type_declaration", "typedef_declaration"):
+    if node_kind in (
+        "type_declaration",
+        "typedef_declaration",
+        "data_type",
+        "newtype",
+        "type_synomym",
+        "type_binding",
+    ):
         return "type"
     if node_kind == "variable_declarator":
         return "variable"
@@ -467,10 +553,23 @@ def _definition_span(language: str, node: Any) -> Any:
 
 def _definition_kind(language: str, node: Any, source: bytes) -> str:
     """Kind of a definition node. A Zig container's kind depends on
-    its enum keyword, which the node kind does not carry.
+    its enum keyword, and an Elixir form on its keyword: the node kind
+    alone says neither.
     """
     if language == "zig" and node.type == "ContainerDecl":
         return _zig_container_kind(node, source)
+    if language == "elixir":
+        return _ELIXIR_KINDS.get(_elixir_head(node, source), "function")
+    if language == "r" and node.type == "call":
+        return "class"
+    if language in ("ocaml", "ocaml_interface") and node.type == "let_binding":
+        # A binding is a function with parameters, or with a fun or
+        # function body. Any other value is a variable.
+        body = node.child_by_field_name("body")
+        has_parameters = any(child.type == "parameter" for child in _children(node))
+        is_lambda = body is not None and body.type in ("fun_expression", "function_expression")
+        if not (has_parameters or is_lambda):
+            return "variable"
     return symbol_kind(language, node.type)
 
 
@@ -583,6 +682,16 @@ def _definition_name(language: str, node: Any, source: bytes) -> str | None:
         return _direct_child_text(node, source, "IDENTIFIER")
     if language == "zig" and node.type == "ContainerDecl":
         return _zig_container_name(node, source)
+    if language == "elixir":
+        return _elixir_definition_name(node, source)
+    if language == "haskell":
+        return _haskell_definition_name(node, source)
+    if language in ("ocaml", "ocaml_interface"):
+        return _ocaml_definition_name(node, source)
+    if language == "r":
+        return _r_definition_name(node, source)
+    if language == "julia":
+        return _julia_definition_name(node, source)
 
     try:
         named = node.child_by_field_name("name")
@@ -1144,6 +1253,470 @@ def _zig_container_kind(node: Any, source: bytes) -> str:
     return "class"
 
 
+def _direct_child(node: Any, kind: str) -> Any:
+    """The first direct child of ``kind``, or None."""
+    for child in _children(node):
+        if child.type == kind:
+            return child
+    return None
+
+
+def _field_text(node: Any, field: str, source: bytes) -> str | None:
+    """Stripped text of a named field, or None when absent or empty."""
+    child = node.child_by_field_name(field)
+    if child is None:
+        return None
+    return _text(source, child).strip() or None
+
+
+def _merge_equations(definitions: list[dict], owners: list[int | None]) -> list[dict]:
+    """One symbol per run of clauses with the same name, kind and
+    declaring block. A Haskell function's equations, or an Elixir
+    function's clauses, are one symbol from the first line to the last.
+    Two instances that both define `show` stay apart, and so do
+    same-named functions with other code between them.
+    """
+    merged: list[dict] = []
+    last_key = None
+    for definition, owner in zip(definitions, owners, strict=True):
+        key = (definition["name"], definition["kind"], owner)
+        if key == last_key:
+            kept = merged[-1]
+            kept["line_end"] = max(kept["line_end"] or 0, definition["line_end"] or 0)
+        else:
+            merged.append(definition)
+            last_key = key
+    return merged
+
+
+# Elixir forms by the keyword that starts them, with their symbol kind.
+_ELIXIR_KINDS = {
+    "def": "function",
+    "defp": "function",
+    "defmacro": "function",
+    "defmacrop": "function",
+    "defmodule": "module",
+    "defprotocol": "interface",
+    "defimpl": "class",
+    "defstruct": "class",
+}
+_ELIXIR_FUNCTION_HEADS = frozenset(("def", "defp", "defmacro", "defmacrop"))
+_ELIXIR_IMPORT_HEADS = frozenset(("alias", "import", "require", "use"))
+# Forms that open a block or special form, which are never a call.
+_ELIXIR_NOT_CALLS = frozenset(
+    (
+        *_ELIXIR_KINDS,
+        *_ELIXIR_IMPORT_HEADS,
+        "if",
+        "unless",
+        "case",
+        "cond",
+        "with",
+        "for",
+        "try",
+        "receive",
+        "quote",
+        "unquote",
+        "super",
+    )
+)
+
+
+def _elixir_head(node: Any, source: bytes) -> str | None:
+    """The keyword a call starts with: `def` in `def f(x) do ... end`.
+    A call on a module (`Mod.fun(x)`) has no such keyword.
+    """
+    target = node.child_by_field_name("target")
+    if target is None or target.type != "identifier":
+        return None
+    return _text(source, target).strip() or None
+
+
+def _elixir_arguments(node: Any) -> list[Any]:
+    """The argument nodes of a call, in order."""
+    arguments = _direct_child(node, "arguments")
+    return list(arguments.named_children) if arguments is not None else []
+
+
+def _elixir_function_name(head: Any, source: bytes) -> str | None:
+    """Name of a def head: `f` in `f(x)`, `f`, or `f(x) when guard`."""
+    while head is not None and head.type == "binary_operator":
+        head = head.child_by_field_name("left")
+    if head is not None and head.type == "call":
+        head = head.child_by_field_name("target")
+    if head is None or head.type != "identifier":
+        return None
+    return _text(source, head).strip() or None
+
+
+def _elixir_impl_name(arguments: list[Any], source: bytes) -> str | None:
+    """`defimpl Protocol, for: Type` is named `Protocol.Type`."""
+    protocol = _text(source, arguments[0]).strip()
+    for argument in arguments[1:]:
+        if argument.type != "keywords":
+            continue
+        for pair in argument.named_children:
+            key = pair.child_by_field_name("key")
+            value = pair.child_by_field_name("value")
+            if key is None or value is None:
+                continue
+            if _text(source, key).strip() == "for:" and value.type == "alias":
+                return f"{protocol}.{_text(source, value).strip()}"
+    return protocol or None
+
+
+def _elixir_enclosing_module(node: Any, source: bytes) -> str | None:
+    """Name of the innermost defmodule around a node."""
+    owner = node.parent
+    while owner is not None:
+        if owner.type == "call" and _elixir_head(owner, source) == "defmodule":
+            arguments = _elixir_arguments(owner)
+            return _text(source, arguments[0]).strip() if arguments else None
+        owner = owner.parent
+    return None
+
+
+def _elixir_definition_name(node: Any, source: bytes) -> str | None:
+    """Name of a def, defmodule, defprotocol, defimpl or defstruct.
+    A defstruct has no name of its own, so it takes its module's.
+    """
+    head = _elixir_head(node, source)
+    if head == "defstruct":
+        return _elixir_enclosing_module(node, source)
+    arguments = _elixir_arguments(node)
+    if not arguments:
+        return None
+    if head in ("defmodule", "defprotocol") and arguments[0].type == "alias":
+        return _text(source, arguments[0]).strip() or None
+    if head in _ELIXIR_FUNCTION_HEADS:
+        return _elixir_function_name(arguments[0], source)
+    if head == "defimpl":
+        return _elixir_impl_name(arguments, source)
+    return None
+
+
+def _elixir_in_head(node: Any, source: bytes) -> bool:
+    """Whether a call is in a def's head (`f(x)` or its guard), not its
+    body.
+    """
+    owner = node.parent
+    while owner is not None and owner.type not in ("do_block", "keywords", "pair"):
+        if owner.type == "arguments":
+            parent = owner.parent
+            return (
+                parent is not None
+                and parent.type == "call"
+                and _elixir_head(parent, source) in _ELIXIR_FUNCTION_HEADS
+            )
+        owner = owner.parent
+    return False
+
+
+def _elixir_import(node: Any, source: bytes) -> str | list[str] | None:
+    """The module an alias, import, require or use names."""
+    if _elixir_head(node, source) not in _ELIXIR_IMPORT_HEADS:
+        return None
+    arguments = _elixir_arguments(node)
+    if not arguments:
+        return None
+    first = arguments[0]
+    if first.type == "alias":
+        return _text(source, first).strip() or None
+    # `alias Foo.{Bar, Baz}` names Foo.Bar and Foo.Baz.
+    parts = first.named_children if first.type == "dot" else []
+    if len(parts) != 2 or parts[0].type != "alias" or parts[1].type != "tuple":
+        return None
+    prefix = _text(source, parts[0]).strip()
+    return [
+        f"{prefix}.{_text(source, member).strip()}"
+        for member in parts[1].named_children
+        if member.type == "alias"
+    ] or None
+
+
+def _elixir_call(node: Any, source: bytes) -> str | None:
+    """The function a call invokes: `f` in `f(x)`, `fun` in
+    `Mod.fun(x)`.
+    """
+    # `@doc "..."` is a module attribute, not a call.
+    parent = node.parent
+    if _elixir_in_head(node, source) or (parent is not None and parent.type == "unary_operator"):
+        return None
+    target = node.child_by_field_name("target")
+    if target is None:
+        return None
+    if target.type == "dot":
+        right = target.child_by_field_name("right")
+        if right is None or right.type != "identifier":
+            return None
+        return _text(source, right).strip() or None
+    if target.type != "identifier":
+        return None
+    name = _text(source, target).strip()
+    return None if name in _ELIXIR_NOT_CALLS else name
+
+
+def _haskell_module_name(module: Any, source: bytes) -> str | None:
+    """Dotted name of a Haskell module node, such as `Data.Map`."""
+    if module is None:
+        return None
+    parts = [_text(source, part).strip() for part in _children(module) if part.type == "module_id"]
+    return ".".join(parts) or None
+
+
+def _haskell_definition_name(node: Any, source: bytes) -> str | None:
+    """A module header names its module. A function is a symbol only at
+    top level or in an instance, never in a where or let.
+    """
+    if node.type == "header":
+        return _haskell_module_name(node.child_by_field_name("module"), source)
+    if node.type in ("function", "bind"):
+        parent = node.parent
+        if parent is None or parent.type not in ("declarations", "instance_declarations"):
+            return None
+    return _field_text(node, "name", source)
+
+
+def _haskell_import(node: Any, source: bytes) -> str | None:
+    """The module an import names, qualified or not."""
+    return _haskell_module_name(node.child_by_field_name("module"), source)
+
+
+def _haskell_call(node: Any, source: bytes) -> str | None:
+    """The function an application calls. Only the outermost application
+    of a chain names the call, and a type signature applies type
+    constructors, which are not calls.
+    """
+    parent = node.parent
+    if parent is not None and parent.type == "apply":
+        function = parent.child_by_field_name("function")
+        if (
+            function is not None
+            and function.start_byte == node.start_byte
+            and function.end_byte == node.end_byte
+        ):
+            return None
+    owner = parent
+    while owner is not None:
+        if owner.type == "signature":
+            return None
+        owner = owner.parent
+    callee = node.child_by_field_name("function")
+    while callee is not None and callee.type == "apply":
+        callee = callee.child_by_field_name("function")
+    if callee is not None and callee.type == "qualified":
+        callee = callee.child_by_field_name("id")
+    if callee is None or callee.type != "variable":
+        return None
+    return _text(source, callee).strip() or None
+
+
+# OCaml declarations whose name is in a child node, by child kind.
+_OCAML_NAME_CHILDREN = {
+    "module_binding": "module_name",
+    "module_type_definition": "module_type_name",
+    "value_specification": "value_name",
+}
+
+
+def _ocaml_definition_name(node: Any, source: bytes) -> str | None:
+    """A let binds a name only at module level: a let inside an
+    expression is local.
+    """
+    if node.type == "let_binding":
+        owner = node.parent.parent if node.parent is not None else None
+        if owner is None or owner.type not in ("compilation_unit", "structure"):
+            return None
+        return _direct_child_text(node, source, "value_name")
+    child_kind = _OCAML_NAME_CHILDREN.get(node.type)
+    if child_kind is not None:
+        return _direct_child_text(node, source, child_kind)
+    return _field_text(node, "name", source)
+
+
+def _ocaml_import(node: Any, source: bytes) -> str | None:
+    """The module an open or include names."""
+    return _field_text(node, "module", source)
+
+
+def _ocaml_call(node: Any, source: bytes) -> str | None:
+    """The value an application calls: `f` in `f x`, `fold_left` in
+    `List.fold_left f`.
+    """
+    function = node.child_by_field_name("function")
+    if function is None or function.type != "value_path":
+        return None
+    return _direct_child_text(function, source, "value_name")
+
+
+# R calls that load a package or a file, and calls that define a class.
+_R_IMPORT_CALLS = frozenset(("library", "require", "requireNamespace", "source"))
+_R_CLASS_CALLS = frozenset(("setClass", "setRefClass", "R6Class"))
+
+
+def _r_callee(node: Any, source: bytes) -> str | None:
+    """The function a call names: `f` in `f(x)` and `pkg::f(x)`."""
+    callee = node.child_by_field_name("function")
+    if callee is not None and callee.type == "namespace_operator":
+        callee = callee.child_by_field_name("rhs")
+    if callee is None or callee.type != "identifier":
+        return None
+    return _text(source, callee).strip() or None
+
+
+def _r_argument_values(node: Any) -> list[Any]:
+    """The value nodes of a call's arguments, in order."""
+    arguments = node.child_by_field_name("arguments")
+    if arguments is None:
+        return []
+    values = [
+        child.child_by_field_name("value")
+        for child in _children(arguments)
+        if child.type == "argument"
+    ]
+    return [value for value in values if value is not None]
+
+
+def _r_definition_name(node: Any, source: bytes) -> str | None:
+    """`name <- function(...)`, or the class a setClass, setRefClass or
+    R6Class call names by its first string argument.
+    """
+    if node.type == "call":
+        if _r_callee(node, source) not in _R_CLASS_CALLS:
+            return None
+        values = _r_argument_values(node)
+        if values and values[0].type == "string":
+            return _unquote(_text(source, values[0])) or None
+        return None
+    lhs = node.child_by_field_name("lhs")
+    rhs = node.child_by_field_name("rhs")
+    if lhs is None or rhs is None or rhs.type != "function_definition":
+        return None
+    if lhs.type not in ("identifier", "string"):
+        return None
+    return _unquote(_text(source, lhs)) or None
+
+
+def _r_import(node: Any, source: bytes) -> str | None:
+    """The package a library or require call names, or the file a
+    source call loads.
+    """
+    name = _r_callee(node, source)
+    if name not in _R_IMPORT_CALLS:
+        return None
+    values = _r_argument_values(node)
+    if not values:
+        return None
+    value = values[0]
+    if value.type == "string":
+        return _unquote(_text(source, value)) or None
+    if value.type == "identifier" and name != "source":
+        return _text(source, value).strip() or None
+    return None
+
+
+def _r_call(node: Any, source: bytes) -> str | None:
+    """The function a call invokes, without the import calls."""
+    name = _r_callee(node, source)
+    return None if name in _R_IMPORT_CALLS else name
+
+
+def _julia_callee(node: Any, source: bytes) -> str | None:
+    """The name a Julia call_expression calls: `f` in `f(x)`, `show` in
+    `Base.show(io, x)`.
+    """
+    callee = node.named_children[0] if node.named_child_count else None
+    if callee is not None and callee.type == "field_expression":
+        callee = callee.named_children[-1] if callee.named_child_count else None
+    if callee is None or callee.type != "identifier":
+        return None
+    return _text(source, callee).strip() or None
+
+
+def _julia_definition_name(node: Any, source: bytes) -> str | None:
+    """Name of a module, function, macro, struct, abstract type or a
+    short-form function `f(x) = ...`. A plain `x = 1` is not one.
+    """
+    if node.type == "module_definition":
+        return _field_text(node, "name", source)
+    if node.type == "assignment":
+        target = node.named_children[0] if node.named_child_count else None
+        if target is None or target.type != "call_expression":
+            return None
+        return _julia_callee(target, source)
+    if node.type in ("function_definition", "macro_definition"):
+        signature = _direct_child(node, "signature")
+        head = signature.named_children[0] if signature and signature.named_child_count else None
+        if head is None:
+            return None
+        if head.type == "call_expression":
+            return _julia_callee(head, source)
+        if head.type == "identifier":
+            return _text(source, head).strip() or None
+        return None
+    # struct and abstract type: the head is `Name`, `Name{T}`, or
+    # `Name <: Super` with either of those on the left.
+    head = _direct_child(node, "type_head")
+    target = head.named_children[0] if head is not None and head.named_child_count else None
+    if target is not None and target.type == "binary_expression":
+        target = target.named_children[0] if target.named_child_count else None
+    if target is not None and target.type == "parametrized_type_expression":
+        target = target.named_children[0] if target.named_child_count else None
+    if target is None or target.type != "identifier":
+        return None
+    return _text(source, target).strip() or None
+
+
+def _julia_import(node: Any, source: bytes) -> str | list[str] | None:
+    """The package a using or import names, or the file an include
+    loads.
+    """
+    if node.type == "call_expression":
+        if _julia_callee(node, source) != "include":
+            return None
+        arguments = _direct_child(node, "argument_list")
+        first = arguments.named_children[0] if arguments and arguments.named_child_count else None
+        if first is None or first.type != "string_literal":
+            return None
+        return _unquote(_text(source, first)) or None
+    # `using A, B` names both; `import X: a` names only X.
+    packages = []
+    for target in node.named_children:
+        if target.type == "selected_import":
+            target = target.named_children[0] if target.named_child_count else None
+        if target is not None and target.type in ("identifier", "import_path"):
+            packages.append(_text(source, target).strip())
+    return [name for name in packages if name] or None
+
+
+def _julia_call(node: Any, source: bytes) -> str | None:
+    """The function a call invokes. `include` is an import, and the call
+    that heads a definition (`f(x) = ...`, `function f(x)`) names what
+    it defines, not a call from it.
+    """
+    parent = node.parent
+    if parent is not None and parent.type == "signature":
+        return None
+    if parent is not None and parent.type == "assignment" and parent.named_child_count:
+        if parent.named_children[0].start_byte == node.start_byte:
+            return None
+    name = _julia_callee(node, source)
+    return None if name == "include" else name
+
+
+def _julia_base_names(head: Any, source: bytes) -> list[str]:
+    """The supertype after `<:` in a Julia type head, if any."""
+    for child in _children(head):
+        if child.type != "binary_expression":
+            continue
+        if not any(_text(source, part).strip() == "<:" for part in _children(child)):
+            continue
+        supertype = child.named_children[-1] if child.named_child_count else None
+        if supertype is not None and supertype.type == "identifier":
+            return [_text(source, supertype).strip()]
+    return []
+
+
 def _generic_import_module(lang: str, node: Any, source: bytes) -> str | None:
     """Generic extraction: strings, identifiers, or regex parsing."""
     import_text = _text(source, node)
@@ -1275,11 +1848,19 @@ _IMPORT_READERS = {
     "dart": _dart_import,
     "objc": _objc_import,
     "zig": _zig_import,
+    "elixir": _elixir_import,
+    "haskell": _haskell_import,
+    "ocaml": _ocaml_import,
+    "ocaml_interface": _ocaml_import,
+    "r": _r_import,
+    "julia": _julia_import,
 }
 
 
-def _import_module(lang: str, node: Any, source: bytes) -> str | None:
-    """The module an import node names, or None when it names none."""
+def _import_module(lang: str, node: Any, source: bytes) -> str | list[str] | None:
+    """The module an import node names, the modules when it names
+    several, or None when it names none.
+    """
     reader = _IMPORT_READERS.get(lang)
     if reader is not None:
         return reader(node, source)
@@ -1441,6 +2022,12 @@ _CALL_READERS = {
     "dart": _dart_call,
     "objc": _objc_call,
     "zig": _zig_call,
+    "elixir": _elixir_call,
+    "haskell": _haskell_call,
+    "ocaml": _ocaml_call,
+    "ocaml_interface": _ocaml_call,
+    "r": _r_call,
+    "julia": _julia_call,
 }
 
 
@@ -1641,6 +2228,9 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
 
     node_types = NODE_TYPES[lang]
     definitions: list[dict] = []
+    # The start byte of each definition's parent block, parallel to
+    # definitions. Haskell and Elixir merge clauses by it.
+    owners: list[int | None] = []
     imports: list[dict] = []
     calls: list[dict] = []
     inherits: list[dict] = []
@@ -1705,6 +2295,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                             "exported": exported,
                         }
                     )
+                    owners.append(node.parent.start_byte if node.parent is not None else None)
                     # Heritage hangs directly off the type declaration.
                     # Functions have no such child, so this never fires
                     # for them.
@@ -1712,6 +2303,8 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                         if child.type in base_kinds:
                             if lang == "dart":
                                 bases = _dart_base_names(child, source)
+                            elif lang == "julia":
+                                bases = _julia_base_names(child, source)
                             else:
                                 bases = _base_type_names(child, source)
                             for base in bases:
@@ -1727,12 +2320,8 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
         if category in (None, "imports") and kind in node_types["imports"]:
             module = _import_module(lang, node, source)
             if module:
-                imports.append(
-                    {
-                        "module": module,
-                        "line": _line(node),
-                    }
-                )
+                for name in [module] if isinstance(module, str) else module:
+                    imports.append({"module": name, "line": _line(node)})
             elif lang == "perl":
                 # `use parent X` makes X a base of the package above it.
                 owner = _perl_package_at(perl_packages, node.start_byte)
@@ -1749,6 +2338,9 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                 if receiver:
                     call["receiver"] = receiver
                 calls.append(call)
+
+    if lang in ("haskell", "elixir"):
+        definitions = _merge_equations(definitions, owners)
 
     # Check for parse errors
     if root_node.has_error:

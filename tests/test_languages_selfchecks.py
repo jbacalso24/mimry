@@ -1184,3 +1184,412 @@ def test_objc_header_extracts_its_classes_and_functions(tmp_path):
         ("B", "class"),
         ("helper", "function"),
     }
+
+
+# Functional and scientific languages: Elixir, Haskell, OCaml, R, Julia
+ELIXIR_SOURCE = """\
+defmodule MyApp.Accounts.User do
+  alias MyApp.Repo
+  import Ecto.Query, only: [from: 2]
+  require Logger
+  use GenServer
+
+  defstruct [:id, :name]
+
+  def create(attrs) do
+    %__MODULE__{}
+    |> Repo.insert(attrs)
+  end
+
+  def active(query) do
+    from(u in query, where: u.active)
+    |> Repo.all()
+  end
+
+  defp label(%{name: name}) when is_binary(name), do: String.upcase(name)
+  defp label(_user), do: "anonymous"
+
+  defmacro trace(expr) do
+    quote do
+      Logger.debug(unquote(expr))
+    end
+  end
+end
+"""
+
+ELIXIR_PROTOCOL_SOURCE = """\
+defprotocol Stringify do
+  def stringify(value)
+end
+
+defimpl Stringify, for: Integer do
+  def stringify(i), do: Integer.to_string(i)
+end
+"""
+
+HASKELL_SOURCE = """\
+module Data.Shapes.Area (Shape(..), area, describe) where
+
+import qualified Data.Map as Map
+import Data.List (sortBy)
+import Geometry.Point
+
+data Shape = Circle Double | Rect Double Double
+  deriving (Show, Eq)
+
+newtype Wrapper a = Wrapper { unwrap :: a }
+
+type Name = String
+
+class Describable a where
+  describe :: a -> String
+
+instance Describable Shape where
+  describe (Circle r) = "circle " ++ show r
+  describe s = "shape " ++ show (area s)
+
+area :: Shape -> Double
+area (Circle r) = pi * r ^ 2
+area (Rect w h)
+  | w < 0 || h < 0 = 0
+  | otherwise = w * h
+
+largest :: [Shape] -> Maybe Shape
+largest = foldr pick Nothing
+  where pick s acc = Just s
+
+index :: [Name] -> [Shape] -> Map.Map Name Shape
+index names shapes = Map.fromList (zip names shapes)
+
+main :: IO ()
+main = mapM_ print $ sortBy compare (map area [Circle 1, Rect 2 3])
+"""
+
+OCAML_SOURCE = """\
+open Printf
+include Util_helpers
+
+module Counter = struct
+  type t = { mutable count : int }
+
+  let create () = { count = 0 }
+
+  let incr c = c.count <- c.count + 1
+end
+
+module type SHAPE = sig
+  val area : float -> float
+end
+
+type shape = Circle of float | Square of float
+
+let rec fact n = if n <= 1 then 1 else n * fact (n - 1)
+
+let area = function
+  | Circle r -> 3.14 *. r *. r
+  | Square s -> s *. s
+
+let total = List.fold_left (+.) 0. [1.0; 2.0]
+
+let () = printf "%d\\n" (fact 5)
+
+let v = Foo_bar.compute 3
+"""
+
+R_SOURCE = """\
+library(dplyr)
+require(ggplot2)
+requireNamespace("jsonlite")
+source("R/helpers.R")
+
+#' Scale a column to zero mean and unit variance
+scale_col <- function(df, col) {
+  df[[col]] <- (df[[col]] - mean(df[[col]])) / sd(df[[col]])
+  df
+}
+
+summarise_by <<- function(df, g) {
+  df %>% group_by(.data[[g]]) %>% summarise(n = n())
+}
+
+setClass("Point", representation(x = "numeric", y = "numeric"))
+Person <- setRefClass("Person", fields = list(name = "character"))
+Counter <- R6Class("Counter", public = list(n = 0))
+
+result <- stats::median(c(1, 2, 3))
+result <- scale_col(mtcars, "mpg") |> helper_fn()
+"""
+
+JULIA_SOURCE = """\
+module Geometry
+
+using LinearAlgebra
+import Base: show, +
+include("shapes.jl")
+
+abstract type AbstractShape end
+
+struct Point <: AbstractShape
+    x::Float64
+    y::Float64
+end
+
+mutable struct Circle <: AbstractShape
+    r::Float64
+end
+
+function norm2(p::Point)
+    sqrt(p.x^2 + p.y^2)
+end
+
+area(c::Circle) = pi * c.r^2
+
+macro timeit(expr)
+    return esc(expr)
+end
+
+Base.show(io::IO, p::Point) = print(io, "($(p.x), $(p.y))")
+
+scaled(xs) = sin.(xs) .* 2.0
+
+result = LinearAlgebra.norm(Point(3.0, 4.0))
+println(area(Circle(1.0)))
+
+end
+"""
+
+
+@pytest.mark.parametrize(
+    "name,source",
+    [
+        ("user.ex", ELIXIR_SOURCE),
+        ("stringify.ex", ELIXIR_PROTOCOL_SOURCE),
+        ("area.hs", HASKELL_SOURCE),
+        ("counter.ml", OCAML_SOURCE),
+        ("analysis.r", R_SOURCE),
+        ("geometry.jl", JULIA_SOURCE),
+    ],
+)
+def test_functional_snippets_parse_without_errors(tmp_path, name, source):
+    """Each snippet is a grammar regression check: a parse error here
+    means a grammar change broke everyday syntax.
+    """
+    result = _extract(tmp_path, name, source)
+    assert result["status"] == "ok", f"{name} parse failed: {result['status']}"
+
+
+def test_language_for_functional_and_scientific_languages():
+    """language_for maps Elixir, Haskell, OCaml (.ml and .mli), R (any
+    case) and Julia extensions.
+    """
+    assert language_for("lib/user.ex") == "elixir"
+    assert language_for("test/user_test.exs") == "elixir"
+    assert language_for("src/Area.hs") == "haskell"
+    assert language_for("counter.ml") == "ocaml"
+    assert language_for("counter.mli") == "ocaml_interface"
+    assert language_for("analysis/main.r") == "r"
+    assert language_for("analysis/main.R") == "r"
+    assert language_for("src/geometry.jl") == "julia"
+
+
+def test_elixir_extracts_modules_functions_imports_and_calls(tmp_path):
+    """Elixir: defmodule keeps the dotted name, defstruct takes its
+    module's name, a function's clauses are one symbol, and
+    alias, import, require and use name modules. Guards and module
+    attributes are not calls.
+    """
+    result = _extract(tmp_path, "user.ex", ELIXIR_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("MyApp.Accounts.User", "module", 1, 27),
+        ("MyApp.Accounts.User", "class", 7, 7),
+        ("create", "function", 9, 12),
+        ("active", "function", 14, 17),
+        ("label", "function", 19, 20),
+        ("trace", "function", 22, 26),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("MyApp.Repo", 2), ("Ecto.Query", 3), ("Logger", 4), ("GenServer", 5)]
+    calls = {(c["name"], c["line"]) for c in result["calls"]}
+    assert {("insert", 11), ("from", 15), ("all", 16), ("upcase", 19), ("debug", 24)} <= calls
+    names = {c["name"] for c in result["calls"]}
+    assert not names & {"is_binary", "unquote", "alias", "use", "def", "defp"}
+
+
+def test_elixir_multi_alias_and_split_clauses(tmp_path):
+    """`alias Foo.{Bar, Baz}` names each module. Clauses with other code
+    between them stay separate symbols.
+    """
+    source = (
+        "defmodule Shop do\n"
+        "  alias Shop.{Cart, Billing.Invoice}\n"
+        "  def total(0), do: 0\n"
+        "  def other, do: 1\n"
+        "  def total(n), do: n\n"
+        "end\n"
+    )
+    result = _extract(tmp_path, "shop.ex", source)
+    assert [i["module"] for i in result["imports"]] == ["Shop.Cart", "Shop.Billing.Invoice"]
+    totals = [d for d in result["definitions"] if d["name"] == "total"]
+    assert [(d["line_start"], d["line_end"]) for d in totals] == [(3, 3), (5, 5)]
+
+
+def test_elixir_protocol_and_impl_are_named_as_their_modules(tmp_path):
+    """defprotocol is an interface, and defimpl is named for the pair
+    it implements, `Stringify.Integer`.
+    """
+    result = _extract(tmp_path, "stringify.ex", ELIXIR_PROTOCOL_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"]) for d in result["definitions"]}
+    assert defs == {
+        ("Stringify", "interface", 1),
+        ("stringify", "function", 2),
+        ("Stringify.Integer", "class", 5),
+        ("stringify", "function", 6),
+    }
+    assert {c["name"] for c in result["calls"]} == {"to_string"}
+
+
+def test_haskell_extracts_types_classes_functions_imports_and_calls(tmp_path):
+    """Haskell: one symbol per top-level name, with its equations as one
+    span; instance methods count, the instance does not; a where-bound
+    helper is not a symbol. Qualified calls record their last segment.
+    """
+    result = _extract(tmp_path, "area.hs", HASKELL_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("Data.Shapes.Area", "module", 1, 1),
+        ("Shape", "type", 7, 8),
+        ("Wrapper", "type", 10, 10),
+        ("Name", "type", 12, 12),
+        ("Describable", "interface", 14, 15),
+        ("describe", "function", 18, 19),
+        ("area", "function", 22, 25),
+        ("largest", "function", 28, 29),
+        ("index", "function", 32, 32),
+        ("main", "function", 35, 35),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("Data.Map", 3), ("Data.List", 4), ("Geometry.Point", 5)]
+    names = {c["name"] for c in result["calls"]}
+    assert {"show", "area", "foldr", "fromList", "map", "mapM_", "sortBy"} <= names
+    assert "pick" not in {d["name"] for d in result["definitions"]}
+    assert not names & {"Just", "Circle"}
+
+
+def test_ocaml_extracts_modules_values_types_imports_and_calls(tmp_path):
+    """OCaml: let bindings are functions when they take parameters or
+    a fun body, variables otherwise; modules, signatures and types are
+    symbols; a let inside an expression is not.
+    """
+    result = _extract(tmp_path, "counter.ml", OCAML_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("Counter", "module", 4, 10),
+        ("t", "type", 5, 5),
+        ("create", "function", 7, 7),
+        ("incr", "function", 9, 9),
+        ("SHAPE", "interface", 12, 14),
+        ("area", "function", 13, 13),
+        ("shape", "type", 16, 16),
+        ("fact", "function", 18, 18),
+        ("area", "function", 20, 22),
+        ("total", "variable", 24, 24),
+        ("v", "variable", 28, 28),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("Printf", 1), ("Util_helpers", 2)]
+    calls = {c["name"] for c in result["calls"]}
+    assert {"fold_left", "printf", "fact", "compute"} <= calls
+
+
+def test_r_extracts_functions_classes_imports_and_calls(tmp_path):
+    """R: `name <- function` and `<<-` are functions; setClass,
+    setRefClass and R6Class name classes by their string. library,
+    require, requireNamespace and source are imports, not calls, and
+    `pkg::f()` calls f.
+    """
+    result = _extract(tmp_path, "analysis.r", R_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("scale_col", "function", 7, 10),
+        ("summarise_by", "function", 12, 14),
+        ("Point", "class", 16, 16),
+        ("Person", "class", 17, 17),
+        ("Counter", "class", 18, 18),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("dplyr", 1), ("ggplot2", 2), ("jsonlite", 3), ("R/helpers.R", 4)]
+    names = {c["name"] for c in result["calls"]}
+    assert {"mean", "sd", "group_by", "summarise", "median", "scale_col", "helper_fn"} <= names
+    assert not names & {"library", "require", "requireNamespace", "source"}
+
+
+def test_julia_using_names_every_package(tmp_path):
+    """`using A, B.C` names both packages; `import X: a` names X."""
+    source = "using LinearAlgebra, Base.Iterators\nimport Statistics: mean\n"
+    result = _extract(tmp_path, "m.jl", source)
+    assert [i["module"] for i in result["imports"]] == [
+        "LinearAlgebra",
+        "Base.Iterators",
+        "Statistics",
+    ]
+
+
+def test_julia_extracts_types_methods_imports_calls_and_bases(tmp_path):
+    """Julia: modules, structs, abstract types, long and short-form
+    functions and macros are symbols; `<:` names a base; using and
+    import name packages, include names a file. A definition's own
+    signature is not a call from it.
+    """
+    result = _extract(tmp_path, "geometry.jl", JULIA_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("Geometry", "module", 1, 35),
+        ("AbstractShape", "interface", 7, 7),
+        ("Point", "class", 9, 12),
+        ("Circle", "class", 14, 16),
+        ("norm2", "function", 18, 20),
+        ("area", "function", 22, 22),
+        ("timeit", "function", 24, 26),
+        ("show", "function", 28, 28),
+        ("scaled", "function", 30, 30),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("LinearAlgebra", 3), ("Base", 4), ("shapes.jl", 5)]
+    names = {c["name"] for c in result["calls"]}
+    assert {"sqrt", "esc", "print", "norm", "Point", "println", "area", "Circle"} <= names
+    assert "sin" in names, "a broadcast call is a call"
+    assert "include" not in names
+    assert {(i["type"], i["base"]) for i in result["inherits"]} == {
+        ("Point", "AbstractShape"),
+        ("Circle", "AbstractShape"),
+    }
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ParserSpec.hs",
+        "AreaTest.hs",
+        "counter_test.ml",
+        "test-plots.R",
+        "test_fit.R",
+        "runtests.jl",
+    ],
+)
+def test_functional_test_file_names_are_tests(name):
+    """Haskell Spec and Test, OCaml _test, R test- and test_, and Julia
+    runtests names mark test files.
+    """
+    assert TEST_NAME_RE.search(name), f"{name} should be a test file"
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["Area.hs", "Latest.hs", "counter.ml", "analysis.R", "latest.jl", "contest.ex"],
+)
+def test_functional_source_file_names_are_not_tests(name):
+    """Source files are not tests, even with test-like words in the
+    name.
+    """
+    assert not TEST_NAME_RE.search(name), f"{name} should not be a test file"

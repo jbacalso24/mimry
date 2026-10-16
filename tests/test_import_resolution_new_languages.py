@@ -1105,3 +1105,227 @@ def test_rust_qualified_call_reaches_the_graph(tmp_path):
         },
     )
     assert ("run", "new") in _graph_pairs(root, "calls")
+
+
+class TestElixirImports:
+    """Elixir `Foo.BarBaz` is `foo/bar_baz.ex`, found by its path under
+    any folder, and only when exactly one file has that path.
+    """
+
+    def test_module_resolves_to_its_snake_case_file(self):
+        imports = {"lib/app/web.ex": ["MyApp.Repo"]}
+        rel_paths = {"lib/app/web.ex", "lib/my_app/repo.ex"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("lib/my_app/repo.ex", "INFERRED")
+        ]
+
+    def test_acronym_module_snake_cases_like_elixir(self):
+        imports = {"lib/app.ex": ["MyApp.HTTPServer"]}
+        rel_paths = {"lib/app.ex", "lib/my_app/http_server.ex"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["lib/my_app/http_server.ex"]
+
+    def test_library_module_is_no_edge(self):
+        imports = {"lib/app/web.ex": ["Ecto.Query"]}
+        rel_paths = {"lib/app/web.ex", "lib/query.ex"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_two_files_at_one_path_is_no_edge(self):
+        imports = {"lib/app.ex": ["Shared.Repo"]}
+        rel_paths = {"lib/app.ex", "lib/shared/repo.ex", "old/shared/repo.ex"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestHaskellImports:
+    """Haskell `X.Y` is `X/Y.hs` under any source root."""
+
+    def test_module_under_src_resolves(self):
+        imports = {"app/Main.hs": ["Data.Shapes.Area"]}
+        rel_paths = {"app/Main.hs", "src/Data/Shapes/Area.hs"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/Data/Shapes/Area.hs", "INFERRED")
+        ]
+
+    def test_module_at_the_repo_root_resolves(self):
+        imports = {"app/Main.hs": ["Geometry.Point"]}
+        rel_paths = {"app/Main.hs", "Geometry/Point.hs"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["Geometry/Point.hs"]
+
+    def test_package_module_is_no_edge(self):
+        imports = {"app/Main.hs": ["Data.Map"]}
+        rel_paths = {"app/Main.hs", "src/Data/Shapes/Area.hs"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_ambiguous_module_is_no_edge(self):
+        imports = {"app/Main.hs": ["Data.Map"]}
+        rel_paths = {"app/Main.hs", "src/Data/Map.hs", "lib/Data/Map.hs"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestOCamlImports:
+    """OCaml module `Foo_bar` is `foo_bar.ml` anywhere in the repo, or
+    its `.mli` when only that exists.
+    """
+
+    def test_module_resolves_to_its_file(self):
+        imports = {"bin/main.ml": ["Util_helpers"]}
+        rel_paths = {"bin/main.ml", "src/util_helpers.ml"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/util_helpers.ml", "INFERRED")
+        ]
+
+    def test_interface_only_module_resolves_to_its_mli(self):
+        imports = {"bin/main.ml": ["Store"]}
+        rel_paths = {"bin/main.ml", "src/store.mli"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/store.mli"]
+
+    def test_stdlib_module_is_no_edge(self):
+        imports = {"bin/main.ml": ["Printf"]}
+        rel_paths = {"bin/main.ml"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_dotted_module_is_no_edge(self):
+        imports = {"bin/main.ml": ["Core.Printf"]}
+        rel_paths = {"bin/main.ml", "src/core/printf.ml"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestRImports:
+    """`source("x.R")` is relative to the importing file, then to the
+    repo root. A package named by library() never resolves.
+    """
+
+    def test_source_resolves_beside_the_importing_file(self):
+        imports = {"analysis/main.R": ["R/helpers.R"]}
+        rel_paths = {"analysis/main.R", "analysis/R/helpers.R"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("analysis/R/helpers.R", "EXTRACTED")
+        ]
+
+    def test_source_falls_back_to_the_repo_root(self):
+        imports = {"analysis/main.R": ["R/helpers.R"]}
+        rel_paths = {"analysis/main.R", "R/helpers.R"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("R/helpers.R", "INFERRED")]
+
+    def test_library_package_is_no_edge(self):
+        imports = {"analysis/main.R": ["dplyr"]}
+        rel_paths = {"analysis/main.R", "analysis/dplyr.R"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_missing_source_file_is_no_edge(self):
+        imports = {"analysis/main.R": ["R/missing.R"]}
+        rel_paths = {"analysis/main.R"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestJuliaImports:
+    """`include("x.jl")` is relative to the importing file. `using` and
+    `import` name packages, which never resolve.
+    """
+
+    def test_include_resolves_beside_the_importer(self):
+        imports = {"src/Geometry.jl": ["shapes.jl"]}
+        rel_paths = {"src/Geometry.jl", "src/shapes.jl"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/shapes.jl", "EXTRACTED")
+        ]
+
+    def test_using_a_package_is_no_edge_even_with_a_matching_file(self):
+        imports = {"src/Geometry.jl": ["LinearAlgebra"]}
+        rel_paths = {"src/Geometry.jl", "src/LinearAlgebra.jl"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_missing_include_is_no_edge(self):
+        imports = {"src/Geometry.jl": ["missing.jl"]}
+        rel_paths = {"src/Geometry.jl"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+def test_each_functional_language_indexes_symbols_and_edges(tmp_path):
+    """One small project per functional or scientific language: each
+    function is findable by name, and each language gets its import
+    edge, including the Elixir, Haskell, OCaml, R and Julia rules.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "web/lib/my_app/repo.ex": (
+                "defmodule MyApp.Repo do\n  def insert(user) do\n    user\n  end\nend\n"
+            ),
+            "web/lib/app/web.ex": (
+                "defmodule App.Web do\n  alias MyApp.Repo\n\n"
+                "  def render(user) do\n    Repo.insert(user)\n  end\nend\n"
+            ),
+            "hs/src/Data/Shapes/Area.hs": (
+                "module Data.Shapes.Area where\n\narea :: Double -> Double\narea r = r * r\n"
+            ),
+            "hs/app/Main.hs": (
+                "module Main where\n\nimport Data.Shapes.Area\n\nmain = print (area 2)\n"
+            ),
+            "ml/util_helpers.ml": 'let shout s = s ^ "!"\n',
+            "ml/bin.ml": 'open Util_helpers\nlet run () = shout "hi"\n',
+            "stats/R/helpers.R": "scale_col <- function(x) x / 2\n",
+            "stats/main.R": 'source("R/helpers.R")\nresult <- scale_col(3)\n',
+            "jl/src/shapes.jl": "circle_area(r) = pi * r^2\n",
+            "jl/src/Geometry.jl": 'include("shapes.jl")\nperimeter(r) = 2pi * r\n',
+        },
+    )
+    pointer = load_pointer(root)
+    assert pointer is not None
+
+    for name, language in [
+        ("render", "elixir"),
+        ("area", "haskell"),
+        ("shout", "ocaml"),
+        ("scale_col", "r"),
+        ("circle_area", "julia"),
+        ("perimeter", "julia"),
+    ]:
+        matches = symbol_matches(pointer, name)
+        assert matches, f"{name} not found in the index"
+        exact = {m["language"] for m in matches if m["name"] == name}
+        assert exact == {language}, matches
+
+    imports = _graph_pairs(root, "imports")
+    assert ("web/lib/app/web.ex", "web/lib/my_app/repo.ex") in imports, sorted(imports)
+    assert ("hs/app/Main.hs", "hs/src/Data/Shapes/Area.hs") in imports, sorted(imports)
+    assert ("ml/bin.ml", "ml/util_helpers.ml") in imports, sorted(imports)
+    assert ("stats/main.R", "stats/R/helpers.R") in imports, sorted(imports)
+    assert ("jl/src/Geometry.jl", "jl/src/shapes.jl") in imports, sorted(imports)

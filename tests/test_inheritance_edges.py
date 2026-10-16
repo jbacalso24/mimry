@@ -54,6 +54,13 @@ from mimry.storage import load_pointer
             "@interface Widget : UIView <Drawable, NSCopying>\n@end\n",
             {("Widget", "UIView"), ("Widget", "Drawable"), ("Widget", "NSCopying")},
         ),
+        # Julia `<:` names the supertype, also under a parametric head.
+        (".jl", "struct P <: AbstractP\n    x::Int\nend\n", {("P", "AbstractP")}),
+        (
+            ".jl",
+            "abstract type Shape{T} <: AbstractShape end\n",
+            {("Shape", "AbstractShape")},
+        ),
     ],
 )
 def test_base_types_are_extracted(tmp_path: Path, suffix: str, source: str, expected: set) -> None:

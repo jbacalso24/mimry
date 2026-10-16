@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import posixpath
+import re
 
 from .languages import language_for
 from .tsconfig import resolve_ts_alias
@@ -154,8 +155,8 @@ def _resolve_import(
     if not module:
         return None
 
-    # Shell, PowerShell, Lua, Perl and Zig imports follow their own
-    # rules.
+    # Shell, PowerShell, Lua, Perl, Zig and the newer script-style
+    # languages follow their own rules.
     language = language_for(importer, overrides)
     if module in (".", ".."):
         # Only JS/TS name a folder this way. Normalize to the trailing
@@ -243,7 +244,9 @@ def _in_python_package(importer: str, rel_paths: set[str]) -> bool:
     return posixpath.join(posixpath.dirname(importer), "__init__.py") in rel_paths
 
 
-_SUFFIX_INDEX_LANGUAGES = frozenset(("lua", "perl", "powershell"))
+_SUFFIX_INDEX_LANGUAGES = frozenset(
+    ("lua", "perl", "powershell", "elixir", "haskell", "ocaml", "ocaml_interface")
+)
 
 
 def _resolve_script_path(importer: str, path: str, rel_paths: set[str]) -> dict | None:
@@ -326,6 +329,76 @@ def _resolve_zig(
     other package names are recorded but never resolve.
     """
     if not module.endswith(".zig"):
+        return None
+    return _resolve_script_path(importer, module, rel_paths)
+
+
+def _unique_path_suffix(exact_lookup: dict, path: str) -> dict | None:
+    """The one repo file whose path ends with ``path``, or None."""
+    matches = exact_lookup.get(path, [])
+    if len(matches) == 1:
+        return {"path": matches[0], "confidence": "INFERRED"}
+    return None
+
+
+def _snake_case(name: str) -> str:
+    """Elixir's Macro.underscore: `MyApp` is `my_app`, `HTTPServer` is
+    `http_server`.
+    """
+    name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
+    return re.sub(r"([a-z\d])([A-Z])", r"\1_\2", name).lower()
+
+
+def _resolve_elixir(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """Elixir `Foo.BarBaz` is `foo/bar_baz.ex`, a unique path suffix."""
+    path = "/".join(_snake_case(part) for part in module.split(".")) + ".ex"
+    return _unique_path_suffix(exact_lookup, path)
+
+
+def _resolve_haskell(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """Haskell `X.Y` is `X/Y.hs` under any source root, as a unique
+    path suffix.
+    """
+    return _unique_path_suffix(exact_lookup, module.replace(".", "/") + ".hs")
+
+
+def _resolve_ocaml(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """OCaml `Foo_bar` is `foo_bar.ml` (or `.mli`) as a unique path
+    suffix. A dotted path names no file this way.
+    """
+    if "." in module:
+        return None
+    stem = module[:1].lower() + module[1:]
+    return _unique_path_suffix(exact_lookup, stem + ".ml") or _unique_path_suffix(
+        exact_lookup, stem + ".mli"
+    )
+
+
+def _resolve_r(importer: str, module: str, rel_paths: set[str], exact_lookup: dict) -> dict | None:
+    """`source("x.R")` is relative to the importing file, then to the
+    repo root. A package named by library() never resolves.
+    """
+    if not module.lower().endswith(".r"):
+        return None
+    found = _resolve_script_path(importer, module, rel_paths)
+    if found is None and posixpath.normpath(module) in rel_paths:
+        found = {"path": posixpath.normpath(module), "confidence": "INFERRED"}
+    return found
+
+
+def _resolve_julia(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """`include("x.jl")` relative to the importing file. A `using` or
+    `import` names a package, which never resolves.
+    """
+    if not module.endswith(".jl"):
         return None
     return _resolve_script_path(importer, module, rel_paths)
 
@@ -461,6 +534,12 @@ _SCRIPT_RESOLVERS = {
     "lua": _resolve_lua,
     "perl": _resolve_perl,
     "zig": _resolve_zig,
+    "elixir": _resolve_elixir,
+    "haskell": _resolve_haskell,
+    "ocaml": _resolve_ocaml,
+    "ocaml_interface": _resolve_ocaml,
+    "r": _resolve_r,
+    "julia": _resolve_julia,
 }
 
 

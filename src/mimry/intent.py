@@ -104,6 +104,7 @@ SOURCE_EXTS = {
     *(".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"),
     *(".sh", ".bash", ".ps1", ".psm1", ".lua", ".pl", ".pm"),
     *(".dart", ".m", ".zig"),
+    *(".ex", ".exs", ".hs", ".ml", ".mli", ".r", ".jl"),
 }
 # Code that ships with a project but is not the product: an edit task is
 # almost never about it, so it is supporting context rather than a
@@ -184,6 +185,11 @@ TEST_NAME_RE = re.compile(
     r"|_test\.dart$"
     r"|[A-Za-z0-9](Test|Tests)\.m$"
     r"|_test\.zig$|^test_.*\.zig$"
+    # Haskell *Spec.hs and *Test.hs, OCaml *_test.ml, R test-*.R and
+    # test_*.R (testthat), and Julia runtests.jl. Elixir *_test.exs is
+    # matched above.
+    r"|(Spec|Test)\.hs$|_test\.ml$"
+    r"|^test[-_].+\.[Rr]$|^runtests\.jl$"
 )
 TEST_TERMS = {"test", "tests", "testing", "pytest", "vitest", "jest", "spec"}
 # Suffixes that inflect a word ("token"/"tokens", "parse"/"parsing"), as
