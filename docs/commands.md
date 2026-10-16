@@ -194,7 +194,9 @@ The MCP tool `mimry_impact(target, file, changed, depth, root)` returns the same
 
 `mimry history "<query>"` finds the commits that added, removed or renamed the files a task is about.
 Git records that history, and MIMRY keeps it in the index, so a query like "share extension removed" finds the commit that deleted the Share Extension files.
-Each match shows its short hash, date and subject, then up to eight changed paths with their status: `removed`, `added`, `renamed from <old path>`, or `changed`.
+Each match shows its short hash, date and subject, then up to eight changed paths with their status: `removed`, `added`, `renamed`, or `changed`.
+A rename shows the new path, then the old one in parentheses, as in `renamed  src/core.py (from src/app.py)`.
+A query that names a file, such as `app.py` or `src/core.py`, matches only the commits that touched that path, not every commit with the same words.
 Matches rank by BM25 over the subject, body and changed paths, and a newer commit comes first on a tie.
 `--limit` sets how many commits to show (default 10), and `--json` prints the same answer for tools.
 

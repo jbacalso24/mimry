@@ -36,7 +36,7 @@ from .feedback import (
     record_feedback,
     show_feedback,
 )
-from .history import history_payload, plain, status_text
+from .history import history_payload, path_text, plain
 from .indexer import write_index
 from .install_info import repair_command
 from .lifecycle import (
@@ -878,7 +878,7 @@ def cmd_history(a):
         print(f"  {commit['sha'][:7]}  {commit['date']}  {plain(commit['subject'])}")
         shown = commit["paths"][:HISTORY_PATHS_SHOWN]
         for line in ui.table_lines(
-            [(status_text(path), plain(path["path"])) for path in shown], indent=6
+            [(path["status"], path_text(path)) for path in shown], indent=6
         ):
             print(line)
         if len(commit["paths"]) > len(shown):

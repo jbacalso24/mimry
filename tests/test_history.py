@@ -111,7 +111,7 @@ def test_deleted_folder_commit_ranks_first_with_removed_status(tmp_path):
     assert "removed  ShareExtension/ShareViewController.swift" in res.stdout
 
 
-def test_rename_shows_renamed_from(tmp_path):
+def test_rename_shows_the_new_path_and_the_old_one(tmp_path):
     cache = tmp_path / "cache"
     repo = _init_repo(tmp_path / "repo")
     _write(repo, "src/old_name.py", "print('one')\n")
@@ -124,7 +124,54 @@ def test_rename_shows_renamed_from(tmp_path):
     res = _mimry(repo, cache, "history", "module renamed")
 
     assert res.returncode == 0, res.stderr
-    assert "renamed from src/old_name.py  src/new_name.py" in res.stdout
+    assert "renamed  src/new_name.py (from src/old_name.py)" in res.stdout
+
+
+def _file_name_repo(tmp_path: Path) -> tuple[Path, Path]:
+    """Commits on app.py, share_extension.py, a rename and app notes."""
+    cache = tmp_path / "cache"
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, "src/app.py", "app = 1\n")
+    _git(repo, "add", "-A")
+    _commit(repo, "Add the app")
+    _write(repo, "src/share_extension.py", "share = 1\n")
+    _git(repo, "add", "-A")
+    _commit(repo, "Add the share extension")
+    _git(repo, "mv", "src/app.py", "src/core.py")
+    _commit(repo, "Rename the app")
+    _write(repo, "docs/notes.md", "app py notes\n")
+    _git(repo, "add", "-A")
+    _commit(repo, "App py notes")
+    assert _mimry(repo, cache, "init", "--skip-graph").returncode == 0
+    return repo, cache
+
+
+def test_file_name_query_lists_only_commits_touching_that_file(tmp_path):
+    repo, cache = _file_name_repo(tmp_path)
+
+    res = _mimry(repo, cache, "history", "app.py")
+
+    assert res.returncode == 0, res.stderr
+    subjects = re.findall(r"^  [0-9a-f]{7}  \d{4}-\d{2}-\d{2}  (.*)$", res.stdout, re.M)
+    assert sorted(subjects) == ["Add the app", "Rename the app"], res.stdout
+
+
+def test_word_query_still_matches_by_words(tmp_path):
+    repo, cache = _file_name_repo(tmp_path)
+
+    res = _mimry(repo, cache, "history", "share extension")
+
+    assert res.returncode == 0, res.stderr
+    assert "Add the share extension" in res.stdout
+
+
+def test_rename_line_names_the_old_path_after_the_new_one(tmp_path):
+    repo, cache = _file_name_repo(tmp_path)
+
+    res = _mimry(repo, cache, "history", "app.py")
+
+    assert res.returncode == 0, res.stderr
+    assert "renamed  src/core.py (from src/app.py)" in res.stdout
 
 
 def test_inexact_rename_is_listed_as_removed_and_added(tmp_path):

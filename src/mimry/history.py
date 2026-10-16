@@ -277,9 +277,36 @@ def update_history(con: sqlite3.Connection, root: Path) -> dict[str, Any]:
     }
 
 
+# Characters around a query token that are not part of a file name.
+_QUERY_EDGE = "\"'`()[]{},;:!?"
+# A query token ending in a dot and letters, such as app.py.
+_FILE_EXTENSION_RE = re.compile(r"\.[A-Za-z]+$")
+
+
+def _match_expression(query: str) -> str:
+    """The FTS5 match for query.
+
+    A token that names a file or path matches its words in order on the
+    paths column only, so app.py does not match every Python commit.
+    The other words keep the OR of their prefixes.
+    """
+    phrases: list[str] = []
+    words: list[str] = []
+    for raw in query.split():
+        token = raw.strip(_QUERY_EDGE).rstrip(".")
+        if "/" not in token and "\\" not in token and not _FILE_EXTENSION_RE.search(token):
+            words.append(raw)
+            continue
+        pieces = re.findall(r"[^\W_]+", token)
+        if pieces:
+            phrases.append(f'paths : "{" ".join(pieces)}"')
+    clauses = phrases + [f'"{term}"*' for term in _query_terms(" ".join(words))]
+    return " OR ".join(dict.fromkeys(clauses))
+
+
 def read_history(con: sqlite3.Connection, query: str, limit: int) -> list[dict[str, Any]]:
     """The commits matching query, best first, newer first on a tie."""
-    match = " OR ".join(f'"{term}"*' for term in _query_terms(query) if term)
+    match = _match_expression(query)
     if not match:
         return []
     rows = con.execute(
@@ -312,11 +339,12 @@ def read_history(con: sqlite3.Connection, query: str, limit: int) -> list[dict[s
     return commits
 
 
-def status_text(path: dict[str, Any]) -> str:
-    """The status column: removed, added, renamed from, or changed."""
+def path_text(path: dict[str, Any]) -> str:
+    """The path column: a rename names its old path after the new."""
+    text = plain(path["path"])
     if path["status"] == "renamed":
-        return f"renamed from {plain(path['oldPath'])}"
-    return path["status"]
+        return f"{text} (from {plain(path['oldPath'])})"
+    return text
 
 
 def history_payload(con: sqlite3.Connection, root: Path, query: str, limit: int) -> dict[str, Any]:
