@@ -34,6 +34,9 @@ HEAVY_IGNORES = {
     ".venv",
     "venv",
 }
+# Symbols that are not code: Markdown headings and SQL tables. The
+# impact command and the PreToolUse hook both skip them.
+NON_CODE_KINDS = frozenset({"heading", "sql_table"})
 SENSITIVE_PATTERNS = [
     ".env",
     "*.env",

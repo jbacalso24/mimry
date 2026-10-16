@@ -26,13 +26,13 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from .constants import HEAVY_IGNORES
+from .constants import HEAVY_IGNORES, NON_CODE_KINDS
 
 # Regex constructs that make a pattern broad. A plain identifier, an
 # escaped dot or an exact message is not matched by any of these.
 REGEX_CONSTRUCT = re.compile(r"\||\.[*+]|\\[wsbdWSBD]|\[[^\]]*\]|\(.*\)|\(\?i\)")
 ESCAPED_CLASS = re.compile(r"\\[wsbdWSBD]")
-WORD = re.compile(r"[A-Za-z][A-Za-z0-9_]+")
+WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
 SEPARATOR = re.compile(r"[|&;]+")
 SEARCH_PROGRAMS = {"grep", "rg", "ag", "ack", "git"}
 # These recurse into subdirectories without needing -r.
@@ -55,7 +55,6 @@ LONG_WITH_VALUE = {
     "--after-context",
     "--before-context",
 }
-PLACEHOLDER = "<what you are looking for>"
 # A refresh lock older than this came from a run that died before
 # removing it. A refresh of a large repo finishes well inside it.
 REFRESH_LOCK_STALE_SECONDS = 15 * 60
@@ -125,11 +124,26 @@ def glob_is_broad(pattern: str) -> bool:
     return last == "**" or "*" in last or "?" in last
 
 
-def query_for(pattern: str) -> str:
-    """Words from ``pattern`` for ``mimry find``, at most six."""
-    words = WORD.findall(ESCAPED_CLASS.sub(" ", pattern))
-    unique = list(dict.fromkeys(words))[:6]
-    return " ".join(unique) or PLACEHOLDER
+def usable_word(word: str) -> str | None:
+    """``word`` if it can name something in the index, else None.
+
+    A word needs three characters. Regex syntax leaves fragments such as
+    ``n_`` in ``(acc|n_)``, so trailing underscores go when the word has
+    fewer than three letters. ``snake_case_`` keeps its underscore.
+    """
+    if sum(ch.isalpha() for ch in word) < 3:
+        word = word.rstrip("_")
+    return word if len(word) >= 3 else None
+
+
+def query_for(pattern: str) -> str | None:
+    """Usable words from ``pattern`` for ``mimry find``, at most six.
+
+    None when the pattern has no usable word, so no nudge is printed.
+    """
+    words = [usable_word(word) for word in WORD.findall(ESCAPED_CLASS.sub(" ", pattern))]
+    unique = list(dict.fromkeys(word for word in words if word))[:6]
+    return " ".join(unique) or None
 
 
 def _next_value(args: list[str], i: int, attached: str = "") -> tuple[str, int]:
@@ -276,7 +290,7 @@ def broad_search_query(tool_name: str, tool_input: dict, command: str) -> str | 
         if not glob_is_broad(pattern):
             return None
         # File extensions say what kind of file, not what it is about:
-        # "**/*.py" gives the placeholder, not `mimry find "py"`.
+        # "**/*.py" has no words left, so it gets no nudge at all.
         return query_for(re.sub(r"\.[A-Za-z0-9]+(?=/|$)", "", pattern))
     pattern = shell_search_pattern(command)
     return None if pattern is None else query_for(pattern)
@@ -302,8 +316,13 @@ def symbol_candidates(patterns: list[str]) -> list[str]:
     """Identifiers in ``patterns`` that could name a symbol."""
     names: list[str] = []
     for pattern in patterns:
-        for word in WORD.findall(ESCAPED_CLASS.sub(" ", pattern)):
-            if len(word) < 3 or word in DECLARATION_WORDS or word in names:
+        for raw in WORD.findall(ESCAPED_CLASS.sub(" ", pattern)):
+            word = usable_word(raw)
+            # Dunder names such as __init__ are defined in nearly every
+            # file, so an answer naming one would be noise.
+            if word is None or word in DECLARATION_WORDS or word in names:
+                continue
+            if word.startswith("__") and word.endswith("__"):
                 continue
             names.append(word)
     return names[:SYMBOL_CANDIDATE_LIMIT]
@@ -363,11 +382,14 @@ def _definitions(
 
     Reads ``mimry.sqlite`` read-only and matches names exactly. A
     definition is skipped when its file is gone or was edited after the
-    index was built, because its line may be wrong by now.
+    index was built, because its line may be wrong by now. Headings and
+    SQL tables are not code, so they are never returned.
     """
     import sqlite3
 
     marks = ",".join("?" * len(names))
+    kinds = sorted(NON_CODE_KINDS)
+    kind_marks = ",".join("?" * len(kinds))
     # A file:///C:/ URI cost ~80 ms to open on Windows; a file:C:/ URI
     # built from the absolute path opens in under 1 ms. Only the three
     # characters that end or change a file: URI need escaping.
@@ -378,8 +400,9 @@ def _definitions(
         rows = con.execute(
             "select s.name, s.kind, f.rel_path, s.line_start from symbols s"
             " join files f on f.file_id = s.file_id"
-            f" where s.name in ({marks}) order by f.rel_path, s.line_start",
-            names,
+            f" where s.name in ({marks}) and (s.kind is null or s.kind not in ({kind_marks}))"
+            " order by f.rel_path, s.line_start",
+            [*names, *kinds],
         ).fetchall()
     finally:
         con.close()

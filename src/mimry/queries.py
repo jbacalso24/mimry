@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from . import ui
 from .cache_safety import IndexOutsideCacheError
+from .constants import NON_CODE_KINDS
 from .core.artifacts import (
     INFERRED_NOTE,
     call_lookup,
@@ -974,8 +975,6 @@ IMPACT_MAX_DEPTH = 5
 IMPACT_SHOWN = 20
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
 _OPEN_END = 10**9
-# Symbols that are not code: Markdown headings and SQL tables.
-NON_CODE_KINDS = frozenset({"heading", "sql_table"})
 
 
 def impact_usage(target: str | None, file: str | None, changed: bool) -> str | None:

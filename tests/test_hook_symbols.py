@@ -248,3 +248,61 @@ def test_corrupt_graph_falls_back_without_raising(repo, monkeypatch, capsys):
 
     assert hook._symbol_answer(repo, "s1", "grep", {"pattern": "leaf"}, "") is None
     assert _hook(monkeypatch, capsys, repo, _grep("leaf")) == ""
+
+
+def _index_again(repo: Path) -> None:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "More files")
+    assert _mimry(repo, repo.parent / "cache", "index").returncode == 0
+
+
+def test_leading_underscore_name_gets_its_definition(repo, monkeypatch, capsys):
+    (repo / "app" / "private.py").write_text(
+        "def _private_helper():\n    return 1\n", encoding="utf-8"
+    )
+    _index_again(repo)
+
+    text = _hook(monkeypatch, capsys, repo, _grep("_private_helper"))
+
+    assert text == (
+        "MIMRY knows _private_helper: function at app/private.py:1.\n"
+        "No callers recorded in the index."
+    )
+
+
+def test_dunder_name_is_not_answered_but_a_function_in_the_same_search_is(
+    repo, monkeypatch, capsys
+):
+    (repo / "app" / "klass.py").write_text(
+        "class Thing:\n    def __init__(self):\n        self.x = 1\n", encoding="utf-8"
+    )
+    _index_again(repo)
+
+    assert _hook(monkeypatch, capsys, repo, _grep("__init__")) == ""
+    text = _hook(monkeypatch, capsys, repo, _grep("__init__|leaf"))
+    assert text.startswith("MIMRY knows leaf: function at app/one.py:5.")
+    assert "__init__" not in text
+
+
+def test_heading_and_sql_table_named_like_a_function_are_not_answered(repo, monkeypatch, capsys):
+    (repo / "NOTES.md").write_text("# leaf\n\n# files\n", encoding="utf-8")
+    (repo / "schema.sql").write_text("CREATE TABLE files (id INTEGER);\n", encoding="utf-8")
+    _index_again(repo)
+
+    assert _hook(monkeypatch, capsys, repo, _grep("files")) == ""
+    text = _hook(monkeypatch, capsys, repo, _grep("leaf|files"))
+    assert text == (
+        "MIMRY knows leaf: function at app/one.py:5.\nCalled by helper (app/one.py:1)."
+    )
+
+
+def test_glob_with_no_words_gets_no_nudge(repo, monkeypatch, capsys):
+    payload = {"tool_name": "Glob", "session_id": "s1", "tool_input": {"pattern": "**/*.py"}}
+
+    assert _hook(monkeypatch, capsys, repo, payload) == ""
+
+
+def test_nudge_query_drops_regex_fragments(repo, monkeypatch, capsys):
+    text = _hook(monkeypatch, capsys, repo, _shell("rg '\"(acc|mean|top|n_|scored)' x.log"))
+
+    assert text.startswith('MIMRY can answer this: run `mimry find "acc mean top scored"`')

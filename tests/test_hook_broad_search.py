@@ -6,7 +6,6 @@ import pytest
 
 from mimry import hook
 from mimry.hook import (
-    PLACEHOLDER,
     broad_search_query,
     glob_is_broad,
     query_for,
@@ -68,9 +67,12 @@ def test_glob_breadth(pattern, broad):
         (r"\bauth\b.*session", "auth session"),
         ("login.*redirect", "login redirect"),
         ("auth|auth|session", "auth session"),
-        ("a1x|bb|cc|dd|ee|ff|gg", "a1x bb cc dd ee ff"),
-        ("a|b", PLACEHOLDER),
-        ("", PLACEHOLDER),
+        ("a1x|bbb|ccc|ddd|eee|fff|ggg", "a1x bbb ccc ddd eee fff"),
+        ("_private|__init__|_x1", "_private __init__ _x1"),
+        ("(acc|mean|top|n_|scored)", "acc mean top scored"),
+        ("snake_case_|x_", "snake_case_"),
+        ("a|b", None),
+        ("", None),
     ],
 )
 def test_query_words(pattern, query):
@@ -128,7 +130,8 @@ def test_broad_search_query_by_tool_name():
 @pytest.mark.parametrize(
     ("pattern", "query"),
     [
-        ("**/*.py", PLACEHOLDER),
+        # Nothing is left once the extension goes, so there is no nudge.
+        ("**/*.py", None),
         ("src/**/*.tsx", "src"),
         ("**/auth*.py", "auth"),
     ],
@@ -149,6 +152,11 @@ def test_glob_query_leaves_out_file_extensions(pattern, query):
         (["leaf", "leaf|main"], ["leaf", "main"]),
         (["connection refused"], ["connection", "refused"]),
         (["a1|xy"], []),
+        (["_escape_control_characters"], ["_escape_control_characters"]),
+        (["_private|_x|_x1"], ["_private", "_x1"]),
+        # Dunder names (__init__) are defined in most files: skipped.
+        (["__init__|__name__|init"], ["init"]),
+        (["(acc|mean|top|n_|scored)"], ["acc", "mean", "top", "scored"]),
     ],
 )
 def test_symbol_candidates_drop_keywords_and_short_words(patterns, names):
