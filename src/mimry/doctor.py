@@ -18,6 +18,7 @@ from typing import Any
 
 from . import __version__, installer, ui
 from .cache_safety import IndexOutsideCacheError, validated_current_index_path
+from .core.languages import grammar_error_reason, is_network_failure
 from .install_info import (
     direct_url,
     editable_folder,
@@ -462,12 +463,24 @@ def _parser_check() -> dict[str, Any]:
         except Exception as exc:
             # Matched by name: a stub pack may not define DownloadError.
             if exc.__class__.__name__ == "DownloadError":
+                # Same wording as the index warning: only a network
+                # failure gets the network hint.
+                reason = grammar_error_reason(exc)
+                if is_network_failure(reason):
+                    return _check(
+                        "parsers.tree_sitter",
+                        "error",
+                        f"tree-sitter grammars could not be downloaded ({reason})",
+                        "Check your network or proxy; MIMRY downloads each grammar once, "
+                        "on first use.",
+                        state="download_failed",
+                        language=language,
+                    )
                 return _check(
                     "parsers.tree_sitter",
                     "error",
-                    "tree-sitter grammars could not be downloaded",
-                    "Check your network or proxy; MIMRY downloads each grammar once, "
-                    "on first use.",
+                    f"tree-sitter grammars failed ({reason})",
+                    None,
                     state="download_failed",
                     language=language,
                 )

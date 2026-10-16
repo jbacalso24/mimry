@@ -44,6 +44,7 @@ from mimry.queries import (
     IMPACT_MAX_DEPTH,
     calls_payload,
     impact_payload,
+    oversized_message,
     path_payload,
     run_explain,
     run_path,
@@ -360,8 +361,8 @@ def _status_payload_unchecked(root_path: Path, verify: bool = False) -> dict[str
         "root": str(root_path),
         "index_state": state,
         "last_indexed_at": ptr.get("lastIndexedAt"),
-        "files_indexed": len(files),
-        "symbols_indexed": len(symbols),
+        "files_indexed": fresh["stored_totals"]["files"],
+        "symbols_indexed": fresh["stored_totals"]["symbols"],
         "languages": language_counts(files, symbols),
         "changed_files": changed,
         "deleted_files": missing,
@@ -667,7 +668,8 @@ def mimry_symbol(
         matches = symbol_matches(ptr, name)
         payload = {"name": name, "root": str(root_path), "symbols": matches}
         if not matches:
-            payload["error"] = {"code": "unknown_symbol", "message": f'No symbols match "{name}".'}
+            message = oversized_message(root_path, ptr, name) or f'No symbols match "{name}".'
+            payload["error"] = {"code": "unknown_symbol", "message": message}
         return sanitize_data(payload)
     if relations not in CALL_DIRECTIONS:
         return {

@@ -1462,6 +1462,43 @@ class GrammarUnavailableError(RuntimeError):
 # Set by the first failed download. The pack would otherwise retry the
 # download for every file, each attempt waiting out the network first.
 _download_failed = False
+# What that first failure said, one line; see grammar_error_reason().
+_download_reason: str | None = None
+
+_REASON_MAX = 200
+_DOWNLOAD_PREFIX = re.compile(r"^\s*download error:\s*", re.IGNORECASE)
+# Words a network failure reports. A cache-directory or other local
+# failure has none of them, so it is not blamed on the network.
+_NETWORK_FAILURE = re.compile(
+    r"\b(?:connect\w*|time[d]?\s?out|dns|resolv\w*|network|proxy|ssl|tls|certificate"
+    r"|https?|unreachable|refused|socket)\b",
+    re.IGNORECASE,
+)
+
+
+def grammar_error_reason(error: object) -> str:
+    """What a grammar download reported, as one short, redacted line.
+
+    The pack's ``Download error:`` prefix is dropped, since the warning
+    already says the grammars failed.
+    """
+    from ..security import redact_sensitive_text
+
+    lines = str(error).strip().splitlines()
+    text = _DOWNLOAD_PREFIX.sub("", lines[0] if lines else "").strip()
+    if len(text) > _REASON_MAX:
+        text = text[: _REASON_MAX - 3].rstrip() + "..."
+    return redact_sensitive_text(text)
+
+
+def is_network_failure(reason: str | None) -> bool:
+    """Whether a grammar failure reason names a network problem."""
+    return bool(reason) and _NETWORK_FAILURE.search(reason) is not None
+
+
+def grammar_failure_reason() -> str | None:
+    """Why this process's grammar download failed, or None."""
+    return _download_reason
 
 
 def _pack_grammar(getter: str, lang: str) -> Any:
@@ -1471,7 +1508,7 @@ def _pack_grammar(getter: str, lang: str) -> Any:
     call in this process raises GrammarUnavailableError without trying
     again. Other errors pass through.
     """
-    global _download_failed
+    global _download_failed, _download_reason
     import tree_sitter_language_pack as pack
 
     if _download_failed:
@@ -1480,6 +1517,7 @@ def _pack_grammar(getter: str, lang: str) -> Any:
         return getattr(pack, getter)(lang)
     except pack.DownloadError as exc:
         _download_failed = True
+        _download_reason = grammar_error_reason(exc)
         raise GrammarUnavailableError(lang) from exc
 
 

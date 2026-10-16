@@ -510,8 +510,17 @@ def is_linked_worktree(folder: Path) -> bool:
         return False
 
 
+def size_limit_text(limit: int) -> str:
+    """A byte limit as the user reads it, e.g. ``1 MB``."""
+    return f"{limit / 1_000_000:g} MB"
+
+
 def scan_stats(
-    root, *, probe_open: bool = True, settings: IndexSettings | None = None
+    root,
+    *,
+    probe_open: bool = True,
+    settings: IndexSettings | None = None,
+    oversized: dict[str, int] | None = None,
 ) -> list[tuple[str, Path, os.stat_result]]:
     """Return ``(canonical_rel_path, native_path, lstat)`` for every
     indexable candidate.
@@ -520,7 +529,9 @@ def scan_stats(
     ACL-protected), which indexing needs. Freshness passes False: it
     opens each file itself and already treats an unreadable file as
     changed or skipped. ``settings`` applies the include, exclude and
-    size rules of ``mimry.toml``.
+    size rules of ``mimry.toml``. When ``oversized`` is given, each
+    candidate left out for its size is recorded in it with its limit in
+    bytes, so callers can say why it is not indexed.
     """
     safe_root(root)
     root = Path(root)
@@ -563,7 +574,12 @@ def scan_stats(
                 # One lstat answers regular-file, not-a-symlink, and
                 # size.
                 info = os.lstat(path)
-                if not stat.S_ISREG(info.st_mode) or info.st_size > size_limit(path, settings):
+                if not stat.S_ISREG(info.st_mode):
+                    continue
+                limit = size_limit(path, settings)
+                if info.st_size > limit:
+                    if oversized is not None:
+                        oversized[unicodedata.normalize("NFC", native_rel)] = limit
                     continue
                 if probe_open:
                     # Windows/macOS can expose locked or ACL-protected

@@ -119,9 +119,12 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     # spellings. scan() also preserves the existing fail-closed NFC
     # collision check.
     settings = index_settings(root)
+    oversized_live: dict[str, int] = {}
     native = {
         canonical: (path, st)
-        for canonical, path, st in scan_stats(root, probe_open=False, settings=settings)
+        for canonical, path, st in scan_stats(
+            root, probe_open=False, settings=settings, oversized=oversized_live
+        )
     }
     built = load_stat_cache(idx)
     stat_cache = None if verify else built
@@ -213,6 +216,12 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     # disables `mimry path`.
     unindexable = _unindexable_paths(idx)
     secret_skipped = 0
+    # Over the size limit, the scan leaves a file out before any read.
+    # An indexed file that grew is already changed above, so it is not
+    # counted again here.
+    oversized_files = {
+        rel: limit for rel, limit in oversized_live.items() if rel not in indexed_paths
+    }
 
     if files_path.exists():
         # Indexed files were secret-scanned from the exact bytes whose
@@ -257,6 +266,22 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     if not isinstance(graph, dict):
         raise StateCorruptionError(graph_path, "expected a JSON object")
     visible_files, visible_symbols = filter_index_records(files, symbols)
+    # What the index holds, before the deleted, policy and live
+    # exclusions below. Totals are reported from this: a rename shows
+    # the same counts until the next index.
+    stored_ids = {
+        *(f"file:{record.get('file_id')}" for record in visible_files),
+        *(f"symbol:{record.get('symbol_id')}" for record in visible_symbols),
+    }
+    stored_totals = {
+        "files": len(visible_files),
+        "symbols": len(visible_symbols),
+        "links": sum(
+            1
+            for edge in graph.get("edges", [])
+            if edge.get("source") in stored_ids and edge.get("target") in stored_ids
+        ),
+    }
     policy_and_live_excluded = set(policy_excluded) | set(live_excluded)
     # A deleted indexed file is just as unsafe to serve from stale cache
     # as a live policy exclusion: its source no longer exists to
@@ -303,7 +328,14 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
         "excluded_paths": sorted(excluded_paths),
         # Count only: these are paths policy intentionally keeps out of
         # agent context.
-        "unindexable_count": len(unindexable) + secret_skipped,
+        "unindexable_count": len(unindexable) + secret_skipped + len(oversized_files),
+        # Per reason, for status. Unreadable paths are not named: that
+        # set can hold files refused for their content.
+        "secret_skipped_count": secret_skipped,
+        "unreadable_count": len(unindexable),
+        # Relative path to its size limit in bytes.
+        "oversized_files": oversized_files,
+        "stored_totals": stored_totals,
         "state": state,
         "outdated_build": outdated_build,
         "settings_changed": settings_changed,

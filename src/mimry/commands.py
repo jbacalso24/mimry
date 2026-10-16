@@ -49,6 +49,7 @@ from .lifecycle import (
     print_parse_error_warning,
     print_problems,
     print_rows_capped,
+    print_skipped_counts,
     refresh_if_stale,
     require,
     root_name,
@@ -71,6 +72,7 @@ from .queries import (
     calls_payload,
     index_and_graph_health,
     inferred_mark,
+    oversized_message,
     print_results,
     print_results_section,
     print_verification,
@@ -93,6 +95,7 @@ from .semantic import semantic_health, semantic_rows
 from .source_snippets import with_source_snippets
 from .state import (
     StateLockTimeoutError,
+    grammar_error_of,
     grammar_unavailable_count,
     parse_error_summary,
 )
@@ -281,18 +284,20 @@ def _print_status(
             f"at commit {commit[:7]}" if commit else None,
         )
     )
-    ui.detail(
-        totals(len(fresh["files"]), len(fresh["symbols"]), len(fresh["graph"].get("edges", [])))
-    )
+    stored = fresh["stored_totals"]
+    ui.detail(totals(stored["files"], stored["symbols"], stored["links"]))
     languages = language_counts(fresh["files"], fresh["symbols"])
     if languages:
         ui.detail(f"Languages: {_languages_text(languages, LANGUAGE_DETAIL_LIMIT)}")
-    if fresh.get("unindexable_count"):
-        ui.detail(
-            f"{ui.count(fresh['unindexable_count'], 'file')} skipped: may contain secrets or could"
-            " not be read"
-        )
-    print_grammar_warning(grammar_unavailable_count(ptr))
+    print_skipped_counts(
+        fresh["secret_skipped_count"],
+        fresh["unreadable_count"],
+        len(fresh["oversized_files"]),
+        fresh["oversized_files"].values(),
+    )
+    if verbose and fresh["oversized_files"]:
+        print_rows_capped([("too large", path) for path in sorted(fresh["oversized_files"])])
+    print_grammar_warning(grammar_unavailable_count(ptr), grammar_error_of(ptr))
     print_parse_error_warning(*parse_error_summary(ptr))
     fixes = print_problems(fresh, graph, semantic)
     if verbose:
@@ -921,6 +926,10 @@ def cmd_symbol(a):
     name = sanitize_query(a.name)
     matches = symbol_matches(ptr, name)
     if not matches:
+        size_message = oversized_message(Path(a.root).resolve(), ptr, name)
+        if size_message:
+            ui.warn(size_message)
+            return 1
         print(f"No symbols match {ui.quote(name)}.")
         ui.detail(f'Try part of the name, or `mimry find "{name}"` to search files.')
         return 1

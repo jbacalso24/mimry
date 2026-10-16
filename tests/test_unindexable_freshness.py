@@ -18,18 +18,20 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import unicodedata
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from mimry.commands import cmd_init, cmd_preflight, cmd_status
+from mimry.commands import cmd_init, cmd_path, cmd_preflight, cmd_status, cmd_symbol, cmd_why
 from mimry.core.artifacts import graph_health
 from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.paths import context_file
 from mimry.queries import write_context_pack
+from mimry.scanner import SCANNER_FILE_SIZE_LIMIT
 from mimry.search import find_rows
 from mimry.state import UNINDEXABLE_FILE
 from mimry.storage import active_index_pointer, load_pointer
@@ -450,7 +452,9 @@ def test_files_skipped_for_secrets_are_reported_by_index_and_status(
 
     assert index_freshness(root, ptr)["unindexable_count"] == 1
     assert cmd_status(SimpleNamespace(root=root, json=False, verbose=False)) == 0
-    assert "1 file skipped: may contain secrets or could not be read" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "1 file skipped: may contain secrets" in out
+    assert "could not be read" not in out
 
 
 def test_a_secret_verdict_from_older_code_is_checked_again(tmp_path: Path, monkeypatch) -> None:
@@ -494,3 +498,112 @@ def test_index_built_by_other_mimry_code_is_stale_until_reindexed(
     rebuilt = load_pointer(root)
     assert rebuilt is not None
     assert index_freshness(root, rebuilt)["state"] == "current"
+
+
+OVERSIZED = "app/huge.py"
+OVERSIZED_MESSAGE = f"{OVERSIZED} is larger than the 1 MB limit, so it is not indexed"
+
+
+def _add_oversized(root: Path) -> None:
+    """One byte over the scanner's size limit."""
+    (root / OVERSIZED).write_bytes(b"x = 1" + bytes([10]) + b"#" * SCANNER_FILE_SIZE_LIMIT)
+
+
+def test_a_file_over_the_size_limit_is_counted_and_not_indexed(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    _add_oversized(root)
+
+    ptr = _index(root)
+    fresh = index_freshness(root, ptr)
+
+    assert fresh["state"] == "current", f"stale right after indexing; changed={fresh['changed']}"
+    assert fresh["oversized_files"] == {OVERSIZED: SCANNER_FILE_SIZE_LIMIT}
+    assert fresh["unindexable_count"] == 1
+    indexed = {
+        json.loads(line)["rel_path"]
+        for line in (Path(ptr["indexPath"]) / "files.jsonl").read_text().splitlines()
+        if line
+    }
+    assert OVERSIZED not in indexed
+
+
+def test_index_reports_the_size_skip_per_reason(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    _add_oversized(root)
+    assert cmd_init(SimpleNamespace(root=root, root_type="repo", skip_graph=True)) == 0
+
+    stats = write_index(root, load_pointer(root))
+
+    assert stats["oversized"] == 1
+    assert stats["oversized_limits"] == [SCANNER_FILE_SIZE_LIMIT]
+    assert stats["unreadable"] == 0
+    assert stats["secret_skipped"] == 0
+
+
+def test_status_counts_the_size_skip_and_names_it_when_verbose(tmp_path: Path, capsys) -> None:
+    root = _repo(tmp_path)
+    _add_oversized(root)
+    _index(root)
+    capsys.readouterr()
+
+    cmd_status(SimpleNamespace(root=root, verify=False, verbose=False))
+    quiet = capsys.readouterr().out
+    assert "1 file skipped: larger than the 1 MB limit" in quiet
+    assert OVERSIZED not in quiet
+
+    cmd_status(SimpleNamespace(root=root, verify=False, verbose=True))
+    assert OVERSIZED in capsys.readouterr().out
+
+
+def test_why_path_and_symbol_say_the_file_is_over_the_limit(tmp_path: Path, capsys) -> None:
+    root = _repo(tmp_path)
+    _add_oversized(root)
+    _index(root)
+    capsys.readouterr()
+
+    assert cmd_why(SimpleNamespace(root=root, surface=OVERSIZED, query="x", limit=25)) == 1
+    assert OVERSIZED_MESSAGE in capsys.readouterr().out
+
+    path_args = SimpleNamespace(root=root, source=OVERSIZED, target="app/clean.py", json=False)
+    assert cmd_path(path_args) == 1
+    assert OVERSIZED_MESSAGE in capsys.readouterr().out
+
+    assert cmd_symbol(SimpleNamespace(root=root, name=OVERSIZED)) == 1
+    assert OVERSIZED_MESSAGE in capsys.readouterr().out
+
+
+def test_a_secret_skip_still_reads_as_not_in_the_index(tmp_path: Path, refuse_one_file, capsys):
+    root = _repo(tmp_path)
+    _index(root)
+    capsys.readouterr()
+
+    assert cmd_why(SimpleNamespace(root=root, surface=REFUSED, query="x", limit=25)) == 1
+
+    out = capsys.readouterr().out
+    assert f"{REFUSED} is not in the index" in out
+    assert "larger" not in out
+    assert "could not be read" not in out
+
+
+def _totals(out: str) -> str:
+    match = re.search(r"\d[\d,]* files? - [\d,]+ symbols? - [\d,]+ links?", out)
+    assert match, out
+    return match.group(0)
+
+
+def test_totals_hold_after_a_rename_until_the_next_index(tmp_path: Path, capsys) -> None:
+    root = _repo(tmp_path)
+    _index(root)
+    capsys.readouterr()
+    cmd_status(SimpleNamespace(root=root, verify=False, verbose=False))
+    before = _totals(capsys.readouterr().out)
+
+    os.rename(root / "app" / "clean.py", root / "app" / "renamed.py")
+    cmd_status(SimpleNamespace(root=root, verify=False, verbose=False))
+    stale = capsys.readouterr().out
+    assert "1 new file, 1 deleted" in stale
+    assert _totals(stale) == before
+
+    write_index(root, load_pointer(root))
+    cmd_status(SimpleNamespace(root=root, verify=False, verbose=False))
+    assert _totals(capsys.readouterr().out) == before

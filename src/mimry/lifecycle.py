@@ -10,11 +10,12 @@ from types import SimpleNamespace
 from . import ui
 from .constants import SCHEMA_VERSION
 from .core.artifacts import graph_health, graph_path, manifest_path, report_path
+from .core.languages import is_network_failure
 from .freshness import index_freshness
 from .indexer import write_index
 from .install_info import repair_command
 from .paths import graph_output_dir, idx_path, mdir, now, output_dir, pointer_file
-from .scanner import _git_output, is_linked_worktree, worktree_fingerprint
+from .scanner import _git_output, is_linked_worktree, size_limit_text, worktree_fingerprint
 from .security import safe_root
 from .semantic import semantic_health
 from .state import atomic_write_text
@@ -359,17 +360,44 @@ def totals(files: int, symbols: int, links: int) -> str:
     return ui.facts(ui.count(files, "file"), ui.count(symbols, "symbol"), ui.count(links, "link"))
 
 
-def print_grammar_warning(unavailable: int) -> None:
-    """One warning when files were indexed without symbols."""
-    if unavailable:
-        ui.warn(
-            f"{ui.count(unavailable, 'file')} indexed without symbols: tree-sitter"
-            " grammars could not be downloaded."
-        )
-        ui.detail(
-            "MIMRY downloads each grammar once, on first use. Check your network or proxy,"
-            " then run `mimry index`."
-        )
+def print_grammar_warning(unavailable: int, reason: str | None = None) -> None:
+    """One warning when files were indexed without symbols.
+
+    ``reason`` is what the download reported. The network hint is only
+    for a network failure, and a failure without one shows just the
+    reason.
+    """
+    if not unavailable:
+        return
+    count = ui.count(unavailable, "file")
+    if reason and not is_network_failure(reason):
+        ui.warn(f"{count} indexed without symbols: tree-sitter grammars failed ({reason}).")
+        return
+    cause = f" ({reason})" if reason else ""
+    ui.warn(
+        f"{count} indexed without symbols: tree-sitter grammars could not be downloaded{cause}."
+    )
+    ui.detail(
+        "MIMRY downloads each grammar once, on first use. Check your network or proxy,"
+        " then run `mimry index`."
+    )
+
+
+def _size_phrase(limits) -> str:
+    distinct = sorted(set(limits))
+    if len(distinct) == 1:
+        return f"the {size_limit_text(distinct[0])} limit"
+    return "their size limits"
+
+
+def print_skipped_counts(secret: int, unreadable: int, oversized: int, limits) -> None:
+    """One line per reason a file is kept out of the index."""
+    if secret:
+        ui.detail(f"{ui.count(secret, 'file')} skipped: may contain secrets")
+    if unreadable:
+        ui.detail(f"{ui.count(unreadable, 'file')} skipped: could not be read")
+    if oversized:
+        ui.detail(f"{ui.count(oversized, 'file')} skipped: larger than {_size_phrase(limits)}")
 
 
 def print_parse_error_warning(count: int, names: list[str]) -> None:
@@ -412,17 +440,18 @@ def print_index_result(
         else:
             ui.detail("No file contents changed since the last index")
     ui.detail(totals(stats["files"], stats["symbols"], stats["edges"]))
-    if stats.get("unindexable"):
-        ui.detail(
-            f"{ui.count(stats['unindexable'], 'file')} skipped: may contain secrets or could not"
-            " be read"
-        )
+    print_skipped_counts(
+        stats.get("secret_skipped", 0),
+        stats.get("unreadable", 0),
+        stats.get("oversized", 0),
+        stats.get("oversized_limits", ()),
+    )
     if stats.get("missing_dependency"):
         ui.warn(
             f"{ui.count(stats['missing_dependency'], 'PDF')} indexed without text: pypdf is"
             f" missing. Run `{repair_command()}` to add it."
         )
-    print_grammar_warning(stats.get("grammar_unavailable", 0))
+    print_grammar_warning(stats.get("grammar_unavailable", 0), stats.get("grammar_error"))
     print_parse_error_warning(stats.get("parse_errors", 0), stats.get("parse_error_files", []))
     if verbose:
         ui.table(

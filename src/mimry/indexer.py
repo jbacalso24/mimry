@@ -17,7 +17,7 @@ from .config_manifest_adapter import is_config_manifest
 from .constants import SCHEMA_VERSION
 from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
 from .core.cluster import assign_communities
-from .core.languages import GRAMMAR_UNAVAILABLE
+from .core.languages import GRAMMAR_UNAVAILABLE, grammar_failure_reason
 from .core.report import build_manifest, render_report
 from .core.resolve import (
     resolve_calls,
@@ -241,6 +241,10 @@ def _adapt_file(
         # sensitive data.
         return UNINDEXABLE, None, None
     row = sanitize_data({"rel_path": rel_path, "out": output})
+    if row["out"][0].get("parse_status") == GRAMMAR_UNAVAILABLE:
+        # The failure happened in this process, so only here can its
+        # reason be read; the row carries it to the parent.
+        row["grammar_error"] = grammar_failure_reason()
     # Semantic chunks derive from exactly the persisted (sanitized)
     # record and its symbols in symbols.jsonl order, so they are
     # computed here, in parallel, and replayed on reuse instead of being
@@ -339,6 +343,12 @@ def _collect(
     # which disables `mimry path` entirely. Content never leaves this
     # list; only the path is kept.
     unindexable: list[str] = []
+    # Files over the size limit, with their limits. The scan leaves
+    # them out before any read, so they are never in ``unindexable``.
+    oversized: dict[str, int] = {}
+    # The first grammar failure's reason, read from the process that
+    # hit it (see _adapt_file).
+    grammar_error: str | None = None
 
     def _note_unindexable(path: Path) -> None:
         try:
@@ -349,7 +359,7 @@ def _collect(
     progress("MIMRY: scanning files", force=True)
     # No open probe here: the snapshot read opens each file once, and a
     # file that cannot be opened is skipped at that point instead.
-    candidates = scan_stats(root, probe_open=False, settings=settings)
+    candidates = scan_stats(root, probe_open=False, settings=settings, oversized=oversized)
     reused: dict[str, tuple[str, dict] | None] = {}
     chunks_by_file_id: dict[str, list] = {}
     fts_body_by_file_id: dict[str, str] = {}
@@ -402,6 +412,8 @@ def _collect(
             # file properly.
             if row["out"][0].get("parse_status") not in (MISSING_DEPENDENCY, GRAMMAR_UNAVAILABLE):
                 stat_entries[rel_path] = [*stat_identity, INDEXED]
+            if grammar_error is None:
+                grammar_error = row.get("grammar_error")
         adapt_lines.append(line)
         output = row["out"]
         if row.get("chunks") is not None:
@@ -467,6 +479,8 @@ def _collect(
     edges = validate_edge_identity(edges)
 
     if record is not None:
+        record["oversized"] = oversized
+        record["grammar_error"] = grammar_error
         record["stat_entries"] = stat_entries
         record["adapt_lines"] = adapt_lines
         record["chunks"] = chunks_by_file_id
@@ -941,9 +955,18 @@ def write_index(root, ptr, *, full: bool = False):
             changes = _changes(ptr, files)
             # Unrecorded as well as unindexable: report every file kept
             # out.
-            skipped = len(unindexable) + sum(
+            secret_skipped = sum(
                 entry[4] == SENSITIVE for entry in record["stat_entries"].values()
             )
+            skipped = len(unindexable) + secret_skipped
+            # Per reason, so the warning can say why each file is out.
+            skip_reasons = {
+                "secret_skipped": secret_skipped,
+                "unreadable": len(unindexable),
+                "oversized": len(record["oversized"]),
+                "oversized_limits": sorted(set(record["oversized"].values())),
+            }
+            grammar_error = record["grammar_error"]
             # Recorded, but without text: the reader library is missing.
             unread = sum(f.get("parse_status") == MISSING_DEPENDENCY for f in files)
             # Symbols missing: their grammar could not be downloaded.
@@ -966,8 +989,10 @@ def write_index(root, ptr, *, full: bool = False):
                     **kept,
                     "changes": changes,
                     "unindexable": skipped,
+                    **skip_reasons,
                     "missing_dependency": unread,
                     "grammar_unavailable": no_grammar,
+                    "grammar_error": grammar_error,
                     "parse_errors": len(parse_errors),
                     "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
                 }
@@ -1114,6 +1139,7 @@ def write_index(root, ptr, *, full: bool = False):
                 "semantic_chunks": semantic["chunks"],
                 "semantic_backend": semantic["backend"],
                 "grammar_unavailable": no_grammar,
+                "grammar_error": grammar_error,
                 "parse_errors": len(parse_errors),
                 "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
             }
@@ -1165,8 +1191,10 @@ def write_index(root, ptr, *, full: bool = False):
         "semantic_backend": semantic["backend"],
         "changes": changes,
         "unindexable": skipped,
+        **skip_reasons,
         "missing_dependency": unread,
         "grammar_unavailable": no_grammar,
+        "grammar_error": grammar_error,
         "parse_errors": len(parse_errors),
         "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
     }

@@ -51,10 +51,16 @@ from .paths import (
     task_context_file,
 )
 from .routing import project_test_command, verification_commands
+from .scanner import size_limit_text
 from .search import find_rows
 from .security import filter_index_records, markdown_inline, redact_sensitive_text, sanitize_query
 from .semantic import semantic_health
-from .state import atomic_write_text, grammar_unavailable_count, parse_error_summary
+from .state import (
+    atomic_write_text,
+    grammar_error_of,
+    grammar_unavailable_count,
+    parse_error_summary,
+)
 from .storage import active_index_pointer, load_jsonl, load_pointer
 from .usage import log_preflight
 
@@ -178,16 +184,33 @@ def _path_list_line(paths: list[str], empty: str) -> str:
     return line
 
 
+def _oversized_message(rel: str, limit: int) -> str:
+    return f"{rel} is larger than the {size_limit_text(limit)} limit, so it is not indexed"
+
+
+def _oversized_text(root: Path, fresh: dict, text: str) -> str | None:
+    """Why ``text`` names a file left out for its size, or None."""
+    rel = normalize_file_filter(text, root)
+    limit = fresh["oversized_files"].get(rel)
+    return None if limit is None else _oversized_message(rel, limit)
+
+
+def oversized_message(root: Path, ptr: dict, text: str) -> str | None:
+    """The size message for ``text`` when it names such a file."""
+    return _oversized_text(root, index_freshness(root, ptr), text)
+
+
 def _status_summary_not_current(
     root: Path, ptr: dict, fresh: dict, graph: dict, semantic_state: dict, semantic: bool
 ) -> list[str]:
     """Status lines when the index or graph needs a refresh."""
     last_indexed = ptr.get("lastIndexedAt") or "never"
+    stored = fresh["stored_totals"]
     return [
         f"- Root: `{root}`",
         (
             f"- Index: {fresh['state']} (last indexed: {last_indexed}; files:"
-            f" {len(fresh['files'])}; symbols: {len(fresh['symbols'])})"
+            f" {stored['files']}; symbols: {stored['symbols']})"
         ),
         f"- Index changes: {len(fresh['changed'])} changed / {len(fresh['missing'])} deleted",
         (
@@ -660,7 +683,8 @@ def run_preflight(a):
     print_grammar_warning(
         stats.get("grammar_unavailable", 0)
         if stats is not None
-        else grammar_unavailable_count(ptr)
+        else grammar_unavailable_count(ptr),
+        stats.get("grammar_error") if stats is not None else grammar_error_of(ptr),
     )
     parse_errors, parse_error_files = (
         (stats.get("parse_errors", 0), stats.get("parse_error_files", []))
@@ -851,10 +875,11 @@ def run_path(a, found: list | None = None):
     unindexed = next((s for s in (source, target) if _unindexed_path(root, s, indexed)), None)
     if unindexed is not None:
         # A file path names one file; a closest match would be a guess.
+        size_message = _oversized_text(root, fresh, unindexed)
         message = (
             f"{unindexed} is outside the repository"
             if _outside_repo(root, unindexed)
-            else f"{unindexed} is not in the index"
+            else size_message or f"{unindexed} is not in the index"
         )
         empty = {"found": False, "source_matches": [], "target_matches": [], "steps": []}
         if found is not None:
@@ -864,7 +889,8 @@ def run_path(a, found: list | None = None):
             print(json.dumps({**path_payload(empty), "error": error}, indent=2, sort_keys=True))
         else:
             ui.warn(message)
-            ui.detail("Check the path, or run `mimry index` if the file is new.")
+            if size_message is None:
+                ui.detail("Check the path, or run `mimry index` if the file is new.")
         return 1
     if graph["status"] != "current":
         message = f"The graph files are {graph['status']}, so connections can't be checked"
@@ -1195,6 +1221,11 @@ def impact_payload(
                 message = f'Several symbols are named "{target}"; add --file <path> to pick one.'
                 payload.update(summary=message, ambiguous=True, candidates=candidates)
                 return payload
+            size_message = None if file else _oversized_text(root, fresh, target)
+            if size_message:
+                return _impact_error(
+                    payload, "unknown_symbol", size_message, candidates=candidates
+                )
             if file and lookup.get("file_matched") is False:
                 message, code = f'No file in the graph matches "{file}".', "unknown_file"
             elif file:
@@ -1354,6 +1385,14 @@ def _indexed_as(surface: str, rel_path: str) -> bool:
     return needle in rel_path.lower()
 
 
+def _oversized_as(surface: str, fresh: dict) -> tuple[str, int] | None:
+    """The file left out for its size that this why surface names."""
+    rel = next(
+        (rel for rel in sorted(fresh["oversized_files"]) if _indexed_as(surface, rel)), None
+    )
+    return None if rel is None else (rel, fresh["oversized_files"][rel])
+
+
 def _outside_repo(root: Path, surface: str) -> bool:
     candidate = Path(surface)
     if not candidate.is_absolute():
@@ -1395,6 +1434,9 @@ def run_why(a):
     status = 0
     if exact is None and _outside_repo(root, surface):
         ui.warn(f"{surface} is outside the repository")
+        status = 1
+    elif exact is None and (oversized := _oversized_as(surface, fresh)) is not None:
+        ui.warn(_oversized_message(*oversized))
         status = 1
     elif exact is None and not any(
         _indexed_as(surface, f.get("rel_path", "")) for f in visible_files

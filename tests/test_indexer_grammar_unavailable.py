@@ -47,6 +47,7 @@ def _new_process_state():
 def _new_process() -> None:
     languages._grammar.cache_clear()
     languages._download_failed = False
+    languages._download_reason = None
 
 
 @pytest.fixture
@@ -54,17 +55,18 @@ def pack_network(monkeypatch):
     """Grammar downloads fail until the test sets ``up`` to True.
 
     ``attempts`` lists every call that reached the pack's loader.
+    ``message`` replaces the error a failed download raises.
     """
     import tree_sitter_language_pack as pack
 
     real_language, real_parser = pack.get_language, pack.get_parser
-    state = SimpleNamespace(up=False, attempts=[])
+    state = SimpleNamespace(up=False, attempts=[], message=None)
 
     def gated(real):
         def load(lang):
             state.attempts.append(lang)
             if not state.up:
-                raise DownloadError(f"cannot download the {lang} grammar")
+                raise DownloadError(state.message or f"cannot download the {lang} grammar")
             return real(lang)
 
         return load
@@ -129,8 +131,8 @@ def test_index_counts_files_without_symbols_and_prints_one_warning(
 
     out = capsys.readouterr().out
     assert out.count("5 files indexed without symbols") == 1
-    assert "tree-sitter grammars could not be downloaded." in out
-    assert "MIMRY downloads each grammar once, on first use." in out
+    assert "tree-sitter grammars failed (cannot download the go grammar)." in out
+    assert "Check your network" not in out
     assert pack_network.attempts == ["go"]
 
 
@@ -247,17 +249,111 @@ def test_doctor_reports_a_failed_download_as_a_download_failure(monkeypatch):
     class ParserPack:
         @staticmethod
         def get_parser(language):
-            raise DownloadError(f"cannot download the {language} grammar")
+            raise DownloadError("Download error: Could not determine system cache directory")
 
     monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", ParserPack)
 
     check = doctor._parser_check()
 
     assert check["state"] == "download_failed"
-    assert check["summary"] == "tree-sitter grammars could not be downloaded"
+    assert check["summary"] == (
+        "tree-sitter grammars failed (Could not determine system cache directory)"
+    )
+    assert "suggestion" not in check
+
+
+def test_doctor_gives_the_network_hint_only_for_a_network_failure(monkeypatch):
+    class ParserPack:
+        @staticmethod
+        def get_parser(language):
+            raise DownloadError("connection timed out fetching the grammar")
+
+    monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", ParserPack)
+
+    check = doctor._parser_check()
+
+    assert check["state"] == "download_failed"
+    assert check["summary"] == (
+        "tree-sitter grammars could not be downloaded (connection timed out fetching the grammar)"
+    )
     assert check["suggestion"] == (
         "Check your network or proxy; MIMRY downloads each grammar once, on first use."
     )
+
+
+def test_a_network_failure_gets_the_network_hint(tmp_path, monkeypatch, capsys, pack_network):
+    pack_network.message = "connection timed out fetching the grammar"
+    root = _repo(tmp_path, monkeypatch, GO_FILES)
+
+    assert cmd_index(SimpleNamespace(root=str(root), full=False)) == 0
+
+    out = capsys.readouterr().out
+    assert (
+        "5 files indexed without symbols: tree-sitter grammars could not be downloaded "
+        "(connection timed out fetching the grammar)."
+    ) in out
+    assert "MIMRY downloads each grammar once, on first use. Check your network or proxy" in out
+
+
+def test_a_cache_directory_failure_shows_the_reason_and_no_network_hint(
+    tmp_path, monkeypatch, capsys, pack_network
+):
+    pack_network.message = "Download error: Could not determine system cache directory"
+    root = _repo(tmp_path, monkeypatch, GO_FILES)
+
+    assert cmd_index(SimpleNamespace(root=str(root), full=False)) == 0
+
+    out = capsys.readouterr().out
+    assert (
+        "5 files indexed without symbols: tree-sitter grammars failed "
+        "(Could not determine system cache directory)."
+    ) in out
+    assert "Check your network" not in out
+    assert "MIMRY downloads each grammar once" not in out
+
+
+def test_status_repeats_the_grammar_reason_from_the_index(
+    tmp_path, monkeypatch, capsys, pack_network
+):
+    pack_network.message = "Download error: Could not determine system cache directory"
+    root = _repo(tmp_path, monkeypatch, GO_FILES)
+    write_index(root, load_pointer(root))
+    capsys.readouterr()
+
+    cmd_status(SimpleNamespace(root=str(root), verify=False, verbose=False))
+
+    assert (
+        "tree-sitter grammars failed (Could not determine system cache directory)."
+        in capsys.readouterr().out
+    )
+
+
+@pytest.mark.parametrize(
+    ("message", "network"),
+    [
+        ("connection timed out", True),
+        ("Could not resolve host: grammars.example.invalid", True),
+        ("HTTP 503 from the grammar server", True),
+        ("Could not determine system cache directory", False),
+        ("cannot download the go grammar", False),
+    ],
+)
+def test_only_a_network_error_is_called_one(message, network):
+    reason = languages.grammar_error_reason(DownloadError(message))
+
+    assert languages.is_network_failure(reason) is network
+
+
+def test_grammar_reason_is_one_line_trimmed_and_redacted():
+    reason = languages.grammar_error_reason(
+        DownloadError("Download error: bad token=CANARY-not-a-real-key\nsecond line")
+    )
+    assert "\n" not in reason and "second line" not in reason
+    assert "CANARY-not-a-real-key" not in reason
+
+    long = languages.grammar_error_reason(DownloadError("x" * 500))
+    assert len(long) == 200
+    assert long.endswith("...")
 
 
 # Runs in a fresh interpreter: the pack keeps each grammar it has loaded

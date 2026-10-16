@@ -426,6 +426,21 @@ def grammar_unavailable_count(pointer: dict[str, Any]) -> int:
     return count if isinstance(count, int) and count > 0 else 0
 
 
+def grammar_error_of(pointer: dict[str, Any]) -> str | None:
+    """Why the active generation's grammars failed, or None.
+
+    None when there were no failures or the manifest predates the
+    reason being recorded.
+    """
+    try:
+        manifest, _ = load_json_state(Path(pointer["indexPath"]) / GENERATION_MANIFEST)
+    except (StateCorruptionError, OSError, KeyError):
+        return None
+    stats = manifest.get("stats") if isinstance(manifest, dict) else None
+    reason = stats.get("grammar_error") if isinstance(stats, dict) else None
+    return reason if isinstance(reason, str) and reason else None
+
+
 def parse_error_summary(pointer: dict[str, Any]) -> tuple[int, list[str]]:
     """Files in the active generation the parser could not read, and
     the first few of their paths.
