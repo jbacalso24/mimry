@@ -1112,6 +1112,50 @@ def _impact_error(payload: dict, code: str, message: str, **extra) -> dict:
     return payload
 
 
+def _file_picks(symbols_by_path: dict[str, list[dict]], rel: str) -> list[tuple[str, dict]]:
+    """Each code symbol in a file, as ``impact <file>`` picks them."""
+    return [(rel, sym) for sym in symbols_by_path.get(rel, [])]
+
+
+def _picked_ids(ids: dict[tuple, str], picks: list[tuple[str, dict]]) -> set[str]:
+    """Graph node ids of picked symbols, found by (path, name, line)."""
+    keys = ((rel, sym["name"], sym.get("line_start")) for rel, sym in picks)
+    return {ids[key] for key in keys if key in ids}
+
+
+def _caller_rows(
+    graph: dict, ids: dict[tuple, str], picks: list[tuple[str, dict]], depth: int
+) -> list[dict]:
+    """Callers of picked symbols, nearest first, with a test flag."""
+    callers = sorted(
+        call_rows(call_relations(graph, _picked_ids(ids, picks), "callers", depth)),
+        key=lambda r: (r["depth"], r["path"], r["line"] or 0, r["name"]),
+    )
+    for row in callers:
+        row["test"] = is_test_file(row["path"])
+    return callers
+
+
+def _impact_selection(
+    graph: dict,
+    ids: dict[tuple, str],
+    picks: list[tuple[str, dict]],
+    target_files: set[str],
+    depth: int,
+) -> tuple[list[dict], list[str], list[str]]:
+    """Callers, importers and tests for picked symbols and their files.
+
+    ``impact`` reports this selection, and the changed-file fallback
+    reuses it for a whole file.
+    """
+    callers = _caller_rows(graph, ids, picks, depth)
+    importers = importing_files(graph, target_files)
+    tests = sorted(
+        {c["path"] for c in callers if c["test"]} | {p for p in importers if is_test_file(p)}
+    )
+    return callers, importers, tests
+
+
 def impact_payload(
     root: Path,
     ptr: dict,
@@ -1128,13 +1172,16 @@ def impact_payload(
     HEAD instead.
     Callers are followed ``depth`` calls back. Importers are the files
     that import a target file directly. Tests are the test files among
-    the callers and importers.
+    the callers and importers. With ``changed``, a file whose changed
+    symbols have no callers gets the tests ``impact <file>`` selects for
+    it, and is listed in ``fallback``.
     """
     payload: dict = {
         "targets": [],
         "callers": [],
         "importers": [],
         "tests": [],
+        "fallback": [],
         "test_command": None,
         "summary": "",
     }
@@ -1162,7 +1209,7 @@ def impact_payload(
         changes = _working_tree_changes(root)
         if changes is None:
             message = (
-                "git could not compare the working tree with HEAD, so there is nothing to check"
+                "Git could not compare the working tree with HEAD, so there is nothing to check"
             )
             return _impact_error(payload, "no_git", message)
         touched = changes["names"] | (changes["untracked"] & indexed)
@@ -1181,9 +1228,9 @@ def impact_payload(
                 for sym, start, end in _symbol_spans(syms)
                 if any(start <= hi and lo <= end for lo, hi in ranges)
             ]
-        target_files, label = touched, "the working tree"
+        target_files, label = touched, "The working tree"
     elif not file and (rel := normalize_file_filter(target, root)) in indexed:
-        picks = [(rel, sym) for sym in symbols_by_path.get(rel, [])]
+        picks = _file_picks(symbols_by_path, rel)
         target_files, label = {rel}, rel
     else:
         wanted = normalize_file_filter(file, root) if file else None
@@ -1223,24 +1270,25 @@ def impact_payload(
         ),
         key=lambda t: (t["path"], t["line"] or 0, t["name"]),
     )
-    target_ids = {
-        ids[key] for key in ((t["path"], t["name"], t["line"]) for t in targets) if key in ids
-    }
-    callers = sorted(
-        call_rows(call_relations(graph, target_ids, "callers", depth)),
-        key=lambda r: (r["depth"], r["path"], r["line"] or 0, r["name"]),
-    )
-    for row in callers:
-        row["test"] = is_test_file(row["path"])
-    importers = importing_files(graph, target_files)
-    tests = sorted(
-        {c["path"] for c in callers if c["test"]} | {p for p in importers if is_test_file(p)}
-    )
+    callers, importers, tests = _impact_selection(graph, ids, picks, target_files, depth)
+    fallback: list[str] = []
+    if changed:
+        for rel in sorted(target_files & indexed):
+            changed_picks = [p for p in picks if p[0] == rel]
+            if changed_picks and _caller_rows(graph, ids, changed_picks, depth):
+                continue
+            _, _, file_tests = _impact_selection(
+                graph, ids, _file_picks(symbols_by_path, rel), {rel}, depth
+            )
+            if file_tests:
+                fallback.append(rel)
+                tests = sorted(set(tests) | set(file_tests))
     payload.update(
         targets=targets,
         callers=callers,
         importers=importers,
         tests=tests,
+        fallback=fallback,
         summary=_impact_summary(label, callers, importers, tests, depth),
     )
     return payload
@@ -1320,6 +1368,11 @@ def _print_impact(payload: dict) -> None:
         if command:
             ui.detail(command)
         ui.listing(tests, IMPACT_SHOWN)
+    if payload["fallback"]:
+        print()
+        for rel in payload["fallback"]:
+            note = f"No callers for the changed symbols in {rel}, "
+            ui.detail(ui.faint(note + "so these are the tests that reach the file."))
     if payload["callers"]:
         print()
         ui.detail(ui.faint(calls_note(payload["callers"])))

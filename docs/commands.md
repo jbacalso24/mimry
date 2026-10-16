@@ -149,6 +149,7 @@ For `callers` and `callees` at depth 2 or 3, a result is `EXTRACTED` only when s
 Give it a symbol name or a repo-relative file path, or pass `--changed` to check the symbols and files that differ from HEAD.
 A file path covers every symbol defined in it.
 `--changed` checks each edited symbol, whose line range overlaps a changed hunk, and each untracked file, whose symbols all count.
+When none of a changed file's symbols has a caller, `--changed` uses the tests that `mimry impact <file>` selects for that file, and lists the file in `fallback`.
 Document headings and SQL tables are not code, so they are never targets; a changed Markdown file still counts for importers.
 
 The answer starts with a summary line, then the targets, the callers grouped by how many calls away they are, the files that import the target file directly, and the tests to run.
@@ -182,7 +183,7 @@ Tests to run (1)
 
 Text output leaves out callers in test files, which already appear under `Tests to run`; their count is shown in each depth heading.
 
-`--json` returns `targets`, `callers` (each with `name`, `kind`, `path`, `line`, `depth`, `confidence` and `test`, and including test callers), `importers`, `tests`, `test_command` and `summary`.
+`--json` returns `targets`, `callers` (each with `name`, `kind`, `path`, `line`, `depth`, `confidence` and `test`, and including test callers), `importers`, `tests`, `fallback`, `test_command` and `summary`.
 The MCP tool `mimry_impact(target, file, changed, depth, root)` returns the same payload.
 
 ## Benchmark your repository

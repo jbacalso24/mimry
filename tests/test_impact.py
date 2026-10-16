@@ -67,6 +67,20 @@ REEXPORT = {
     "app/two.py": "from app import helper\n\n\ndef helper2():\n    return helper(2)\n",
 }
 
+# test_util imports util. test_service reaches it only via run(), which
+# calls used(), so the symbol-level answer misses it.
+UTIL_FILES = {
+    "app/util.py": "def used():\n    return 1\n\n\ndef other():\n    return 2\n",
+    "app/service.py": "from app.util import used\n\n\ndef run():\n    return used()\n",
+    "tests/test_service.py": (
+        "from app.service import run\n\n\ndef test_run():\n    assert run() == 1\n"
+    ),
+    "tests/test_util.py": (
+        "from app.util import used\n\n\ndef test_used():\n    assert used() == 1\n"
+    ),
+    "pyproject.toml": PYPROJECT,
+}
+
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(
@@ -157,7 +171,7 @@ def test_changed_markdown_file_adds_no_heading_targets(tmp_path):
 
     assert changed["targets"] == []
     assert by_file["targets"] == []
-    assert changed["summary"].startswith("the working tree: 0 direct source callers")
+    assert changed["summary"].startswith("The working tree: 0 direct source callers")
 
 
 def test_importer_that_calls_nothing_is_listed_under_importers(tmp_path):
@@ -207,7 +221,7 @@ def test_changed_targets_only_the_edited_symbol_and_new_files_count(tmp_path):
     payload = _json(repo, cache, "--changed")
 
     assert {t["name"] for t in payload["targets"]} == {"a", "fresh"}
-    assert payload["summary"].startswith("the working tree: ")
+    assert payload["summary"].startswith("The working tree: ")
 
 
 def test_changed_with_a_clean_tree_says_so(tmp_path):
@@ -241,6 +255,7 @@ def test_json_has_the_documented_shape(tmp_path):
         "callers",
         "importers",
         "tests",
+        "fallback",
         "test_command",
         "summary",
     }
@@ -298,3 +313,37 @@ def test_mcp_impact_rejects_a_depth_outside_one_to_five(tmp_path, monkeypatch):
 
     assert payload["returncode"] == 2
     assert payload["error"]["code"] == "invalid_depth"
+
+
+def test_uncalled_new_symbol_falls_back_to_the_file_tests(tmp_path):
+    repo, cache = _repo(tmp_path, UTIL_FILES)
+    (repo / "app" / "util.py").write_text(
+        UTIL_FILES["app/util.py"] + "\n\ndef fresh():\n    return 3\n", encoding="utf-8"
+    )
+
+    payload = _json(repo, cache, "--changed")
+    text = _mimry(repo, cache, "impact", "--changed").stdout
+
+    assert {t["name"] for t in payload["targets"]} == {"fresh"}
+    assert payload["fallback"] == ["app/util.py"]
+    assert payload["tests"] == ["tests/test_service.py", "tests/test_util.py"]
+    assert payload["tests"] == _json(repo, cache, "app/util.py")["tests"]
+    assert (
+        "No callers for the changed symbols in app/util.py, "
+        "so these are the tests that reach the file." in text
+    )
+    assert "uv run pytest tests/test_service.py tests/test_util.py" in text
+
+
+def test_changed_symbol_with_callers_does_not_fall_back(tmp_path):
+    repo, cache = _repo(tmp_path, UTIL_FILES)
+    (repo / "app" / "util.py").write_text(
+        UTIL_FILES["app/util.py"].replace("return 1", "return 10"), encoding="utf-8"
+    )
+
+    payload = _json(repo, cache, "--changed")
+    text = _mimry(repo, cache, "impact", "--changed").stdout
+
+    assert {t["name"] for t in payload["targets"]} == {"used"}
+    assert payload["fallback"] == []
+    assert "No callers for the changed symbols" not in text
