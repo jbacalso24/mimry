@@ -54,7 +54,7 @@ try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") 
     {"@type": "Question", "name": "Does MIMRY upload my code?", "acceptedAnswer": {"@type": "Answer", "text": "No. Everything runs on your machine. There is no code upload, no remote embedding service and no telemetry. The index lives in your user cache folder, outside the repo."}},
     {"@type": "Question", "name": "Which coding agents work with MIMRY?", "acceptedAnswer": {"@type": "Answer", "text": "Any agent that can run a shell command or use an MCP server, including Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, OpenCode, Kiro, Amp and Devin."}},
     {"@type": "Question", "name": "Does it replace reading the code?", "acceptedAnswer": {"@type": "Answer", "text": "No. MIMRY narrows where to look. Source files, tests and build output stay the final truth, and every result says why it ranked so an agent can check it."}},
-    {"@type": "Question", "name": "What does MIMRY need to run?", "acceptedAnswer": {"@type": "Answer", "text": "Python 3.11 or newer on Windows, macOS or Linux. Install it with uv tool install mimry or pipx install mimry."}},
+    {"@type": "Question", "name": "What does MIMRY need to run?", "acceptedAnswer": {"@type": "Answer", "text": "Python 3.11 or newer on Windows, macOS or Linux. Install it with uv tool install mimry or pipx install mimry. Or run the container image ghcr.io/jbacalso24/mimry."}},
     {"@type": "Question", "name": "How much does MIMRY cost?", "acceptedAnswer": {"@type": "Answer", "text": "Nothing. MIMRY is open source under the MIT license."}}
   ]
 }
@@ -504,7 +504,7 @@ Start with
         <div><h3>Does MIMRY upload my code?</h3><p>No. Everything runs on your machine. There is no code upload, no remote embedding service and no telemetry. The index lives in your user cache folder, outside the repo.</p></div>
         <div><h3>Which coding agents work with it?</h3><p>Any agent that can run a shell command or use an MCP server, including Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, OpenCode, Kiro, Amp and Devin.</p></div>
         <div><h3>Does it replace reading the code?</h3><p>No. MIMRY narrows where to look. Source files, tests and build output stay the final truth, and every result says why it ranked so an agent can check it.</p></div>
-        <div><h3>What does it need to run?</h3><p>Python 3.11 or newer on Windows, macOS or Linux. Install it with <code>uv tool install mimry</code> or <code>pipx install mimry</code>.</p></div>
+        <div><h3>What does it need to run?</h3><p>Python 3.11 or newer on Windows, macOS or Linux. Install it with <code>uv tool install mimry</code> or <code>pipx install mimry</code>. Or run the container image <code>ghcr.io/jbacalso24/mimry</code>.</p></div>
         <div><h3>How much does it cost?</h3><p>Nothing. MIMRY is open source under the MIT license.</p></div>
       </div>
     </div>

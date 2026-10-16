@@ -38,6 +38,15 @@ The PyPI Trusted Publisher is configured for repository `jbacalso24/mimry`, work
 
 `main` accepts changes only through pull requests, so tag the merged commit on `main`, not a local branch commit.
 
+### Container image
+
+The `docker` job in [`release.yml`](.github/workflows/release.yml) publishes `ghcr.io/jbacalso24/mimry` after the `release` job succeeds.
+It builds the tagged commit for `linux/amd64` and `linux/arm64`, and pushes the full version, the minor line and `latest`.
+If it fails after PyPI succeeded, rerun only that job.
+
+The `docker` job in [`ci.yml`](.github/workflows/ci.yml) builds the image on every pull request and every push to `main`.
+It then indexes a fixture repo with `--network none` and fails if `find` does not return a known file, which proves the grammars are baked into the image.
+
 ### Arch Linux (AUR)
 
 Arch users install the [`mimry`](https://aur.archlinux.org/packages/mimry) AUR package with `yay -S mimry`.

@@ -52,6 +52,40 @@ The first index downloads the tree-sitter grammars it needs, once per user, and 
 > To upgrade, run `mimry upgrade`.
 > On Windows, `mimry upgrade` refuses while MIMRY servers run, and `mimry upgrade --stop-servers` stops them first.
 
+### Docker
+
+The image `ghcr.io/jbacalso24/mimry` has every tree-sitter grammar built in, so indexing needs no network.
+Tags are `latest`, the full version such as `0.5.0`, and the minor line such as `0.5`.
+
+Mount your repo at `/repo` and keep the index in a named volume at `/cache`.
+Without the volume, each container starts with no index.
+On Linux, add `--user "$(id -u):$(id -g)"` so the `.mimry/` folder MIMRY writes in your repo belongs to you.
+
+```bash
+docker run --rm -v "$PWD:/repo" -v mimry-cache:/cache ghcr.io/jbacalso24/mimry init
+docker run --rm -v "$PWD:/repo" -v mimry-cache:/cache ghcr.io/jbacalso24/mimry index
+docker run --rm -v "$PWD:/repo" -v mimry-cache:/cache ghcr.io/jbacalso24/mimry find "<query>"
+```
+
+For an agent, run the MCP server over stdio with the same mounts:
+
+```bash
+docker run -i --rm -v "$PWD:/repo" -v mimry-cache:/cache ghcr.io/jbacalso24/mimry mcp
+```
+
+In an MCP client config, use the repo's absolute path, because `$PWD` is not expanded there:
+
+```json
+{
+  "mcpServers": {
+    "mimry": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "/absolute/path/to/repo:/repo", "-v", "mimry-cache:/cache", "ghcr.io/jbacalso24/mimry", "mcp"]
+    }
+  }
+}
+```
+
 ### Claude Code plugin
 
 In Claude Code, the plugin gives the agent the MIMRY skill, the hooks and the MCP server in one step.

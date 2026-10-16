@@ -146,3 +146,40 @@ jobs:
           name: benchmark-result
           path: /tmp/artifact/result.core.json
           if-no-files-found: error
+
+  docker:
+    # Builds the image for linux/amd64 without pushing it. Then it indexes and
+    # searches a fixture repo with the network disabled, so the find step only
+    # passes if the grammars were baked into the image at build time.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --platform linux/amd64 -t mimry:ci .
+
+      - name: Print the version
+        run: docker run --rm mimry:ci --version
+
+      - name: Index and search a fixture repo with no network
+        run: |
+          set -euo pipefail
+          repo="$(mktemp -d)"
+          cache="$(mktemp -d)"
+          # The container runs as uid 1000, not the runner user, so both
+          # mounts need to be writable by it.
+          chmod 777 "$repo" "$cache"
+          cp -r tests/fixtures/simple_repo/. "$repo"
+          git -C "$repo" init -q
+          git -C "$repo" add -A
+          git -C "$repo" -c user.name=ci -c user.email=ci@invalid.example commit -qm "Fixture"
+          run_mimry() {
+            docker run --rm --network none -v "$repo:/repo" -v "$cache:/cache" mimry:ci "$@"
+          }
+          run_mimry init
+          run_mimry index
+          out="$(run_mimry find "session")"
+          echo "$out"
+          # Fail if find prints no result for a word the fixture contains.
+          grep -q "session.py" <<<"$out"
