@@ -291,6 +291,19 @@ _VALUE_RE = re.compile(
 # single ``|`` is a member of a TypeScript literal-union type.
 _UNION_NEXT_RE = re.compile(r"\s*\|(?!\|)\s*[\"'`]")
 _UNION_PREVIOUS_RE = re.compile(r"[\"'`]\s*(?<!\|)\|\s*\Z")
+# ``typeof secret === 'string'``: the literal names a type, it is not a
+# value. Only a typeof result, after a typeof comparison, is exempt.
+_TYPEOF_RESULTS = frozenset(
+    {"bigint", "boolean", "function", "number", "object", "string", "symbol", "undefined"}
+)
+_TYPEOF_COMPARISON_RE = re.compile(r"\btypeof\s+[\w$.]+\s*[!=]==?\s*\Z")
+# A relative path, as in a package.json ``exports`` list. It is judged
+# as a file only as an array member; under a label it stays a value.
+_RELATIVE_PATH_RE = re.compile(r"(?:\.{1,2}|~)/\S*")
+# What is left of an array's shape around its members, and the bare
+# members that are never credentials.
+_ARRAY_PUNCTUATION_RE = re.compile(r"[\[\]{}(),:\s]+")
+_ARRAY_CONSTANTS = frozenset({"true", "false", "null", "none", "nil"})
 _FIELD_NAME_RE = re.compile(r"[A-Za-z][A-Za-z_]*")
 # The rest is only for parsed source. Quotes, brackets and value ends,
 # plus comments, which start after whitespace (``x  # note``, ``x  //
@@ -515,6 +528,8 @@ def _value_is_credential(
     lookup = _ENV_LOOKUP_RE.match(text, start)
     if lookup:
         return _expression_is_credential(text, start, scanner, name=lookup.start("name"))
+    if candidate[0] == "[":
+        return _array_is_credential(text, start, scanner)
     lowered = candidate.lower()
     if (
         lowered in _NON_CREDENTIAL_WORDS
@@ -626,6 +641,36 @@ def _expression_is_credential(
     )
 
 
+def _array_is_credential(text: str, start: int, scanner: _Scanner) -> bool:
+    """Outside parsed source: whether an array value holds a credential.
+
+    An array is a list, so the label alone does not make it one. Its
+    string members are judged as literals, and a relative path member is
+    a file, not a credential.
+    """
+    value = scanner.scan(start)
+    if value is None or not value.closed:
+        return True  # nested past the budget, or unterminated: fail closed
+    # An unquoted member, as in a YAML flow list ``[abc123]``, may be
+    # the credential itself; only numbers and literals are judged.
+    members = list(text[start : value.end])
+    for literal in value.literals:
+        members[literal.start() - start : literal.end() - start] = " " * len(literal.group())
+    bare = _ARRAY_PUNCTUATION_RE.sub(" ", "".join(members)).split()
+    if any(
+        _NUMBER_RE.fullmatch(token) is None
+        and token.lower() not in _ARRAY_CONSTANTS
+        and not _RELATIVE_PATH_RE.fullmatch(token)
+        for token in bare
+    ):
+        return True
+    return any(
+        _string_literal_is_credential(literal, code=False)
+        and not _RELATIVE_PATH_RE.match(_literal_text(literal))
+        for literal in value.literals
+    )
+
+
 def _literal_names_field(literal: re.Match[str], label: str) -> bool:
     """Whether a literal names a field, not a credential.
 
@@ -645,6 +690,14 @@ def _in_literal_union(text: str, literal: re.Match[str]) -> bool:
     return bool(
         _UNION_NEXT_RE.match(text, literal.end())
         or _UNION_PREVIOUS_RE.search(text, max(0, start - 80), start)
+    )
+
+
+def _in_typeof_comparison(text: str, literal: re.Match[str]) -> bool:
+    """Whether a literal is the type a typeof comparison tests for."""
+    start = literal.start()
+    return _literal_text(literal) in _TYPEOF_RESULTS and (
+        _TYPEOF_COMPARISON_RE.search(text, max(0, start - 80), start) is not None
     )
 
 
@@ -681,10 +734,16 @@ def _code_value_is_credential(
         _literal_text(literal).lower() for literal in value.literals
     }:
         return False
+    # A relative path that is a member of an array is a file, as in
+    # _array_is_credential.
+    in_array = shape.startswith("[")
     if any(
         _string_literal_is_credential(literal, code=True)
         for literal in value.literals
-        if not _literal_names_field(literal, label) and not _in_literal_union(text, literal)
+        if not _literal_names_field(literal, label)
+        and not _in_literal_union(text, literal)
+        and not _in_typeof_comparison(text, literal)
+        and not (in_array and _RELATIVE_PATH_RE.match(_literal_text(literal)))
     ):
         return True
     if not shape or shape[0] in "_([":
@@ -937,6 +996,9 @@ def _string_literal_is_credential(literal: re.Match[str], *, code: bool) -> bool
         text == REDACTED
         or lowered in _NON_CREDENTIAL_WORDS
         or lowered in _AUTH_SCHEMES
+        # A count or a size, as in ``Secret: "42"``. A PIN-length
+        # number is still a credential.
+        or (_NUMBER_RE.fullmatch(text) is not None and len(text) < 4)
         or _REFERENCE_RE.fullmatch(text)
         or _PLACEHOLDER_RE.fullmatch(text)
         or _ENV_LOOKUP_RE.fullmatch(text)

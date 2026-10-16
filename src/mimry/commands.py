@@ -298,6 +298,8 @@ def _print_status(
         len(fresh["oversized_files"]),
         fresh["oversized_files"].values(),
     )
+    if verbose and fresh["secret_skipped_paths"]:
+        print_rows_capped([("secret", path) for path in fresh["secret_skipped_paths"]])
     if verbose and fresh["oversized_files"]:
         print_rows_capped([("too large", path) for path in sorted(fresh["oversized_files"])])
     print_grammar_warning(grammar_unavailable_count(ptr), grammar_error_of(ptr))

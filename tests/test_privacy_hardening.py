@@ -1380,6 +1380,72 @@ def test_path_shaped_values_under_credential_labels_stay_sensitive(line: str):
     assert "[REDACTED]" in redact_sensitive_text(line)
 
 
+# Issue #324: an array value, a typeof comparison and a short number are
+# not credentials as written, so the files that hold them stay indexed.
+# Redaction judges every line as configuration, so only the verdict is
+# checked here (see test_a_json_array_of_paths_is_not_redacted).
+@pytest.mark.parametrize(
+    ("line", "code"),
+    [
+        ("const secretBuf = typeof secret === 'string' ? secret : other\n", True),
+        (
+            "const secretBuf = typeof secret === 'string'"
+            " ? new TextEncoder().encode(secret) : secret\n",
+            True,
+        ),
+        ('Secret: "42",\n', True),
+        ('"basic-auth": ["./dist/basic-auth.js"],\n', True),
+    ],
+)
+def test_source_typeof_comparisons_short_numbers_and_path_arrays_are_not_credentials(
+    line: str, code: bool
+):
+    assert not contains_sensitive_text(line, code=code)
+
+
+def test_a_json_array_of_paths_under_a_credential_key_is_not_redacted():
+    line = '{\n  "exports": {\n    "basic-auth": [\n      "./dist/basic-auth.js"\n    ]\n  }\n}\n'
+    assert not contains_sensitive_text(line)
+    assert redact_sensitive_text(line) == line
+
+
+# The same shapes with a credential in them. Built from parts, so no
+# literal here looks like a secret.
+BASIC_AUTH_CREDENTIAL = "dXNlcjpwYXNz" + "d29yZA=="
+GO_CREDENTIAL = "hunter2" * 2
+LONG_NUMBER_CREDENTIAL = "4815" + "162342"
+API_KEY_CREDENTIAL = "sk_live_" + "FAKECANARY" + ("0" * 12)
+FILE_CREDENTIAL = "s3cr3t-" + "Value-9f8e7d6c"
+
+
+@pytest.mark.parametrize(
+    ("line", "code", "credential"),
+    [
+        (f'"basic-auth": "{BASIC_AUTH_CREDENTIAL}"\n', False, BASIC_AUTH_CREDENTIAL),
+        (f'{{"basic-auth": ["{BASIC_AUTH_CREDENTIAL}"]}}\n', False, BASIC_AUTH_CREDENTIAL),
+        (f'"basic-auth": [\n  "{BASIC_AUTH_CREDENTIAL}"\n]\n', False, BASIC_AUTH_CREDENTIAL),
+        (f'secret = "{FILE_CREDENTIAL}"\n', False, FILE_CREDENTIAL),
+        (f"api_key: [{GO_CREDENTIAL}, ./keys.txt]\n", False, GO_CREDENTIAL),
+        (f'Secret: "{GO_CREDENTIAL}",\n', True, GO_CREDENTIAL),
+        (f'Secret: "{LONG_NUMBER_CREDENTIAL}",\n', True, LONG_NUMBER_CREDENTIAL),
+        (f"const apiKey = '{API_KEY_CREDENTIAL}'\n", True, API_KEY_CREDENTIAL),
+        (f"const token = ['{GO_CREDENTIAL}']\n", True, GO_CREDENTIAL),
+        (
+            f"const secretBuf = typeof secret === 'string' ? '{GO_CREDENTIAL}' : secret\n",
+            True,
+            GO_CREDENTIAL,
+        ),
+    ],
+)
+def test_credentials_in_the_shapes_the_exemptions_skip_stay_sensitive(
+    line: str, code: bool, credential: str
+):
+    assert contains_sensitive_text(line, code=code)
+    redacted = redact_sensitive_text(line)
+    assert credential not in redacted
+    assert "[REDACTED]" in redacted
+
+
 # A URL is a location unless its query or fragment carries a credential
 # named parameter with a real value (#168 review).
 @pytest.mark.parametrize(

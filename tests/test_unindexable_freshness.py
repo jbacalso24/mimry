@@ -455,6 +455,26 @@ def test_files_skipped_for_secrets_are_reported_by_index_and_status(
     out = capsys.readouterr().out
     assert "1 file skipped: may contain secrets" in out
     assert "could not be read" not in out
+    assert "app/settings.py" not in out
+
+
+def test_status_verbose_names_the_path_of_a_file_skipped_for_secrets(
+    tmp_path: Path, capsys
+) -> None:
+    # Size skips are named under -v. Secret skips are named the same
+    # way, by path only, never the matched text (issue #324).
+    root = _repo(tmp_path)
+    (root / "app" / "settings.py").write_text(
+        'API_TOKEN = "' + "x1y2z3" * 4 + '"\n', encoding="utf-8"
+    )
+    _index(root)
+    capsys.readouterr()
+
+    assert cmd_status(SimpleNamespace(root=root, json=False, verbose=True)) == 0
+    out = capsys.readouterr().out
+    assert "1 file skipped: may contain secrets" in out
+    assert "app/settings.py" in out
+    assert "x1y2z3" not in out
 
 
 def test_a_secret_verdict_from_older_code_is_checked_again(tmp_path: Path, monkeypatch) -> None:

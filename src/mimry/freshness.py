@@ -215,7 +215,7 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
     # keep the index stale forever, which pins graph health to stale and
     # disables `mimry path`.
     unindexable = _unindexable_paths(idx)
-    secret_skipped = 0
+    secret_skipped: list[str] = []
     # Over the size limit, the scan leaves a file out before any read.
     # An indexed file that grew is already changed above, so it is not
     # counted again here.
@@ -236,14 +236,14 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
             # Skipped at index time for secret-bearing bytes, and still
             # the same file.
             if stat_cache is not None and stat_cache.trusts(rel, live, SENSITIVE):
-                secret_skipped += 1
+                secret_skipped.append(rel)
                 continue
             try:
                 data, _ = read_snapshot(p, root=root, settings=settings)
             except OSError:
                 continue
             if security.has_sensitive_content(p, data=data):
-                secret_skipped += 1
+                secret_skipped.append(rel)
             else:
                 changed.append(rel)
 
@@ -328,10 +328,12 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
         "excluded_paths": sorted(excluded_paths),
         # Count only: these are paths policy intentionally keeps out of
         # agent context.
-        "unindexable_count": len(unindexable) + secret_skipped + len(oversized_files),
+        "unindexable_count": len(unindexable) + len(secret_skipped) + len(oversized_files),
         # Per reason, for status. Unreadable paths are not named: that
-        # set can hold files refused for their content.
-        "secret_skipped_count": secret_skipped,
+        # set can hold files refused for their content. Secret-skipped
+        # paths are named, as size skips are; never their content.
+        "secret_skipped_count": len(secret_skipped),
+        "secret_skipped_paths": sorted(secret_skipped),
         "unreadable_count": len(unindexable),
         # Relative path to its size limit in bytes.
         "oversized_files": oversized_files,
