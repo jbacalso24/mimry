@@ -1314,6 +1314,55 @@ def test_route_does_not_create_secret_gate_from_token_match_reason(tmp_path):
     assert "secrets" not in _row(res.stdout, "Risk")
 
 
+def test_route_matches_role_terms_only_as_whole_words(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    # Substrings: "help" in "helper", "test" in "latest", "expo" in
+    # "export", "next" in "context".
+    not_routed = [
+        ("add a helper function to parse the config", "docs"),
+        ("fix the latest parser crash", "qa"),
+        ("export the context pack", "mobile"),
+        ("export the context pack", "frontend"),
+    ]
+    for query, role in not_routed:
+        res = run_cli(repo, cache, "route", query)
+        assert res.returncode == 0, res.stderr
+        assert not _row(res.stdout, "Agent").startswith(f"{role} (")
+
+    routed = [
+        ("update the help text for find", "docs"),
+        ("add a regression test for the parser", "qa"),
+        ("write unit tests for the parser", "qa"),
+    ]
+    for query, role in routed:
+        res = run_cli(repo, cache, "route", query)
+        assert res.returncode == 0, res.stderr
+        assert _row(res.stdout, "Agent").startswith(f"{role} (")
+
+
+def test_route_keeps_implementation_out_of_qa_when_test_files_selected(tmp_path):
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "terminal.py", "def escape_control(text):\n    return text\n")
+    _write(
+        repo / "tests" / "test_terminal.py",
+        "from terminal import escape_control\n\n\n"
+        "def test_escape_control():\n    assert escape_control('a') == 'a'\n",
+    )
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    query = "escape terminal control characters in error messages"
+    res = run_cli(repo, cache, "route", query)
+
+    assert res.returncode == 0, res.stderr
+    assert not _row(res.stdout, "Agent").startswith("qa (")
+
+
 def test_brief_writes_role_aware_markdown_sections(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

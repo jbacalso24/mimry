@@ -7,7 +7,7 @@ from typing import Any
 
 from .config_manifest_adapter import DOC_NAMES, check_source_rank
 from .freshness import index_freshness
-from .intent import start_order
+from .intent import is_likely_edit_surface, start_order
 from .paths import output_dir
 from .search import find_rows
 from .security import redact_sensitive_text, sanitize_data, sanitize_query
@@ -168,8 +168,17 @@ def normalize_agent(agent: str | None) -> str:
     return value
 
 
+def _has_term(text: str, term: str) -> bool:
+    """True if term, or its plural, is a whole word in text.
+
+    `_` is a separator, so `test_foo` has "test" but `latest` does not.
+    """
+    pattern = rf"(?<![a-z0-9]){re.escape(term)}(?:e?s)?(?![a-z0-9])"
+    return re.search(pattern, text) is not None
+
+
 def _contains(text: str, terms: set[str]) -> list[str]:
-    return [term for term in sorted(terms, key=len, reverse=True) if term in text]
+    return [term for term in sorted(terms, key=len, reverse=True) if _has_term(text, term)]
 
 
 def _record_text(fresh: dict[str, Any], rows: list[dict[str, Any]]) -> str:
@@ -194,6 +203,12 @@ def _score_roles(
 ) -> tuple[dict[str, int], dict[str, list[str]]]:
     q = query.lower()
     evidence = _record_text(fresh, rows)
+    test_intent = re.search(r"\b(tests?|qa|regression|repro|verify)\b", q) is not None
+    # Supporting test files are selected for most tasks in a repo with
+    # tests, so QA counts only edit surfaces unless the query asks QA.
+    edit_rows = [row for row in rows if is_likely_edit_surface(row["path"])]
+    edit_evidence = _record_text(fresh, edit_rows)
+    implementing = re.search(r"\b(fix|implement|add|update|debug|refactor|build)\b", q)
     scores = {role: 0 for role in ROLES}
     reasons: dict[str, list[str]] = {role: [] for role in ROLES}
 
@@ -208,8 +223,16 @@ def _score_roles(
     }
     for role, terms in role_terms.items():
         query_matches = _contains(q, terms)
+        # Evidence from files the query did not ask for: QA counts only
+        # edit surfaces, and docs stay out of implementation tasks.
+        if role == "qa" and not test_intent:
+            text_evidence = edit_evidence
+        elif role == "docs" and implementing and not query_matches:
+            text_evidence = ""
+        else:
+            text_evidence = evidence
         evidence_matches = [
-            term for term in _contains(evidence, terms) if term not in query_matches
+            term for term in _contains(text_evidence, terms) if term not in query_matches
         ]
         if query_matches:
             scores[role] += len(query_matches) * 14
@@ -220,37 +243,39 @@ def _score_roles(
 
     # Intent verbs keep implementation tasks out of reviewer/qa/docs
     # unless those are explicit.
-    if re.search(r"\b(fix|implement|add|update|debug|refactor|build)\b", q):
+    if implementing:
         for role in ("backend", "frontend", "mobile", "tooly", "general"):
             scores[role] += 2
     if _contains(q, REVIEWER_TERMS):
         scores["reviewer"] += 35
         reasons["reviewer"].append("explicit review/audit intent")
-    if re.search(r"\b(test|qa|regression|repro|verify)\b", q):
+    if test_intent:
         scores["qa"] += 30
         reasons["qa"].append("explicit QA/test intent")
     if _contains(q, DOCS_TERMS):
         scores["docs"] += 30
         reasons["docs"].append("explicit docs/readme intent")
-    if "mimry" in q or "tooly" in q:
+    if _has_term(q, "mimry") or _has_term(q, "tooly"):
         scores["tooly"] += 30
         reasons["tooly"].append("explicit MIMRY/Tooly ownership")
     # MCP alone is a Tooly signal for MIMRY/tooling tasks, but avoid
     # stealing ordinary backend API route work.
-    if "mcp" in q and any(term in q for term in ("mimry", "tool", "route", "server")):
+    if _has_term(q, "mcp") and any(
+        _has_term(q, term) for term in ("mimry", "tool", "route", "server")
+    ):
         scores["tooly"] += 10
         reasons["tooly"].append("MCP/tooling task signal")
-    if "fastapi" in q:
+    if _has_term(q, "fastapi"):
         scores["backend"] += 18
         reasons["backend"].append("FastAPI framework signal")
-    if "next" in q or "next.js" in q or "nextjs" in q:
+    if any(_has_term(q, term) for term in ("next", "next.js", "nextjs")):
         scores["frontend"] += 20
         reasons["frontend"].append("Next.js/web frontend signal")
-    if "expo" in q or "share extension" in q:
+    if any(_has_term(q, term) for term in ("expo", "share extension")):
         scores["mobile"] += 20
         reasons["mobile"].append("Expo/native mobile signal")
     if (root and root.name.lower() == "mimry") and any(
-        term in q for term in ("mcp", "cli", "graph", "routing", "route", "context pack")
+        _has_term(q, term) for term in ("mcp", "cli", "graph", "routing", "route", "context pack")
     ):
         scores["tooly"] += 22
         reasons["tooly"].append("MIMRY repo tooling surface")
@@ -411,7 +436,7 @@ def route_payload(root: Path, ptr: dict[str, Any], query: str, limit: int = 8) -
         "high" if score >= 28 and score - runner_up >= 8 else "medium" if score >= 10 else "low"
     )
     reasons = reasons_by_role.get(role) or [
-        "best available match from query terms and indexed file evidence"
+        "implementation verb only; no specialist term or file evidence matched"
     ]
     gates = detect_risk_gates(query, rows)
     risk = risk_severity(gates)
