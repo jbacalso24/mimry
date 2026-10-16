@@ -201,6 +201,7 @@ A rewritten history, such as an amended or rebased HEAD, rebuilds the stored com
 Renames are found only when the file content is identical, because inexact rename detection makes git fetch file contents one at a time in a partial clone.
 A shallow clone indexes the commits it has, and the output says `shallow history`.
 Outside a git repository, or in one with no commits yet, `mimry history` says so and exits 1.
+When `mimry preflight` names a file path that the index lacks but the history removed or renamed, it adds one `History:` line for that path, up to two in all, to its output and the context pack.
 
 History searches what each commit did to the files, not the text inside the diff.
 For a string that a commit added or removed, use `git log -S "<text>"` or `git log -G "<regex>"`.

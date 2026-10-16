@@ -51,6 +51,7 @@ ALL_TOOL_NAMES = [
     "mimry_path",
     "mimry_impact",
     "mimry_why",
+    "mimry_history",
     "mimry_feedback",
     "mimry_digest",
     "mimry_plan_tree",
@@ -288,6 +289,23 @@ def test_a_tool_that_is_not_listed_by_default_is_an_unknown_tool():
         ]
     )
     assert replies[1]["error"] == {"code": -32602, "message": "Unknown tool: mimry_list_adapters"}
+
+
+def test_mimry_history_is_an_unknown_tool_unless_mimry_mcp_tools_names_it():
+    call = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": "mimry_history", "arguments": {"query": "share extension"}},
+    }
+    replies = _exchange([_init("2025-06-18"), call])
+    assert replies[1]["error"] == {"code": -32602, "message": "Unknown tool: mimry_history"}
+
+    listed = _exchange(
+        [_init("2025-06-18"), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}],
+        tools="mimry_history",
+    )
+    assert _tools_listed(listed) == ["mimry_history"]
 
 
 def test_mimry_mcp_tools_lists_exactly_the_named_tools():

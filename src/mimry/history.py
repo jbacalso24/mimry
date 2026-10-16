@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .core.languages import EXTENSION_LANGUAGE
 from .intent import TOKEN_RE, query_terms, text_terms
 from .security import redact_sensitive_text
 
@@ -23,6 +24,8 @@ HISTORY_COMMIT_LIMIT = 5000
 HISTORY_BODY_CHARS = 2000
 # Bump when stored commit data changes, so the next index rebuilds it.
 HISTORY_FORMAT = 1
+# History lines a preflight adds for paths the task names.
+HISTORY_MENTION_LINES = 2
 
 GIT_MISSING = "git is not installed, so commit history is unavailable"
 NOT_A_REPO = "This folder is not a git repository, so it has no commit history"
@@ -314,3 +317,119 @@ def status_text(path: dict[str, Any]) -> str:
     if path["status"] == "renamed":
         return f"renamed from {plain(path['oldPath'])}"
     return path["status"]
+
+
+def history_payload(con: sqlite3.Connection, root: Path, query: str, limit: int) -> dict[str, Any]:
+    """What `mimry history --json` prints and mimry_history returns.
+
+    A repository without usable history gets an error object instead.
+    The caller holds the index lock, since update_history writes.
+    """
+    synced = update_history(con, root)
+    if synced["status"] in ("unavailable", "error"):
+        code = "no_history" if synced["status"] == "unavailable" else "history_failed"
+        return {"returncode": 1, "error": {"code": code, "message": synced["reason"]}}
+    return {
+        "query": query,
+        "shallow": synced["shallow"],
+        "commits": [
+            {
+                "sha": commit["sha"],
+                "shortSha": commit["sha"][:7],
+                "date": commit["date"],
+                "subject": commit["subject"],
+                "pathCount": len(commit["paths"]),
+                "paths": commit["paths"],
+            }
+            for commit in read_history(con, query, limit)
+        ],
+    }
+
+
+# The tokens a query can name a path with, as named_paths reads them.
+_PATH_TOKEN_RE = re.compile(r"\w[\w.\-]*(?:[/\\][\w.\-]+)*")
+
+
+def path_names(query: str) -> list[str]:
+    """Path-like query tokens: a separator, or a source extension."""
+    names: list[str] = []
+    for raw in _PATH_TOKEN_RE.findall(query):
+        name = raw.replace("\\", "/").rstrip("./-")
+        if name in names:
+            continue
+        if "/" in name or Path(name).suffix.lower() in EXTENSION_LANGUAGE:
+            names.append(name)
+    return names
+
+
+def _is_named(path: str, name: str) -> bool:
+    """Whether path is name, or ends with name at a folder boundary."""
+    return path == name or path.endswith("/" + name)
+
+
+def _like_escaped(text: str) -> str:
+    return text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
+def history_mentions(idx: Path, query: str, files: list[dict[str, Any]]) -> list[str]:
+    """History lines for the paths the query names that the index lacks.
+
+    A path the commit history removed or renamed gets one line, from the
+    newest commit that did it, at most HISTORY_MENTION_LINES in all.
+    Read-only: the index is opened without the index lock, and git is
+    never run, so this reads what the last index recorded. It queries
+    only when the query names a path the index does not hold.
+    """
+    indexed = {record["rel_path"] for record in files if record.get("rel_path")}
+    missing = [
+        name
+        for name in path_names(query)
+        if name not in indexed and not any(_is_named(path, name) for path in indexed)
+    ]
+    if not missing:
+        return []
+    clauses: list[str] = []
+    params: list[str] = []
+    for name in missing:
+        pattern = "%/" + _like_escaped(name)
+        clauses.append(
+            "(cf.path = ? or cf.path like ? escape '!'"
+            " or cf.old_path = ? or cf.old_path like ? escape '!')"
+        )
+        params += [name, pattern, name, pattern]
+    sql = (
+        "select cf.status, cf.path, cf.old_path, c.sha, c.date, c.subject "
+        "from commit_files cf join commits c on c.id = cf.commit_id "
+        f"where cf.status in ('D', 'R') and ({' or '.join(clauses)}) order by c.id desc"
+    )
+    try:
+        con = sqlite3.connect(
+            idx.resolve().joinpath("mimry.sqlite").as_uri() + "?mode=ro", uri=True
+        )
+    except sqlite3.Error:
+        return []
+    try:
+        rows = con.execute(sql, params).fetchall()
+    except sqlite3.Error:
+        # An index from before commit history has no such tables.
+        return []
+    finally:
+        con.close()
+    lines: list[str] = []
+    answered: set[str] = set()
+    for status, path, old_path, sha, date, subject in rows:
+        for name in missing:
+            if name in answered:
+                continue
+            if status == "D" and _is_named(path, name):
+                text = f"{path} was removed"
+            elif status == "R" and old_path and _is_named(old_path, name):
+                text = f"{old_path} was renamed to {path}"
+            else:
+                continue
+            answered.add(name)
+            lines.append(f'History: {text} in {sha[:7]} {date[:10]} "{plain(subject)}"')
+            break
+        if len(lines) == HISTORY_MENTION_LINES:
+            break
+    return lines

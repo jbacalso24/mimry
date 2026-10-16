@@ -71,6 +71,7 @@ mimry symbol "<name>"
 mimry callers "<name>"
 mimry callees "<name>"
 mimry impact "<name or path>"
+mimry history "<what changed>"
 mimry explain "<task>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
@@ -100,6 +101,8 @@ The MCP server lists 9 core tools by default: `mimry_status`, `mimry_preflight`,
 Set `MIMRY_MCP_TOOLS=all` in the server's environment to list every command as a tool.
 
 CLI fallback is fine when MCP is unavailable.
+
+To find the commit that added, removed or renamed files, use `mimry history "<what changed>"`; use `git log -S "<string>"` for an exact string in diffs.
 
 ## How to read MIMRY results
 

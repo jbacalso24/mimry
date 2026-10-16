@@ -18,6 +18,7 @@ mimry path "<source>" "<target>"
 mimry callers "<name>"
 mimry callees "<name>"
 mimry impact "<name or path>"
+mimry history "<what changed>"
 mimry semantic "<query>"
 ```
 

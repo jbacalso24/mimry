@@ -18,6 +18,7 @@ from mimry.core.languages import language_counts
 from mimry.digest import canonical_digest
 from mimry.feedback import feedback_payload_from_args, record_feedback
 from mimry.freshness import index_freshness
+from mimry.history import history_payload
 from mimry.indexer import write_index
 from mimry.lifecycle import (
     INDEX_REBUILT_NOTE,
@@ -70,7 +71,7 @@ from mimry.state import (
     StateLockTimeoutError,
     UnsupportedIndexSchemaError,
 )
-from mimry.storage import RootIdentityError, active_index_pointer, load_pointer
+from mimry.storage import RootIdentityError, active_index_pointer, connect, load_pointer
 
 
 def _schema_upgrade_error_payload(
@@ -797,6 +798,31 @@ def mimry_why(
             limit=limit,
         ),
     )
+
+
+@tool
+@_state_guard
+@_requires_text("query", "query", '"share extension removed"')
+@_index_operation(exclusive=True, refresh=True)
+def mimry_history(query: str, limit: int = 10, root: str | None = None) -> dict[str, Any]:
+    """Find the commits that added, removed or renamed matching files.
+
+    Reads the commit history MIMRY keeps in the index. limit is how many
+    commits to return, newest first among equal matches.
+    """
+    if limit < 1:
+        return {
+            "returncode": 2,
+            "error": {"code": "invalid_limit", "message": "limit must be 1 or more"},
+        }
+    root_path = _root(root)
+    ptr = require(root_path)
+    con = connect(Path(ptr["indexPath"]))
+    try:
+        payload = history_payload(con, root_path, sanitize_query(query), limit)
+    finally:
+        con.close()
+    return sanitize_data(payload)
 
 
 @tool

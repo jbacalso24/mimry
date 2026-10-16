@@ -35,7 +35,7 @@ from .feedback import (
     record_feedback,
     show_feedback,
 )
-from .history import plain, read_history, status_text, update_history
+from .history import history_payload, plain, status_text
 from .indexer import write_index
 from .install_info import repair_command
 from .lifecycle import (
@@ -844,37 +844,19 @@ def cmd_history(a):
             raise SystemExit(not_set_up(root))
         con = connect(Path(ptr["indexPath"]))
         try:
-            synced = update_history(con, root)
-            commits = (
-                []
-                if synced["status"] in ("unavailable", "error")
-                else read_history(con, query, a.limit)
-            )
+            payload = history_payload(con, root, query, a.limit)
         finally:
             con.close()
-    if synced["status"] == "unavailable":
-        ui.fail(synced["reason"])
+    if "error" in payload:
+        error = payload["error"]
+        if error["code"] == "history_failed":
+            ui.fail("Could not read the commit history", error["message"])
+        else:
+            ui.fail(error["message"])
         return 1
-    if synced["status"] == "error":
-        ui.fail("Could not read the commit history", synced["reason"])
-        return 1
-    shallow = synced["shallow"]
+    commits = payload["commits"]
+    shallow = payload["shallow"]
     if a.json:
-        payload = {
-            "query": query,
-            "shallow": shallow,
-            "commits": [
-                {
-                    "sha": commit["sha"],
-                    "shortSha": commit["sha"][:7],
-                    "date": commit["date"],
-                    "subject": commit["subject"],
-                    "pathCount": len(commit["paths"]),
-                    "paths": commit["paths"],
-                }
-                for commit in commits
-            ],
-        }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0 if commits else 1
     if not commits:

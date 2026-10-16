@@ -21,7 +21,7 @@ Feedback/tooling tools:
 
 - `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, ignored?, verification?, outcome?, notes?)`
 
-Other tools, such as `mimry_list_adapters` and `mimry_context`, are listed only with `MIMRY_MCP_TOOLS=all` in the server's environment.
+Other tools, such as `mimry_list_adapters`, `mimry_context` and `mimry_history`, are listed only with `MIMRY_MCP_TOOLS=all` in the server's environment.
 
 CLI commands (not MCP tools by default):
 
@@ -33,6 +33,7 @@ CLI commands (not MCP tools by default):
 - `mimry semantic "<query>"`
 - `mimry explain "<task>"`
 - `mimry adapters --active-only`
+- `mimry history "<what changed>"`
 
 Rules:
 

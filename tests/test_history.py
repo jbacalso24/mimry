@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mimry import history
+from mimry import history, mcp_protocol, mcp_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -380,3 +380,63 @@ def test_a_new_history_format_rebuilds_the_commits(tmp_path, monkeypatch):
 
     assert history.update_history(con, repo)["status"] == "rebuilt"
     assert con.execute("select count(*) from commits where body = 'marker'").fetchone()[0] == 0
+
+
+def test_mcp_history_returns_the_same_payload_as_the_cli_json(tmp_path, monkeypatch):
+    repo, cache = _share_extension_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    via_mcp = mcp_tools.mimry_history("share extension removed", root=str(repo))
+
+    cli = json.loads(_mimry(repo, cache, "history", "share extension removed", "--json").stdout)
+    # The MCP call refreshes the index first, adding a reindexed note.
+    assert {key: value for key, value in via_mcp.items() if key != "reindexed"} == cli
+    assert via_mcp["commits"][0]["subject"] == "Remove the Share Extension target"
+
+
+def test_mcp_history_blank_query_is_an_error(tmp_path, monkeypatch):
+    repo, cache = _share_extension_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    payload = mcp_tools.mimry_history("   ", root=str(repo))
+
+    assert payload["error"]["code"] == "empty_query"
+    assert mcp_protocol._failed(payload)
+
+
+def _context_pack(repo: Path) -> str:
+    return (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+
+
+def test_preflight_names_the_commit_that_removed_a_named_path(tmp_path):
+    repo, cache = _share_extension_repo(tmp_path)
+
+    res = _mimry(repo, cache, "preflight", "restore ShareExtension/Info.plist")
+
+    assert res.returncode == 0, res.stderr
+    line = (
+        r"History: ShareExtension/Info\.plist was removed in [0-9a-f]{7} \d{4}-\d{2}-\d{2}"
+        r' "Remove the Share Extension target"'
+    )
+    assert re.search(line, res.stdout), res.stdout
+    assert re.search(line, _context_pack(repo))
+
+
+def test_preflight_adds_no_history_line_for_a_path_the_index_has(tmp_path):
+    repo, cache = _share_extension_repo(tmp_path)
+
+    res = _mimry(repo, cache, "preflight", "fix App/Main.swift")
+
+    assert res.returncode == 0, res.stderr
+    assert "History:" not in res.stdout
+    assert "## Commit History" not in _context_pack(repo)
+
+
+def test_preflight_adds_no_history_line_for_a_task_with_no_path(tmp_path):
+    repo, cache = _share_extension_repo(tmp_path)
+
+    res = _mimry(repo, cache, "preflight", "fix the login timeout")
+
+    assert res.returncode == 0, res.stderr
+    assert "History:" not in res.stdout
+    assert "## Commit History" not in _context_pack(repo)

@@ -135,6 +135,7 @@ _REFERENCES: dict[str, str] = {
         """mimry callers \"<name>\"\n"""
         """mimry callees \"<name>\"\n"""
         """mimry impact \"<name or path>\"\n"""
+        """mimry history \"<what changed>\"\n"""
         """mimry semantic \"<query>\"\n"""
         """```\n"""
         """\n"""
@@ -167,8 +168,8 @@ _REFERENCES: dict[str, str] = {
         """- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, """
         """ignored?, verification?, outcome?, notes?)`\n"""
         """\n"""
-        """Other tools, such as `mimry_list_adapters` and `mimry_context`, are listed only"""
-        """ with `MIMRY_MCP_TOOLS=all` in the server's environment.\n"""
+        """Other tools, such as `mimry_list_adapters`, `mimry_context` and `mimry_history`, """
+        """are listed only with `MIMRY_MCP_TOOLS=all` in the server's environment.\n"""
         """\n"""
         """CLI commands (not MCP tools by default):\n"""
         """\n"""
@@ -180,6 +181,7 @@ _REFERENCES: dict[str, str] = {
         """- `mimry semantic "<query>"`\n"""
         """- `mimry explain "<task>"`\n"""
         """- `mimry adapters --active-only`\n"""
+        """- `mimry history "<what changed>"`\n"""
         """\n"""
         """Rules:\n"""
         """\n"""
@@ -696,6 +698,7 @@ mimry symbol "<name>"
 mimry callers "<name>"
 mimry callees "<name>"
 mimry impact "<name or path>"
+mimry history "<what changed>"
 mimry explain "<task>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
@@ -725,6 +728,8 @@ The MCP server lists 9 core tools by default: `mimry_status`, `mimry_preflight`,
 Set `MIMRY_MCP_TOOLS=all` in the server's environment to list every command as a tool.
 
 CLI fallback is fine when MCP is unavailable.
+
+To find the commit that added, removed or renamed files, use `mimry history "<what changed>"`; use `git log -S "<string>"` for an exact string in diffs.
 
 ## How to read MIMRY results
 
@@ -776,6 +781,7 @@ Rules:
 - Read the context pack that preflight names (`context_path` over MCP) or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
 - Where a file lists `Read first: lines X-Y`, read those lines before the rest of the file.
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry callers`, `mimry callees`, `mimry impact`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
+- To find the commit that added, removed or renamed files, use `mimry history "<what changed>"`; use `git log -S "<string>"` for an exact string in diffs.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
 """  # noqa: E501 - Markdown written verbatim; its line breaks are content
