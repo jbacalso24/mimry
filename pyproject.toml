@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mimry"
 version = "0.5.0"
-description = "The local context engine for AI coding agents"
+description = "Finds the files a coding task touches, so your AI agent reads less. Local CLI and MCP server."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

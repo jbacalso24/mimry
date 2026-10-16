@@ -1,6 +1,6 @@
 {
   "name": "mimry",
-  "description": "MIMRY: the local context engine for coding agents.",
+  "description": "MIMRY: finds the files a coding task touches, so your agent reads less.",
   "owner": {
     "name": "Judison Bacalso"
   },
@@ -8,7 +8,7 @@
     {
       "name": "mimry",
       "source": "./plugins/mimry",
-      "description": "The local context engine for AI coding agents"
+      "description": "Finds the files a coding task touches, so your AI agent reads less. Local CLI and MCP server."
     }
   ]
 }

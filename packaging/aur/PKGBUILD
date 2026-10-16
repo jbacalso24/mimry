@@ -7,7 +7,7 @@
 pkgname=mimry
 pkgver=0
 pkgrel=1
-pkgdesc='The local context engine for coding agents: a CLI and MCP server that ranks the files that matter for a task'
+pkgdesc='Finds the files a coding task touches, so your AI agent reads less. Local CLI and MCP server.'
 arch=('x86_64')
 url='https://github.com/jbacalso24/mimry'
 license=('MIT')

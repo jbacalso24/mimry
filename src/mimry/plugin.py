@@ -13,7 +13,9 @@ from . import __version__
 from .installer import _REFERENCES, hook_table, skill_body
 
 NAME = "mimry"
-DESCRIPTION = "The local context engine for AI coding agents"
+DESCRIPTION = (
+    "Finds the files a coding task touches, so your AI agent reads less. Local CLI and MCP server."
+)
 HOMEPAGE = "https://github.com/jbacalso24/mimry"
 PLUGIN_DIR = "plugins/mimry"
 
@@ -47,7 +49,9 @@ def plugin_files() -> dict[str, str]:
         ".claude-plugin/marketplace.json": _json(
             {
                 "name": NAME,
-                "description": "MIMRY: the local context engine for coding agents.",
+                "description": (
+                    "MIMRY: finds the files a coding task touches, so your agent reads less."
+                ),
                 "owner": {"name": "Judison Bacalso"},
                 "plugins": [
                     {"name": NAME, "source": f"./{PLUGIN_DIR}", "description": DESCRIPTION}

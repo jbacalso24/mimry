@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.jbacalso24/mimry",
   "title": "MIMRY",
-  "description": "The local context engine for AI coding agents: ranked files, context packs and a code graph.",
+  "description": "Finds the files a coding task touches, so your AI agent reads less. Local CLI and MCP server.",
   "websiteUrl": "https://jbacalso24.github.io/mimry/",
   "repository": {
     "url": "https://github.com/jbacalso24/mimry",

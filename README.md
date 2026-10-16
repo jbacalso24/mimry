@@ -8,7 +8,11 @@
 <!-- mcp-name: io.github.jbacalso24/mimry -->
 
 <p align="center">
-  The local context engine for AI coding agents.
+  Finds the files a coding task touches, so your agent reads less.
+</p>
+
+<p align="center">
+  <a href="#benchmarks">On 92 real pull requests, agents read 50% fewer tokens with MIMRY.</a>
 </p>
 
 <p align="center">
