@@ -1593,3 +1593,302 @@ def test_functional_source_file_names_are_not_tests(name):
     name.
     """
     assert not TEST_NAME_RE.search(name), f"{name} should not be a test file"
+
+
+# Contracts, numerical code and Pascal: Solidity, Fortran, Pascal
+SOLIDITY_SOURCE = """\
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+import "./IERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+interface IVault { function deposit(uint256 amount) external; }
+library MathLib { function add(uint a, uint b) internal pure returns (uint) { return a + b; } }
+contract Vault is IVault, Ownable {
+    struct Position { uint256 amount; }
+    enum State { Open, Closed }
+    event Deposited(address indexed who, uint256 amount);
+    error TooSmall();
+    mapping(address => Position) public positions;
+    modifier onlyOpen() { _; }
+    constructor() Ownable(msg.sender) {}
+    function deposit(uint256 amount) external override onlyOpen {
+        if (amount == 0) revert TooSmall();
+        positions[msg.sender].amount = MathLib.add(positions[msg.sender].amount, amount);
+        emit Deposited(msg.sender, amount);
+    }
+    receive() external payable {}
+}
+"""
+
+FORTRAN_SOURCE = """\
+module geometry
+  use iso_fortran_env, only: real64
+  implicit none
+  type :: point
+    real(real64) :: x, y
+  end type point
+  interface area
+    module procedure circle_area
+  end interface
+contains
+  pure function circle_area(r) result(a)
+    real(real64), intent(in) :: r
+    real(real64) :: a
+    a = 3.14159_real64 * r**2
+  end function circle_area
+  subroutine report(r)
+    real(real64), intent(in) :: r
+    print *, circle_area(r)
+    call helper(r)
+  end subroutine report
+end module geometry
+program main
+  use geometry
+  call report(2.0d0)
+end program main
+"""
+
+PASCAL_SOURCE = """\
+unit Shapes;
+interface
+uses SysUtils, Classes;
+type
+  TShape = class(TObject)
+  public
+    function Area: Double; virtual; abstract;
+  end;
+  TCircle = class(TShape)
+  private
+    FRadius: Double;
+  public
+    constructor Create(ARadius: Double);
+    function Area: Double; override;
+  end;
+procedure PrintArea(S: TShape);
+implementation
+constructor TCircle.Create(ARadius: Double);
+begin
+  inherited Create;
+  FRadius := ARadius;
+end;
+function TCircle.Area: Double;
+begin
+  Result := Pi * Sqr(FRadius);
+end;
+procedure PrintArea(S: TShape);
+begin
+  WriteLn(FloatToStr(S.Area));
+end;
+end.
+"""
+
+
+def test_language_for_solidity_fortran_and_pascal():
+    """Solidity, the free-form Fortran suffixes and the Pascal suffixes
+    map to their grammars. Fixed-form Fortran (.f, .for) is not parsed.
+    """
+    assert language_for("contracts/Vault.sol") == "solidity"
+    for name in ("geometry.f90", "geometry.f95", "geometry.f03", "geometry.f08"):
+        assert language_for(name) == "fortran", name
+    for name in ("Shapes.pas", "Shapes.pp", "Shapes.dpr", "Shapes.lpr"):
+        assert language_for(name) == "pascal", name
+    assert language_for("legacy.f") is None
+    assert language_for("legacy.for") is None
+
+
+@pytest.mark.parametrize(
+    "name,source",
+    [
+        ("Vault.sol", SOLIDITY_SOURCE),
+        ("geometry.f90", FORTRAN_SOURCE),
+        ("Shapes.pas", PASCAL_SOURCE),
+    ],
+)
+def test_new_language_snippets_parse_without_errors(tmp_path, name, source):
+    """A grammar regression shows up as a parse error."""
+    result = _extract(tmp_path, name, source)
+    assert result["status"] == "ok", f"{name} parse failed: {result['status']}"
+
+
+def test_solidity_extracts_contracts_members_imports_and_calls(tmp_path):
+    """Solidity: contracts and libraries are classes, interfaces are
+    interfaces, and structs, enums, events and errors are types. A
+    constructor, fallback and receive are named by their keyword. emit
+    and revert calls name the event and the error.
+    """
+    result = _extract(tmp_path, "Vault.sol", SOLIDITY_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("IVault", "interface", 5, 5),
+        ("deposit", "function", 5, 5),
+        ("MathLib", "class", 6, 6),
+        ("add", "function", 6, 6),
+        ("Vault", "class", 7, 21),
+        ("Position", "type", 8, 8),
+        ("State", "type", 9, 9),
+        ("Deposited", "type", 10, 10),
+        ("TooSmall", "type", 11, 11),
+        ("onlyOpen", "function", 13, 13),
+        ("constructor", "function", 14, 14),
+        ("deposit", "function", 15, 19),
+        ("receive", "function", 20, 20),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("./IERC20.sol", 3), ("@openzeppelin/contracts/access/Ownable.sol", 4)]
+    calls = {(c["name"], c["line"]) for c in result["calls"]}
+    assert calls == {("TooSmall", 16), ("add", 17), ("Deposited", 18)}
+    assert {(i["type"], i["base"]) for i in result["inherits"]} == {
+        ("Vault", "IVault"),
+        ("Vault", "Ownable"),
+    }
+
+
+def test_solidity_builtins_are_not_calls(tmp_path):
+    """require, assert, keccak256 and abi.encode* name no repo function,
+    so they make no call. A member call keeps its last segment.
+    """
+    source = (
+        "contract Pool is Base(1), Lib.Ext {\n"
+        "    fallback() external {}\n"
+        "    function go() public {\n"
+        "        require(true);\n"
+        "        bytes32 h = keccak256(abi.encodePacked(uint(1)));\n"
+        "        assert(h != 0);\n"
+        "        Lib.f(1);\n"
+        '        revert("msg");\n'
+        "    }\n"
+        "}\n"
+    )
+    result = _extract(tmp_path, "Pool.sol", source)
+    assert [(c["name"], c["line"]) for c in result["calls"]] == [("f", 7)]
+    assert ("fallback", "function") in {(d["name"], d["kind"]) for d in result["definitions"]}
+    assert {i["base"] for i in result["inherits"]} == {"Base", "Ext"}
+
+
+def test_fortran_extracts_units_types_interfaces_imports_and_calls(tmp_path):
+    """Fortran: modules, programs, functions and subroutines are
+    symbols, as are derived types and named interface blocks. use and
+    include name a module and a file. Call and function references are
+    calls.
+    """
+    result = _extract(tmp_path, "geometry.f90", FORTRAN_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("geometry", "module", 1, 21),
+        ("point", "type", 4, 6),
+        ("area", "interface", 7, 9),
+        ("circle_area", "function", 11, 15),
+        ("report", "function", 16, 20),
+        ("main", "module", 22, 25),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("iso_fortran_env", 2), ("geometry", 23)]
+    calls = {(c["name"], c["line"]) for c in result["calls"]}
+    assert calls == {("circle_area", 18), ("helper", 19), ("report", 24)}
+
+
+def test_fortran_extends_include_and_submodule(tmp_path):
+    """Fortran: `extends(parent)` is an inheritance edge, an include
+    path is marked as a file, and a submodule is a module under its own
+    name.
+    """
+    source = (
+        "submodule (parent) child_mod\n"
+        "  use Shapes\n"
+        "  include 'consts.inc'\n"
+        "  type, extends(point) :: point3\n"
+        "    real :: z\n"
+        "  end type point3\n"
+        "contains\n"
+        "  function f2(x) result(y)\n"
+        "    real :: x, y\n"
+        "    y = g(x) + arr(3)\n"
+        "  end function\n"
+        "end submodule child_mod\n"
+    )
+    result = _extract(tmp_path, "child.f90", source)
+    defs = {(d["name"], d["kind"]) for d in result["definitions"]}
+    assert defs == {("child_mod", "module"), ("point3", "type"), ("f2", "function")}
+    assert [(i["module"], i["line"]) for i in result["imports"]] == [
+        ("Shapes", 2),
+        ("./consts.inc", 3),
+    ]
+    assert {(i["type"], i["base"]) for i in result["inherits"]} == {("point3", "point")}
+    assert {c["name"] for c in result["calls"]} == {"g", "arr"}
+
+
+def test_pascal_extracts_routines_classes_imports_and_calls(tmp_path):
+    """Pascal: a method is named by its method name and its body is the
+    symbol. A declaration whose body is in the file is dropped, and one
+    without a body (TShape.Area) stays. Classes, interfaces and records
+    are types, and class(...) names the ancestors.
+    """
+    result = _extract(tmp_path, "Shapes.pas", PASCAL_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("Shapes", "module", 1, 31),
+        ("TShape", "class", 5, 8),
+        ("Area", "function", 7, 7),
+        ("TCircle", "class", 9, 15),
+        ("Create", "function", 18, 22),
+        ("Area", "function", 23, 26),
+        ("PrintArea", "function", 27, 30),
+    }
+    imports = [(i["module"], i["line"]) for i in result["imports"]]
+    assert imports == [("SysUtils", 3), ("Classes", 3)]
+    calls = {(c["name"], c["line"]) for c in result["calls"]}
+    assert calls == {("Create", 20), ("Sqr", 25), ("WriteLn", 29), ("FloatToStr", 29)}
+    assert {(i["type"], i["base"]) for i in result["inherits"]} == {
+        ("TShape", "TObject"),
+        ("TCircle", "TShape"),
+    }
+
+
+def test_pascal_uses_in_names_the_path_and_class_lists_each_ancestor(tmp_path):
+    """`uses X in 'path'` imports the path, and the other names of the
+    same clause stay units. A class with two ancestors names both.
+    """
+    source = (
+        "program Main;\n"
+        "uses Foo in 'lib\\Foo.pas', Bar;\n"
+        "type\n"
+        "  TCircle = class(TShape, IFoo)\n"
+        "  end;\n"
+        "begin\n"
+        "end.\n"
+    )
+    result = _extract(tmp_path, "Main.dpr", source)
+    # The in clause is a grammar error, yet the file is still read.
+    assert result["status"] == "ok", result["status"]
+    assert [(i["module"], i["line"]) for i in result["imports"]] == [
+        ("lib/Foo.pas", 2),
+        ("Bar", 2),
+    ]
+    assert {(i["type"], i["base"]) for i in result["inherits"]} == {
+        ("TCircle", "TShape"),
+        ("TCircle", "IFoo"),
+    }
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Vault.t.sol",
+        "Vault.test.sol",
+        "test_geometry.f90",
+        "geometry_test.f95",
+        "TestShapes.pas",
+        "ShapesTests.pas",
+        "ShapesTest.pas",
+    ],
+)
+def test_solidity_fortran_pascal_test_file_names_are_tests(name):
+    """Foundry *.t.sol and *.test.sol, Fortran test_* and *_test,
+    and Pascal Test* and *Test(s).pas mark test files.
+    """
+    assert TEST_NAME_RE.search(name), f"{name} should be a test file"
+
+
+@pytest.mark.parametrize("name", ["Vault.sol", "geometry.f90", "Shapes.pas", "Latest.pas"])
+def test_solidity_fortran_pascal_source_names_are_not_tests(name):
+    assert not TEST_NAME_RE.search(name), f"{name} should not be a test file"

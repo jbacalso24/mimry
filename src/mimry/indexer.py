@@ -17,7 +17,7 @@ from .adapters.config_manifest import is_config_manifest
 from .constants import SCHEMA_VERSION
 from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
 from .core.cluster import assign_communities
-from .core.languages import GRAMMAR_UNAVAILABLE, grammar_failure_reason
+from .core.languages import GRAMMAR_UNAVAILABLE, grammar_failure_reason, language_for
 from .core.report import build_manifest, render_report
 from .core.resolve import (
     resolve_calls,
@@ -527,6 +527,51 @@ def _symbol_ids_by_path_name(files, symbols) -> dict:
     return index
 
 
+# Languages whose names ignore case. Fortran and Pascal code mixes
+# spellings freely, so `CALL REPORT` calls `subroutine report`.
+_CASE_FOLDED_LANGUAGES = frozenset(("fortran", "pascal"))
+
+
+def _fold_case(by_file: dict, symbols, field: str) -> dict:
+    """Give each Fortran or Pascal name the spelling its definition has.
+
+    ``field`` is the key of the name in each record: "name" for a call,
+    "base" for an inheritance. A name that matches no definition exactly
+    takes the one spelling a definition in those languages has, when
+    there is only one such spelling.
+    """
+    spellings: dict[str, set[str]] = {}
+    for sym in symbols:
+        if sym.get("language") in _CASE_FOLDED_LANGUAGES:
+            spellings.setdefault(sym["name"].lower(), set()).add(sym["name"])
+    folded = {}
+    for rel_path, records in by_file.items():
+        if language_for(rel_path) not in _CASE_FOLDED_LANGUAGES:
+            folded[rel_path] = records
+            continue
+        folded[rel_path] = [_respelled(record, field, spellings) for record in records]
+    return folded
+
+
+def _respelled(record: dict, field: str, spellings: dict) -> dict:
+    names = spellings.get(record[field].lower(), set())
+    if len(names) != 1 or record[field] in names:
+        return record
+    (name,) = names
+    return {**record, field: name}
+
+
+def _fortran_module_files(files, symbols) -> dict:
+    """lower(module name) -> [rel_path, ...] for each Fortran module."""
+    rel_path_of = {f["file_id"]: f["rel_path"] for f in files}
+    modules: dict[str, list] = {}
+    for sym in symbols:
+        rel_path = rel_path_of.get(sym["file_id"])
+        if sym.get("language") == "fortran" and sym["kind"] == "module" and rel_path:
+            modules.setdefault(sym["name"].lower(), []).append(rel_path)
+    return modules
+
+
 def _table_symbols(files, symbols) -> dict:
     """lower(table_name) -> [(rel_path, symbol_id), ...]."""
     rel_path_of = {f["file_id"]: f["rel_path"] for f in files}
@@ -704,7 +749,9 @@ def _build_core_graph(
     file_id_of = {f["rel_path"]: f["file_id"] for f in files}
     symbol_ids = _symbol_ids_by_path_name(files, symbols)
     overrides = settings.language_overrides() if settings is not None else None
+    calls = _fold_case(calls, symbols, "name")
     split_refs = _split_references(references)
+    split_refs["inherits"] = _fold_case(split_refs["inherits"], symbols, "base")
     dart_packages: dict[str, list[str]] = {}
     for pubspec, name in split_refs["dart_package"].items():
         dart_packages.setdefault(name, []).append(posixpath.dirname(pubspec))
@@ -713,7 +760,13 @@ def _build_core_graph(
         go_modules.setdefault(name, []).append(posixpath.dirname(gomod))
     ts_paths = build_ts_paths(split_refs["ts_config"], rel_paths)
     import_edges = resolve_imports(
-        imports, rel_paths, overrides, dart_packages, go_modules, ts_paths=ts_paths
+        imports,
+        rel_paths,
+        overrides,
+        dart_packages,
+        go_modules,
+        ts_paths=ts_paths,
+        fortran_modules=_fortran_module_files(files, symbols),
     )
 
     graph["edges"] += _import_graph_edges(import_edges, file_id_of)

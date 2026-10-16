@@ -61,6 +61,22 @@ from mimry.storage import load_pointer
             "abstract type Shape{T} <: AbstractShape end\n",
             {("Shape", "AbstractShape")},
         ),
+        # Solidity `is` lists each base of a contract or interface.
+        (".sol", "contract C is A, B {}\n", {("C", "A"), ("C", "B")}),
+        (".sol", "interface I is J {}\n", {("I", "J")}),
+        # Pascal class(...) names each ancestor.
+        (
+            ".pas",
+            "unit U;\ninterface\ntype\n  TC = class(TShape, IFoo)\n  end;\nimplementation\nend.\n",
+            {("TC", "TShape"), ("TC", "IFoo")},
+        ),
+        # Fortran extends(parent) on a derived type.
+        (
+            ".f90",
+            "module m\n  type, extends(point) :: point3\n"
+            "    real :: z\n  end type point3\nend module m\n",
+            {("point3", "point")},
+        ),
     ],
 )
 def test_base_types_are_extracted(tmp_path: Path, suffix: str, source: str, expected: set) -> None:

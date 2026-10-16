@@ -1329,3 +1329,257 @@ def test_each_functional_language_indexes_symbols_and_edges(tmp_path):
     assert ("ml/bin.ml", "ml/util_helpers.ml") in imports, sorted(imports)
     assert ("stats/main.R", "stats/R/helpers.R") in imports, sorted(imports)
     assert ("jl/src/Geometry.jl", "jl/src/shapes.jl") in imports, sorted(imports)
+
+
+class TestSolidityImports:
+    """`./x.sol` is relative to the importing file. Another path is
+    tried from the repo root, then node_modules/, lib/, and a Foundry
+    library's src/. remappings.txt is not read.
+    """
+
+    def test_relative_import_resolves_beside_the_importer(self):
+        imports = {"src/Vault.sol": ["./IERC20.sol"]}
+        rel_paths = {"src/Vault.sol", "src/IERC20.sol"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/IERC20.sol", "EXTRACTED")
+        ]
+
+    def test_package_import_resolves_under_node_modules(self):
+        imports = {"src/Vault.sol": ["@openzeppelin/contracts/access/Ownable.sol"]}
+        rel_paths = {
+            "src/Vault.sol",
+            "node_modules/@openzeppelin/contracts/access/Ownable.sol",
+        }
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("node_modules/@openzeppelin/contracts/access/Ownable.sol", "INFERRED")
+        ]
+
+    def test_package_import_falls_back_to_lib(self):
+        imports = {"src/Vault.sol": ["solmate/src/auth/Owned.sol"]}
+        rel_paths = {"src/Vault.sol", "lib/solmate/src/auth/Owned.sol"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["lib/solmate/src/auth/Owned.sol"]
+
+    def test_foundry_library_resolves_under_its_src(self):
+        imports = {"test/Vault.t.sol": ["forge-std/Test.sol"]}
+        rel_paths = {"test/Vault.t.sol", "lib/forge-std/src/Test.sol"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["lib/forge-std/src/Test.sol"]
+
+    def test_root_relative_import_resolves_from_the_repo_root(self):
+        imports = {"contracts/Vault.sol": ["contracts/lib/Math.sol"]}
+        rel_paths = {"contracts/Vault.sol", "contracts/lib/Math.sol"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["contracts/lib/Math.sol"]
+
+    def test_renamed_prefix_is_no_edge(self):
+        """`@oz/` only reaches lib/openzeppelin-contracts through
+        remappings.txt, which is not read, so no edge is made.
+        """
+        imports = {"src/Vault.sol": ["@oz/token/ERC20.sol"]}
+        rel_paths = {"src/Vault.sol", "lib/openzeppelin-contracts/contracts/token/ERC20.sol"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_missing_relative_import_is_no_edge(self):
+        imports = {"src/Vault.sol": ["./Missing.sol"]}
+        rel_paths = {"src/Vault.sol"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestFortranImports:
+    """`use name` is the one file that defines `module name`, compared
+    without case. An include path is relative to the importing file.
+    """
+
+    def test_use_resolves_to_the_file_that_defines_the_module(self):
+        imports = {"app/main.f90": ["Geometry"]}
+        rel_paths = {"app/main.f90", "src/shapes.f90"}
+        modules = {"geometry": ["src/shapes.f90"]}
+
+        results = resolve_imports(imports, rel_paths, fortran_modules=modules)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/shapes.f90", "INFERRED")
+        ]
+
+    def test_intrinsic_module_never_resolves(self):
+        imports = {"app/main.f90": ["iso_fortran_env", "ieee_arithmetic"]}
+        rel_paths = {"app/main.f90", "src/env.f90"}
+        modules = {"iso_fortran_env": ["src/env.f90"]}
+
+        assert resolve_imports(imports, rel_paths, fortran_modules=modules) == []
+
+    def test_two_files_defining_one_module_is_no_edge(self):
+        imports = {"app/main.f90": ["geometry"]}
+        rel_paths = {"app/main.f90", "a/shapes.f90", "b/shapes.f90"}
+        modules = {"geometry": ["a/shapes.f90", "b/shapes.f90"]}
+
+        assert resolve_imports(imports, rel_paths, fortran_modules=modules) == []
+
+    def test_unknown_module_is_no_edge(self):
+        imports = {"app/main.f90": ["linalg"]}
+        rel_paths = {"app/main.f90"}
+
+        assert resolve_imports(imports, rel_paths, fortran_modules={}) == []
+
+    def test_include_resolves_beside_the_importer(self):
+        imports = {"src/main.f90": ["./consts.inc"]}
+        rel_paths = {"src/main.f90", "src/consts.inc"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/consts.inc", "EXTRACTED")
+        ]
+
+
+class TestPascalImports:
+    """A unit `Foo.Bar` is the one `Foo.Bar.pas` or `.pp` in the repo,
+    compared without case. `uses X in 'path'` is a path beside the
+    importing file.
+    """
+
+    def test_unit_resolves_to_its_pas_file_without_case(self):
+        imports = {"app/Main.dpr": ["Foo.Bar"]}
+        rel_paths = {"app/Main.dpr", "lib/foo.bar.pas"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("lib/foo.bar.pas", "INFERRED")
+        ]
+
+    def test_pp_file_is_a_unit_too(self):
+        imports = {"app/Main.dpr": ["Geometry"]}
+        rel_paths = {"app/Main.dpr", "src/Geometry.pp"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/Geometry.pp"]
+
+    def test_unit_with_a_pas_and_a_pp_file_is_no_edge(self):
+        imports = {"app/Main.dpr": ["Foo"]}
+        rel_paths = {"app/Main.dpr", "a/Foo.pas", "b/Foo.pp"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_runtime_unit_is_no_edge(self):
+        imports = {"app/Main.dpr": ["SysUtils"]}
+        rel_paths = {"app/Main.dpr"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_uses_in_path_resolves_beside_the_importer(self):
+        imports = {"app/Main.dpr": ["lib/Foo.pas"]}
+        rel_paths = {"app/Main.dpr", "app/lib/Foo.pas"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("app/lib/Foo.pas", "EXTRACTED")
+        ]
+
+
+def test_each_contract_fortran_and_pascal_project_indexes_symbols_and_edges(tmp_path):
+    """One small project per language, with files that import each
+    other. Each function is findable, each import links, and a call
+    across a file reaches the graph.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "src/Token.sol": "contract Token {\n    function mint(uint x) public {\n    }\n}\n",
+            "src/Vault.sol": (
+                'import "./Token.sol";\n'
+                "contract Vault is Token {\n"
+                "    function deposit(uint x) public {\n"
+                "        mint(x);\n"
+                "    }\n"
+                "}\n"
+            ),
+            "geo/shapes.f90": (
+                "module geometry\ncontains\n  subroutine report(r)\n"
+                "    real :: r\n  end subroutine report\nend module geometry\n"
+            ),
+            "geo/main.f90": "program main\n  use GEOMETRY\n  call report(2.0)\nend program main\n",
+            "pas/Shapes.pas": (
+                "unit Shapes;\ninterface\nprocedure Draw(n: Integer);\n"
+                "implementation\nprocedure Draw(n: Integer);\nbegin\nend;\nend.\n"
+            ),
+            "pas/App.pas": (
+                "unit App;\ninterface\nuses Shapes;\nimplementation\n"
+                "procedure Run;\nbegin\n  Draw(1);\nend;\nend.\n"
+            ),
+        },
+    )
+    pointer = load_pointer(root)
+    assert pointer is not None
+
+    for name, language in [
+        ("deposit", "solidity"),
+        ("mint", "solidity"),
+        ("report", "fortran"),
+        ("Draw", "pascal"),
+    ]:
+        matches = symbol_matches(pointer, name)
+        assert matches, f"{name} not found in the index"
+        exact = {m["language"] for m in matches if m["name"] == name}
+        assert language in exact, matches
+
+    imports = _graph_pairs(root, "imports")
+    assert ("src/Vault.sol", "src/Token.sol") in imports, sorted(imports)
+    assert ("geo/main.f90", "geo/shapes.f90") in imports, sorted(imports)
+    assert ("pas/App.pas", "pas/Shapes.pas") in imports, sorted(imports)
+    calls = _graph_pairs(root, "calls")
+    assert ("deposit", "mint") in calls, sorted(calls)
+    assert ("Run", "Draw") in calls, sorted(calls)
+
+
+def test_fortran_and_pascal_names_match_without_case(tmp_path):
+    """Fortran and Pascal ignore case: `CALL REPORT` calls
+    `subroutine report`, `Draw(1)` calls `procedure draw`, and a class
+    named `tshape` inherits from `TShape`.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "shapes.f90": (
+                "module shapes\ncontains\n  subroutine report(r)\n"
+                "    real :: r\n  end subroutine report\nend module shapes\n"
+            ),
+            "runner.f90": (
+                "module runner\n  use Shapes\ncontains\n  subroutine go()\n"
+                "    call REPORT(2.0)\n  end subroutine go\nend module runner\n"
+            ),
+            "Shapes.pas": (
+                "unit Shapes;\ninterface\ntype\n  TShape = class\n  end;\n"
+                "procedure Draw(n: Integer);\nimplementation\n"
+                "procedure draw(n: Integer);\nbegin\nend;\nend.\n"
+            ),
+            "App.pas": (
+                "unit App;\ninterface\nuses Shapes;\ntype\n"
+                "  TCircle = class(tshape)\n  end;\nimplementation\n"
+                "procedure Run;\nbegin\n  Draw(1);\nend;\nend.\n"
+            ),
+        },
+    )
+
+    assert ("go", "report") in _graph_pairs(root, "calls")
+    assert ("Run", "draw") in _graph_pairs(root, "calls")
+    assert ("TCircle", "TShape") in _graph_pairs(root, "inherits")

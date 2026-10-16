@@ -105,6 +105,7 @@ SOURCE_EXTS = {
     *(".sh", ".bash", ".ps1", ".psm1", ".lua", ".pl", ".pm"),
     *(".dart", ".m", ".zig"),
     *(".ex", ".exs", ".hs", ".ml", ".mli", ".r", ".jl"),
+    *(".sol", ".f90", ".f95", ".f03", ".f08", ".pas", ".pp", ".dpr", ".lpr"),
 }
 # Code that ships with a project but is not the product: an edit task is
 # almost never about it, so it is supporting context rather than a
@@ -190,6 +191,10 @@ TEST_NAME_RE = re.compile(
     # matched above.
     r"|(Spec|Test)\.hs$|_test\.ml$"
     r"|^test[-_].+\.[Rr]$|^runtests\.jl$"
+    # Solidity *.t.sol and *.test.sol, Fortran *_test.f90 (test_ is
+    # matched above), and Pascal TestX.pas and XTest.pas.
+    r"|\.t\.sol$|\.test\.sol$|_test\.(f90|f95|f03|f08)$"
+    r"|^Test[A-Z]\w*\.pas$|^Test\.pas$|[A-Za-z0-9](Test|Tests)\.pas$"
 )
 TEST_TERMS = {"test", "tests", "testing", "pytest", "vitest", "jest", "spec"}
 # Suffixes that inflect a word ("token"/"tokens", "parse"/"parsing"), as

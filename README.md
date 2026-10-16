@@ -109,7 +109,7 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 26 languages with tree-sitter |
+| Code graph | Maps imports, calls and inheritance across 29 languages with tree-sitter |
 | Deterministic | The same code gives the same symbols, graph, rankings and context pack on every machine; CI checks every change against committed golden values ([how](docs/determinism.md)) |
 | Documents | Indexes Markdown, text, PDF, Word and Excel files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
@@ -149,6 +149,11 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 | OCaml | `.ml`, `.mli` |
 | R | `.r` |
 | Julia | `.jl` |
+| Solidity | `.sol` |
+| Fortran | `.f03`, `.f08`, `.f90`, `.f95` |
+| Pascal | `.dpr`, `.lpr`, `.pas`, `.pp` |
+
+Fortran is read in free form only. Fixed-form `.f` and `.for` files do not parse with the grammar MIMRY uses, so they get no symbols or edges.
 
 MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Word and Excel files.
 
@@ -168,7 +173,6 @@ We're adding these next; progress is tracked in [#47](https://github.com/jbacals
 - [ ] Web and markup: HTML, CSS, SCSS, Vue, Svelte
 - [ ] Data and config: YAML, XML, Terraform (HCL), and JSON and TOML files beyond the manifests above
 - [ ] Apps and systems: Groovy
-- [ ] Other: Solidity, Fortran, Pascal
 
 ## Supported agents
 

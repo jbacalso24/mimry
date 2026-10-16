@@ -51,6 +51,15 @@ EXTENSION_LANGUAGE = {
     ".mli": "ocaml_interface",
     ".r": "r",
     ".jl": "julia",
+    ".sol": "solidity",
+    ".f90": "fortran",
+    ".f95": "fortran",
+    ".f03": "fortran",
+    ".f08": "fortran",
+    ".pas": "pascal",
+    ".pp": "pascal",
+    ".dpr": "pascal",
+    ".lpr": "pascal",
 }
 
 # Display name for each EXTENSION_LANGUAGE value.
@@ -85,6 +94,9 @@ LANGUAGE_LABELS: dict[str, str] = {
     "ocaml_interface": "OCaml",
     "r": "R",
     "julia": "Julia",
+    "solidity": "Solidity",
+    "fortran": "Fortran",
+    "pascal": "Pascal",
     # Symbol-only languages, with no extension entry.
     "markdown": "Markdown",
     "sql": "SQL",
@@ -428,6 +440,56 @@ NODE_TYPES = {
         "calls": frozenset(["call_expression", "broadcast_call_expression"]),
         "bases": frozenset(["type_head"]),
     },
+    "solidity": {
+        # A library is a class; enums, structs, events and errors are
+        # types. Modifiers and fallback/receive are functions.
+        "definitions": frozenset(
+            [
+                "contract_declaration",
+                "interface_declaration",
+                "library_declaration",
+                "struct_declaration",
+                "enum_declaration",
+                "event_definition",
+                "error_declaration",
+                "function_definition",
+                "modifier_definition",
+                "constructor_definition",
+                "fallback_receive_definition",
+            ]
+        ),
+        "imports": frozenset(["import_directive"]),
+        # emit names an event and revert an error; both are calls.
+        "calls": frozenset(["call_expression", "emit_statement", "revert_statement"]),
+        "bases": frozenset(["inheritance_specifier"]),
+    },
+    "fortran": {
+        # Fixed-form .f and .for files do not parse with this grammar.
+        "definitions": frozenset(
+            [
+                "module",
+                "submodule",
+                "program",
+                "function",
+                "subroutine",
+                "interface",
+                "derived_type_definition",
+            ]
+        ),
+        "imports": frozenset(["use_statement", "include_statement"]),
+        "calls": frozenset(["call_expression", "subroutine_call"]),
+        "bases": frozenset(["derived_type_statement"]),
+    },
+    "pascal": {
+        # A class or interface type is a declType. A routine is a
+        # declProc (its declaration) or defProc (its body).
+        "definitions": frozenset(
+            ["unit", "program", "library", "declType", "declProc", "defProc"]
+        ),
+        "imports": frozenset(["declUses"]),
+        "calls": frozenset(["exprCall", "inherited"]),
+        "bases": frozenset(["declClass"]),
+    },
 }
 
 
@@ -487,8 +549,35 @@ def language_counts(files: list[dict], symbols: list[dict]) -> dict[str, int]:
     return counts
 
 
+# Kinds that the generic rules below get wrong for these languages: a
+# Solidity enum or struct is a type, and a Fortran module or Pascal unit
+# is a module.
+_LANGUAGE_KINDS = {
+    ("solidity", "contract_declaration"): "class",
+    ("solidity", "library_declaration"): "class",
+    # The word "constructor" contains "struct", which the rule below
+    # would read as a class.
+    ("solidity", "constructor_definition"): "function",
+    ("solidity", "struct_declaration"): "type",
+    ("solidity", "enum_declaration"): "type",
+    ("solidity", "event_definition"): "type",
+    ("solidity", "error_declaration"): "type",
+    ("fortran", "module"): "module",
+    ("fortran", "submodule"): "module",
+    ("fortran", "program"): "module",
+    ("fortran", "interface"): "interface",
+    ("fortran", "derived_type_definition"): "type",
+    ("pascal", "unit"): "module",
+    ("pascal", "program"): "module",
+    ("pascal", "library"): "module",
+}
+
+
 def symbol_kind(language: str, node_kind: str) -> str:
     """Map a tree-sitter node kind to MIMRY's symbol kind vocabulary."""
+    kind = _LANGUAGE_KINDS.get((language, node_kind))
+    if kind is not None:
+        return kind
     # A PowerShell method is named "class_..." by the grammar but is a
     # function, not a class.
     if node_kind == "class_method_definition":
@@ -562,6 +651,9 @@ def _definition_kind(language: str, node: Any, source: bytes) -> str:
         return _ELIXIR_KINDS.get(_elixir_head(node, source), "function")
     if language == "r" and node.type == "call":
         return "class"
+    if language == "pascal" and node.type == "declType":
+        # Only a class or interface type is a symbol (see the name).
+        return "interface" if _direct_child(node, "declIntf") is not None else "class"
     if language in ("ocaml", "ocaml_interface") and node.type == "let_binding":
         # A binding is a function with parameters, or with a fun or
         # function body. Any other value is a variable.
@@ -599,6 +691,17 @@ def _end_line(node: Any) -> int | None:
         return int(node.end_point.row) + 1
     except Exception:
         return None
+
+
+def _definition_end_line(language: str, node: Any) -> int | None:
+    """Last line of a definition. The Fortran grammar ends a unit's node
+    after the newline that closes it, which puts the end on the next
+    line at column 0, so that line is not counted.
+    """
+    if language == "fortran" and node.end_point.column == 0:
+        if node.end_point.row > node.start_point.row:
+            return int(node.end_point.row)
+    return _end_line(node)
 
 
 def _children(node: Any):
@@ -692,6 +795,12 @@ def _definition_name(language: str, node: Any, source: bytes) -> str | None:
         return _r_definition_name(node, source)
     if language == "julia":
         return _julia_definition_name(node, source)
+    if language == "solidity":
+        return _solidity_definition_name(node, source)
+    if language == "fortran":
+        return _fortran_definition_name(node, source)
+    if language == "pascal":
+        return _pascal_definition_name(node, source)
 
     try:
         named = node.child_by_field_name("name")
@@ -1717,6 +1826,240 @@ def _julia_base_names(head: Any, source: bytes) -> list[str]:
     return []
 
 
+# Builtins every contract may call. None of them names a repo function.
+_SOLIDITY_BUILTINS = frozenset(("require", "assert", "keccak256", "revert"))
+
+
+def _solidity_definition_name(node: Any, source: bytes) -> str | None:
+    """Name of a Solidity declaration. A constructor is named
+    `constructor`, and a fallback or receive function by its keyword.
+    """
+    if node.type == "constructor_definition":
+        return "constructor"
+    if node.type == "fallback_receive_definition":
+        for child in _children(node):
+            if child.type in ("fallback", "receive"):
+                return child.type
+        return None
+    return _field_text(node, "name", source)
+
+
+def _solidity_base_names(specifier: Any, source: bytes) -> list[str]:
+    """The base an inheritance clause names: `Base` in `is Base(x)`, and
+    the last part of `Lib.Base`.
+    """
+    ancestor = specifier.child_by_field_name("ancestor")
+    if ancestor is None:
+        return []
+    identifiers = [child for child in _children(ancestor) if child.type == "identifier"]
+    return [_text(source, identifiers[-1]).strip()] if identifiers else []
+
+
+def _solidity_import(node: Any, source: bytes) -> str | None:
+    """The path an import directive names, as written."""
+    path = node.child_by_field_name("source")
+    if path is None:
+        return None
+    return _unquote(_text(source, path)) or None
+
+
+def _solidity_call(node: Any, source: bytes) -> str | None:
+    """The function a call names, the event an emit names or the error a
+    revert names. `abi.encode*` and the global builtins are not calls
+    to a repo function.
+    """
+    if node.type == "call_expression":
+        callee = node.child_by_field_name("function")
+    elif node.type == "emit_statement":
+        callee = node.child_by_field_name("name")
+    else:
+        callee = node.child_by_field_name("error")
+    if callee is None:
+        return None
+    text = _text(source, callee).strip()
+    if text in _SOLIDITY_BUILTINS or text.startswith("abi."):
+        return None
+    return _expression_name(callee, source)
+
+
+def _fortran_definition_name(node: Any, source: bytes) -> str | None:
+    """Name in a unit's header: `geometry` in `module geometry`, `point`
+    in `type :: point`, `area` in `interface area`. An unnamed interface
+    block names nothing.
+    """
+    statement = next(
+        (child for child in _children(node) if child.type.endswith("_statement")), None
+    )
+    if statement is None:
+        return None
+    return _direct_child_text(statement, source, "name") or _direct_child_text(
+        statement, source, "type_name"
+    )
+
+
+def _fortran_base_names(statement: Any, source: bytes) -> list[str]:
+    """The parent in `type, extends(parent) :: child`."""
+    spec = _direct_child(statement, "base_type_specifier")
+    name = _direct_child_text(spec, source, "identifier") if spec is not None else None
+    return [name] if name else []
+
+
+def _fortran_import(node: Any, source: bytes) -> str | None:
+    """The module a use names, or the file an include loads. An include
+    path gets the "./" that marks a file, as a C include does, so the
+    resolver never reads it as a module name.
+    """
+    if node.type == "use_statement":
+        return _direct_child_text(node, source, "module_name")
+    path = node.child_by_field_name("path")
+    text = _unquote(_text(source, path)) if path is not None else ""
+    if not text:
+        return None
+    return text if text.startswith((".", "/")) else "./" + text
+
+
+def _fortran_call(node: Any, source: bytes) -> str | None:
+    """`f` in `f(x)`, which array indexing reads the same way, and the
+    subroutine a call statement names.
+    """
+    if node.type == "subroutine_call":
+        return _field_text(node, "subroutine", source)
+    return _direct_child_text(node, source, "identifier")
+
+
+def _pascal_definition_name(node: Any, source: bytes) -> str | None:
+    """Name of a unit, program or library, of a class or interface type,
+    or of a routine. A routine's name is the method name, so `Area` in
+    `TCircle.Area`.
+    """
+    if node.type in ("unit", "program", "library"):
+        return _direct_child_text(node, source, "moduleName")
+    if node.type == "declType":
+        kind = node.child_by_field_name("type")
+        if kind is None or kind.type not in ("declClass", "declIntf"):
+            return None
+        return _field_text(node, "name", source)
+    if node.type == "defProc":
+        header = node.child_by_field_name("header")
+        return _pascal_routine_name(header, source) if header is not None else None
+    return _pascal_routine_name(node, source)
+
+
+def _pascal_routine_name(node: Any, source: bytes) -> str | None:
+    """The name of a routine declaration: `Area` for a `TCircle.Area`
+    header, which the grammar wraps in a genericDot.
+    """
+    name = node.child_by_field_name("name")
+    if name is not None and name.type == "genericDot":
+        name = name.child_by_field_name("rhs")
+    if name is None:
+        return None
+    return _text(source, name).strip() or None
+
+
+def _pascal_owner(node: Any, source: bytes) -> str | None:
+    """The class a routine belongs to: `TCircle` in `TCircle.Area`, or
+    the class type whose declaration holds the routine.
+    """
+    if node.type == "defProc":
+        header = node.child_by_field_name("header")
+        name = header.child_by_field_name("name") if header is not None else None
+        if name is None or name.type != "genericDot":
+            return None
+        return _field_text(name, "lhs", source)
+    owner = node.parent
+    while owner is not None and owner.type not in ("declType", "defProc"):
+        owner = owner.parent
+    if owner is None or owner.type != "declType":
+        return None
+    return _field_text(owner, "name", source)
+
+
+def _pascal_key(node: Any, source: bytes) -> tuple:
+    """(owner, name), without case: a method body and its declaration
+    share it.
+    """
+    owner = _pascal_owner(node, source)
+    name = _pascal_definition_name(node, source)
+    return (owner.lower() if owner else owner, name.lower() if name else name)
+
+
+def _pascal_body_keys(root_node: Any, source: bytes) -> set:
+    """Key of every routine that has a body in this file."""
+    return {_pascal_key(node, source) for node in _walk(root_node) if node.type == "defProc"}
+
+
+def _pascal_is_forward(node: Any, source: bytes, bodies: set) -> bool:
+    """True for a routine declaration that is not a symbol of its own:
+    the header copy inside a body, or a declaration whose body is in
+    this file. The body is the symbol, since its lines are the ones
+    worth reading.
+    """
+    if node.type != "declProc":
+        return False
+    if node.parent is not None and node.parent.type == "defProc":
+        return True
+    return _pascal_key(node, source) in bodies
+
+
+_PASCAL_IN_PATH = re.compile(r"in\s*'([^']*)'")
+
+
+def _only_pascal_in_clauses(lang: str, root: Any, source: bytes) -> bool:
+    """True when a Pascal tree's only errors are `in 'path'` clauses,
+    which this grammar does not parse. The rest of the file is sound, so
+    it is read. Any other error still fails the file.
+    """
+    if lang != "pascal":
+        return False
+    errors = [node for node in _walk(root) if node.type == "ERROR" or node.is_missing]
+    return bool(errors) and all(
+        node.type == "ERROR" and _PASCAL_IN_PATH.fullmatch(_text(source, node).strip())
+        for node in errors
+    )
+
+
+def _pascal_import(node: Any, source: bytes) -> list[str] | None:
+    """Every unit a uses clause names. `uses X in 'path'` names the path
+    instead. The grammar leaves the `in` clause as an ERROR node beside
+    the unit, so the path is read from that node's text.
+    """
+    names: list[str] = []
+    for child in _children(node):
+        if child.type == "moduleName":
+            names.append(_text(source, child).strip())
+        elif child.type == "ERROR" and names:
+            clause = _PASCAL_IN_PATH.fullmatch(_text(source, child).strip())
+            if clause:
+                names[-1] = clause.group(1).replace("\\", "/")
+    return [name for name in names if name] or None
+
+
+def _pascal_base_names(declaration: Any, source: bytes) -> list[str]:
+    """The ancestors in `class(TShape, IFoo)`, in order."""
+    names = []
+    for child in _children(declaration):
+        if child.type == "typeref":
+            name = _direct_child_text(child, source, "identifier")
+            if name:
+                names.append(name)
+    return names
+
+
+def _pascal_call(node: Any, source: bytes) -> str | None:
+    """`Foo` in `Foo(x)`, `Method` in `Obj.Method(x)`, and `Create` in
+    `inherited Create`.
+    """
+    if node.type == "inherited":
+        return _direct_child_text(node, source, "identifier")
+    entity = node.child_by_field_name("entity")
+    if entity is not None and entity.type == "exprDot":
+        entity = entity.child_by_field_name("rhs")
+    if entity is None or entity.type != "identifier":
+        return None
+    return _text(source, entity).strip() or None
+
+
 def _generic_import_module(lang: str, node: Any, source: bytes) -> str | None:
     """Generic extraction: strings, identifiers, or regex parsing."""
     import_text = _text(source, node)
@@ -1854,6 +2197,9 @@ _IMPORT_READERS = {
     "ocaml_interface": _ocaml_import,
     "r": _r_import,
     "julia": _julia_import,
+    "solidity": _solidity_import,
+    "fortran": _fortran_import,
+    "pascal": _pascal_import,
 }
 
 
@@ -2015,6 +2361,25 @@ def _perl_call(node: Any, source: bytes) -> str | None:
     return name if _PERL_NAME.fullmatch(name) else None
 
 
+# Base names a heritage node names, for the languages with their own
+# reader. Other languages use _base_type_names.
+_BASE_READERS = {
+    "dart": _dart_base_names,
+    "julia": _julia_base_names,
+    "solidity": _solidity_base_names,
+    "fortran": _fortran_base_names,
+    "pascal": _pascal_base_names,
+}
+
+
+def _heritage_names(lang: str, node: Any, source: bytes) -> list[str]:
+    """The base types a heritage node names."""
+    reader = _BASE_READERS.get(lang)
+    if reader is not None:
+        return reader(node, source)
+    return _base_type_names(node, source)
+
+
 _CALL_READERS = {
     "bash": _bash_call,
     "powershell": _powershell_call,
@@ -2028,6 +2393,9 @@ _CALL_READERS = {
     "ocaml_interface": _ocaml_call,
     "r": _r_call,
     "julia": _julia_call,
+    "solidity": _solidity_call,
+    "fortran": _fortran_call,
+    "pascal": _pascal_call,
 }
 
 
@@ -2273,12 +2641,15 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
         else ((node, None) for node in _walk(root_node))
     )
     perl_packages = _perl_packages(root_node, source) if lang == "perl" else []
+    pascal_bodies = _pascal_body_keys(root_node, source) if lang == "pascal" else set()
     for node, category in facts:
         kind = node.type
 
         # Definitions
         if category in (None, "definitions") and kind in node_types["definitions"]:
             name = _definition_name(lang, node, source)
+            if lang == "pascal" and _pascal_is_forward(node, source, pascal_bodies):
+                name = None
             if name:  # Skip if no name found
                 span = _definition_span(lang, node)
                 line = _line(span)
@@ -2291,7 +2662,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                             "name": name,
                             "kind": _definition_kind(lang, node, source),
                             "line_start": line,
-                            "line_end": _end_line(span),
+                            "line_end": _definition_end_line(lang, span),
                             "exported": exported,
                         }
                     )
@@ -2301,12 +2672,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                     # for them.
                     for child in _children(node):
                         if child.type in base_kinds:
-                            if lang == "dart":
-                                bases = _dart_base_names(child, source)
-                            elif lang == "julia":
-                                bases = _julia_base_names(child, source)
-                            else:
-                                bases = _base_type_names(child, source)
+                            bases = _heritage_names(lang, child, source)
                             for base in bases:
                                 inherits.append({"type": name, "base": base, "line": line})
                     if lang == "powershell" and kind == "class_statement":
@@ -2343,7 +2709,7 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
         definitions = _merge_equations(definitions, owners)
 
     # Check for parse errors
-    if root_node.has_error:
+    if root_node.has_error and not _only_pascal_in_clauses(lang, root_node, source):
         return {
             "definitions": definitions,
             "imports": imports,

@@ -57,6 +57,7 @@ def resolve_imports(
     dart_packages: dict[str, list[str]] | None = None,
     go_modules: dict[str, list[str]] | None = None,
     ts_paths: dict[str, dict] | None = None,
+    fortran_modules: dict[str, list[str]] | None = None,
 ) -> list[dict]:
     """Resolve import strings to repo-relative target files.
 
@@ -73,6 +74,8 @@ def resolve_imports(
             can link to one result per .go file in that package.
         ts_paths: Effective tsconfig/jsconfig alias table per config
             folder, from tsconfig.build_ts_paths.
+        fortran_modules: Lower-cased Fortran module name to the files
+            that define a module of that name, for `use` statements.
 
     Returns:
         Sorted list of {"importer": str, "target": str,
@@ -98,6 +101,7 @@ def resolve_imports(
 
     # Python package roots (src/ layouts) share one lookup per pass.
     package_roots = _build_package_roots(rel_paths)
+    pascal_units = _build_pascal_units(rel_paths)
 
     for importer, module_list in imports.items():
         is_go = language_for(importer, overrides) == "go"
@@ -115,6 +119,8 @@ def resolve_imports(
                     package_roots,
                     dart_packages,
                     ts_paths=ts_paths,
+                    fortran_modules=fortran_modules,
+                    pascal_units=pascal_units,
                 )
                 targets = [target] if target else []
             for target in targets:
@@ -141,6 +147,8 @@ def _resolve_import(
     package_roots: dict | None = None,
     dart_packages: dict[str, list[str]] | None = None,
     ts_paths: dict[str, dict] | None = None,
+    fortran_modules: dict[str, list[str]] | None = None,
+    pascal_units: dict[str, list[str]] | None = None,
 ) -> dict | None:
     """Try to resolve a single import against available paths.
 
@@ -164,6 +172,10 @@ def _resolve_import(
         if language not in _DIRECTORY_IMPORT_LANGUAGES:
             return None
         module += "/"
+    if language == "fortran":
+        return _resolve_fortran(importer, module, rel_paths, fortran_modules or {})
+    if language == "pascal":
+        return _resolve_pascal(importer, module, rel_paths, pascal_units or {})
     if language in _SCRIPT_RESOLVERS:
         return _SCRIPT_RESOLVERS[language](importer, module, rel_paths, exact_lookup)
     if language == "dart":
@@ -392,6 +404,79 @@ def _resolve_r(importer: str, module: str, rel_paths: set[str], exact_lookup: di
     return found
 
 
+def _resolve_solidity(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """`./x.sol` and `../x.sol` are relative to the importing file.
+    Any other path is tried from the repo root, then as a package under
+    node_modules/ or lib/, then as a Foundry library, where
+    `forge-std/Test.sol` is lib/forge-std/src/Test.sol. remappings.txt
+    is not read, so a renamed prefix finds nothing.
+    """
+    if module.startswith(("./", "../")):
+        return _resolve_script_path(importer, module, rel_paths)
+    package, _, rest = module.partition("/")
+    candidates = [module, f"node_modules/{module}", f"lib/{module}"]
+    if rest:
+        candidates.append(f"lib/{package}/src/{rest}")
+    for candidate in candidates:
+        candidate = posixpath.normpath(candidate)
+        if candidate in rel_paths:
+            return {"path": candidate, "confidence": "INFERRED"}
+    return None
+
+
+# Modules the compiler ships. No repo file defines them.
+_FORTRAN_INTRINSIC_MODULES = frozenset(("iso_fortran_env", "iso_c_binding", "omp_lib", "mpi"))
+
+
+def _resolve_fortran(
+    importer: str, module: str, rel_paths: set[str], modules: dict[str, list[str]]
+) -> dict | None:
+    """`use name` is the one file that defines `module name`, compared
+    without case. An include path (marked with "./" or "/") is relative
+    to the importing file. Intrinsic modules never resolve.
+    """
+    if module.startswith(("./", "../", "/")):
+        return _resolve_script_path(importer, module, rel_paths)
+    name = module.lower()
+    if name in _FORTRAN_INTRINSIC_MODULES or name.startswith("ieee_"):
+        return None
+    matches = modules.get(name, [])
+    if len(matches) == 1:
+        return {"path": matches[0], "confidence": "INFERRED"}
+    return None
+
+
+# Pascal source files, which name a unit after their file.
+_PASCAL_UNIT_EXTENSIONS = (".pas", ".pp")
+
+
+def _build_pascal_units(rel_paths: set[str]) -> dict[str, list[str]]:
+    """Lower-cased unit name to its .pas and .pp files."""
+    units: dict[str, list[str]] = {}
+    for path in sorted(rel_paths):
+        stem, ext = posixpath.splitext(posixpath.basename(path))
+        if ext.lower() in _PASCAL_UNIT_EXTENSIONS:
+            units.setdefault(stem.lower(), []).append(path)
+    return units
+
+
+def _resolve_pascal(
+    importer: str, module: str, rel_paths: set[str], units: dict[str, list[str]]
+) -> dict | None:
+    """`uses X in 'path'` is a path relative to the importing file. A
+    unit name `Foo.Bar` is the one file `Foo.Bar.pas` or `.pp` anywhere
+    in the repo, compared without case.
+    """
+    if "/" in module or module.lower().endswith((".pas", ".pp", ".inc")):
+        return _resolve_script_path(importer, module, rel_paths)
+    matches = units.get(module.lower(), [])
+    if len(matches) == 1:
+        return {"path": matches[0], "confidence": "INFERRED"}
+    return None
+
+
 def _resolve_julia(
     importer: str, module: str, rel_paths: set[str], exact_lookup: dict
 ) -> dict | None:
@@ -540,6 +625,7 @@ _SCRIPT_RESOLVERS = {
     "ocaml_interface": _resolve_ocaml,
     "r": _resolve_r,
     "julia": _resolve_julia,
+    "solidity": _resolve_solidity,
 }
 
 
