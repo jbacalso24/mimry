@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from mimry.cli import _configure_console
+from mimry import configure_console
 from mimry.state import atomic_write_text
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +37,7 @@ def test_piped_console_writes_utf8_even_when_the_locale_is_cp1252(tmp_path, monk
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(sys, "stderr", err)
 
-    _configure_console()
+    configure_console()
     print("piped path: \u96ea caf\u00e9 \udc80")
     out.flush()
     err.flush()
@@ -60,7 +60,7 @@ def test_terminal_streams_keep_their_encoding(monkeypatch):
     monkeypatch.setattr(sys, "stdout", out)
     monkeypatch.setattr(sys, "stderr", err)
 
-    _configure_console()
+    configure_console()
 
     assert out.encoding == "cp1252"
     assert err.encoding == "cp1252"

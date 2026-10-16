@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import sys
 
+from mimry import configure_console
+
 
 def _positive_int(value: str) -> int:
     import argparse
@@ -551,21 +553,6 @@ def _cmd_mcp(a) -> int:
     return 0
 
 
-def _configure_console() -> None:
-    # Piped output (agent shells, Git Bash, CI) is UTF-8 everywhere, so
-    # names and symbols come through exactly. A terminal keeps its
-    # encoding: Python already writes Unicode to a Windows console via
-    # the console API.
-    for stream in (sys.stdout, sys.stderr):
-        reconfigure = getattr(stream, "reconfigure", None)
-        if not callable(reconfigure):
-            continue
-        if stream.isatty():
-            reconfigure(errors="backslashreplace")
-        else:
-            reconfigure(encoding="utf-8", errors="backslashreplace")
-
-
 def _hook_check_root(args) -> str | None:
     """Root if argv is exactly ``[--root R] hook-check``, else None."""
     rest = list(args)
@@ -584,7 +571,7 @@ def main(argv=None):
 
         from .hook import cmd_hook_check
 
-        _configure_console()
+        configure_console()
         return cmd_hook_check(SimpleNamespace(root=hook_root))
     from pathlib import Path
 
@@ -601,7 +588,7 @@ def main(argv=None):
     )
     from .storage import RootIdentityError, copied_folder_lines
 
-    _configure_console()
+    configure_console()
     a = build_parser().parse_args(argv)
     from . import ui
 

@@ -16,8 +16,7 @@ import sys
 import threading
 from collections.abc import Callable
 
-from mimry import __version__
-from mimry.cli import _configure_console
+from mimry import __version__, configure_console
 from mimry.mcp_protocol import registered_names, serve
 
 # The tools listed by default. MIMRY_MCP_TOOLS=all lists every tool.
@@ -103,7 +102,7 @@ def _start_tool_import(select: Callable[[], object] | None = None):
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run the MIMRY MCP stdio server.")
     parser.parse_args(sys.argv[1:] if argv is None else argv)
-    _configure_console()
+    configure_console()
     select = _selection(os.environ.get("MIMRY_MCP_TOOLS"))
     load_tools = _start_tool_import(select)
     info = {"name": "MIMRY", "version": __version__, "instructions": INSTRUCTIONS}
