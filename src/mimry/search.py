@@ -142,6 +142,12 @@ def _fts_match_query(terms: list[str]) -> str:
 
 LONG_QUERY_TERMS = 24
 
+# BM25 weight of the words from the test names that reach a file. Low on
+# purpose: they describe behaviour in the words issues use, but they are
+# not the file's own text. Zero writes no column at all, because fts5
+# length normalisation counts zero-weight columns too.
+TEST_TERMS_WEIGHT = 0.3
+
 
 def bm25_scale(term_count: int) -> float:
     """How much to scale the BM25 boost for a query this long.
@@ -162,11 +168,11 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
     try:
         con = connect(idx)
         # First weight is unindexed file_id; rel_path, filename,
-        # extension, content_hint, metadata_text, body follow.
+        # extension, content_hint, metadata_text, body, then test_terms.
         rows = con.execute(
-            "select file_id, bm25(files_fts, 0.0, 1.0, 1.4, 0.4, 0.8, 0.8, 0.8) as rank "
+            "select file_id, bm25(files_fts, 0.0, 1.0, 1.4, 0.4, 0.8, 0.8, 0.8, ?) as rank "
             "from files_fts where files_fts match ? order by rank, rel_path, file_id limit 80",
-            (match,),
+            (TEST_TERMS_WEIGHT, match),
         ).fetchall()
         con.close()
     except Exception:

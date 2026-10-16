@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
@@ -28,6 +29,7 @@ from .core.resolve import (
 )
 from .core.tsconfig import build_ts_paths
 from .history import update_history
+from .intent import is_test_file, text_terms
 from .paths import graph_output_dir, idx_path, now, pointer_file
 from .pieces import PIECES_FTS_CREATE, file_pieces
 from .reuse import (
@@ -52,6 +54,7 @@ from .scanner import (
     scan_stats,
     worktree_fingerprint,
 )
+from .search import TEST_TERMS_WEIGHT
 from .security import is_text, sanitize_data
 from .semantic import build_semantic_index, file_semantic_chunks
 from .settings import IndexSettings, index_settings
@@ -729,6 +732,83 @@ def _build_core_graph(
     return _finalize_graph(graph)
 
 
+# Words that say nothing about behaviour in a test name.
+_TEST_NAME_STOPWORDS = frozenset({"test", "tests", "should", "it"})
+TEST_TERMS_CAP = 300
+# Experiment: also credit every file a test file imports.
+TEST_TERMS_FROM_IMPORTS = True
+
+
+def _is_test_name(name: str) -> bool:
+    return name.startswith(("test_", "Test")) or name.endswith(("Test", "_test"))
+
+
+def _test_name_words(name: str) -> frozenset[str]:
+    return frozenset(word for word in text_terms(name) if len(word) >= 3) - _TEST_NAME_STOPWORDS
+
+
+def _test_terms_by_file_id(files, symbols, graph_edges) -> dict[str, str]:
+    """Words of the test names that reach each non-test file.
+
+    A test symbol reaches the non-test files its outgoing call and
+    reference edges point at (one hop). A test file reaches the
+    non-test files it imports, and each test name in it counts for all
+    of them. Each file gets its distinct words, most frequent first,
+    capped at TEST_TERMS_CAP.
+    """
+    is_test = {f["file_id"]: is_test_file(f["rel_path"]) for f in files}
+    file_of_symbol = {s["symbol_id"]: s["file_id"] for s in symbols}
+    words_of = {
+        s["symbol_id"]: _test_name_words(s["name"])
+        for s in symbols
+        if is_test.get(s["file_id"]) and _is_test_name(s["name"])
+    }
+    if not words_of:
+        return {}
+    test_symbols_of_file: dict[str, list[str]] = {}
+    for sid in words_of:
+        test_symbols_of_file.setdefault(file_of_symbol[sid], []).append(sid)
+
+    def file_of(node: str) -> str | None:
+        kind, _, ident = node.partition(":")
+        if kind == "file":
+            return ident
+        if kind == "symbol":
+            return file_of_symbol.get(ident)
+        return None
+
+    reached: set[tuple[str, str]] = set()  # (non-test file ID, test symbol ID)
+    imported: dict[str, set[str]] = {}  # test file ID -> non-test file IDs it imports
+    for edge in graph_edges:
+        source, relation = edge["source"], edge["relation"]
+        if source.startswith("symbol:") and relation in ("calls", "references"):
+            sid = source[len("symbol:") :]
+            target_file = file_of(edge["target"])
+            if sid in words_of and target_file and not is_test.get(target_file, True):
+                reached.add((target_file, sid))
+        elif source.startswith("file:") and relation == "imports":
+            file_id = source[len("file:") :]
+            target_file = file_of(edge["target"])
+            if is_test.get(file_id) and target_file and not is_test.get(target_file, True):
+                imported.setdefault(file_id, set()).add(target_file)
+    for test_file, targets in imported.items() if TEST_TERMS_FROM_IMPORTS else ():
+        for sid in test_symbols_of_file.get(test_file, []):
+            reached.update((target, sid) for target in targets)
+
+    counts: dict[str, Counter] = {}
+    for target_file, sid in reached:
+        counts.setdefault(target_file, Counter()).update(words_of[sid])
+    return {
+        file_id: " ".join(
+            word
+            for word, _count in sorted(counter.items(), key=lambda item: (-item[1], item[0]))[
+                :TEST_TERMS_CAP
+            ]
+        )
+        for file_id, counter in counts.items()
+    }
+
+
 def _remove_tree(path: Path) -> None:
     """Remove a cache tree completely or fail.
 
@@ -1038,6 +1118,10 @@ def write_index(root, ptr, *, full: bool = False):
         try:
             previous = Path(ptr["indexPath"])
             _seed_database(previous, staging)
+            # Zero weight writes no column at all (TEST_TERMS_WEIGHT).
+            test_terms = (
+                _test_terms_by_file_id(files, symbols, graph["edges"]) if TEST_TERMS_WEIGHT else {}
+            )
             con = connect(staging)
             with con:
                 con.execute("delete from files")
@@ -1069,7 +1153,7 @@ def write_index(root, ptr, *, full: bool = False):
                     )
                     fts_body = record.get("fts_body", {}).get(file_rec["file_id"], "")
                     con.execute(
-                        "insert into files_fts values(?,?,?,?,?,?,?)",
+                        "insert into files_fts values(?,?,?,?,?,?,?,?)",
                         (
                             file_rec["file_id"],
                             file_rec["rel_path"],
@@ -1078,6 +1162,7 @@ def write_index(root, ptr, *, full: bool = False):
                             file_rec["content_hint"],
                             file_rec["metadata_text"],
                             fts_body,
+                            test_terms.get(file_rec["file_id"], ""),
                         ),
                     )
                     for start, end, name, body in record.get("pieces", {}).get(
