@@ -39,11 +39,29 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.4.1">
+<header class="release-meta">
+<h2>0.4.1</h2>
+<p class="release-date"><time datetime="2026-10-16">16 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.4.1">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.4.1/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Upgrade notes</h3>
+<ul><li>Upgrade with <code>mimry upgrade</code>; it refreshes the skills, always-on rules and hooks you installed. The first command after upgrading rebuilds the index, so imports resolve more precisely and the lines to read first are recomputed.</li><li>Commands now exit 1 when they find nothing and 2 on a blank task or query, instead of 0 (<a href="https://github.com/jbacalso24/mimry/pull/298">#298</a>). Scripts that treated any non-zero exit as an error should allow exit 1 for <code>find</code>, <code>related</code> and <code>semantic</code>.</li><li><code>mimry_impact</code> is now one of the default MCP tools (<a href="https://github.com/jbacalso24/mimry/pull/300">#300</a>).</li></ul>
+<h3>Fixes</h3>
+<ul><li>Every query command indexes or builds the graph first when it is missing, instead of answering from nothing (<a href="https://github.com/jbacalso24/mimry/pull/295">#295</a>).</li><li>Output piped to an agent or a file is UTF-8 on every platform (<a href="https://github.com/jbacalso24/mimry/pull/296">#296</a>).</li><li>A Python standard-library import no longer links to a same-named module inside a package, and TypeScript <code>from '.'</code> and <code>from '..'</code> imports resolve to the folder's index file (<a href="https://github.com/jbacalso24/mimry/pull/297">#297</a>).</li><li>A missing name or file, or a search with no matches, exits 1; a blank task or query exits 2 and writes nothing; MCP marks real failures with <code>isError</code>, and <code>path</code> no longer guesses for a file that is not indexed (<a href="https://github.com/jbacalso24/mimry/pull/298">#298</a>).</li><li>The hook finds names that start with an underscore, stays quiet for globs like <code>**/*.py</code>, and never answers with a Markdown heading or SQL table (<a href="https://github.com/jbacalso24/mimry/pull/299">#299</a>).</li><li>The installed skill names only MCP tools the server lists, <code>install --status</code> respects <code>--no-mcp</code>, and <code>uninstall</code> removes only what MIMRY created and says what it did; <code>uninstall --git-ignore</code> removes MIMRY's global ignore lines (<a href="https://github.com/jbacalso24/mimry/pull/300">#300</a>).</li><li>Suggested verification commands come only from the project's own manifests, never from install snippets in README files (<a href="https://github.com/jbacalso24/mimry/pull/303">#303</a>).</li><li>Files over the 1 MB limit are counted and named, grammar failures show their real cause, and <code>status</code> totals stay right after a rename (<a href="https://github.com/jbacalso24/mimry/pull/304">#304</a>).</li><li><code>impact --changed</code> includes the tests that reach a changed file when the changed function has no callers (<a href="https://github.com/jbacalso24/mimry/pull/305">#305</a>).</li><li>Feedback notes redact AWS, GitHub and Slack tokens and private key headers without a <code>key=</code> label (<a href="https://github.com/jbacalso24/mimry/pull/306">#306</a>).</li><li>The lines to read first cover the function that holds the code, instead of a stray piece next to it (<a href="https://github.com/jbacalso24/mimry/pull/308">#308</a>).</li></ul>
+<h3>Other changes</h3>
+<ul><li>The MIMRY logo in the README, on the website and as the social preview (<a href="https://github.com/jbacalso24/mimry/pull/307">#307</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.4.0">
 <header class="release-meta">
 <h2>0.4.0</h2>
-<p class="release-date"><time datetime="2026-10-16">16 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-16">16 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.4.0">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.4.0/">PyPI</a></li>

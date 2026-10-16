@@ -2,6 +2,34 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.4.1 - 2026-10-16
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`; it refreshes the skills, always-on rules and hooks you installed.
+  The first command after upgrading rebuilds the index, so imports resolve more precisely and the lines to read first are recomputed.
+- Commands now exit 1 when they find nothing and 2 on a blank task or query, instead of 0 ([#298](https://github.com/jbacalso24/mimry/pull/298)).
+  Scripts that treated any non-zero exit as an error should allow exit 1 for `find`, `related` and `semantic`.
+- `mimry_impact` is now one of the default MCP tools ([#300](https://github.com/jbacalso24/mimry/pull/300)).
+
+### Fixes
+
+- Every query command indexes or builds the graph first when it is missing, instead of answering from nothing ([#295](https://github.com/jbacalso24/mimry/pull/295)).
+- Output piped to an agent or a file is UTF-8 on every platform ([#296](https://github.com/jbacalso24/mimry/pull/296)).
+- A Python standard-library import no longer links to a same-named module inside a package, and TypeScript `from '.'` and `from '..'` imports resolve to the folder's index file ([#297](https://github.com/jbacalso24/mimry/pull/297)).
+- A missing name or file, or a search with no matches, exits 1; a blank task or query exits 2 and writes nothing; MCP marks real failures with `isError`, and `path` no longer guesses for a file that is not indexed ([#298](https://github.com/jbacalso24/mimry/pull/298)).
+- The hook finds names that start with an underscore, stays quiet for globs like `**/*.py`, and never answers with a Markdown heading or SQL table ([#299](https://github.com/jbacalso24/mimry/pull/299)).
+- The installed skill names only MCP tools the server lists, `install --status` respects `--no-mcp`, and `uninstall` removes only what MIMRY created and says what it did; `uninstall --git-ignore` removes MIMRY's global ignore lines ([#300](https://github.com/jbacalso24/mimry/pull/300)).
+- Suggested verification commands come only from the project's own manifests, never from install snippets in README files ([#303](https://github.com/jbacalso24/mimry/pull/303)).
+- Files over the 1 MB limit are counted and named, grammar failures show their real cause, and `status` totals stay right after a rename ([#304](https://github.com/jbacalso24/mimry/pull/304)).
+- `impact --changed` includes the tests that reach a changed file when the changed function has no callers ([#305](https://github.com/jbacalso24/mimry/pull/305)).
+- Feedback notes redact AWS, GitHub and Slack tokens and private key headers without a `key=` label ([#306](https://github.com/jbacalso24/mimry/pull/306)).
+- The lines to read first cover the function that holds the code, instead of a stray piece next to it ([#308](https://github.com/jbacalso24/mimry/pull/308)).
+
+### Other changes
+
+- The MIMRY logo in the README, on the website and as the social preview ([#307](https://github.com/jbacalso24/mimry/pull/307)).
+
 ## 0.4.0 - 2026-10-16
 
 ### Upgrade notes
