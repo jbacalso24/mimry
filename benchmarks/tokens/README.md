@@ -17,6 +17,8 @@ A read costs the tokens of the file's first 2,000 lines, like a coding agent's f
 An agent stops once it has read every gold file, or after 10 reads.
 Tokens are counted with tiktoken's `o200k_base` encoding.
 Indexing is not charged, because it runs locally once and uses no model tokens.
+Per-task results list each read in `read_log`, with its path, tokens and, for a partial read, the line spans it showed.
+Each agent's `search` field gives the commands its search step runs and their tokens.
 
 Some agents, Codex among them, do not open whole files: they find lines with `grep -n` and read a window around each with `sed -n`.
 `--reads sed` measures that instead.

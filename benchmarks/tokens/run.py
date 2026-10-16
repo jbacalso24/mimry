@@ -109,10 +109,19 @@ def read_cost(repo: Path, rel: str) -> int:
     return tokens("\n".join(text.splitlines()[:READ_LINES]))
 
 
+def grep_command(word: str) -> list[str]:
+    return ["git", "grep", "-c", "-i", "-I", "-F", word]
+
+
+def grep_commands(task: str) -> list[str]:
+    """The keyword searches grep_search runs, as they would be typed."""
+    return [" ".join(grep_command(word)) for word in keywords(task)]
+
+
 def grep_search(repo: Path, task: str) -> tuple[int, list[str]]:
     cost, hits, counts = 0, {}, {}
     for word in keywords(task):
-        out = run(["git", "grep", "-c", "-i", "-I", "-F", word], repo)
+        out = run(grep_command(word), repo)
         lines = out.splitlines()[:GREP_OUTPUT_LINES]
         cost += tokens("\n".join(lines))
         for line in lines:
@@ -193,12 +202,12 @@ def keyword_lines(repo: Path, rel: str, words: list[str]) -> tuple[int, list[int
 
 def window_read(
     repo: Path, rel: str, anchors: list[int], changed: set[int] | None, width: int
-) -> tuple[int, bool]:
-    """Cost of sed windows around anchors; whether one shows change."""
+) -> tuple[int, bool, list[list[int]]]:
+    """Cost, change shown, and line spans of the sed windows."""
     try:
         lines = (repo / rel).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return 0, False
+        return 0, False, []
     spans: list[list[int]] = []
     for anchor in sorted(anchors or [1 + width]):
         start, end = max(1, anchor - width), min(len(lines), anchor + width)
@@ -210,17 +219,17 @@ def window_read(
     shown = changed is None or any(
         start <= line <= end for start, end in spans for line in changed
     )
-    return tokens(text), shown
+    return tokens(text), shown, spans
 
 
 def sed_read(
     repo: Path, path: str, sed: dict, anchors: list[int] | None = None
-) -> tuple[int, bool]:
+) -> tuple[int, bool, list[list[int]]]:
     cost = 0
     if not anchors:
         cost, anchors = keyword_lines(repo, path, sed["words"])
-    spent, shown = window_read(repo, path, anchors, sed["changed"].get(path), sed["width"])
-    return cost + spent, shown
+    spent, shown, spans = window_read(repo, path, anchors, sed["changed"].get(path), sed["width"])
+    return cost + spent, shown, spans
 
 
 def walk(
@@ -238,16 +247,17 @@ def walk(
     followed by a whole-file read of it, which costs a second read.
     """
     custom_read = read is not None
-    read = read or (lambda path: (read_cost(repo, path), True))
+    read = read or (lambda path: (read_cost(repo, path), True, None))
+    gold_set = set(gold)
     remaining, opened, cost, first_gold, missed = set(gold), [], search_cost, None, 0
-    reads = 0
+    reads, read_log, fallback_tokens = 0, [], None
     queue = list(order)
     while remaining and reads < READ_BUDGET:
         if not queue:
             if fallback is None:
                 break
             extra, more = fallback()
-            fallback, cost = None, cost + extra
+            fallback, cost, fallback_tokens = None, cost + extra, extra
             queue = [p for p in more if p not in opened]
             continue
         path = queue.pop(0)
@@ -255,13 +265,21 @@ def walk(
             continue
         opened.append(path)
         reads += 1
-        spent, shown = read(path)
+        spent, shown, spans = read(path)
         cost += spent
+        entry = {"path": path, "tokens": spent, "gold": path in gold_set, "shown": shown}
+        if spans is not None:
+            entry["lines"] = [list(span) for span in spans]
+        read_log.append(entry)
         if then_whole and not shown and path in remaining and reads < READ_BUDGET:
             missed += 1
             reads += 1
-            spent, shown = read_cost(repo, path), True
+            spent = read_cost(repo, path)
             cost += spent
+            shown = True
+            read_log.append(
+                {"path": path, "tokens": spent, "gold": True, "shown": True, "whole": True}
+            )
         if path in remaining:
             if shown:
                 remaining.discard(path)
@@ -275,7 +293,11 @@ def walk(
         "first_gold_read": first_gold,
         "gold_found": len(gold) - len(remaining),
         "success": not remaining,
+        "read_log": read_log,
     }
+    if fallback_tokens is not None:
+        # The grep search run when the ranked list ran out.
+        result["fallback_tokens"] = fallback_tokens
     if custom_read:
         result["gold_missed"] = missed
     return result
@@ -316,17 +338,17 @@ def pack_ranges(pack: str) -> dict[str, list[tuple[int, int]]]:
 
 def range_read(
     repo: Path, rel: str, spans: list[tuple[int, int]], changed: set[int] | None
-) -> tuple[int, bool]:
-    """Cost of reading these line ranges; whether one shows a change."""
+) -> tuple[int, bool, list[tuple[int, int]]]:
+    """Cost, change shown, and line spans of these ranges."""
     try:
         lines = (repo / rel).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return 0, False
+        return 0, False, []
     text = "\n".join("\n".join(lines[start - 1 : end]) for start, end in spans)
     shown = changed is None or any(
         start <= line <= end for start, end in spans for line in changed
     )
-    return tokens(text), shown
+    return tokens(text), shown, spans
 
 
 def mimry_agent(
@@ -357,13 +379,14 @@ def mimry_agent(
 
         def read(path):
             if path not in listed:
-                return read_cost(repo, path), True
+                return read_cost(repo, path), True, None
             return range_read(repo, path, listed[path], changed.get(path))
 
+    search_cost = tokens(printed) + tokens(pack)
     result = walk(
         repo,
         task["gold"],
-        tokens(printed) + tokens(pack),
+        search_cost,
         order,
         lambda: grep_search(repo, task["task"]),
         read=read,
@@ -373,6 +396,7 @@ def mimry_agent(
         "index_ms": round(index_ms),
         "preflight_ms": round(preflight_ms),
         "ranking": rank_metrics(order, task["gold"]),
+        "search": {"commands": [f'mimry preflight "{task["task"]}"'], "tokens": search_cost},
     }
 
 
@@ -482,7 +506,10 @@ def main() -> int:
                 ranked,
                 read=sed and (lambda path, repo=repo, sed=sed: sed_read(repo, path, sed)),
             )
-            | {"ranking": rank_metrics(ranked, task["gold"])},
+            | {
+                "ranking": rank_metrics(ranked, task["gold"]),
+                "search": {"commands": grep_commands(task["task"]), "tokens": cost},
+            },
             "mimry": mimry_agent(
                 repo,
                 task,
