@@ -61,6 +61,12 @@ SEED_COUNT = 3
 # A seed with more non-gold neighbours keeps this many of them.
 NEIGHBOUR_SAMPLE = 200
 LINKED_SYMBOL_CAP = 10
+# Co-change reads at most this many commits up to the base commit.
+COCHANGE_COMMITS = 2000
+# A commit touching more files than this is a mass rename or reformat.
+COCHANGE_MAX_FILES = 50
+# Each seed keeps this many co-changed files in the record.
+COCHANGE_TOP = 30
 TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs"}
 CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
@@ -373,16 +379,118 @@ def neighbour_records(
     return records
 
 
+def cochange_history(repo: Path, base: str) -> dict:
+    """File lists of the commits at or before `base`.
+
+    A shallow clone would cut the history short, so co-change is skipped
+    with a reason instead of deepening the clone. Commits touching more
+    than COCHANGE_MAX_FILES files are left out and counted in `broad`.
+    """
+    try:
+        if run(["git", "rev-parse", "--is-shallow-repository"], repo).strip() == "true":
+            return {"skipped": "shallow clone"}
+        log = run(
+            [
+                "git",
+                "-c",
+                "core.quotePath=false",
+                "log",
+                "--no-merges",
+                "--name-only",
+                "--format=%x1e",
+                "-n",
+                str(COCHANGE_COMMITS),
+                base,
+            ],
+            repo,
+        )
+    except RuntimeError as exc:
+        return {"skipped": f"git log failed: {exc}"}
+    commits: list[list[str]] = []
+    broad = 0
+    for chunk in log.split("\x1e")[1:]:
+        files = [line for line in chunk.splitlines() if line.strip()]
+        if len(files) > COCHANGE_MAX_FILES:
+            broad += 1
+        else:
+            commits.append(files)
+    return {"commits": commits, "broad": broad}
+
+
+def cochange(
+    history: dict,
+    explained: list[tuple[str, str | None]],
+    gold: list[str],
+    graph: dict,
+) -> dict:
+    """Files that changed in the same commits as each of the top seeds.
+
+    `files` lists each seed's co-changed files, most often first, up to
+    COCHANGE_TOP. `gold_outside_top` gives the exact count of every gold
+    file outside the top 10 with each seed, so gold coverage does not
+    depend on that cut.
+    """
+    if "commits" not in history:
+        return history
+    rank = {path: position for position, (path, _) in enumerate(explained, 1)}
+    gold_set = set(gold)
+    seeds = [path for path, _ in explained[:SEED_COUNT]]
+    _, edges = _file_edges(graph)
+    linked: dict[str, set[str]] = defaultdict(set)
+    for source, target, _, _, _ in edges:
+        linked[source].add(target)
+        linked[target].add(source)
+    counts: dict[str, Counter] = {seed: Counter() for seed in seeds}
+    seed_commits: Counter = Counter()
+    for files in history["commits"]:
+        touched = set(files)
+        for seed in seeds:
+            if seed in touched:
+                seed_commits[seed] += 1
+                counts[seed].update(touched - {seed})
+    seed_records = []
+    for seed_rank, seed in enumerate(seeds, 1):
+        ordered = sorted(counts[seed].items(), key=lambda item: (-item[1], item[0]))
+        seed_records.append(
+            {
+                "seed": seed,
+                "seed_rank": seed_rank,
+                "seed_commits": seed_commits[seed],
+                "files": [
+                    {
+                        "file": path,
+                        "count": count,
+                        "is_gold": path in gold_set,
+                        "rank": rank.get(path),
+                        "is_test": _is_test(path),
+                        "in_graph_neighbours": path in linked[seed],
+                    }
+                    for path, count in ordered[:COCHANGE_TOP]
+                ],
+            }
+        )
+    outside = sorted(path for path in gold_set if rank.get(path) is None or rank[path] > TOP)
+    return {
+        "commits": len(history["commits"]),
+        "broad": history["broad"],
+        "seeds": seed_records,
+        "gold_outside_top": [
+            {"file": path, "counts": [counts[seed][path] for seed in seeds]} for path in outside
+        ],
+    }
+
+
 def diagnosis(
     explained: list[tuple[str, str | None]],
     gold: list[str],
     graph: dict | None = None,
     query: str = "",
+    history: dict | None = None,
 ) -> dict:
     """Where each gold file ranked within DIAGNOSE_DEPTH, how the gold
     files outside the top 10 connect to the top 10, the neighbours of
-    the top results, and why the top 10 and those gold files scored as
-    they did."""
+    the top results, the files that co-changed with the top results,
+    and why the top 10 and those gold files scored as they did."""
     rank = {path: position for position, (path, _) in enumerate(explained, 1)}
     keep = {path for path, _ in explained[:TOP]} | set(gold)
     gold_rank = {path: rank.get(path) for path in sorted(gold)}
@@ -392,6 +500,7 @@ def diagnosis(
         "gold_rank": gold_rank,
         "partners": partner_links(graph, gold, top, gold_rank),
         "neighbours": neighbour_records(graph, query, explained, gold),
+        "cochange": cochange(history or {"skipped": "no history"}, explained, gold, graph),
         "explain": [
             {"rank": position, "path": path, "score": line}
             for position, (path, line) in enumerate(explained, 1)
@@ -473,6 +582,7 @@ def run_instance(
         # The repo-local graph `mimry index` just wrote, read after the
         # lookup is timed.
         graph = load_graph(repo) if diagnose else None
+        history = cochange_history(repo, task["base_commit"]) if diagnose else None
     except (RuntimeError, OSError) as exc:
         return row | {"status": "error", "error": f"{stage} failed: {exc}"}
     return (
@@ -484,7 +594,11 @@ def run_instance(
             "lookup_ms": round(lookup_ms),
         }
         | score(ranked, task["gold"])
-        | ({"diagnosis": diagnosis(explained, task["gold"], graph, query)} if diagnose else {})
+        | (
+            {"diagnosis": diagnosis(explained, task["gold"], graph, query, history)}
+            if diagnose
+            else {}
+        )
     )
 
 
@@ -572,7 +686,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--diagnose",
         action="store_true",
-        help=f"Also record gold ranks to {DIAGNOSE_DEPTH} and the score line of each result",
+        help=(
+            f"Also record gold ranks to {DIAGNOSE_DEPTH}, the score line of each result,"
+            " and the neighbour and co-change features"
+        ),
     )
     parser.add_argument(
         "--merge", type=Path, nargs="+", help="Merge these shard files into --out and exit"

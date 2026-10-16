@@ -10,6 +10,11 @@ Non-gold neighbours are sampled by run.py, so each one stands for
 several: a seed's unsampled non-gold neighbours are spread evenly over
 the sampled ones. Gold neighbours are never sampled.
 
+The co-change section does the same for files that changed in the same
+commits as a top-3 result. A rule picks files outside the top 10, and
+precision is missing gold partners reached over those plus the non-gold
+files picked.
+
     uv run python benchmarks/localization/partner_report.py results.json
 """
 
@@ -91,6 +96,75 @@ def _percent(part: float, whole: float) -> str:
     return f"{100 * part / whole:.1f}%" if whole else "n/a"
 
 
+COCHANGE_COUNTS = (1, 2, 3, 5)
+COCHANGE_TOP_FILES = (1, 2)
+
+
+def _cochange_picks(cochange: dict, kind: str, n: int) -> tuple[set[str], set[str]]:
+    """The gold and non-gold files a co-change rule picks.
+
+    Only files outside the top 10 are picked.
+    ("count", n) picks files that changed with a seed in at least n
+    commits. ("top", n) picks the n most co-changed files of each seed.
+    Gold files come from `gold_outside_top`, which is exact. Other files
+    come from each seed's recorded list.
+    """
+    gold: set[str] = set()
+    other: set[str] = set()
+    if kind == "count":
+        for entry in cochange["gold_outside_top"]:
+            if max(entry["counts"], default=0) >= n:
+                gold.add(entry["file"])
+    for seed in cochange["seeds"]:
+        outside = [f for f in seed["files"] if f["rank"] is None or f["rank"] > TOP]
+        picked = [f for f in outside if f["count"] >= n] if kind == "count" else outside[:n]
+        for f in picked:
+            (gold if f["is_gold"] else other).add(f["file"])
+    return gold, other
+
+
+def _cochange_section(instances: list[dict]) -> list[str]:
+    """Co-change rule rows, for instances with a top-10 gold file."""
+    cases = []
+    for instance in instances:
+        diagnosis = instance.get("diagnosis") or {}
+        cochange = diagnosis.get("cochange") or {}
+        if instance.get("status") != "scored" or "seeds" not in cochange:
+            continue
+        gold_rank = diagnosis["gold_rank"]
+        if any(rank is not None and rank <= TOP for rank in gold_rank.values()):
+            missing = {path for path, rank in gold_rank.items() if rank is None or rank > TOP}
+            cases.append((cochange, missing))
+    total = sum(len(missing) for _, missing in cases)
+    lines = [
+        "",
+        "## Co-change partners",
+        "",
+        f"Instances with a gold file in the top 10 and co-change records: {len(cases)}.",
+        f"Missing gold partners: {total}.",
+        "",
+        "Gold partners are exact. Non-gold candidates come from each seed's recorded",
+        "list of 30, so at low counts they are a floor and precision is an upper bound.",
+        "",
+        "| Rule | Non-gold candidates | Precision | Missing partners reached |",
+        "|---|---:|---:|---:|",
+    ]
+    rules = [(f"count >= {n}", "count", n) for n in COCHANGE_COUNTS]
+    rules += [(f"top {n} per seed", "top", n) for n in COCHANGE_TOP_FILES]
+    for name, kind, n in rules:
+        reached = 0
+        other = 0
+        for cochange, missing in cases:
+            gold, picked_other = _cochange_picks(cochange, kind, n)
+            reached += len(gold & missing)
+            other += len(picked_other)
+        lines.append(
+            f"| {name} | {other} | {_percent(reached, reached + other)} "
+            f"| {reached} of {total} ({_percent(reached, total)}) |"
+        )
+    return lines
+
+
 def partner_features_report(results_path: Path | str) -> str:
     """The Markdown report for one --diagnose results file."""
     data = json.loads(Path(results_path).read_text(encoding="utf-8"))
@@ -119,6 +193,7 @@ def partner_features_report(results_path: Path | str) -> str:
             f"| {name} | {estimate:.0f} | {gold} | {_percent(gold, estimate)} "
             f"| {len(reached)} of {len(missing)} ({_percent(len(reached), len(missing))}) |"
         )
+    lines += _cochange_section(data["instances"])
     return "\n".join(lines) + "\n"
 
 

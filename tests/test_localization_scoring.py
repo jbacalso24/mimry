@@ -6,6 +6,7 @@ network: the dataset is never fetched here.
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -467,3 +468,153 @@ def test_partner_report_on_a_tiny_results_file(tmp_path):
     assert "| edge_count >= 2 | 1 | 1 | 100.0% | 1 of 1 (100.0%) |" in text
     assert "| name_stem_match | 2 | 0 | 0.0% | 0 of 1 (0.0%) |" in text
     assert "| edge_count >= 3 | 0 | 0 | n/a | 0 of 1 (0.0%) |" in text
+
+
+def _git(repo, *args):
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
+
+
+def test_cochange_counts_from_a_real_git_repo_and_ignores_broad_commits(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    steps = [
+        ["pkg/a.py", "pkg/b.py"],
+        ["pkg/a.py", "pkg/b.py", "pkg/c.py"],
+        ["pkg/a.py"] + [f"many/f{i:02d}.py" for i in range(55)],
+    ]
+    for step, files in enumerate(steps):
+        for name in files:
+            path = repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"{step}\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(
+            repo,
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            f"step {step}",
+        )
+    head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+    history = run.cochange_history(repo, head)
+    assert history["broad"] == 1
+    assert history["commits"] == [
+        ["pkg/a.py", "pkg/b.py", "pkg/c.py"],
+        ["pkg/a.py", "pkg/b.py"],
+    ]
+    record = run.cochange(history, [("pkg/a.py", None), ("pkg/b.py", None)], ["pkg/c.py"], {})
+    seed_a = record["seeds"][0]
+    assert seed_a["seed_commits"] == 2
+    assert seed_a["files"] == [
+        {
+            "file": "pkg/b.py",
+            "count": 2,
+            "is_gold": False,
+            "rank": 2,
+            "is_test": False,
+            "in_graph_neighbours": False,
+        },
+        {
+            "file": "pkg/c.py",
+            "count": 1,
+            "is_gold": True,
+            "rank": None,
+            "is_test": False,
+            "in_graph_neighbours": False,
+        },
+    ]
+    assert record["gold_outside_top"] == [{"file": "pkg/c.py", "counts": [1, 1]}]
+
+
+def test_cochange_keeps_thirty_per_seed_and_counts_every_gold_file_exactly():
+    commits = [["seed.py", f"p{i:02d}.py"] for i in range(40)]
+    graph = _graph({"s": "seed.py", "t": "p00.py"}, [("s", "t", "imports")])
+    record = run.cochange(
+        {"commits": commits, "broad": 0}, [("seed.py", None)], ["p39.py", "far.py"], graph
+    )
+    [seed] = record["seeds"]
+    assert seed["seed_commits"] == 40
+    assert [item["file"] for item in seed["files"]] == [f"p{i:02d}.py" for i in range(30)]
+    assert seed["files"][0] == {
+        "file": "p00.py",
+        "count": 1,
+        "is_gold": False,
+        "rank": None,
+        "is_test": False,
+        "in_graph_neighbours": True,
+    }
+    assert seed["files"][1]["in_graph_neighbours"] is False
+    assert record["gold_outside_top"] == [
+        {"file": "far.py", "counts": [0]},
+        {"file": "p39.py", "counts": [1]},
+    ]
+
+
+def test_cochange_report_rows_on_a_tiny_results_file(tmp_path):
+    def entry(file, count, rank, is_gold):
+        return {
+            "file": file,
+            "count": count,
+            "is_gold": is_gold,
+            "rank": rank,
+            "is_test": False,
+            "in_graph_neighbours": False,
+        }
+
+    cochange = {
+        "commits": 5,
+        "broad": 0,
+        "seeds": [
+            {
+                "seed": "a/g.py",
+                "seed_rank": 1,
+                "seed_commits": 5,
+                "files": [
+                    entry("x/o.py", 4, 2, False),
+                    entry("b/m.py", 3, 12, True),
+                    entry("o/q.py", 2, None, False),
+                ],
+            },
+            {
+                "seed": "x/o.py",
+                "seed_rank": 2,
+                "seed_commits": 4,
+                "files": [entry("c/n.py", 1, None, True), entry("o/q.py", 1, None, False)],
+            },
+            {"seed": "y/p.py", "seed_rank": 3, "seed_commits": 0, "files": []},
+        ],
+        "gold_outside_top": [
+            {"file": "b/m.py", "counts": [3, 0, 0]},
+            {"file": "c/n.py", "counts": [0, 1, 0]},
+        ],
+    }
+    instance = {
+        "instance_id": "x-2",
+        "status": "scored",
+        "gold": ["a/g.py", "b/m.py", "c/n.py"],
+        "diagnosis": {
+            "gold_rank": {"a/g.py": 1, "b/m.py": 12, "c/n.py": None},
+            "cochange": cochange,
+        },
+    }
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps({"instances": [instance], "summary": {}}), encoding="utf-8")
+    text = partner_report.partner_features_report(path)
+    assert "Instances with a gold file in the top 10 and co-change records: 1." in text
+    assert "Missing gold partners: 2." in text
+    assert "| count >= 1 | 1 | 66.7% | 2 of 2 (100.0%) |" in text
+    assert "| count >= 2 | 1 | 50.0% | 1 of 2 (50.0%) |" in text
+    assert "| count >= 3 | 0 | 100.0% | 1 of 2 (50.0%) |" in text
+    assert "| count >= 5 | 0 | n/a | 0 of 2 (0.0%) |" in text
+    assert "| top 1 per seed | 0 | 100.0% | 2 of 2 (100.0%) |" in text
+    assert "| top 2 per seed | 1 | 66.7% | 2 of 2 (100.0%) |" in text
