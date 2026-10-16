@@ -17,6 +17,7 @@ from .adapters.config_manifest import is_config_manifest
 from .constants import SCHEMA_VERSION
 from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
 from .core.cluster import assign_communities
+from .core.documents import DOCUMENT_UNITS, extract_document_parts
 from .core.languages import GRAMMAR_UNAVAILABLE, grammar_failure_reason, language_for
 from .core.report import build_manifest, render_report
 from .core.resolve import (
@@ -29,7 +30,12 @@ from .core.resolve import (
 from .core.tsconfig import build_ts_paths
 from .history import update_history
 from .paths import graph_output_dir, idx_path, now, pointer_file
-from .pieces import PIECES_FTS_CREATE, file_pieces
+from .pieces import (
+    PIECES_FTS_CREATE,
+    document_body,
+    document_pieces,
+    file_pieces,
+)
 from .reuse import (
     ADAPT_CACHE,
     INDEXED,
@@ -174,6 +180,8 @@ def _symbol_order(symbol: dict) -> tuple:
 SKIPPED = "skipped"
 UNINDEXABLE = "unindexable"
 MISSING_DEPENDENCY = "parse_error:MissingDependency"
+# A PDF whose pages have no text layer (a scan): nothing to search.
+NO_TEXT_LAYER = "parse_error:NoTextLayer"
 # How many paths the status, doctor and index output name for files the
 # parser rejected.
 PARSE_ERROR_FILES_SHOWN = 5
@@ -232,7 +240,14 @@ def _adapt_file(
     """
     try:
         snapshot = read_snapshot(path, root=root, settings=settings)
-        output = adapt(path, root, snapshot, settings=settings)
+        # Office and PDF documents are read once here; adapt() and the
+        # searchable body and pieces below share the same parts.
+        document = (
+            extract_document_parts(path, data=snapshot[0])
+            if path.suffix.lower() in DOCUMENT_UNITS
+            else None
+        )
+        output = adapt(path, root, snapshot, settings=settings, document=document)
     except UnopenableFileError:
         # Locked or ACL-protected: skipped like ignored files, not
         # refused.
@@ -255,8 +270,12 @@ def _adapt_file(
     file_rec, file_symbols = row["out"][0], row["out"][1]
     row["chunks"] = file_semantic_chunks(file_rec, sorted(file_symbols, key=_symbol_order))
     # Whole-file identifier terms; content_hint covers only first 40.
-    row["fts_body"] = body_terms(snapshot[0]) if is_text(path) else ""
-    row["pieces"] = file_pieces(snapshot[0], file_symbols) if is_text(path) else []
+    if document is not None:
+        row["fts_body"] = document_body(document.parts)
+        row["pieces"] = document_pieces(document.parts)
+    else:
+        row["fts_body"] = body_terms(snapshot[0]) if is_text(path) else ""
+        row["pieces"] = file_pieces(snapshot[0], file_symbols) if is_text(path) else []
     return INDEXED, identity(snapshot[1]), json.dumps(row, sort_keys=True)
 
 
@@ -1039,6 +1058,7 @@ def write_index(root, ptr, *, full: bool = False):
             grammar_error = record["grammar_error"]
             # Recorded, but without text: the reader library is missing.
             unread = sum(f.get("parse_status") == MISSING_DEPENDENCY for f in files)
+            scanned = sum(f.get("parse_status") == NO_TEXT_LAYER for f in files)
             # Symbols missing: their grammar could not be downloaded.
             no_grammar = sum(f.get("parse_status") == GRAMMAR_UNAVAILABLE for f in files)
             # Files the parser rejected; grammar gaps are counted above.
@@ -1065,6 +1085,7 @@ def write_index(root, ptr, *, full: bool = False):
                     "unindexable": skipped,
                     **skip_reasons,
                     "missing_dependency": unread,
+                    "no_text_layer": scanned,
                     "grammar_unavailable": no_grammar,
                     "grammar_error": grammar_error,
                     "parse_errors": len(parse_errors),
@@ -1269,6 +1290,7 @@ def write_index(root, ptr, *, full: bool = False):
         "unindexable": skipped,
         **skip_reasons,
         "missing_dependency": unread,
+        "no_text_layer": scanned,
         "grammar_unavailable": no_grammar,
         "grammar_error": grammar_error,
         "parse_errors": len(parse_errors),

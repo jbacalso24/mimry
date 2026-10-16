@@ -699,8 +699,32 @@ def _code_name(value: str) -> str:
 
 
 def _ranges_text(ranges: list[dict], name=str) -> str:
-    """``lines 13-15 (name), 40-60 (name)`` for a result's ranges."""
+    """``lines 13-15 (name), 40-60 (name)`` for a result's ranges.
+
+    A document's ranges name its parts instead, such as ``pages 12-14``
+    or ``section "3.2 Retention"``.
+    """
+    if ranges and ranges[0].get("unit"):
+        return _document_ranges_text(ranges)
     return "lines " + ", ".join(f"{r['start']}-{r['end']} ({name(r['name'])})" for r in ranges)
+
+
+def _document_ranges_text(ranges: list[dict]) -> str:
+    unit = ranges[0]["unit"]
+    if unit == "page":
+        spans = [
+            str(r["start"]) if r["start"] == r["end"] else f"{r['start']}-{r['end']}"
+            for r in ranges
+        ]
+        single = len(ranges) == 1 and ranges[0]["start"] == ranges[0]["end"]
+        return f"{'page' if single else 'pages'} {', '.join(spans)}"
+    if unit == "slide":
+        labels = []
+        for r in ranges:
+            title = r["name"].removeprefix(f"slide {r['start']}").strip()
+            labels.append(f'slide {r["start"]} "{title}"' if title else f"slide {r['start']}")
+        return ", ".join(labels)
+    return ", ".join(f'{unit} "{r["name"]}"' for r in ranges)
 
 
 def print_results(rows: list[dict], *, verbose: bool) -> None:

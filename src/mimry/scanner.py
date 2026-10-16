@@ -32,7 +32,9 @@ from .core.documents import (
     DOCUMENT_ADAPTERS,
     DOCUMENT_EXTENSIONS,
     MAX_DOCUMENT_FILE_BYTES,
-    extract_document_text,
+    DocumentText,
+    document_text,
+    extract_document_parts,
     is_document,
 )
 from .core.languages import EXTENSION_LANGUAGE, is_objc_header
@@ -798,7 +800,30 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     }
 
 
-def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
+def _document_record(path, root, document: DocumentText, snapshot):
+    """The file record of a document, and its redacted text."""
+    text = document_text(document.parts)
+    safe_text = redact_sensitive_text(text) if text else ""
+    f = file_record(
+        path,
+        root,
+        DOCUMENT_ADAPTERS[path.suffix.lower()],
+        document.status,
+        safe_text[:2000],
+        snapshot,
+    )
+    if document.truncated:
+        f["metadata_text"] += " truncated: part of this document is not indexed"
+    return f, safe_text
+
+
+def adapt(
+    path,
+    root,
+    snapshot=None,
+    settings: IndexSettings | None = None,
+    document: DocumentText | None = None,
+):
     # The extension picks the parser, so a mimry.toml override applies.
     # Manifests and documents keep their checks on the real path.
     ext = settings.extension(path) if settings else path.suffix.lower()
@@ -932,13 +957,13 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
     elif is_document(path):
         # The path is still needed for the extension check; only the
         # BYTES come from the snapshot. Dropping it made every Office
-        # document return parse_error:unsupported_extension.
-        text, status = extract_document_text(path, data=data)
-        safe_text = redact_sensitive_text(text) if text else ""
-        doc_hint = safe_text[:2000]
+        # document return parse_error:unsupported_extension. _adapt_file
+        # passes in the parts it already read, so a document is parsed
+        # once per index run.
+        if document is None:
+            document = extract_document_parts(path, data=data)
+        f, safe_text = _document_record(path, root, document, snapshot)
         ext = path.suffix.lower()
-        adapter_name = DOCUMENT_ADAPTERS[ext]
-        f = file_record(path, root, adapter_name, status, doc_hint, snapshot)
         # Populate table_refs only from the same redacted text allowed
         # into the searchable index and semantic/context surfaces.
         if safe_text:

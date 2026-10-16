@@ -15,7 +15,7 @@ MIMRY should understand a repo through small, inspectable adapter plugins before
 | `react-native-expo` | Expo config + Expo Router detector | `app.json`, `app.config.*`, `app/**/*.tsx`, screen files | mobile surfaces, Expo routes, screens, native config hints | Surfaces mobile routes/screens and native config hints without simulator access |
 | `sql-schema` | Conservative SQL text parser | `.sql`, Python SQL strings | tables, columns, schema symbols, migration hints | Exposes straightforward SQLite/SQL schemas without executing migrations or DB writes |
 | `markdown-docs` | Markdown heading/frontmatter/link parser | `.md`, `.mdx` | headings (as symbols spanning their section), frontmatter, markdown links, wiki links, doc relationship hints | Turns docs/specs/Obsidian notes into citable structured facts without storing full docs |
-| `office-document` | ZIP container parser over Office XML | `.docx`, `.xlsx` | files, content, table references | Extracts text from Word and Excel documents for indexing and secret scanning without external services |
+| `office-document` | ZIP container parser over Office XML | `.docx`, `.xlsx`, `.pptx` | files, content, table references | Extracts text from Word and Excel documents for indexing and secret scanning without external services |
 | `pdf-document` | pypdf text stream extractor | `.pdf` | files, content, table references | Extracts text from PDF files for indexing and secret scanning without OCR or vision models |
 | `svg-document` | XML parser over title, desc, text, tspan | `.svg` | files, content | Extracts human-readable text from SVG diagrams for indexing and searching without rendering or rasterizing |
 | `js-ts-regex` | Regex-based declaration scanner | `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts` | files, symbols, imports, exports, defines edges, line ranges | Fallback when tree-sitter is unavailable; recovers top-level declarations |
@@ -23,7 +23,7 @@ MIMRY should understand a repo through small, inspectable adapter plugins before
 | `swift-ios` | Xcode project, entitlements and plist parsers | `.pbxproj`, `.entitlements`, `.plist` | xcode targets, entitlements, app groups, bundle IDs, reference edges | Maps iOS targets, entitlements, app extensions and App Groups for native mobile work |
 | `generic-text` | Safe text hints | fallback | files, metadata, content hints | Docs/config fallback while keeping sensitive files skipped |
 
-Documents up to 20 MB are read (PDFs up to 200 pages); other files stop at 1 MB.
+Documents up to 20 MB are read, whole: up to 2,000 pages, sections, sheets or slides and 2,000,000 characters per file. Results name the page, section, sheet or slide they match. Other files stop at 1 MB.
 Note: Raster images (PNG, JPG) require OCR or vision models and are not supported.
 
 ## Adapter status

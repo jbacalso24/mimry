@@ -52,8 +52,10 @@ Indexing parses each file once and derives these edges from what it read:
 | `references` | file to file, file to symbol | markdown links and SQL table mentions |
 
 39 languages parsed: Python, JavaScript, TypeScript, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart, Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, Pascal, CSS, SCSS, HTML, Vue, Svelte, JSON, YAML, TOML, XML and Terraform (HCL).
-Markdown, text, `.docx`, `.xlsx`, `.pdf`, and `.svg` are indexed for content and can carry `references` edges.
-Documents up to 20 MB are read (PDFs up to 200 pages); other files stop at 1 MB.
+Markdown, text, `.docx`, `.pptx`, `.xlsx`, `.pdf`, and `.svg` are indexed for content and can carry `references` edges.
+Documents up to 20 MB are read whole: up to 2,000 pages, sections, sheets or slides and 2,000,000 characters per file.
+Results name the page, section, sheet or slide they match (`read first: pages 12-14`, `section "3.2 Retention"`).
+Scanned PDFs with no text layer are not searchable; other files stop at 1 MB.
 Raster images (PNG, JPG) require OCR or vision models and are out of scope.
 
 Resolution never guesses.

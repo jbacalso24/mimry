@@ -483,6 +483,13 @@ def print_index_result(
             f"{ui.count(stats['missing_dependency'], 'PDF')} indexed without text: pypdf is"
             f" missing. Run `{repair_command()}` to add it."
         )
+    if stats.get("no_text_layer"):
+        count = stats["no_text_layer"]
+        verb = "has" if count == 1 else "have"
+        ui.warn(
+            f"{ui.count(count, 'PDF')} {verb} no text layer (scanned pages): they are indexed"
+            " by name only, not searchable."
+        )
     print_grammar_warning(stats.get("grammar_unavailable", 0), stats.get("grammar_error"))
     print_parse_error_warning(stats.get("parse_errors", 0), stats.get("parse_error_files", []))
     if verbose:

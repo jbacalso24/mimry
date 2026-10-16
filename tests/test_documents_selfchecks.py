@@ -197,7 +197,7 @@ def test_xlsx_extracts_valid_utf16_shared_and_inline_strings(tmp_path, byte_orde
     text, status = extract_document_text(path)
 
     assert status == "ok"
-    assert text == "Shared UTF-16 text Inline UTF-16 text"
+    assert text == "Inline UTF-16 text Shared UTF-16 text"
 
 
 def test_pdf_text_is_extracted(tmp_path):
@@ -214,7 +214,8 @@ def test_pdf_text_is_extracted(tmp_path):
     writer.write(path)
 
     text, status = extract_document_text(path)
-    assert status == "ok" or status == "parse_error:empty"
+    # A blank page has no text layer.
+    assert status == "parse_error:NoTextLayer"
 
 
 def test_pdf_multipage_respects_page_limit(tmp_path):
@@ -235,7 +236,7 @@ def test_pdf_multipage_respects_page_limit(tmp_path):
 
     # Should not raise, should limit pages processed
     text, status = extract_document_text(path)
-    assert status in ("ok", "parse_error:empty")
+    assert status == "parse_error:NoTextLayer"
 
 
 def test_pdf_respects_file_size_limit(tmp_path):
@@ -267,7 +268,7 @@ def test_pdf_with_empty_password_is_readable(tmp_path):
 
     text, status = extract_document_text(path)
     # Should attempt decryption with empty password
-    assert status in ("ok", "parse_error:empty")
+    assert status == "parse_error:NoTextLayer"
 
 
 def test_pdf_with_real_user_password_is_rejected(tmp_path):

@@ -17,8 +17,10 @@ import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
+from .core.documents import DOCUMENT_UNITS, DocumentPart
 from .intent import query_terms
 from .scanner import body_terms
+from .security import redact_sensitive_text
 
 PIECES_FTS_CREATE = (
     "create virtual table if not exists pieces_fts using fts5(file_id unindexed, "
@@ -27,6 +29,8 @@ PIECES_FTS_CREATE = (
 # Ranges listed per result: enough to point at the code, few enough to
 # keep the context pack short.
 RANGES_PER_FILE = 2
+# Longest part title kept as a piece name; a first line can be long.
+TITLE_CHARS = 80
 # The most lines above a symbol that a piece takes in as its comments,
 # decorators or attributes.
 ATTACHED_LINES = 15
@@ -113,8 +117,40 @@ def piece_matches(
     return by_file
 
 
-def best_ranges(pieces: list[tuple[float, int, int, str]]) -> list[dict]:
-    """The best non-overlapping pieces of one file, in file order."""
+def document_pieces(parts: list[DocumentPart]) -> list[list]:
+    """``[number, number, title, body terms]`` for each part with text.
+
+    A document's part number stands in for its line numbers, so the same
+    pieces table and ranges serve documents and code.
+    """
+    pieces = []
+    for part in parts:
+        if not part.text.strip() or part.kind not in DOCUMENT_UNITS.values():
+            continue
+        title = redact_sensitive_text(part.title)[:TITLE_CHARS]
+        pieces.append([part.number, part.number, title, body_terms(part.text.encode("utf-8"))])
+    return pieces
+
+
+def document_body(parts: list[DocumentPart]) -> str:
+    """Searchable terms of a whole document: its text and section,
+    sheet and slide titles. Page titles are left out, since every page
+    would match the word "page".
+    """
+    titles = [part.title for part in parts if part.kind != "page" and part.title]
+    texts = [part.text for part in parts if part.text]
+    return body_terms("\n".join(titles + texts).encode("utf-8"))
+
+
+def best_ranges(pieces: list[tuple[float, int, int, str]], unit: str | None = None) -> list[dict]:
+    """The best non-overlapping pieces of one file, in file order.
+
+    For a document, ``unit`` names what its parts are and each range
+    carries it. Adjacent matching pages are joined first, so a run of
+    matches reads as one range such as pages 12-14.
+    """
+    if unit == "page":
+        pieces = _join_adjacent(pieces)
     chosen: list[tuple[float, int, int, str]] = []
     for piece in pieces:
         _rank, start, end, _name = piece
@@ -123,7 +159,27 @@ def best_ranges(pieces: list[tuple[float, int, int, str]]) -> list[dict]:
         chosen.append(piece)
         if len(chosen) == RANGES_PER_FILE:
             break
-    return [
+    ranges = [
         {"start": start, "end": end, "name": name}
         for _rank, start, end, name in sorted(chosen, key=lambda p: p[1])
     ]
+    if unit:
+        for item in ranges:
+            item["unit"] = unit
+    return ranges
+
+
+def _join_adjacent(pieces: list[tuple[float, int, int, str]]) -> list[tuple[float, int, int, str]]:
+    """Join pieces whose line or page ranges touch, keeping the best
+    rank and name of each joined run. Returned best first.
+    """
+    joined: list[tuple[float, int, int, str]] = []
+    for rank, start, end, name in sorted(pieces, key=lambda p: p[1]):
+        if joined and start <= joined[-1][2] + 1:
+            last_rank, last_start, last_end, last_name = joined[-1]
+            if rank < last_rank:
+                last_rank, last_name = rank, name
+            joined[-1] = (last_rank, last_start, max(last_end, end), last_name)
+        else:
+            joined.append((rank, start, end, name))
+    return sorted(joined, key=lambda p: p[0])

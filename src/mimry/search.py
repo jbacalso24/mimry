@@ -6,6 +6,7 @@ from functools import cache
 from pathlib import Path
 
 from .core.artifacts import graph_available, graph_rows
+from .core.documents import DOCUMENT_UNITS
 from .core.languages import EXTENSION_LANGUAGE, language_for
 from .feedback import apply_feedback_to_rows
 from .intent import (
@@ -207,7 +208,9 @@ def _with_ranges(idx, q, rows, id_by_path):
     out = []
     for row in rows:
         matches = pieces.get(id_by_path.get(row["path"], ""))
-        out.append({**row, "ranges": best_ranges(matches)} if matches else row)
+        # A document's ranges name its parts (pages, sections, ...).
+        unit = DOCUMENT_UNITS.get(Path(row["path"]).suffix.lower())
+        out.append({**row, "ranges": best_ranges(matches, unit)} if matches else row)
     return out
 
 

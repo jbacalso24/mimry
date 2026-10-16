@@ -238,16 +238,19 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         name="office-document",
         status="active",
         kind="document",
-        extensions=(".docx", ".xlsx"),
-        parser="ZIP container parser over word/document.xml and xl/sharedStrings.xml",
+        extensions=(".docx", ".xlsx", ".pptx"),
+        parser=(
+            "ZIP container parser over word/document.xml, xl/sharedStrings.xml and"
+            " ppt/slides/slide*.xml"
+        ),
         emits=("files", "content", "table_references"),
         agent_use=(
-            "Extracts text from Word and Excel documents for indexing and secret scanning without"
-            " external services."
+            "Extracts text from Word, Excel and PowerPoint documents for indexing and secret"
+            " scanning without external services."
         ),
         notes=(
-            "Guards against zip bombs, DTD/entity attacks, and compression bombs; collapses text"
-            " to searchable form."
+            "Guards against zip bombs, DTD/entity attacks, and compression bombs; splits text into"
+            " sections, sheets and slides so results can name them."
         ),
     ),
     AdapterInfo(
@@ -262,8 +265,9 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
             " models."
         ),
         notes=(
-            "Handles empty user passwords on encrypted PDFs; limits to 200 pages and 20 MB file"
-            " size."
+            "Handles empty user passwords on encrypted PDFs; reads up to 2,000 pages per file and"
+            " 20 MB file size, one part per page. Scanned PDFs with no text layer are not"
+            " searchable."
         ),
     ),
     AdapterInfo(

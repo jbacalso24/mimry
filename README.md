@@ -111,7 +111,7 @@ mimry install --platform claude-code
 | Line ranges | Names the functions, classes or sections to read first in each file |
 | Code graph | Maps imports, calls and inheritance across 39 languages with tree-sitter |
 | Deterministic | The same code gives the same symbols, graph, rankings and context pack on every machine; CI checks every change against committed golden values ([how](docs/determinism.md)) |
-| Documents | Indexes Markdown, text, PDF, Word and Excel files alongside code |
+| Documents | Indexes Markdown, text, PDF, Word, Excel and PowerPoint files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
 | Feedback | Ranks files recorded as useful higher for similar tasks |
 | MCP server | Exposes every lookup as an MCP tool |
@@ -170,7 +170,7 @@ CSS and SCSS give their class and id selectors, custom properties, keyframes, Sa
 HTML gives each element id and the local stylesheets and scripts it loads.
 Vue and Svelte give each component (named after its file) and run the JavaScript or TypeScript and CSS or SCSS passes over their `<script>` and `<style>` blocks, so their line numbers match the file.
 
-MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Word and Excel files.
+MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Word, Excel and PowerPoint files. Results name the page, section, sheet or slide that matches.
 
 Some files get more structure than their text:
 
