@@ -12,7 +12,9 @@ slightly more.
 
 from __future__ import annotations
 
+import re
 import sqlite3
+from collections.abc import Iterable
 from pathlib import Path
 
 from .intent import query_terms
@@ -28,6 +30,10 @@ RANGES_PER_FILE = 2
 # The most lines above a symbol that a piece takes in as its comments,
 # decorators or attributes.
 ATTACHED_LINES = 15
+# A line above a symbol belongs to it only when it is a comment,
+# decorator or attribute. Any other line is code, such as the
+# signature of the function above, and must not join the piece.
+ATTACHED_LINE = re.compile(r"(?:#|//|/\*|\*(?:\s|/|$)|@|--|\[[A-Z])")
 
 
 def file_pieces(data: bytes, symbols: list[dict]) -> list[list]:
@@ -57,7 +63,11 @@ def file_pieces(data: bytes, symbols: list[dict]) -> list[list]:
         # Doc comments, decorators and attributes sit directly above a
         # symbol; a piece starts at the top of that attached block.
         top = start
-        while top > 1 and start - top < ATTACHED_LINES and lines[top - 2].strip():
+        while (
+            top > 1
+            and start - top < ATTACHED_LINES
+            and ATTACHED_LINE.match(lines[top - 2].strip())
+        ):
             top -= 1
         start = top
         body = body_terms("\n".join(lines[start - 1 : end]).encode("utf-8"))
@@ -65,23 +75,31 @@ def file_pieces(data: bytes, symbols: list[dict]) -> list[list]:
     return pieces
 
 
-def piece_matches(idx: Path, q: str) -> dict[str, list[tuple[float, int, int, str]]]:
-    """Matching pieces by file id, best first, as ``(rank, start, end,
-    name)``; a lower rank is a better BM25 match.
+def piece_matches(
+    idx: Path, q: str, file_ids: Iterable[str]
+) -> dict[str, list[tuple[float, int, int, str]]]:
+    """Matching pieces of the given files by file id, best first, as
+    ``(rank, start, end, name)``; a lower rank is a better BM25 match.
+
+    Only the result files are searched, and none of their pieces is
+    cut. A cap over the whole repository dropped a result's own
+    pieces whenever many other files matched the same terms.
     """
     terms = query_terms(q)
     match = " OR ".join(f'"{term}"*' for term in terms if term)
-    if not match:
+    ids = sorted(set(file_ids))
+    if not match or not ids:
         return {}
+    marks = ", ".join("?" for _ in ids)
     try:
         con = sqlite3.connect(Path(idx) / "mimry.sqlite")
         try:
             rows = con.execute(
                 "select file_id, line_start, line_end, name, "
                 "bm25(pieces_fts, 0.0, 0.0, 0.0, 1.4, 1.0) as rank "
-                "from pieces_fts where pieces_fts match ? "
-                "order by rank, file_id, line_start limit 400",
-                (match,),
+                f"from pieces_fts where pieces_fts match ? and file_id in ({marks}) "
+                "order by rank, file_id, line_start",
+                (match, *ids),
             ).fetchall()
         finally:
             con.close()

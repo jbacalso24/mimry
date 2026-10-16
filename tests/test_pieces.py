@@ -97,7 +97,91 @@ def test_an_index_without_pieces_falls_back_to_whole_files(tmp_path):
     idx = tmp_path / "idx"
     idx.mkdir()
     sqlite3.connect(idx / "mimry.sqlite").close()
-    assert piece_matches(idx, "invoice tax") == {}
+    assert piece_matches(idx, "invoice tax", ["any-file"]) == {}
+
+
+def test_code_above_a_symbol_is_not_attached_but_comments_and_decorators_are():
+    """Only comments, decorators and attributes join a piece.
+
+    A code line above a symbol belongs to another symbol. Taking it in
+    hid the enclosing function behind a stray piece that starts on a
+    signature.
+    """
+    data = (
+        b"import os\nvalue = os.sep\ndef f():\n    return value\n"
+        b"# doc\n@cached\ndef g():\n    return 1\n"
+    )
+    symbols = [
+        {"name": "f", "line_start": 3, "line_end": 4},
+        {"name": "g", "line_start": 7, "line_end": 8},
+    ]
+    pieces = file_pieces(data, symbols)
+    assert [(start, end, name) for start, end, name, _body in pieces] == [
+        (3, 4, "f"),
+        (5, 8, "g"),
+    ]
+
+
+def test_a_result_file_keeps_its_piece_outside_the_global_top_n(tmp_path):
+    """A result keeps its piece even when the repository cap cuts it.
+
+    Other files with better-ranked pieces for the same terms can push a
+    result's own piece past the 400 best in the repository. The lines to
+    read come from the result files, so the piece must still be found.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for n in range(3):
+        decoy = "".join(
+            f"def invoice_tax_{n}_{i}(subtotal, rate):\n    return round(subtotal * rate, 2)\n\n"
+            for i in range(150)
+        )
+        (repo / f"decoy_{n}.py").write_text(decoy, encoding="utf-8")
+    target = (
+        "def settle(account, amount):\n"
+        + "    ledger = account.ledger\n" * 20
+        + "    return invoice_for(amount)  # tax on the invoice\n"
+    )
+    (repo / "settle.py").write_text(target, encoding="utf-8")
+    ptr = _index_repo(repo)
+    idx = Path(ptr["indexPath"])
+    con = sqlite3.connect(idx / "mimry.sqlite")
+    try:
+        target_id = con.execute("select file_id from pieces_fts where name = 'settle'").fetchone()[
+            0
+        ]
+        matching = con.execute(
+            "select count(*) from pieces_fts where pieces_fts match ?",
+            ('"invoice"* OR "tax"*',),
+        ).fetchone()[0]
+    finally:
+        con.close()
+    assert matching > 400
+
+    matches = piece_matches(idx, "invoice tax", [target_id])
+
+    assert "settle" in [name for _rank, _start, _end, name in matches[target_id]]
+
+
+def test_preflight_and_find_name_the_same_ranges_for_the_same_text(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "billing.py").write_text(_large_module(match_at=60), encoding="utf-8")
+    ptr = _index_repo(repo)
+    idx = Path(ptr["indexPath"])
+    task = "change how invoice tax is calculated"
+
+    preflight = find_rows(idx, task, 8, True, root=repo, root_id=ptr.get("rootId"))
+    found = find_rows(idx, task, 10)
+    write_context_pack(repo, ptr, task)
+
+    def ranges(rows):
+        return next(r["ranges"] for r in rows if r["path"] == "src/billing.py")
+
+    expected = [{"start": 181, "end": 183, "name": "calculate_invoice_tax"}]
+    assert ranges(preflight) == ranges(found) == expected
+    pack = context_file(repo).read_text(encoding="utf-8")
+    assert "Read first: lines 181-183 (`calculate_invoice_tax`)" in pack
 
 
 def test_credentials_in_a_function_never_reach_the_pieces_table(tmp_path):
@@ -140,3 +224,16 @@ def test_symbols_sharing_one_line_share_one_piece(monkeypatch):
 
     assert [(start, end) for start, end, _name, _body in pieces] == [(1, 1)]
     assert len(calls) == 1
+
+
+def test_a_bracket_attribute_joins_the_piece_but_a_list_line_does_not():
+    data = b"[Serializable]\nclass A:\n    pass\nitems = [\n]\ndef f():\n    pass\n"
+    symbols = [
+        {"name": "A", "line_start": 2, "line_end": 3},
+        {"name": "f", "line_start": 6, "line_end": 7},
+    ]
+    pieces = file_pieces(data, symbols)
+    assert [(start, end, name) for start, end, name, _body in pieces] == [
+        (1, 3, "A"),
+        (6, 7, "f"),
+    ]

@@ -185,8 +185,11 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
     return scores
 
 
-def _with_ranges(rows, pieces, id_by_path):
+def _with_ranges(idx, q, rows, id_by_path):
     """Name the lines to read first in each result: its best pieces."""
+    pieces = piece_matches(
+        idx, q, [id_by_path[row["path"]] for row in rows if row["path"] in id_by_path]
+    )
     out = []
     for row in rows:
         matches = pieces.get(id_by_path.get(row["path"], ""))
@@ -347,7 +350,6 @@ def find_rows(
             + ", ".join(sorted(known_languages))
         )
     fts_scores = _fts_scores(idx, q)
-    pieces = piece_matches(idx, q)
     id_by_path = {f["rel_path"]: f["file_id"] for f in files}
     known_paths = set(id_by_path)
     candidate_limit = max(len(files), limit + scope["offset"]) if scoped_or_paginated else limit
@@ -458,7 +460,7 @@ def find_rows(
                 excluded_paths,
             )
             rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
-            return _with_ranges(rows, pieces, id_by_path)
+            return _with_ranges(idx, q, rows, id_by_path)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     ranked = _with_semantic(
         ranked,
@@ -471,4 +473,4 @@ def find_rows(
         excluded_paths,
     )
     rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
-    return _with_ranges(rows, pieces, id_by_path)
+    return _with_ranges(idx, q, rows, id_by_path)
