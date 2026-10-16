@@ -9,9 +9,11 @@ from .core.artifacts import graph_available, graph_rows
 from .core.languages import EXTENSION_LANGUAGE, language_for
 from .feedback import apply_feedback_to_rows
 from .intent import (
+    CJK_RUN_RE,
     TEST_TERMS,
     apply_exclusion_adjustment,
     apply_intent_adjustment,
+    cjk_bigrams,
     excluded_query_terms,
     intent_terms,
     is_test_file,
@@ -137,7 +139,19 @@ def _filter_and_page(rows, *, scope, languages_by_path):
 def _fts_match_query(terms: list[str]) -> str:
     # Prefix each normalized token for identifier/path fragments; quote
     # to keep FTS syntax safe.
-    return " OR ".join(f'"{term}"*' for term in terms if term)
+    clauses = []
+    for term in terms:
+        if not term:
+            continue
+        if not CJK_RUN_RE.fullmatch(term):
+            clauses.append(f'"{term}"*')
+            continue
+        # A CJK run is one FTS word, so a substring of it matches its
+        # character pairs instead (indexed by body_terms).
+        grams = sorted(set(cjk_bigrams(term)))
+        pairs = " AND ".join(f'"{gram}"' for gram in grams)
+        clauses.append(f'("{term}"* OR ({pairs}))' if len(grams) > 1 else f'("{term}"*)')
+    return " OR ".join(clauses)
 
 
 LONG_QUERY_TERMS = 24

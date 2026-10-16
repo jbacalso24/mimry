@@ -264,7 +264,24 @@ STOPWORDS = {
     "to",
     "with",
 }
-TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+# CJK ideographs, kana and Hangul syllables. Explicit ranges, not \w:
+# \w would also widen accented Latin text and change English tokens.
+CJK_CHARS = (
+    "\u3005\u3007"  # iteration mark, ideographic number zero
+    "\u3041-\u309f"  # hiragana
+    "\u30a0-\u30ff"  # katakana
+    "\u31f0-\u31ff"  # katakana phonetic extensions
+    "\u3400-\u4dbf"  # CJK unified ideographs extension A
+    "\u4e00-\u9fff"  # CJK unified ideographs
+    "\uf900-\ufaff"  # CJK compatibility ideographs
+    "\uff66-\uff9f"  # halfwidth katakana
+    "\uac00-\ud7af"  # hangul syllables
+    "\U00020000-\U0002ffff"  # CJK extensions B to F
+)
+CJK_RUN_RE = re.compile(f"[{CJK_CHARS}]+")
+# An ASCII word or a CJK run. For ASCII input this matches exactly
+# what the old [A-Za-z0-9]+ matched.
+TOKEN_RE = re.compile(f"[A-Za-z0-9]+|[{CJK_CHARS}]+")
 CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 EXCLUSION_RE = re.compile(
     r"\b(?:without(?:\s+(?:touching|changing|editing|modifying))?|exclude(?:d|ing)?)"
@@ -312,6 +329,19 @@ def _normalized_terms(q: str) -> list[str]:
             seen.add(term)
             terms.append(term)
     return terms
+
+
+def cjk_bigrams(run: str) -> list[str]:
+    """Overlapping character pairs of a CJK run, in order.
+
+    FTS5 tokenizes a CJK run as one word, so "漢字" inside "日本語漢字"
+    is invisible to it. Indexing and querying pairs makes any two-or-
+    more-character substring of a run reachable. A one-character run is
+    its own gram.
+    """
+    if len(run) < 2:
+        return [run]
+    return [run[i : i + 2] for i in range(len(run) - 1)]
 
 
 def text_terms(text: str) -> frozenset[str]:

@@ -30,7 +30,7 @@ from .framework_adapters import (
     markdown_link_targets,
     sql_table_references,
 )
-from .intent import CAMEL_BOUNDARY_RE, STOPWORDS, TOKEN_RE
+from .intent import CAMEL_BOUNDARY_RE, CJK_RUN_RE, STOPWORDS, TOKEN_RE, cjk_bigrams
 from .paths import canonical_rel_path, stable_id
 from .reuse import code_fingerprint
 from .security import (
@@ -330,6 +330,10 @@ def body_terms(data: bytes) -> str:
         raw_lower = raw.lower()
         if len(raw_lower) >= 2 and not raw_lower.isdigit() and raw_lower not in STOPWORDS:
             term_counts[raw_lower] = term_counts.get(raw_lower, 0) + 1
+        if CJK_RUN_RE.fullmatch(raw) and len(raw) > 2:
+            # Pairs make substrings of a run findable (cjk_bigrams).
+            for gram in cjk_bigrams(raw):
+                term_counts[gram] = term_counts.get(gram, 0) + 1
         if any(c.isupper() for c in raw):
             pieces = CAMEL_BOUNDARY_RE.split(raw)
             for piece in pieces:
