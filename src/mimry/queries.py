@@ -26,6 +26,7 @@ from .core.artifacts import (
     shortest_path,
     surface_evidence,
 )
+from .core.languages import EXTENSION_LANGUAGE
 from .freshness import index_freshness
 from .indexer import write_index
 from .intent import is_doc_or_plan, is_source_file, is_test_file
@@ -648,7 +649,12 @@ def run_preflight(a):
             action = f"Reindexed first - {change_summary(stats)}"
         ui.detail(f"{action} ({totals}, {ui.took(elapsed)})")
     elif fresh["state"] == "current" and graph["status"] == "current":
-        ui.detail(f"Index is up to date ({totals}, indexed {ui.ago(ptr.get('lastIndexedAt'))})")
+        if fresh["files"]:
+            ui.detail(
+                f"Index is up to date ({totals}, indexed {ui.ago(ptr.get('lastIndexedAt'))})"
+            )
+        else:
+            ui.detail("No files to index in this folder yet")
     # Once per run: this run's count after a reindex, else the index's.
     print_grammar_warning(
         stats.get("grammar_unavailable", 0)
@@ -856,6 +862,25 @@ def run_path(a, found: list | None = None):
     source = sanitize_query(a.source)
     target = sanitize_query(a.target)
     as_json = getattr(a, "json", False)
+    indexed = {f["rel_path"] for f in fresh["files"]}
+    unindexed = next((s for s in (source, target) if _unindexed_path(root, s, indexed)), None)
+    if unindexed is not None:
+        # A file path names one file; a closest match would be a guess.
+        message = (
+            f"{unindexed} is outside the repository"
+            if _outside_repo(root, unindexed)
+            else f"{unindexed} is not in the index"
+        )
+        empty = {"found": False, "source_matches": [], "target_matches": [], "steps": []}
+        if found is not None:
+            found.append(empty)
+        if as_json:
+            error = {"code": "not_in_index", "message": message}
+            print(json.dumps({**path_payload(empty), "error": error}, indent=2, sort_keys=True))
+        else:
+            ui.warn(message)
+            ui.detail("Check the path, or run `mimry index` if the file is new.")
+        return 1
     if graph["status"] != "current":
         message = f"The graph files are {graph['status']}, so connections can't be checked"
         if as_json:
@@ -863,10 +888,10 @@ def run_path(a, found: list | None = None):
             print(
                 json.dumps({"found": False, "steps": [], "error": error}, indent=2, sort_keys=True)
             )
-            return 0
+            return 1
         ui.warn(message)
         ui.detail("Run `mimry refresh`, then try again.")
-        return 0
+        return 1
     result = shortest_path(root, source, target)
     if found is not None:
         found.append(result)
@@ -912,14 +937,26 @@ def run_path(a, found: list | None = None):
         return 0
     ui.warn(f"No connection found between {ui.quote(source)} and {ui.quote(target)}")
     for query, matches in ((source, result["source_matches"]), (target, result["target_matches"])):
-        found = (
-            ", ".join(_node_text(m["node"]) for m in matches[:3])
-            if matches
-            else "nothing in the graph"
-        )
+        found = _matched_text(matches) if matches else "nothing in the graph"
         ui.detail(f"{ui.quote(query)} matched {found}")
     ui.detail(f'Try `mimry related "{source}"` to see what it connects to.')
     return 0
+
+
+def _matched_text(matches: list[dict], shown: int = 3) -> str:
+    """The first few matches, then a count of the rest."""
+    text = ", ".join(_node_text(m["node"]) for m in matches[:shown])
+    rest = len(matches) - shown
+    return f"{text}, +{rest} more" if rest > 0 else text
+
+
+def _looks_like_path(text: str) -> bool:
+    """A file path: it has a separator or a source file extension."""
+    return "/" in text or "\\" in text or Path(text).suffix.lower() in EXTENSION_LANGUAGE
+
+
+def _unindexed_path(root: Path, text: str, indexed: set[str]) -> bool:
+    return _looks_like_path(text) and normalize_file_filter(text, root) not in indexed
 
 
 def _step_relation(step: dict) -> str:
@@ -967,7 +1004,19 @@ def calls_payload(
         }
         return payload
     wanted = normalize_file_filter(file, root) if file else None
-    return call_lookup(load_graph(root), name, relation, depth, wanted)
+    payload = call_lookup(load_graph(root), name, relation, depth, wanted)
+    if payload["target"] is None and not payload["ambiguous"]:
+        payload["error"] = _missing_target_error(name, file, payload)
+    return payload
+
+
+def _missing_target_error(name: str, file: str | None, payload: dict) -> dict:
+    if file and payload.get("file_matched") is False:
+        message = f"No file in the graph matches {ui.quote(file)}."
+        return {"code": "unknown_file", "message": message}
+    where = f"in {file}" if file else "in the graph"
+    message = f"No function or method named {ui.quote(name)} is {where}."
+    return {"code": "unknown_symbol", "message": message}
 
 
 IMPACT_MAX_DEPTH = 5
@@ -1072,6 +1121,9 @@ def _impact_summary(
     return f"{label}: {', '.join(parts)}."
 
 
+NO_CHANGES_MESSAGE = "No changes in the working tree against HEAD."
+
+
 def _impact_error(payload: dict, code: str, message: str, **extra) -> dict:
     payload.update(summary=message, error={"code": code, "message": message, **extra})
     return payload
@@ -1132,9 +1184,9 @@ def impact_payload(
             return _impact_error(payload, "no_git", message)
         touched = changes["names"] | (changes["untracked"] & indexed)
         if not touched:
-            return _impact_error(
-                payload, "no_changes", "No changes in the working tree against HEAD."
-            )
+            # An answer, not a failure: there is nothing to check.
+            payload.update(summary=NO_CHANGES_MESSAGE, no_changes=True)
+            return payload
         for rel in sorted(touched):
             syms = symbols_by_path.get(rel, [])
             if rel in changes["untracked"]:
@@ -1156,9 +1208,11 @@ def impact_payload(
         if lookup["target"] is None:
             candidates = lookup["candidates"]
             if lookup["ambiguous"]:
+                # Candidates answer until --file picks one.
                 message = f'Several symbols are named "{target}"; add --file <path> to pick one.'
-                code = "ambiguous"
-            elif file and lookup.get("file_matched") is False:
+                payload.update(summary=message, ambiguous=True, candidates=candidates)
+                return payload
+            if file and lookup.get("file_matched") is False:
                 message, code = f'No file in the graph matches "{file}".', "unknown_file"
             elif file:
                 message = f'No function or method named "{target}" is in {file}.'
@@ -1222,20 +1276,23 @@ def _print_impact(payload: dict) -> None:
     if error and error["code"] == "no_git":
         ui.warn(error["message"])
         return
-    if error and error["code"] == "no_changes":
-        print(error["message"])
-        return
     if error and error["code"] == "usage":
         ui.warn(error["message"])
+        return
+    if payload.get("no_changes"):
+        print(payload["summary"])
+        return
+    if payload.get("ambiguous"):
+        print(payload["summary"])
+        ui.table(
+            [(c["name"], c["kind"], _at(c["path"], c["line"])) for c in payload["candidates"]],
+            indent=4,
+        )
         return
     if error:
         print(error["message"])
         candidates = error.get("candidates") or []
-        if error["code"] == "ambiguous":
-            ui.table(
-                [(c["name"], c["kind"], _at(c["path"], c["line"])) for c in candidates], indent=4
-            )
-        elif candidates:
+        if candidates:
             ui.detail("Did you mean:")
             ui.table([(c["name"], _at(c["path"], c["line"])) for c in candidates], indent=4)
         return
@@ -1296,7 +1353,14 @@ def run_impact(a):
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         _print_impact(payload)
-    return 2 if payload.get("error", {}).get("code") == "usage" else 0
+    return _impact_exit_code(payload)
+
+
+def _impact_exit_code(payload: dict) -> int:
+    error = payload.get("error")
+    if not error:
+        return 0
+    return 2 if error["code"] == "usage" else 1
 
 
 def _indexed_as(surface: str, rel_path: str) -> bool:
@@ -1345,14 +1409,17 @@ def run_why(a):
                 exact = next((row for row in rows if row["path"] == path), None)
                 if exact:
                     break
+    status = 0
     if exact is None and _outside_repo(root, surface):
         ui.warn(f"{surface} is outside the repository")
+        status = 1
     elif exact is None and not any(
         _indexed_as(surface, f.get("rel_path", "")) for f in visible_files
     ):
         # Missing and skipped-as-secret look the same on purpose.
         ui.warn(f"{surface} is not in the index")
         ui.detail("Check the path, or run `mimry index` if the file is new.")
+        status = 1
     elif exact is None:
         ui.warn(f"{surface} is not in the top {window} results for {ui.quote(query)}")
         ui.detail(f'Try a narrower query, or `mimry find "{surface}"`.')
@@ -1395,7 +1462,7 @@ def run_why(a):
                     )
                 )
     print_verification(_verification_commands(fresh))
-    return 0
+    return status
 
 
 def _joined(items: list[str], total: int) -> str:

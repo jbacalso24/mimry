@@ -278,6 +278,31 @@ def _root(root: str | None) -> Path:
     return safe_root(Path(root or "."))
 
 
+def _requires_text(param: str, noun: str, example: str):
+    """Refuse a blank task or query as a usage error, before any work.
+
+    It sits outside the index refresh, so a blank call changes nothing.
+    """
+
+    def decorate(func):
+        @wraps(func)
+        def guarded(*args, **kwargs):
+            value = signature(func).bind_partial(*args, **kwargs).arguments.get(param)
+            if isinstance(value, str) and not value.strip():
+                return {
+                    "returncode": 2,
+                    "error": {
+                        "code": f"empty_{param}",
+                        "message": f"Give a {noun}, for example {example}",
+                    },
+                }
+            return func(*args, **kwargs)
+
+        return guarded
+
+    return decorate
+
+
 def _index_operation(*, exclusive: bool = False, refresh: bool = False):
     def decorate(func):
         func_signature = signature(func)
@@ -429,6 +454,7 @@ def mimry_refresh(root: str | None = None) -> dict[str, Any]:
 
 @tool
 @_state_guard
+@_requires_text("query", "task", '"fix the login timeout"')
 def mimry_preflight(
     query: str, root: str | None = None, force_refresh: bool = False
 ) -> dict[str, Any]:
@@ -456,6 +482,7 @@ def mimry_preflight(
 
 @tool
 @_state_guard
+@_requires_text("query", "query", '"login timeout"')
 @_index_operation(refresh=True)
 def mimry_find(
     query: str,
@@ -529,11 +556,14 @@ def mimry_find(
     }
     if semantic:
         payload["semantic"] = semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))
+    if not rows:
+        payload["message"] = f'No files match "{payload["query"]}".'
     return payload
 
 
 @tool
 @_state_guard
+@_requires_text("query", "query", '"login timeout"')
 @_index_operation(refresh=True)
 def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Local-only semantic search over bounded MIMRY chunks."""
@@ -542,16 +572,20 @@ def mimry_semantic(query: str, root: str | None = None, limit: int = 10) -> dict
     ptr = require(root_path)
     idx = Path(ptr["indexPath"])
     rows, health = semantic_rows(idx, ptr.get("rootId"), query, limit)
-    return {
+    payload = {
         "query": redact_sensitive_text(query),
         "root": str(root_path),
         "semantic": health,
         "results": sanitize_data(rows),
     }
+    if not rows:
+        payload["message"] = f'No files match "{payload["query"]}".'
+    return payload
 
 
 @tool
 @_state_guard
+@_requires_text("query", "query", '"login timeout"')
 @_index_operation(refresh=True)
 def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[str, Any]:
     """Return files related to a query by graph-aware ranking."""
@@ -561,15 +595,19 @@ def mimry_related(query: str, root: str | None = None, limit: int = 10) -> dict[
     rows = find_rows(
         Path(ptr["indexPath"]), query, limit, True, root=root_path, root_id=ptr.get("rootId")
     )
-    return {
+    payload = {
         "query": redact_sensitive_text(query),
         "root": str(root_path),
         "results": sanitize_data(rows),
     }
+    if not rows:
+        payload["message"] = f'No files match "{payload["query"]}".'
+    return payload
 
 
 @tool
 @_state_guard
+@_requires_text("query", "task", '"fix the login timeout"')
 @_index_operation(refresh=True)
 def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
     """Recommend an agent/role and supporting context for a task.
@@ -583,6 +621,7 @@ def mimry_route(query: str, root: str | None = None, limit: int = 8) -> dict[str
 
 @tool
 @_state_guard
+@_requires_text("query", "task", '"fix the login timeout"')
 @_index_operation(refresh=True)
 def mimry_brief(query: str, agent: str, root: str | None = None, limit: int = 8) -> dict[str, Any]:
     """Write a role-aware MIMRY agent brief.
@@ -626,7 +665,10 @@ def mimry_symbol(
     if relations is None:
         ptr = require(root_path)
         matches = symbol_matches(ptr, name)
-        return sanitize_data({"name": name, "root": str(root_path), "symbols": matches})
+        payload = {"name": name, "root": str(root_path), "symbols": matches}
+        if not matches:
+            payload["error"] = {"code": "unknown_symbol", "message": f'No symbols match "{name}".'}
+        return sanitize_data(payload)
     if relations not in CALL_DIRECTIONS:
         return {
             "returncode": 2,
@@ -647,6 +689,7 @@ def mimry_symbol(
 
 @tool
 @_state_guard
+@_requires_text("query", "task", '"fix the login timeout"')
 @_index_operation(refresh=True)
 def mimry_context(query: str, root: str | None = None, semantic: bool = False) -> dict[str, Any]:
     """Generate a MIMRY context pack.
@@ -670,6 +713,7 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
 
 @tool
 @_state_guard
+@_requires_text("query", "task", '"fix the login timeout"')
 @_index_operation(refresh=True)
 def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[str, Any]:
     """Explain the top files and symbols for a task.

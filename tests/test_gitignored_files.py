@@ -49,7 +49,9 @@ def test_find_never_points_at_an_ignored_file(tmp_path):
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
     result = run_cli(repo, cache, "find", "calculate invoice tax")
-    assert result.returncode == 0, result.stderr
+    # The only file with this text is ignored, so nothing matches.
+    assert result.returncode == 1, result.stderr
+    assert "No files match" in result.stdout
     assert "generated/" not in result.stdout
     assert "invoice_tax.log" not in result.stdout
 

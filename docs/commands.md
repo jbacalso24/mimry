@@ -104,6 +104,24 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 Colour is used only on an interactive terminal, and `NO_COLOR=1` turns it off.
 Piped and captured output always uses plain ASCII marks, so scripts and agents see the same text on every platform.
 
+## Exit codes
+
+Scripts and hooks can tell an answer from a miss by the exit code.
+
+| Situation | Exit code |
+| --- | --- |
+| Answer found | 0 |
+| `find`, `related` or `semantic` with a real query and no matches | 1 |
+| A named target that does not exist: `symbol`, `callers`, `callees`, `impact`, `why`, or a `path` source or target that looks like a file path and is not indexed | 1 |
+| Empty or whitespace-only task or query | 2 |
+| Invalid argument values, such as a bad depth or outcome | 2 |
+
+A name that several symbols share exits 0 and lists the candidates, so you can add `--file`.
+`path` between two indexed names with no connection also exits 0, because that is an answer.
+`status` keeps its own codes: 1 when MIMRY is not set up, 2 when the index is not current.
+`hook-check` and `hook-refresh` always exit 0, so a hook never fails the agent's tool call.
+With `--json`, the JSON is printed and the exit code is the same.
+
 ## Inferred edges
 
 Each graph edge is either `EXTRACTED` or `INFERRED`.

@@ -177,6 +177,22 @@ def cmd_plan_list(a):
     return 0
 
 
+def _requires_text(attr: str, noun: str, example: str):
+    """Refuse a blank task or query as a usage error (exit 2)."""
+
+    def decorate(command):
+        @wraps(command)
+        def guarded(a):
+            if not (getattr(a, attr, None) or "").strip():
+                ui.fail(f"Give a {noun}", f"For example: {example}")
+                return 2
+            return command(a)
+
+        return guarded
+
+    return decorate
+
+
 def _index_reader(command):
     """Keep the resolved generation alive for the whole command."""
 
@@ -392,6 +408,7 @@ def _relative_status_path(root: Path, maybe_path: str | Path | None) -> str:
         return str(maybe_path)
 
 
+@_requires_text("task", "task", 'mimry preflight "fix the login timeout"')
 def cmd_preflight(a):
     return run_preflight(a)
 
@@ -592,14 +609,16 @@ def _print_semantic_degrade(idx: Path, root_id: str | None) -> bool:
     return False
 
 
-def _print_search(heading: str, query: str, rows: list[dict], *, verbose: bool) -> None:
+def _print_search(heading: str, query: str, rows: list[dict], *, verbose: bool) -> int:
+    """Print the matches; exit 1 when there are none."""
     if not rows:
         print(f"No files match {ui.quote(redact_sensitive_text(query))}.")
         ui.detail("Try different words, or `mimry symbol <name>` to look up a function or class.")
-        return
+        return 1
     ui.title(f"{heading} {ui.quote(redact_sensitive_text(query))}")
     print()
     print_results(rows, verbose=verbose)
+    return 0
 
 
 @_fresh_index
@@ -634,10 +653,12 @@ def cmd_semantic(a):
         rows, semantic_info = semantic_rows(idx, ptr.get("rootId"), query, getattr(a, "limit", 10))
         if not _print_semantic_degrade(idx, ptr.get("rootId")):
             return 0
-        _print_search("Similar content for", query, rows, verbose=getattr(a, "verbose", False))
-        return 0
+        return _print_search(
+            "Similar content for", query, rows, verbose=getattr(a, "verbose", False)
+        )
 
 
+@_requires_text("query", "query", 'mimry find "login timeout"')
 @_fresh_index
 def cmd_find(a):
     start = Path(getattr(a, "find_directory", a.root)).resolve()
@@ -712,10 +733,10 @@ def _find_in_directory(a, root, start):
         except ValueError as exc:
             ui.fail("Invalid snippet limits", str(exc))
             return 2
-    _print_search("Best matches for", query, rows, verbose=getattr(a, "verbose", False))
-    return 0
+    return _print_search("Best matches for", query, rows, verbose=getattr(a, "verbose", False))
 
 
+@_requires_text("query", "query", 'mimry related "login timeout"')
 @_fresh_index
 @_index_reader
 def cmd_related(a):
@@ -725,10 +746,10 @@ def cmd_related(a):
     rows = find_rows(
         Path(ptr["indexPath"]), query, a.limit, True, root=root, root_id=ptr.get("rootId")
     )
-    _print_search("Files related to", query, rows, verbose=getattr(a, "verbose", False))
-    return 0
+    return _print_search("Files related to", query, rows, verbose=getattr(a, "verbose", False))
 
 
+@_requires_text("query", "task", 'mimry route "fix the login timeout"')
 @_fresh_index
 @_index_reader
 def cmd_route(a):
@@ -759,6 +780,7 @@ def cmd_route(a):
     return 0
 
 
+@_requires_text("query", "task", 'mimry brief "fix the login timeout" --agent <role>')
 @_fresh_index
 @_index_reader
 def cmd_brief(a):
@@ -778,6 +800,7 @@ def cmd_brief(a):
     return 0
 
 
+@_requires_text("query", "task", 'mimry explain "fix the login timeout"')
 @_fresh_index
 @_index_reader
 def cmd_explain(a):
@@ -820,11 +843,11 @@ def _print_calls(a, relation: str) -> int:
     payload = calls_payload(root, ptr, name, relation, a.depth, file)
     if getattr(a, "json", False):
         print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-    if "error" in payload:
+        return 1 if "error" in payload else 0
+    if "error" in payload and payload["error"]["code"] == "graph_not_current":
         ui.warn(payload["error"]["message"])
         ui.detail("Run `mimry refresh`, then try again.")
-        return 0
+        return 1
     target = payload["target"]
     if target is None:
         if payload["ambiguous"]:
@@ -837,18 +860,14 @@ def _print_calls(a, relation: str) -> int:
                 indent=4,
             )
             return 0
-        if payload.get("file_matched") is False:
-            print(f"No file in the graph matches {ui.quote(file)}.")
-        else:
-            where = f"in {file}" if file else "in the graph"
-            print(f"No function or method named {ui.quote(name)} is {where}.")
+        print(payload["error"]["message"])
         if payload["candidates"]:
             ui.detail("Did you mean:")
             ui.table(
                 [(c["name"], _location(c["path"], c["line"])) for c in payload["candidates"]],
                 indent=4,
             )
-        return 0
+        return 1
     results = payload["results"]
     if not results:
         if relation == "callers":
@@ -904,7 +923,7 @@ def cmd_symbol(a):
     if not matches:
         print(f"No symbols match {ui.quote(name)}.")
         ui.detail(f'Try part of the name, or `mimry find "{name}"` to search files.')
-        return 0
+        return 1
     if matches[0]["kind"] == "file":
         title = (
             f"No symbols match {ui.quote(name)}; {ui.count(len(matches), 'file')} named like it"
@@ -933,6 +952,7 @@ def cmd_symbol(a):
     return 0
 
 
+@_requires_text("query", "task", 'mimry context "fix the login timeout"')
 @_fresh_index
 @_index_reader
 def cmd_context(a):

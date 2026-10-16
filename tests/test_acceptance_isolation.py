@@ -121,13 +121,14 @@ def test_existing_index_becomes_stale_when_policy_newly_ignores_acceptance_tests
     assert all(symbol["name"] != "hidden_acceptance_symbol" for symbol in freshness["symbols"])
 
     capsys.readouterr()
+    # A hidden name is a real miss, so find and symbol exit 1.
     assert (
         cmd_find(
             SimpleNamespace(root=repo, query="hidden_acceptance_symbol", limit=10, semantic=False)
         )
-        == 0
+        == 1
     )
-    assert cmd_symbol(SimpleNamespace(root=repo, name="hidden_acceptance_symbol")) == 0
+    assert cmd_symbol(SimpleNamespace(root=repo, name="hidden_acceptance_symbol")) == 1
     assert (
         cmd_context(SimpleNamespace(root=repo, query="hidden acceptance contract", semantic=True))
         == 0

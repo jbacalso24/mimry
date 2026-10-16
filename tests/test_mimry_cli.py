@@ -1392,6 +1392,90 @@ def test_path_degrades_honestly_when_no_relationship_path_exists(tmp_path):
     assert " connects to " not in broad_token_res.stdout
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("find", ""),
+        ("find", "   "),
+        ("related", ""),
+        ("explain", ""),
+        ("route", ""),
+        ("context", ""),
+        ("brief", "", "--agent", "backend"),
+        ("preflight", ""),
+    ],
+)
+def test_a_blank_task_is_a_usage_error_and_changes_nothing(tmp_path, args):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+
+    res = run_cli(repo, cache, *args)
+
+    assert res.returncode == 2, res.stdout + res.stderr
+    assert "Give a" in res.stdout + res.stderr
+    assert not (repo / ".mimry").exists()
+
+
+def test_find_and_related_with_no_matches_exit_1_and_say_so(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+
+    for command in ("find", "related"):
+        res = run_cli(repo, cache, command, "zzzqqq")
+
+        assert res.returncode == 1, res.stdout + res.stderr
+        assert "No files match" in res.stdout
+
+
+def test_path_to_a_file_that_is_not_indexed_is_an_error_not_a_guess(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    write_current_graph_artifacts(repo)
+
+    res = run_cli(repo, cache, "path", "src/auth/nope.py", "src/auth/session.py")
+    as_json = run_cli(repo, cache, "path", "src/auth/nope.py", "src/auth/session.py", "--json")
+
+    assert res.returncode == 1, res.stderr
+    assert "src/auth/nope.py is not in the index" in res.stdout + res.stderr
+    assert "connects to" not in res.stdout and "closest match" not in res.stdout.lower()
+    assert as_json.returncode == 1, as_json.stderr
+    payload = json.loads(as_json.stdout)
+    assert payload["found"] is False
+    assert payload["error"]["code"] == "not_in_index"
+
+
+def test_why_exits_1_for_a_file_outside_or_missing_from_the_index(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    missing = run_cli(repo, cache, "why", "zzz_missing", "--query", "token")
+    outside = run_cli(repo, cache, "why", "../outside/secret.txt", "--query", "token")
+    unranked = run_cli(repo, cache, "why", "src/auth/session.py", "--query", "token")
+
+    assert missing.returncode == 1, missing.stderr
+    assert outside.returncode == 1, outside.stderr
+    assert unranked.returncode == 0, unranked.stderr
+
+
+def test_preflight_in_a_folder_with_no_files_says_there_is_nothing_to_index(tmp_path):
+    repo = tmp_path / "empty"
+    repo.mkdir()
+    cache = tmp_path / "cache"
+
+    first = run_cli(repo, cache, "preflight", "fix login timeout")
+    second = run_cli(repo, cache, "preflight", "fix login timeout")
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert "No files to index in this folder yet" in second.stdout
+    assert "Index is up to date" not in second.stdout
+
+
 def write_current_graph_artifacts(repo: Path):
     target = repo / "src" / "auth" / "session.py"
     graph_dir = repo / ".mimry" / "mimry-out" / "graph"

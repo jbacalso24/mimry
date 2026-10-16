@@ -877,7 +877,6 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
     cli_results = (
         run_cli(repo, cache, "init", "--skip-graph"),
         run_cli(repo, cache, "index"),
-        run_cli(repo, cache, "find", f"CONFIDENTIAL={DEFENSIVE_MARKER}"),
         run_cli(repo, cache, "context", f"credentials: {DEFENSIVE_MARKER}"),
         run_cli(repo, cache, "brief", f"auth={DEFENSIVE_MARKER}", "--agent", "tooly"),
         run_cli(repo, cache, "preflight", f"confidential: {DEFENSIVE_MARKER}"),
@@ -885,6 +884,10 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
     for result in cli_results:
         assert result.returncode == 0, result.stderr
         assert DEFENSIVE_MARKER not in result.stdout + result.stderr
+    # A search with no matches exits 1 and must not echo the value.
+    find = run_cli(repo, cache, "find", f"CONFIDENTIAL={DEFENSIVE_MARKER}")
+    assert find.returncode == 1, find.stderr
+    assert DEFENSIVE_MARKER not in find.stdout + find.stderr
 
     pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     index = Path(pointer["indexPath"])
@@ -924,10 +927,13 @@ def test_fake_standalone_token_has_zero_matches_across_owned_surfaces(tmp_path: 
     context = run_cli(repo, cache, "context", CANARY, "--semantic")
     brief = run_cli(repo, cache, "brief", CANARY, "--agent", "tooly")
     preflight = run_cli(repo, cache, "preflight", CANARY)
-    for result in (init, index, find, context, brief, preflight):
+    for result in (init, index, context, brief, preflight):
         assert result.returncode == 0, result.stderr
         assert CANARY not in result.stdout
         assert CANARY not in result.stderr
+    # A search with no matches exits 1 and must not echo the value.
+    assert find.returncode == 1, find.stderr
+    assert CANARY not in find.stdout + find.stderr
 
     pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     idx = Path(pointer["indexPath"])
@@ -1104,14 +1110,14 @@ def test_cli_and_mcp_lookup_boundaries_never_echo_credential_inputs(tmp_path: Pa
         f'credentials = """first line\n{VALUE_CANARY}\nlast line"""',
     )
     for lookup in lookup_inputs:
-        cli_results = (
-            run_cli(repo, cache, "symbol", lookup),
-            run_cli(repo, cache, "explain", lookup),
-            run_cli(repo, cache, "path", lookup, lookup),
-            run_cli(repo, cache, "why", lookup, "--query", lookup),
-        )
-        for result in cli_results:
-            assert result.returncode == 0, result.stderr
+        cli_results = {
+            "symbol": (run_cli(repo, cache, "symbol", lookup), 1),
+            "explain": (run_cli(repo, cache, "explain", lookup), 0),
+            "path": (run_cli(repo, cache, "path", lookup, lookup), 0),
+            "why": (run_cli(repo, cache, "why", lookup, "--query", lookup), 1),
+        }
+        for command, (result, code) in cli_results.items():
+            assert result.returncode == code, (command, result.stderr)
             assert VALUE_CANARY not in result.stdout + result.stderr
 
         mcp_payloads = (

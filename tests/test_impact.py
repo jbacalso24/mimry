@@ -255,9 +255,21 @@ def test_unknown_symbol_suggests_similar_names(tmp_path):
 
     res = _mimry(repo, cache, "impact", "sol")
 
-    assert res.returncode == 0, res.stderr
+    assert res.returncode == 1, res.stderr
     assert "Did you mean:" in res.stdout
     assert "solo" in res.stdout
+
+
+def test_impact_of_a_name_or_file_missing_from_the_graph_exits_1(tmp_path):
+    repo, cache = _repo(tmp_path, FILES)
+
+    res = _mimry(repo, cache, "impact", "nope_missing")
+    as_json = _mimry(repo, cache, "impact", "app/nope.py", "--json")
+
+    assert res.returncode == 1, res.stderr
+    assert "No function, method or file" in res.stdout
+    assert as_json.returncode == 1, as_json.stderr
+    assert json.loads(as_json.stdout)["error"]["code"] == "unknown_symbol"
 
 
 def test_depth_outside_one_to_five_is_rejected(tmp_path):

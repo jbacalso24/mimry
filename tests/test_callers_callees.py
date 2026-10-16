@@ -351,10 +351,26 @@ def test_unknown_name_says_so_and_suggests_similar_names(tmp_path):
 
     res = _mimry(repo, cache, "callers", "Help")
 
-    assert res.returncode == 0, res.stderr
+    assert res.returncode == 1, res.stderr
     assert 'No function or method named "Help" is in the graph.' in res.stdout
     assert "Did you mean:" in res.stdout
     assert "helper2" in res.stdout and "app/two.py:4" in res.stdout
+
+
+def test_a_name_missing_from_the_graph_exits_1_for_every_lookup(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+
+    for args in (
+        ("symbol", "nope_missing"),
+        ("callers", "nope_missing"),
+        ("callees", "nope_missing"),
+        ("callers", "helper", "--file", "nope.py"),
+    ):
+        res = _mimry(repo, cache, *args)
+
+        assert res.returncode == 1, (args, res.stdout, res.stderr)
+        assert "No " in res.stdout
 
 
 def test_ambiguous_name_lists_candidates_until_file_picks_one(tmp_path):

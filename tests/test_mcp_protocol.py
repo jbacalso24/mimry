@@ -224,6 +224,62 @@ def test_tool_exceptions_become_error_results(registry):
     }
 
 
+def test_a_failed_payload_is_an_error_result_and_keeps_its_message(registry):
+    @tool
+    def refused(text: str) -> dict:
+        """A usage error: returncode 2 with an error object."""
+        return {"returncode": 2, "error": {"code": "bad", "message": text}}
+
+    @tool
+    def missed(text: str) -> dict:
+        """A command that found nothing to answer: returncode 1."""
+        return {"returncode": 1, "stdout": text}
+
+    @tool
+    def errored(text: str) -> dict:
+        """An error object without a returncode."""
+        return {"error": {"code": "graph_not_current", "message": text}}
+
+    @tool
+    def searched(text: str) -> dict:
+        """A search with no matches is a normal answer."""
+        return {"query": text, "results": [], "message": "No files match"}
+
+    @tool
+    def succeeded(text: str) -> dict:
+        """A command that answered."""
+        return {"returncode": 0, "stdout": text}
+
+    calls = [
+        ("refused", "bad input"),
+        ("missed", "nothing here"),
+        ("errored", "stale graph"),
+        ("searched", "zzz"),
+        ("succeeded", "ok"),
+    ]
+    replies = _exchange(
+        [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}]
+        + [
+            {
+                "jsonrpc": "2.0",
+                "id": index,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": {"text": text}},
+            }
+            for index, (name, text) in enumerate(calls, start=2)
+        ]
+    )
+    results = {name: replies[index]["result"] for index, (name, _) in enumerate(calls, start=1)}
+
+    assert results["refused"]["isError"] is True
+    assert "bad input" in results["refused"]["content"][0]["text"]
+    assert results["missed"]["isError"] is True
+    assert results["errored"]["isError"] is True
+    assert "isError" not in results["searched"]
+    assert "No files match" in results["searched"]["content"][0]["text"]
+    assert "isError" not in results["succeeded"]
+
+
 def test_a_tool_that_exits_is_an_error_result_and_the_server_keeps_going(registry):
     @tool
     def quits(text: str) -> dict:

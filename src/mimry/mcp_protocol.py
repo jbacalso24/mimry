@@ -213,6 +213,18 @@ def _tool_result(text: str, *, is_error: bool = False, structured: Any = None) -
     return result
 
 
+def _failed(result: Any) -> bool:
+    """Whether a tool result is a failure, so the agent sees isError.
+
+    A failed command returns a non-zero returncode or an error object.
+    A search with no matches returns neither, so it stays a normal
+    empty answer; tools never set returncode 1 for that case.
+    """
+    if not isinstance(result, dict):
+        return False
+    return bool(result.get("error")) or result.get("returncode", 0) not in (0, None)
+
+
 def exit_message(exc: SystemExit) -> str:
     """The text a SystemExit carries: its message or its exit status."""
     if isinstance(exc.code, str):
@@ -323,7 +335,9 @@ class _Session:
             traceback.print_exc(file=sys.stderr)
             return _tool_result(f"{type(exc).__name__}: {exc}", is_error=True)
         structured = result if self.structured and isinstance(result, dict) else None
-        return _tool_result(text, structured=structured)
+        # The payload stays as structured content, so the agent still
+        # reads the message next to the error flag.
+        return _tool_result(text, is_error=_failed(result), structured=structured)
 
 
 def _error(message_id: Any, code: int, message: str) -> dict[str, Any]:

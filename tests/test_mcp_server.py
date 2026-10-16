@@ -330,7 +330,7 @@ def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(
 
     explain = mimry_explain("fix auth session", str(repo), limit=3)
     why = mimry_why("src/auth/session.py", "fix auth session", str(repo))
-    path = mimry_path("src/auth/session.py", "tests/test_session.py", str(repo))
+    path = mimry_path("src/auth/session.py", "src/auth/middleware.py", str(repo))
     feedback = mimry_feedback(
         query="fix auth session",
         root=str(repo),
@@ -1010,3 +1010,88 @@ def test_capture_command_keeps_what_a_cli_helper_printed_before_it_exited():
         "stderr": "",
         "error": {"code": "command_exited", "message": "gone"},
     }
+
+
+def _mcp_repo(tmp_path: Path, monkeypatch) -> Path:
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    assert mimry_preflight("fix auth session", str(repo))["returncode"] == 0
+    return repo
+
+
+def _call(name: str, arguments: dict) -> dict:
+    """One tool call over the stdio protocol, as an agent makes it."""
+    replies = _serve(
+        [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            },
+        ]
+    )
+    return replies[1]["result"]
+
+
+def test_mcp_blank_task_or_query_is_an_error(tmp_path: Path, monkeypatch):
+    repo = _mcp_repo(tmp_path, monkeypatch)
+
+    for name, arguments in (
+        ("mimry_preflight", {"query": "", "root": str(repo)}),
+        ("mimry_find", {"query": "   ", "root": str(repo)}),
+        ("mimry_route", {"query": "", "root": str(repo)}),
+    ):
+        result = _call(name, arguments)
+
+        assert result["isError"] is True, name
+        assert "Give a" in result["content"][0]["text"], name
+
+
+def test_mcp_search_with_no_matches_is_an_empty_answer_not_an_error(tmp_path: Path, monkeypatch):
+    repo = _mcp_repo(tmp_path, monkeypatch)
+
+    for name in ("mimry_find", "mimry_related"):
+        result = _call(name, {"query": "zzzqqq", "root": str(repo)})
+
+        assert "isError" not in result, name
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["results"] == []
+        assert "No files match" in payload["message"]
+
+
+def test_mcp_missing_names_and_paths_are_errors_and_found_ones_are_not(
+    tmp_path: Path, monkeypatch
+):
+    repo = _mcp_repo(tmp_path, monkeypatch)
+
+    missing_symbol = _call("mimry_symbol", {"name": "no_such_symbol_xyz", "root": str(repo)})
+    missing_callers = _call(
+        "mimry_symbol",
+        {"name": "no_such_symbol_xyz", "relations": "callers", "root": str(repo)},
+    )
+    missing_path = _call(
+        "mimry_path",
+        {"source": "src/auth/nope.py", "target": "src/auth/session.py", "root": str(repo)},
+    )
+    found_symbol = _call("mimry_symbol", {"name": "session", "root": str(repo)})
+
+    assert missing_symbol["isError"] is True
+    assert missing_callers["isError"] is True
+    assert missing_path["isError"] is True
+    assert json.loads(missing_path["content"][0]["text"])["found"] is False
+    assert "isError" not in found_symbol
+
+
+def test_mcp_depth_outside_the_range_is_an_error(tmp_path: Path, monkeypatch):
+    repo = _mcp_repo(tmp_path, monkeypatch)
+
+    result = _call(
+        "mimry_symbol",
+        {"name": "session", "relations": "callers", "depth": 9, "root": str(repo)},
+    )
+
+    assert result["isError"] is True
+    assert "depth must be 1, 2 or 3" in result["content"][0]["text"]
