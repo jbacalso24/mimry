@@ -194,7 +194,7 @@ See [docs/agents.md](docs/agents.md) for where each agent's files go and how its
 | `--always-on` | Add a short rules block to the agent's always-read file, such as `AGENTS.md` |
 | `--hooks` | Suggest `mimry find` when the agent starts a broad grep, answer a search for a known symbol with its definition and callers, and refresh the index in the background when a session starts and after each file edit. For Codex, project hooks run after you trust them with `/hooks`. |
 | `--no-mcp` | Install the skill without registering the MCP server |
-| `--no-global-gitignore` | Do not add `.mimry/` and `mimry-out/` to Git's global ignore file |
+| `--no-global-gitignore` | Do not add `.mimry/` to Git's global ignore file |
 
 <a id="manual-mcp-setup"></a>
 <details>

@@ -18,7 +18,7 @@ import pytest
 import mimry.installer as installer
 from mimry.cli import main
 
-GLOBAL_LINES = "# MIMRY\n.mimry/\nmimry-out/\n"
+GLOBAL_LINES = "# MIMRY\n.mimry/\n"
 
 
 @pytest.fixture
@@ -303,6 +303,22 @@ def test_without_the_flag_the_block_stays_and_a_line_says_how(ignore_file, capsy
 
     assert ignore_file.read_text(encoding="utf-8") == text
     assert "--git-ignore" in capsys.readouterr().out
+
+
+def test_git_ignore_flag_keeps_a_user_mimry_out_line(ignore_file):
+    ignore_file.write_text("mimry-out/\n# MIMRY\n.mimry/\n", encoding="utf-8")
+
+    installer._uninstall_global_ignore(remove=True)
+
+    assert ignore_file.read_text(encoding="utf-8") == "mimry-out/\n"
+
+
+def test_git_ignore_flag_removes_an_older_install_block(ignore_file):
+    ignore_file.write_text("node_modules/\n# MIMRY\n.mimry/\nmimry-out/\n", encoding="utf-8")
+
+    installer._uninstall_global_ignore(remove=True)
+
+    assert ignore_file.read_text(encoding="utf-8") == "node_modules/\n"
 
 
 def test_git_ignore_flag_keeps_the_line_endings_of_the_other_lines(ignore_file):

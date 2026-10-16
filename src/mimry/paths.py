@@ -61,10 +61,6 @@ def output_dir(root):
     return mdir(root) / "mimry-out"
 
 
-def legacy_output_dir(root):
-    return root / "mimry-out"
-
-
 def context_file(root):
     return output_dir(root) / "context" / "latest.md"
 
@@ -95,10 +91,6 @@ def _task_slug(query: str) -> str:
         # One word longer than the limit has no boundary to cut at.
         slug = words[0][:_TASK_SLUG_LIMIT]
     return slug or "task"
-
-
-def legacy_context_file(root):
-    return legacy_output_dir(root) / "context" / "latest.md"
 
 
 def graph_output_dir(root):

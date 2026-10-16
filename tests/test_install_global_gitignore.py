@@ -11,7 +11,7 @@ import pytest
 from mimry import installer
 from mimry.cli import main
 
-GLOBAL_LINES = "# MIMRY\n.mimry/\nmimry-out/\n"
+GLOBAL_LINES = "# MIMRY\n.mimry/\n"
 
 
 @pytest.fixture
@@ -58,14 +58,25 @@ def test_existing_file_without_trailing_newline_gets_a_separator(home):
     assert path.read_text(encoding="utf-8") == "node_modules/\n" + GLOBAL_LINES
 
 
-def test_only_the_missing_patterns_are_added(home):
+def test_a_file_that_already_lists_mimry_is_left_alone(home, capsys):
     path = _default_file(home)
     path.parent.mkdir(parents=True)
     path.write_text(".mimry/\n", encoding="utf-8")
 
+    assert _install() == 0
+
+    assert path.read_text(encoding="utf-8") == ".mimry/\n"
+    assert "global git ignore" not in capsys.readouterr().out
+
+
+def test_an_existing_mimry_out_line_is_kept_and_only_mimry_is_added(home):
+    path = _default_file(home)
+    path.parent.mkdir(parents=True)
+    path.write_text("mimry-out/\n", encoding="utf-8")
+
     _install()
 
-    assert path.read_text(encoding="utf-8") == ".mimry/\n# MIMRY\nmimry-out/\n"
+    assert path.read_text(encoding="utf-8") == "mimry-out/\n" + GLOBAL_LINES
 
 
 def test_custom_core_excludes_file_is_used(home, tmp_path):
@@ -159,7 +170,7 @@ def test_write_failure_warns_with_the_lines_to_add_by_hand(home, monkeypatch, ca
 
     out = capsys.readouterr()
     assert "Could not write" in out.out + out.err
-    assert "Add these lines to it by hand: .mimry/, mimry-out/" in out.out
+    assert "Add these lines to it by hand: .mimry/" in out.out
     assert _skill(home).is_file()
 
 

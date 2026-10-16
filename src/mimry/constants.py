@@ -19,6 +19,8 @@ HEAVY_IGNORES = {
     "coverage",
     ".git",
     ".mimry",
+    # Output from before it moved under .mimry/. A stray root copy
+    # must not be indexed as source, so keep it.
     "mimry-out",
     ".cache",
     ".expo",

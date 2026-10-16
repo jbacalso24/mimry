@@ -46,7 +46,6 @@ from .lifecycle import (
 from .paths import (
     TASK_PACK_PATTERN,
     context_file,
-    legacy_context_file,
     normalize_file_filter,
     output_dir,
     task_context_file,
@@ -570,7 +569,6 @@ def write_context_pack(
     # latest.md is a copy of the newest pack, for anything that reads it
     # directly.
     atomic_write_text(context_file(root), text)
-    _write_legacy_context_redirect(root)
     _prune_task_packs(root, keep=pack_path)
     log_preflight(root, rows)
     return rows, pack_path
@@ -609,31 +607,6 @@ def _prune_task_packs(root: Path, *, keep: Path) -> None:
             # deleted yet. Leave it for a later run. Another process may
             # also have pruned it already.
             continue
-
-
-def _write_legacy_context_redirect(root: Path) -> None:
-    """Prevent stale pre-migration context packs from misleading agents.
-
-    MIMRY now keeps generated output under `.mimry/mimry-out/` so
-    ordinary project roots do not accumulate visible generated folders.
-    Older checkouts may still have `mimry-out/context/latest.md`;
-    overwrite that file with a small redirect if it already exists
-    instead of leaving stale task context.
-    """
-    legacy = legacy_context_file(root)
-    current = context_file(root)
-    if not legacy.exists():
-        return
-    try:
-        current_rel = current.relative_to(root).as_posix()
-    except ValueError:
-        current_rel = str(current)
-    atomic_write_text(
-        legacy,
-        "# MIMRY context moved\n\n"
-        "This legacy context path is no longer the source of truth.\n\n"
-        f"Read `{current_rel}` instead.\n",
-    )
 
 
 def run_preflight(a):

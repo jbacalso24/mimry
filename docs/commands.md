@@ -75,7 +75,7 @@ Add `--project` to remove a project install, and `--always-on` or `--hooks` to r
 MIMRY removes only its own part of a file it shares with you, and says so: `Removed MIMRY's hooks from .claude/settings.json` means the file stays with your settings.
 A file is deleted only when MIMRY created it and nothing else is left in it, and a folder is removed only when MIMRY created it and it is empty.
 Git's global ignore file is shared by every install on the machine, so uninstall leaves MIMRY's lines there and prints how to remove them.
-Pass `--git-ignore` to remove them: MIMRY's `# MIMRY` line and the `.mimry/` and `mimry-out/` lines after it go, and every other line stays as it was.
+Pass `--git-ignore` to remove them: MIMRY's `# MIMRY` line and the `.mimry/` line after it go, and every other line stays as it was.
 
 ## Diagnosing an install with `doctor`
 

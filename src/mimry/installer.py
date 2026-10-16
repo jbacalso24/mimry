@@ -1786,8 +1786,11 @@ def _plugin_installed() -> bool:
 
 
 # Git's global excludes file gets these once per machine, so a repo's
-# tracked .gitignore needs no MIMRY lines.
-_GLOBAL_IGNORE_PATTERNS = (".mimry/", "mimry-out/")
+# tracked .gitignore needs no MIMRY lines. MIMRY's output lives under
+# .mimry/, so that one pattern covers it.
+_GLOBAL_IGNORE_PATTERNS = (".mimry/",)
+# Installs before #269 also wrote this line in the block.
+_LEGACY_BLOCK_PATTERNS = ("mimry-out/",)
 _GLOBAL_IGNORE_MARKER = "# MIMRY"
 
 
@@ -1858,7 +1861,7 @@ def _without_mimry_block(lines: list[str]) -> list[str]:
         if text == _GLOBAL_IGNORE_MARKER:
             in_block = True
             continue
-        if in_block and text in _GLOBAL_IGNORE_PATTERNS:
+        if in_block and text in _GLOBAL_IGNORE_PATTERNS + _LEGACY_BLOCK_PATTERNS:
             continue
         in_block = False
         kept.append(line)

@@ -24,6 +24,6 @@ MIMRY is local-first, but local software still processes untrusted filenames and
 
 - Do not point MIMRY at a home directory, drive root, credential dump, or unknown archive.
 - Review the selected root and generated output before sharing either one.
-- Keep `.mimry/`, `mimry-out/`, local caches, and feedback data out of version control.
+- Keep `.mimry/`, local caches, and feedback data out of version control.
 - Treat scanner exclusions and redaction as defense in depth, not permission to store secrets in repositories.
 - MIMRY does not require cloud credentials, remote embeddings, or telemetry for its default workflow.

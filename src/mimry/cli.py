@@ -497,7 +497,7 @@ def build_parser():
     i.add_argument(
         "--no-global-gitignore",
         action="store_true",
-        help="Do not add .mimry/ and mimry-out/ to Git's global ignore file",
+        help="Do not add .mimry/ to Git's global ignore file",
     )
     i.set_defaults(func=cmd_install)
     u = sub.add_parser("uninstall", help="Remove a MIMRY agent skill install")

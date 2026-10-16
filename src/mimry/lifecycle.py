@@ -53,6 +53,7 @@ def _git_toplevel(root: Path) -> Path | None:
 def ensure_mimry_gitignore(root: Path) -> bool:
     """Ensure Git ignores repo-local MIMRY metadata and output.
 
+    MIMRY's output lives under `.mimry/`, so that one pattern covers it.
     Only in initialized Git worktrees.
     """
     git_root = _git_toplevel(root)
@@ -65,39 +66,29 @@ def ensure_mimry_gitignore(root: Path) -> bool:
         return False
 
     if rel == Path("."):
-        patterns = [".mimry/", "mimry-out/"]
-        check_paths = [Path(".mimry/pointer.json"), Path("mimry-out/context/latest.md")]
+        pattern = ".mimry/"
+        check_path = Path(".mimry/pointer.json")
     else:
-        prefix = rel.as_posix()
-        patterns = [f"/{prefix}/.mimry/", f"/{prefix}/mimry-out/"]
-        check_paths = [
-            rel / ".mimry" / "pointer.json",
-            rel / "mimry-out" / "context" / "latest.md",
-        ]
+        pattern = f"/{rel.as_posix()}/.mimry/"
+        check_path = rel / ".mimry" / "pointer.json"
 
     gitignore = git_root / ".gitignore"
     existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    lines = {line.strip() for line in existing.splitlines()}
-    additions = []
-    for pattern, check_path in zip(patterns, check_paths, strict=True):
-        if pattern in lines:
-            continue
-        ignored = subprocess.run(
-            ["git", "-C", str(git_root), "check-ignore", "--quiet", "--", check_path.as_posix()],
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
-        if ignored.returncode != 0:
-            additions.append(pattern)
-
-    if not additions:
+    if pattern in {line.strip() for line in existing.splitlines()}:
+        return False
+    ignored = subprocess.run(
+        ["git", "-C", str(git_root), "check-ignore", "--quiet", "--", check_path.as_posix()],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    if ignored.returncode == 0:
         return False
     prefix = "" if not existing or existing.endswith("\n") else "\n"
-    gitignore.write_text(f"{existing}{prefix}" + "\n".join(additions) + "\n", encoding="utf-8")
+    gitignore.write_text(f"{existing}{prefix}{pattern}\n", encoding="utf-8")
     return True
 
 

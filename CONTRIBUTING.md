@@ -67,7 +67,7 @@ Install the built wheel into a clean environment and smoke-test `mimry --help`. 
 - Keep indexing local-first and fail closed around secrets, unsafe roots, stale state, symlinks, and ambiguous relationships.
 - Do not add telemetry, implicit network calls, provider credentials, or remote model requirements to the default path.
 - Use generic paths and identities in docs and fixtures. Do not commit real usernames, home paths, tokens, keys, or private repository names.
-- Keep `.mimry/`, `mimry-out/`, caches, build output, and local environments untracked.
+- Keep `.mimry/`, caches, build output, and local environments untracked.
 
 ## Opening a pull request
 

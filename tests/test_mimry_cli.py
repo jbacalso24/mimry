@@ -157,7 +157,7 @@ def test_init_adds_mimry_to_gitignore_without_clobbering_existing_content(tmp_pa
     gitignore = (repo / ".gitignore").read_text(encoding="utf-8")
     assert "dist/\n# keep me\n" in gitignore
     assert gitignore.count(".mimry/") == 1
-    assert gitignore.count("mimry-out/") == 1
+    assert "mimry-out/" not in gitignore
     ignored = subprocess.run(
         ["git", "check-ignore", ".mimry/pointer.json"],
         cwd=repo,
@@ -166,14 +166,28 @@ def test_init_adds_mimry_to_gitignore_without_clobbering_existing_content(tmp_pa
         check=False,
     )
     assert ignored.returncode == 0, ignored.stderr
-    legacy_ignored = subprocess.run(
-        ["git", "check-ignore", "mimry-out/context/latest.md"],
-        cwd=repo,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert legacy_ignored.returncode == 0, legacy_ignored.stderr
+
+
+def test_init_in_a_repo_without_gitignore_writes_only_mimry(tmp_path):
+    repo = copy_fixture(tmp_path)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    assert not (repo / ".gitignore").exists()
+
+    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graph")
+
+    assert res.returncode == 0, res.stderr
+    assert (repo / ".gitignore").read_text(encoding="utf-8") == ".mimry/\n"
+
+
+def test_init_keeps_an_existing_mimry_out_line_and_adds_mimry(tmp_path):
+    repo = copy_fixture(tmp_path)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / ".gitignore").write_text("mimry-out/\n", encoding="utf-8")
+
+    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graph")
+
+    assert res.returncode == 0, res.stderr
+    assert (repo / ".gitignore").read_text(encoding="utf-8") == "mimry-out/\n.mimry/\n"
 
 
 def test_init_gitignore_is_idempotent_for_existing_mimry_root(tmp_path):
@@ -184,8 +198,7 @@ def test_init_gitignore_is_idempotent_for_existing_mimry_root(tmp_path):
     assert run_cli(repo, tmp_path / "cache", "init", "--skip-graph").returncode == 0
 
     gitignore = (repo / ".gitignore").read_text(encoding="utf-8")
-    assert gitignore.count(".mimry/") == 1
-    assert gitignore.count("mimry-out/") == 1
+    assert gitignore == ".mimry/\n"
 
 
 def test_init_defaults_to_current_working_directory(tmp_path):
@@ -1538,26 +1551,6 @@ def test_preflight_skips_refresh_when_current_and_writes_context(tmp_path):
     assert "src/auth/session.py" in res.stdout
     assert before == after
     assert (repo / ".mimry" / "mimry-out" / "context" / "latest.md").exists()
-
-
-def test_context_generation_overwrites_legacy_context_with_redirect_warning(tmp_path):
-    repo = copy_fixture(tmp_path)
-    cache = tmp_path / "cache"
-    legacy = repo / "mimry-out" / "context" / "latest.md"
-    legacy.parent.mkdir(parents=True, exist_ok=True)
-    legacy.write_text("# Old stale context\n\nThis should not be trusted.\n", encoding="utf-8")
-    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
-    assert run_cli(repo, cache, "index").returncode == 0
-
-    res = run_cli(repo, cache, "context", "fix auth session")
-
-    assert res.returncode == 0, res.stderr
-    current = repo / ".mimry" / "mimry-out" / "context" / "latest.md"
-    assert current.exists()
-    legacy_text = legacy.read_text(encoding="utf-8")
-    assert "# MIMRY context moved" in legacy_text
-    assert ".mimry/mimry-out/context/latest.md" in legacy_text
-    assert "Old stale context" not in legacy_text
 
 
 def test_preflight_writes_evidence_grade_context_pack_sections(tmp_path):
