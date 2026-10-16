@@ -211,7 +211,7 @@ def _status_summary_not_current(
     root: Path, ptr: dict, fresh: dict, graph: dict, semantic_state: dict, semantic: bool
 ) -> list[str]:
     """Status lines when the index or graph needs a refresh."""
-    last_indexed = ptr.get("lastIndexedAt") or "never"
+    last_indexed = ui.local_time(ptr.get("lastIndexedAt"))
     stored = fresh["stored_totals"]
     return [
         f"- Root: `{root}`",
@@ -445,7 +445,7 @@ def write_context_pack(
     if fresh["state"] == "current" and graph["status"] == "current":
         status_summary_lines = [
             f"- Index current: {len(fresh['files'])} files, {len(fresh['symbols'])} symbols"
-            f" (indexed {ptr.get('lastIndexedAt') or 'never'})"
+            f" (indexed {ui.local_time(ptr.get('lastIndexedAt'))})"
         ]
     else:
         status_summary_lines = _status_summary_not_current(

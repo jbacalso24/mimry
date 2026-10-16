@@ -94,7 +94,11 @@ def build_parser():
             " keep the index outside the repo. Run `mimry index` next to build the index."
         ),
     )
-    s.add_argument("--root-type", default="repo")
+    s.add_argument(
+        "--root-type",
+        default="repo",
+        help="Folder type recorded for this root (default: repo). Nothing else reads it yet",
+    )
     # init never builds the graph; accepted for old scripts.
     s.add_argument(
         "--skip-graph",
@@ -154,21 +158,25 @@ def build_parser():
         help="Re-hash indexed files while checking freshness; still performs no writes",
     )
     s.set_defaults(func=cmd_doctor)
-    # argparse prints the primary name for an alias; the help says so.
-    s = sub.add_parser(
-        "upgrade",
-        aliases=["update"],
-        help="Upgrade MIMRY to the latest release",
-        description=(
-            "Upgrade MIMRY to the latest release. `mimry update` is an alias for this command."
-        ),
+    # Own parser, so the `update` usage line says `mimry update`.
+    upgrade_description = (
+        "Upgrade MIMRY to the latest release. `mimry update` is an alias for this command."
     )
-    s.add_argument(
-        "--stop-servers",
-        action="store_true",
-        help="Stop running MIMRY MCP servers first; open agents must reconnect afterwards",
-    )
-    s.set_defaults(func=cmd_upgrade)
+    # No help= on update keeps it out of the command list.
+    for name, listed in (("upgrade", "Upgrade MIMRY to the latest release"), ("update", None)):
+        extra = {} if listed is None else {"help": listed}
+        s = sub.add_parser(
+            name,
+            prog=f"mimry {name}",
+            description=upgrade_description,
+            **extra,
+        )
+        s.add_argument(
+            "--stop-servers",
+            action="store_true",
+            help="Stop running MIMRY MCP servers first; open agents must reconnect afterwards",
+        )
+        s.set_defaults(func=cmd_upgrade)
     s = sub.add_parser("watch", help="Poll for changes and refresh when they settle")
     s.add_argument(
         "--interval",
@@ -206,7 +214,8 @@ def build_parser():
     )
     s.set_defaults(func=cmd_export)
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
-    s.add_argument("--active-only", action="store_true")
+    # No planned adapters, so this does nothing; kept for old scripts.
+    s.add_argument("--active-only", action="store_true", help=argparse.SUPPRESS)
     s.set_defaults(func=cmd_adapters)
     s = sub.add_parser("find", help="Rank files that match a query, best match first")
     s.add_argument("--everywhere", action="store_true", help="Search the whole indexed repository")
@@ -270,7 +279,7 @@ def build_parser():
         ),
     )
     s.add_argument("query", nargs="?", help='Query text, or "index"/"status"')
-    s.add_argument("--limit", type=int, default=10)
+    s.add_argument("--limit", type=int, default=10, help="How many matches to show (default 10)")
     s.set_defaults(func=cmd_semantic)
     s = sub.add_parser(
         "related",
@@ -285,7 +294,9 @@ def build_parser():
         help="Recommend an agent role, context packs, risks, files, and verification for a task",
     )
     s.add_argument("query")
-    s.add_argument("--limit", type=int, default=8)
+    s.add_argument(
+        "--limit", type=int, default=8, help="How many likely files to consider (default 8)"
+    )
     s.add_argument(
         "--json", action="store_true", help="Print the structured route payload as JSON"
     )
@@ -297,7 +308,9 @@ def build_parser():
         required=True,
         help="Agent role: backend/frontend/mobile/reviewer/qa/docs/tooly/general",
     )
-    s.add_argument("--limit", type=int, default=8)
+    s.add_argument(
+        "--limit", type=int, default=8, help="How many likely files to list (default 8)"
+    )
     s.set_defaults(func=cmd_brief)
     s = sub.add_parser(
         "symbol",
@@ -370,7 +383,7 @@ def build_parser():
         help="Explain top files, symbols, relationship evidence, and verification for a task",
     )
     s.add_argument("query")
-    s.add_argument("--limit", type=int, default=5)
+    s.add_argument("--limit", type=int, default=5, help="How many top files to show (default 5)")
     s.set_defaults(func=cmd_explain)
     s = sub.add_parser(
         "path", help="Find a graph relationship path between two files/symbols/queries"
@@ -439,16 +452,29 @@ def build_parser():
     s.set_defaults(func=cmd_impact)
     s = sub.add_parser(
         "history",
-        help="Find the commits that added, removed or renamed files matching a query",
+        help="Find the commits whose message or changed files match a query",
+        description=(
+            "Find the commits whose message or changed files match a query, best match first."
+            " Words match the commit message; a file name or path matches the files the commit"
+            " changed."
+        ),
     )
-    s.add_argument("query")
+    s.add_argument(
+        "query",
+        help="Words from the commit message, or a file name or path the commit changed",
+    )
     s.add_argument("--limit", type=int, default=10, help="How many commits to show (default 10)")
     s.add_argument("--json", action="store_true", help="Print the matching commits as JSON")
     s.set_defaults(func=cmd_history)
     s = sub.add_parser("why", help="Explain why a file or symbol ranked for a task query")
     s.add_argument("surface")
-    s.add_argument("--query", required=True)
-    s.add_argument("--limit", type=int, default=25)
+    s.add_argument("--query", required=True, help="The task to rank the file or symbol for")
+    s.add_argument(
+        "--limit",
+        type=int,
+        default=25,
+        help="How many ranked files to search for it; never fewer than 25 (default 25)",
+    )
     s.set_defaults(func=cmd_why)
     s = sub.add_parser("report", help="Print the current MIMRY graph report")
     s.set_defaults(func=cmd_report)

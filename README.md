@@ -225,8 +225,9 @@ Other MCP clients:
 `uvx mimry mcp` runs the server without installing it.
 
 By default the server lists 9 core tools: `mimry_status`, `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_path`, `mimry_impact`, `mimry_why` and `mimry_feedback`.
-Their definitions cost 1,309 tokens per session (o200k_base), against 2,590 for all 22 tools, so the rest stay CLI commands unless you ask for them.
-Set `MIMRY_MCP_TOOLS=all` in the server's environment to list every command as a tool, or give a comma-separated list of tool names, such as `MIMRY_MCP_TOOLS=mimry_find,mimry_path`.
+The other tools stay off by default to keep the tool list small, so use the CLI for them unless you ask for them.
+Set `MIMRY_MCP_TOOLS=all` in the server's environment to list all 24 tools, or give a comma-separated list of tool names, such as `MIMRY_MCP_TOOLS=mimry_find,mimry_path`.
+Commands with no tool, such as `mimry callers`, `mimry callees`, `mimry bench`, `mimry doctor`, `mimry report` and `mimry install`, stay CLI-only.
 An unknown name prints one line to stderr and falls back to the core tools.
 
 MIMRY is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/) as `io.github.jbacalso24/mimry`.

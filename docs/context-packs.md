@@ -21,6 +21,7 @@ Required sections:
 - verify with: suggested verification commands detected from package.json, pyproject.toml, Makefile and justfile targets, tox and nox sessions, and CI workflow run steps
   A nested package's command runs from its own directory (`cd adapters/bun && bun run test`) with its own package manager.
   Tool-name guesses (`uv run pytest` from pyproject.toml) appear only when the project names no check command.
+  Repo docs such as README.md, AGENTS.md and CLAUDE.md are never a source of commands.
 
 Rules:
 

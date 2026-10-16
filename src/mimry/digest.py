@@ -41,6 +41,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .ui import local_time
+
 DIGEST_VERSION = "1"
 
 # A masked operational value must not swallow the token that follows it.
@@ -213,6 +215,10 @@ def normalize_context(
         for candidate in candidates:
             if candidate:
                 replacements.append((candidate, token))
+
+    if indexed_at:
+        # The pack shows the same time as local time with its offset.
+        replacements.append((local_time(indexed_at), "<timestamp>"))
 
     replacements.sort(key=lambda pair: len(pair[0]), reverse=True)
 

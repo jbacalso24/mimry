@@ -180,7 +180,7 @@ _REFERENCES: dict[str, str] = {
         """- `mimry context "<task>"`\n"""
         """- `mimry semantic "<query>"`\n"""
         """- `mimry explain "<task>"`\n"""
-        """- `mimry adapters --active-only`\n"""
+        """- `mimry adapters`\n"""
         """- `mimry history "<what changed>"`\n"""
         """\n"""
         """Rules:\n"""
@@ -564,13 +564,24 @@ def canonical_platform(name: str) -> str:
     return key
 
 
+# Accepted everywhere, listed only on Windows.
+_WINDOWS_ONLY_ALIASES = frozenset({"windows"})
+
+
+def _listed_aliases(cfg: MimryPlatform, *, windows: bool) -> tuple[str, ...]:
+    if windows:
+        return cfg.aliases
+    return tuple(alias for alias in cfg.aliases if alias not in _WINDOWS_ONLY_ALIASES)
+
+
 def platform_table(*, verbose: bool = False) -> str:
     configs = list(platforms().values())
     lines = [ui.paint(f"Supported platforms ({len(configs)})", "bold")]
     width = max(len(cfg.key) for cfg in configs)
     label_width = max(len(cfg.label) for cfg in configs)
     for cfg in configs:
-        aliases = f"also: {', '.join(cfg.aliases)}" if cfg.aliases else ""
+        listed = _listed_aliases(cfg, windows=sys.platform == "win32")
+        aliases = f"also: {', '.join(listed)}" if listed else ""
         lines.append(
             (
                 f"  {cfg.key.ljust(width)}  {cfg.label.ljust(label_width)}  {ui.faint(aliases)}"
@@ -711,7 +722,7 @@ mimry explain "<task>"
 mimry why <file-or-symbol> --query "<task>"
 mimry path "<source>" "<target>"
 mimry semantic "<query>"
-mimry adapters --active-only
+mimry adapters
 ```
 
 Prefer precise queries: `auth session refresh expiry` beats `bug`; `Next.js app router loading state` beats `frontend`.
@@ -730,20 +741,21 @@ If MCP tools are loaded, prefer them over shell for lookup/context/workflow:
 - `mimry_why`
 - `mimry_feedback`
 
-These are CLI commands, not MCP tools by default: `mimry init`, `mimry refresh`, `mimry route "<task>"`, `mimry brief "<task>" --agent <role>`, `mimry context "<task>"`, `mimry semantic "<query>"`, `mimry explain "<task>"`, `mimry adapters --active-only`.
+These are CLI commands, not MCP tools by default: `mimry init`, `mimry refresh`, `mimry route "<task>"`, `mimry brief "<task>" --agent <role>`, `mimry context "<task>"`, `mimry semantic "<query>"`, `mimry explain "<task>"`, `mimry adapters`.
 
 The MCP server lists 9 core tools by default: `mimry_status`, `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_path`, `mimry_impact`, `mimry_why` and `mimry_feedback`.
-Set `MIMRY_MCP_TOOLS=all` in the server's environment to list every command as a tool.
+Set `MIMRY_MCP_TOOLS=all` in the server's environment to list every MIMRY tool.
+Commands with no tool, such as `mimry callers`, `mimry callees`, `mimry bench`, `mimry doctor`, `mimry report` and `mimry install`, stay CLI-only.
 
 CLI fallback is fine when MCP is unavailable.
 
-To find the commit that added, removed or renamed files, use `mimry history "<what changed>"`; use `git log -S "<string>"` for an exact string in diffs.
+To find the commits whose message or changed files match a topic, use `mimry history "<what changed>"`; use `git log -S "<string>"` for an exact string in diffs.
 
 ## How to read MIMRY results
 
 Each file in a context pack has a `Why:` line. Strongest evidence first:
 
-- name matches / path matches: a task word is in the file's name, path, or a symbol it defines
+- name matches / symbol matches / path matches: a task word is in the file's name, in a symbol it defines, or in its path
 - content matches: a task word appears in the file's text
 - connected to other matches: the graph links it to other results
 - project config, helped in past tasks, similar wording: supporting evidence
@@ -754,7 +766,7 @@ Weak/limited signals include generic content hints, semantic-only matches, stale
 
 ## Adapter expectations
 
-Use `mimry adapters --active-only` to know what MIMRY can currently understand structurally. Current strengths are code/docs/project metadata, not arbitrary binary media. If an adapter is missing, use MIMRY for path/context narrowing, then inspect source manually.
+Use `mimry adapters` to know what MIMRY can currently understand structurally. Current strengths are code/docs/project metadata, not arbitrary binary media. If an adapter is missing, use MIMRY for path/context narrowing, then inspect source manually.
 
 Known limitation: image pixels are not understood by default yet. Image/media support should be treated as future adapter work unless this install reports an active image adapter.
 
@@ -789,7 +801,7 @@ Rules:
 - Read the context pack that preflight names (`context_path` over MCP) or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
 - Where a file lists `Read first: lines X-Y`, read those lines before the rest of the file.
 - Use `mimry find`, `mimry related`, `mimry symbol`, `mimry callers`, `mimry callees`, `mimry impact`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
-- To find the commit that added, removed or renamed files, use `mimry history "<what changed>"`; use `git log -S "<string>"` for an exact string in diffs.
+- To find the commits whose message or changed files match a topic, use `mimry history "<what changed>"`; use `git log -S "<string>"` for an exact string in diffs.
 - Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
 - After meaningful verified work, record `mimry feedback`.
 """  # noqa: E501 - Markdown written verbatim; its line breaks are content

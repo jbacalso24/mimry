@@ -645,7 +645,7 @@ def test_cache_wipe_current_leaves_truthful_missing_state_and_normal_index_rebui
     assert Path(pointer["indexPath"]) == cache / "indexes" / before["rootId"]
     status = run_cli(repo, cache, "status")
     assert status.returncode == 2, status.stderr
-    assert "! repo has not been indexed yet" in status.stdout
+    assert "! repo is not indexed yet: run `mimry index`" in status.stdout
 
     rebuilt = run_cli(repo, cache, "index", "--full")
     assert rebuilt.returncode == 0, rebuilt.stderr

@@ -97,7 +97,7 @@ $ mimry status
 ! The index is behind the working tree - 1 file changed, 1 new. The next query updates it; `mimry reindex` updates it now.
 
 $ mimry reindex
-✓ Updated the index for my-app in 2.2s
+OK Updated the index for my-app in 2.2s
   1 file changed, 1 added
     changed  src/auth/session.py
     added    src/auth/magic_link.py

@@ -32,14 +32,17 @@ All major adapters are now active. Run:
 
 ```bash
 uv run mimry adapters
-uv run mimry adapters --active-only
 ```
 
-MCP tool (with `MIMRY_MCP_TOOLS=all`; the CLI is `mimry adapters --active-only`):
+MCP tool (with `MIMRY_MCP_TOOLS=all`):
 
 ```text
 mimry_list_adapters(active_only?: bool)
 ```
+
+`active_only` still works: it leaves out planned adapters.
+There are none today, so both values return the same list.
+The CLI flag `--active-only` behaves the same way, but `--help` no longer lists it.
 
 ## Plugin contract
 

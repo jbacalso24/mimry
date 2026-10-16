@@ -17,6 +17,7 @@ behavior instead.
 from __future__ import annotations
 
 from mimry.digest import normalize_context
+from mimry.ui import local_time
 
 ENVELOPE = {
     "root": "/home/ci/work/checkout",
@@ -43,6 +44,13 @@ def test_generation_id_and_timestamp_are_replaced_in_place():
     out = normalize_context(line, **ENVELOPE)
     assert "<generation>" in out and "<timestamp>" in out
     assert "- Index: current (last indexed:" in out
+
+
+def test_the_pack_shows_the_index_time_as_local_time_and_it_is_masked_too():
+    # The pack prints local time with its offset, not the ISO UTC value.
+    line = f"- Index current: 11 files (indexed {local_time(ENVELOPE['indexed_at'])})"
+    out = normalize_context(line, **ENVELOPE)
+    assert out == "- Index current: 11 files (indexed <timestamp>)"
 
 
 def test_semantic_guidance_containing_generated_is_preserved():

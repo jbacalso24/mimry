@@ -32,7 +32,7 @@ CLI commands (not MCP tools by default):
 - `mimry context "<task>"`
 - `mimry semantic "<query>"`
 - `mimry explain "<task>"`
-- `mimry adapters --active-only`
+- `mimry adapters`
 - `mimry history "<what changed>"`
 
 Rules:

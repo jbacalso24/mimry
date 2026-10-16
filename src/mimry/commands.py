@@ -265,8 +265,7 @@ def _print_status(
 ) -> None:
     name = root_name(root)
     if fresh["state"] == "missing":
-        ui.warn(f"{name} has not been indexed yet")
-        ui.detail("Run `mimry index` to build the index.")
+        ui.warn(f"{name} is not indexed yet: run `mimry index`")
         return
     if fresh["state"] == "stale":
         ui.warn(f"{name} is out of date - {stale_summary(fresh)} since the last index")
@@ -310,7 +309,7 @@ def _print_status(
             [
                 ("Folder", str(root)),
                 ("Index", str(fresh["index_path"])),
-                ("Indexed at", ptr.get("lastIndexedAt") or "never"),
+                ("Indexed at", ui.local_time(ptr.get("lastIndexedAt"))),
                 (
                     "Graph",
                     (

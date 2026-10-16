@@ -14,6 +14,7 @@ from .core.languages import is_network_failure
 from .freshness import index_freshness
 from .indexer import write_index
 from .install_info import repair_command
+from .installer import _LEGACY_BLOCK_PATTERNS
 from .paths import graph_output_dir, idx_path, mdir, now, output_dir, pointer_file
 from .scanner import _git_output, is_linked_worktree, size_limit_text, worktree_fingerprint
 from .security import safe_root
@@ -26,6 +27,8 @@ from .storage import (
     register_root,
     save_pointer,
 )
+
+_LEGACY_LINE_NOTE = "Removed mimry-out/ from .gitignore: MIMRY keeps its output under .mimry/"
 
 
 def _git_toplevel(root: Path) -> Path | None:
@@ -92,6 +95,36 @@ def ensure_mimry_gitignore(root: Path) -> bool:
     return True
 
 
+def drop_legacy_output_line(root: Path) -> bool:
+    """Remove the `mimry-out/` line that 0.4.x added to .gitignore.
+
+    MIMRY keeps its output under `.mimry/`, so the line is no longer
+    needed. Only that exact line is removed; the rest is kept as it is.
+    """
+    git_root = _git_toplevel(root)
+    if git_root is None:
+        return False
+    try:
+        rel = root.relative_to(git_root)
+    except ValueError:
+        return False
+    if rel == Path("."):
+        legacy = set(_LEGACY_BLOCK_PATTERNS)
+    else:
+        legacy = {f"/{rel.as_posix()}/mimry-out/"}
+    gitignore = git_root / ".gitignore"
+    try:
+        raw = gitignore.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    lines = raw.splitlines(keepends=True)
+    kept = [line for line in lines if line.strip() not in legacy]
+    if len(kept) == len(lines):
+        return False
+    gitignore.write_bytes("".join(kept).encode("utf-8"))
+    return True
+
+
 def run_init(a):
     root = Path(a.root).resolve()
     safe_root(root)
@@ -106,12 +139,16 @@ def run_init(a):
         # from the authoritative root-local pointer.
         register_root(existing)
         gitignore_updated = ensure_mimry_gitignore(root)
+        legacy_dropped = drop_legacy_output_line(root)
         ui.ok(f"MIMRY is already set up for {root_name(root)}")
+        if legacy_dropped:
+            ui.detail(_LEGACY_LINE_NOTE)
         if gitignore_updated:
             ui.detail("Added .mimry/ to .gitignore")
         ui.detail("Run `mimry status` to check the index.")
         return 0
     gitignore_updated = ensure_mimry_gitignore(root)
+    legacy_dropped = drop_legacy_output_line(root)
     rid = str(uuid.uuid4())
     ptr = {
         "rootId": rid,
@@ -146,6 +183,8 @@ def run_init(a):
     ui.detail("Created .mimry/ for settings and generated context")
     if gitignore_updated:
         ui.detail("Added .mimry/ to .gitignore")
+    if legacy_dropped:
+        ui.detail(_LEGACY_LINE_NOTE)
     ui.detail(
         f"The index itself is kept outside the repo, in {ui.display_path(idx_path(rid).parent)}"
     )

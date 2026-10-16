@@ -1,7 +1,11 @@
 import io
+import re
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from mimry import ui
+from mimry.scanner import size_limit_text
 
 
 class _Tty(io.StringIO):
@@ -31,3 +35,27 @@ def test_counts_times_and_reasons_read_naturally():
         == "name matches - content matches"
     )
     assert ui.reason_summary("") == "matches your query"
+
+
+def test_local_time_shows_this_machines_clock_with_its_offset():
+    stamp = "2026-10-17T01:02:03+00:00"
+    # Same build as the function, so it holds in any time zone.
+    expected = datetime.fromisoformat(stamp).astimezone().isoformat(sep=" ", timespec="seconds")
+    assert ui.local_time(stamp) == expected
+    assert re.search(r"[+-]\d\d:\d\d$", ui.local_time(stamp))
+    assert ui.local_time(None) == "never"
+    assert ui.local_time("not a time") == "not a time"
+
+
+@pytest.mark.parametrize(
+    ("limit", "text"),
+    [
+        (1_000, "1,000 bytes"),
+        (9_999, "9,999 bytes"),
+        (512_000, "512 KB"),
+        (1_000_000, "1 MB"),
+        (1_500_000, "1.5 MB"),
+    ],
+)
+def test_size_limits_read_in_bytes_kb_or_mb(limit, text):
+    assert size_limit_text(limit) == text

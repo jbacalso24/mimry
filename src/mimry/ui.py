@@ -188,6 +188,20 @@ def ago(timestamp: str | None, now: datetime | None = None) -> str:
     return f"{count(round(seconds / 60) or 1, 'minute')} ago"
 
 
+def local_time(timestamp: str | None) -> str:
+    """An ISO timestamp as this machine's clock, with its UTC offset,
+    e.g. ``2026-10-17 09:12:04+10:00``; "never" when there is none."""
+    if not timestamp:
+        return "never"
+    try:
+        then = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return timestamp
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    return then.astimezone().isoformat(sep=" ", timespec="seconds")
+
+
 def display_path(path: str | Path, root: Path | None = None) -> str:
     """A path relative to ``root`` when inside it.
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from mimry import __version__, installer
+from mimry import __version__, installer, lifecycle
 from mimry.commands import _languages_text
 from mimry.config_manifest_adapter import extract_config_metadata
 from mimry.core.languages import language_counts
@@ -180,15 +180,46 @@ def test_init_in_a_repo_without_gitignore_writes_only_mimry(tmp_path):
     assert (repo / ".gitignore").read_text(encoding="utf-8") == ".mimry/\n"
 
 
-def test_init_keeps_an_existing_mimry_out_line_and_adds_mimry(tmp_path):
+def test_init_removes_the_mimry_out_line_that_0_4_left_in_gitignore(tmp_path):
     repo = copy_fixture(tmp_path)
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
-    (repo / ".gitignore").write_text("mimry-out/\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("dist/\nmimry-out/\n# keep me\n", encoding="utf-8")
 
     res = run_cli(repo, tmp_path / "cache", "init", "--skip-graph")
 
     assert res.returncode == 0, res.stderr
-    assert (repo / ".gitignore").read_text(encoding="utf-8") == "mimry-out/\n.mimry/\n"
+    assert (repo / ".gitignore").read_text(encoding="utf-8") == "dist/\n# keep me\n.mimry/\n"
+    assert "Removed mimry-out/ from .gitignore" in res.stdout
+
+
+def test_init_on_a_0_4_setup_removes_its_mimry_out_line(tmp_path):
+    repo = copy_fixture(tmp_path)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    assert run_cli(repo, tmp_path / "cache", "init", "--skip-graph").returncode == 0
+    (repo / ".gitignore").write_text("mimry-out/\n.mimry/\n", encoding="utf-8")
+
+    res = run_cli(repo, tmp_path / "cache", "init", "--skip-graph")
+
+    assert res.returncode == 0, res.stderr
+    assert (repo / ".gitignore").read_text(encoding="utf-8") == ".mimry/\n"
+    assert "Removed mimry-out/ from .gitignore" in res.stdout
+
+
+def test_drop_legacy_output_line_matches_only_the_exact_line_in_a_subfolder(tmp_path):
+    repo = tmp_path / "repo"
+    sub = repo / "pkg"
+    sub.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+    (repo / ".gitignore").write_text(
+        "/pkg/mimry-out/\n/pkg/.mimry/\n/pkg/mimry-out/keep/\n", encoding="utf-8"
+    )
+
+    assert lifecycle.drop_legacy_output_line(sub) is True
+
+    assert (repo / ".gitignore").read_text(encoding="utf-8") == (
+        "/pkg/.mimry/\n/pkg/mimry-out/keep/\n"
+    )
+    assert lifecycle.drop_legacy_output_line(sub) is False
 
 
 def test_init_gitignore_is_idempotent_for_existing_mimry_root(tmp_path):
@@ -3387,7 +3418,8 @@ def test_status_after_init_reports_not_indexed_and_builds_nothing(tmp_path):
 
     res = run_cli(repo, cache, "status")
 
-    assert "has not been indexed yet" in res.stdout
+    assert res.returncode == 2
+    assert "is not indexed yet: run `mimry index`" in res.stdout
     assert "Indexed" not in res.stdout and "Built" not in res.stdout
     assert not (repo / ".mimry" / "mimry-out" / "graph" / "graph.json").exists()
 
