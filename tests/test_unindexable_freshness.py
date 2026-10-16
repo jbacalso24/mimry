@@ -69,10 +69,10 @@ def refuse_one_file(monkeypatch: pytest.MonkeyPatch):
 
     real_adapt = indexer.adapt
 
-    def guarded(path: Path, root: Path, snapshot=None, settings=None):
+    def guarded(path: Path, root: Path, snapshot=None, settings=None, **kwargs):
         if path.name == "refused.py":
             raise ValueError("adapter output contained sensitive data")
-        return real_adapt(path, root, snapshot, settings=settings)
+        return real_adapt(path, root, snapshot, settings=settings, **kwargs)
 
     monkeypatch.setattr(indexer, "adapt", guarded)
 

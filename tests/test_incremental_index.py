@@ -63,9 +63,9 @@ def _count_adapts(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     adapted: list[str] = []
     real = indexer.adapt
 
-    def spy(path, root, snapshot=None, settings=None):
+    def spy(path, root, snapshot=None, settings=None, **kwargs):
         adapted.append(Path(path).name)
-        return real(path, root, snapshot, settings=settings)
+        return real(path, root, snapshot, settings=settings, **kwargs)
 
     monkeypatch.setattr(indexer, "adapt", spy)
     return adapted
