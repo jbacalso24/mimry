@@ -35,6 +35,7 @@ from .feedback import (
     record_feedback,
     show_feedback,
 )
+from .history import plain, read_history, status_text, update_history
 from .indexer import write_index
 from .install_info import repair_command
 from .lifecycle import (
@@ -101,6 +102,7 @@ from .state import (
 )
 from .storage import (
     active_index_pointer,
+    connect,
     load_pointer,
     load_root_registry,
     prune_root_registry,
@@ -822,6 +824,81 @@ def cmd_path(a):
 @_index_reader
 def cmd_impact(a):
     return run_impact(a)
+
+
+HISTORY_PATHS_SHOWN = 8
+HISTORY_SHALLOW_NOTE = "shallow history: only the commits this clone has are searched"
+
+
+@_requires_text("query", "query", 'mimry history "share extension removed"')
+@_fresh_index
+def cmd_history(a):
+    root = command_root(a)
+    if a.limit < 1:
+        ui.fail("Give a limit of 1 or more", 'For example: mimry history "login" --limit 5')
+        return 2
+    query = sanitize_query(a.query)
+    # Exclusive: the commit tables are written in place when HEAD moved.
+    with active_index_pointer(root, exclusive=True) as ptr:
+        if not ptr:
+            raise SystemExit(not_set_up(root))
+        con = connect(Path(ptr["indexPath"]))
+        try:
+            synced = update_history(con, root)
+            commits = (
+                []
+                if synced["status"] in ("unavailable", "error")
+                else read_history(con, query, a.limit)
+            )
+        finally:
+            con.close()
+    if synced["status"] == "unavailable":
+        ui.fail(synced["reason"])
+        return 1
+    if synced["status"] == "error":
+        ui.fail("Could not read the commit history", synced["reason"])
+        return 1
+    shallow = synced["shallow"]
+    if a.json:
+        payload = {
+            "query": query,
+            "shallow": shallow,
+            "commits": [
+                {
+                    "sha": commit["sha"],
+                    "shortSha": commit["sha"][:7],
+                    "date": commit["date"],
+                    "subject": commit["subject"],
+                    "pathCount": len(commit["paths"]),
+                    "paths": commit["paths"],
+                }
+                for commit in commits
+            ],
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0 if commits else 1
+    if not commits:
+        print(f"No commits match {ui.quote(query)}.")
+        ui.detail("Try different words, or `mimry find` for files that exist now.")
+        if shallow:
+            ui.detail(HISTORY_SHALLOW_NOTE)
+        return 1
+    ui.title(f"Commits for {ui.quote(query)}")
+    if shallow:
+        ui.detail(HISTORY_SHALLOW_NOTE)
+    print()
+    for index, commit in enumerate(commits):
+        if index:
+            print()
+        print(f"  {commit['sha'][:7]}  {commit['date']}  {plain(commit['subject'])}")
+        shown = commit["paths"][:HISTORY_PATHS_SHOWN]
+        for line in ui.table_lines(
+            [(status_text(path), plain(path["path"])) for path in shown], indent=6
+        ):
+            print(line)
+        if len(commit["paths"]) > len(shown):
+            print(f"      +{len(commit['paths']) - len(shown)} more")
+    return 0
 
 
 def _location(path: str, line) -> str:

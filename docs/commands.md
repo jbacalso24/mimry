@@ -19,6 +19,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry callers <name>` | Functions that call a function, from the graph (`--depth` follows the chain up to 3 calls, `--file` picks one of several, `--json` for tools) |
 | `mimry callees <name>` | Functions that a function calls, with the same options |
 | `mimry impact <name-or-path>` | What a change touches: callers by depth, the files that import it, and the tests to run (`--changed` checks the working tree against HEAD, `--depth` follows up to 5 calls, `--file` picks one of several, `--json` for tools) |
+| `mimry history "<query>"` | Find the commits that added, removed or renamed files matching a query (`--limit N`, `--json` for tools) |
 | `mimry why <file> --query "<task>"` | Why a file ranks for a query |
 | `mimry route "<task>"` | Recommend an agent role (`--json` for tools) |
 | `mimry brief "<task>" --agent <role>` | Write a role-specific brief |
@@ -121,7 +122,8 @@ Scripts and hooks can tell an answer from a miss by the exit code.
 | Situation | Exit code |
 | --- | --- |
 | Answer found | 0 |
-| `find`, `related` or `semantic` with a real query and no matches | 1 |
+| `find`, `related`, `semantic` or `history` with a real query and no matches | 1 |
+| `history` outside a git repository, or in one with no commits yet | 1 |
 | A named target that does not exist: `symbol`, `callers`, `callees`, `impact`, `why`, or a `path` source or target that looks like a file path and is not indexed | 1 |
 | Empty or whitespace-only task or query | 2 |
 | Invalid argument values, such as a bad depth or outcome | 2 |
@@ -185,6 +187,36 @@ Text output leaves out callers in test files, which already appear under `Tests 
 
 `--json` returns `targets`, `callers` (each with `name`, `kind`, `path`, `line`, `depth`, `confidence` and `test`, and including test callers), `importers`, `tests`, `fallback`, `test_command` and `summary`.
 The MCP tool `mimry_impact(target, file, changed, depth, root)` returns the same payload.
+
+## History
+
+`mimry history "<query>"` finds the commits that added, removed or renamed the files a task is about.
+Git records that history, and MIMRY keeps it in the index, so a query like "share extension removed" finds the commit that deleted the Share Extension files.
+Each match shows its short hash, date and subject, then up to eight changed paths with their status: `removed`, `added`, `renamed from <old path>`, or `changed`.
+Matches rank by BM25 over the subject, body and changed paths, and a newer commit comes first on a tie.
+`--limit` sets how many commits to show (default 10), and `--json` prints the same answer for tools.
+
+The index keeps the newest 5000 non-merge commits, and each `mimry index` adds only the commits since the last one.
+A rewritten history, such as an amended or rebased HEAD, rebuilds the stored commits.
+Renames are found only when the file content is identical, because inexact rename detection makes git fetch file contents one at a time in a partial clone.
+A shallow clone indexes the commits it has, and the output says `shallow history`.
+Outside a git repository, or in one with no commits yet, `mimry history` says so and exits 1.
+
+History searches what each commit did to the files, not the text inside the diff.
+For a string that a commit added or removed, use `git log -S "<text>"` or `git log -G "<regex>"`.
+
+```bash
+mimry history "share extension removed"
+mimry history "login" --limit 5 --json
+```
+
+```text
+Commits for "share extension removed"
+
+  5cf2d2e  2026-10-16  Remove the Share Extension target
+      removed  ShareExtension/Info.plist
+      removed  ShareExtension/Share.swift
+```
 
 ## Benchmark your repository
 

@@ -27,6 +27,7 @@ from .core.resolve import (
     resolve_table_refs,
 )
 from .core.tsconfig import build_ts_paths
+from .history import update_history
 from .paths import graph_output_dir, idx_path, now, pointer_file
 from .pieces import PIECES_FTS_CREATE, file_pieces
 from .reuse import (
@@ -857,6 +858,20 @@ def _unchanged_generation(root, ptr, previous, record, files, symbols, unindexab
     }
 
 
+def _sync_history_in_place(generation: Path, root: Path) -> dict:
+    """Bring a published generation's commit tables up to date.
+
+    The SQLite file stays writable for bounded local writes, as feedback
+    uses it, so this runs under the exclusive operation lock that
+    write_index already holds.
+    """
+    con = connect(generation)
+    try:
+        return update_history(con, root)
+    finally:
+        con.close()
+
+
 def _changes(ptr: dict, files: list[dict]) -> dict | None:
     """Paths added, changed and removed since the active generation.
 
@@ -975,6 +990,9 @@ def write_index(root, ptr, *, full: bool = False):
             parse_errors = _parse_error_paths(files)
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
+                # Nothing to publish, but HEAD may have moved, so the
+                # commit tables are brought up to date in place.
+                history_stats = _sync_history_in_place(previous, root)
                 # Nothing to publish, but the tree git sees may have
                 # changed, so record its fingerprint for the fast path.
                 unchanged = {
@@ -988,6 +1006,7 @@ def write_index(root, ptr, *, full: bool = False):
                 return {
                     **kept,
                     "changes": changes,
+                    "history": history_stats,
                     "unindexable": skipped,
                     **skip_reasons,
                     "missing_dependency": unread,
@@ -1068,6 +1087,7 @@ def write_index(root, ptr, *, full: bool = False):
                             "insert into pieces_fts values(?,?,?,?,?)",
                             (file_rec["file_id"], start, end, name, body),
                         )
+                history_stats = update_history(con, root)
                 for symbol in symbols:
                     con.execute(
                         "insert or replace into symbols values(?,?,?,?,?,?)",
@@ -1190,6 +1210,7 @@ def write_index(root, ptr, *, full: bool = False):
         "semantic_chunks": semantic["chunks"],
         "semantic_backend": semantic["backend"],
         "changes": changes,
+        "history": history_stats,
         "unindexable": skipped,
         **skip_reasons,
         "missing_dependency": unread,

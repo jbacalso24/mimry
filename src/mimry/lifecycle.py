@@ -440,6 +440,8 @@ def print_index_result(
         else:
             ui.detail("No file contents changed since the last index")
     ui.detail(totals(stats["files"], stats["symbols"], stats["edges"]))
+    if (stats.get("history") or {}).get("shallow"):
+        ui.detail("shallow history: only the commits this clone has are indexed")
     print_skipped_counts(
         stats.get("secret_skipped", 0),
         stats.get("unreadable", 0),

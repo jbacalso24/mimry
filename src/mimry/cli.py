@@ -45,6 +45,7 @@ def build_parser():
         cmd_feedback,
         cmd_find,
         cmd_git_hooks,
+        cmd_history,
         cmd_impact,
         cmd_index,
         cmd_init,
@@ -364,6 +365,14 @@ def build_parser():
     )
     s.add_argument("--json", action="store_true", help="Print the structured answer as JSON")
     s.set_defaults(func=cmd_impact)
+    s = sub.add_parser(
+        "history",
+        help="Find the commits that added, removed or renamed files matching a query",
+    )
+    s.add_argument("query")
+    s.add_argument("--limit", type=int, default=10, help="How many commits to show (default 10)")
+    s.add_argument("--json", action="store_true", help="Print the matching commits as JSON")
+    s.set_defaults(func=cmd_history)
     s = sub.add_parser("why", help="Explain why a file or symbol ranked for a task query")
     s.add_argument("surface")
     s.add_argument("--query", required=True)

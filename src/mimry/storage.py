@@ -11,6 +11,7 @@ from typing import Any
 from . import ui
 from .cache_safety import UnsafeCachePathError, validated_current_root_cache_path
 from .feedback import ensure_feedback_schema
+from .history import ensure_history_schema
 from .paths import idx_path, mdir, pointer_file, roots_file
 from .security import sanitize_data
 from .semantic import ensure_semantic_schema
@@ -316,6 +317,7 @@ def connect(idx):
     if "semantic_checksum" not in generation_columns:
         con.execute("alter table index_generation add column semantic_checksum text")
     ensure_feedback_schema(con)
+    ensure_history_schema(con)
     ensure_semantic_schema(con)
     return con
 
