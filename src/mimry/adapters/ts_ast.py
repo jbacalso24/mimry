@@ -261,7 +261,11 @@ def parse_ts_like(
             # method calls have no target.
             add_symbol(_first_identifier(node, source), "method", node)
         elif kind == "variable_declarator":
-            name = _first_identifier(node, source)
+            # `const { a, b } = obj` declares no single name.
+            target = node.child_by_field_name("name")
+            if target is None or target.kind() != "identifier":
+                continue
+            name = _text(source, target)
             value = node.child_by_field_name("value")
             symbol_kind = js_declarator_kind(
                 value, source, lambda n: n.kind(), _children, _text, _walk

@@ -163,11 +163,15 @@ def test_ts_declarator_kind_follows_its_initializer(tmp_path, monkeypatch):
                 "export const onSave = useCallback(() => save(1), [])\n"
                 "export const h = ((x: number) => x) as Fn\n"
                 "export const doubled = items.map((i) => i * 2)\n"
+                "export const { first, rest = make() } = obj\n"
             ),
         },
     )
 
     kinds = {s["name"]: s["kind"] for s in symbols}
+    # A destructuring pattern declares no single name.
+    assert not {"first", "rest", "make", "obj"} & set(kinds)
+    assert not [name for name in kinds if "{" in name]
     expected = {
         "Card": "component",
         "n": "variable",

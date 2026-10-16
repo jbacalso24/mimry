@@ -876,6 +876,13 @@ def _definition_name(language: str, node: Any, source: bytes) -> str | None:
                 return _text(source, child).strip() or None
         return None
 
+    # `const { a, b } = obj` declares no single name.
+    if node.type == "variable_declarator" and language in ("javascript", "typescript", "tsx"):
+        target = node.child_by_field_name("name")
+        if target is None or target.type != "identifier":
+            return None
+        return _text(source, target)
+
     # The branches below are gated by language. PHP, Java, C#, Swift and
     # others reuse method_declaration, method_definition and
     # extension_declaration, and must keep their `name` field.
