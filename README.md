@@ -109,7 +109,7 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 34 languages with tree-sitter |
+| Code graph | Maps imports, calls and inheritance across 39 languages with tree-sitter |
 | Deterministic | The same code gives the same symbols, graph, rankings and context pack on every machine; CI checks every change against committed golden values ([how](docs/determinism.md)) |
 | Documents | Indexes Markdown, text, PDF, Word and Excel files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
@@ -157,6 +157,11 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 | HTML | `.htm`, `.html` |
 | Vue | `.vue` |
 | Svelte | `.svelte` |
+| JSON | `.json`, `.jsonc` |
+| YAML | `.yaml`, `.yml` |
+| TOML | `.toml` |
+| XML | `.xml`, `.xsd` |
+| Terraform (HCL) | `.hcl`, `.tf`, `.tfvars` |
 
 Fortran is read in free form only. Fixed-form `.f` and `.for` files do not parse with the grammar MIMRY uses, so they get no symbols or edges.
 
@@ -172,7 +177,15 @@ Some files get more structure than their text:
 - SQL: `CREATE TABLE` statements in `.sql` files and in Python string literals, plus Alembic migrations and their revision lineage.
 - Manifests: `package.json`, `pyproject.toml`, `tsconfig.json`, `vite.config.*`, `next.config.*`, `app.json`, `app.config.*`, `.env.example`, `CLAUDE.md`, `AGENTS.md` and `README.md` give their commands, frameworks, entry points and env variable names, never values.
 
-Other JSON, YAML and TOML files are indexed as text, so `mimry find` matches their content, but they have no symbols.
+The data formats get the names an agent looks them up by.
+JSON, YAML and TOML give their keys to depth two, named by path, such as `services.web` or `tool.ruff.line-length`, and TOML also gives each table header.
+A YAML document that is a Kubernetes object also gives a `<kind>/<name>` resource, such as `Deployment/web`.
+XML gives each element with an `id` or `name` attribute, and a Maven `pom.xml` gives its `groupId:artifactId`.
+Terraform gives each `resource`, `data`, `module`, `variable`, `output`, `provider` and `locals` entry under the name it is referenced by, such as `aws_s3_bucket.b`, `data.aws_iam_policy_document.p`, `module.bucket`, `var.region` and `local.name`.
+A `var.region` reference finds the variable in the same folder, and a module's local `source` links to its folder.
+Values are never symbols, so a secret stored as a value is never indexed.
+Lock files and files over 256 KB get no symbols, and manifests keep their own adapter above.
+Every data file is also indexed as text, so `mimry find` matches its content.
 
 Other extensions can be mapped to a supported language in `mimry.toml`, see [Configuration](#configuration).
 
@@ -180,7 +193,6 @@ Other extensions can be mapped to a supported language in `mimry.toml`, see [Con
 
 We're adding these next; progress is tracked in [#47](https://github.com/jbacalso24/mimry/issues/47), where you can ask for yours.
 
-- [ ] Data and config: YAML, XML, Terraform (HCL), and JSON and TOML files beyond the manifests above
 - [ ] Apps and systems: Groovy
 
 ## Supported agents

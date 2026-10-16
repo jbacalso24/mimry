@@ -5,6 +5,15 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .data_files import (
+    DATA_LANGUAGES,
+    extract_hcl,
+    extract_json,
+    extract_toml,
+    extract_xml,
+    extract_yaml,
+)
+
 EXTENSION_LANGUAGE = {
     ".py": "python",
     ".js": "javascript",
@@ -66,6 +75,16 @@ EXTENSION_LANGUAGE = {
     ".htm": "html",
     ".vue": "vue",
     ".svelte": "svelte",
+    ".json": "json",
+    ".jsonc": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".xml": "xml",
+    ".xsd": "xml",
+    ".tf": "hcl",
+    ".tfvars": "hcl",
+    ".hcl": "hcl",
 }
 
 # Display name for each EXTENSION_LANGUAGE value.
@@ -108,6 +127,11 @@ LANGUAGE_LABELS: dict[str, str] = {
     "html": "HTML",
     "vue": "Vue",
     "svelte": "Svelte",
+    "json": "JSON",
+    "yaml": "YAML",
+    "toml": "TOML",
+    "xml": "XML",
+    "hcl": "Terraform (HCL)",
     # Symbol-only languages, with no extension entry.
     "markdown": "Markdown",
     "sql": "SQL",
@@ -3030,6 +3054,57 @@ def _captures(query: Any, root_node: Any) -> list[tuple[Any, str]]:
     return ordered
 
 
+# Data files: their symbols come from data_files. Like a stylesheet, a
+# data file keeps the symbols that parsed when the tree has errors.
+_DATA_EXTRACTORS = {
+    "yaml": extract_yaml,
+    "json": extract_json,
+    "toml": extract_toml,
+    "hcl": extract_hcl,
+}
+
+
+# Languages that parse the whole file at once, not as a node walk.
+_WHOLE_FILE_LANGUAGES = _EMBEDDED_LANGUAGES | DATA_LANGUAGES
+
+
+def _extract_whole_file(path: Path, lang: str, source: str) -> dict:
+    """HTML, Vue and Svelte, and the data languages."""
+    if lang in _EMBEDDED_LANGUAGES:
+        return _extract_embedded(path, lang, source)
+    return _extract_data(path, lang, source)
+
+
+def _extract_data(path: Path, lang: str, source: str) -> dict:
+    """YAML, JSON, TOML, XML and HCL, through their own extractors."""
+    from tree_sitter import Parser
+
+    raw = source.encode("utf-8")
+    try:
+        root = Parser(load_language(lang)).parse(raw).root_node
+    except GrammarUnavailableError:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": GRAMMAR_UNAVAILABLE,
+        }
+    except Exception as exc:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": f"parse_error:{exc.__class__.__name__}",
+        }
+    if lang == "xml":
+        result = extract_xml(root, raw, path.name)
+    else:
+        result = _DATA_EXTRACTORS[lang](root, raw)
+    return {**result, "status": "ok"}
+
+
 def extract(path: str | Path, source: str, language: str | None = None) -> dict:
     """Parse and return definitions, imports, calls with status.
 
@@ -3048,8 +3123,8 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
             "status": "parse_error:unsupported_language",
         }
 
-    if lang in _EMBEDDED_LANGUAGES:
-        return _extract_embedded(path, lang, source)
+    if lang in _WHOLE_FILE_LANGUAGES:
+        return _extract_whole_file(path, lang, source)
 
     if lang not in NODE_TYPES:
         return {

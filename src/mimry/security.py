@@ -464,15 +464,23 @@ def _is_sensitive_label(label: str, value: str = "") -> bool:
     return True
 
 
+# Parsed languages whose unquoted values are literal data, not
+# expressions. They are judged as text, so `auth: <secret>` in a YAML
+# file is still a literal credential.
+_LITERAL_VALUE_LANGUAGES = frozenset(("bash", "yaml", "json", "toml", "xml"))
+
+
 def is_code_path(path: str | Path) -> bool:
     """Whether a file is parsed source.
 
     In parsed source, an unquoted value is an expression. Shell is not
     one: `export TOKEN=abc` binds the literal word abc, so a shell
-    script is judged as text, as it was before shell was parsed.
+    script is judged as text, as it was before shell was parsed. Data
+    formats such as YAML and TOML are judged as text for the same
+    reason: their unquoted values are the literal values.
     """
     ext = Path(path).suffix.lower()
-    return ext in EXTENSION_LANGUAGE and EXTENSION_LANGUAGE[ext] != "bash"
+    return ext in EXTENSION_LANGUAGE and EXTENSION_LANGUAGE[ext] not in _LITERAL_VALUE_LANGUAGES
 
 
 def _value_is_credential(

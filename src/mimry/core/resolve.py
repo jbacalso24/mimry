@@ -704,6 +704,35 @@ def _resolve_html(
     return None
 
 
+def _resolve_hcl(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """A Terraform module `source` that is a local folder: its main.tf,
+    or else its first .tf file. Registry and git sources name no file
+    here, so they resolve to nothing.
+    """
+    if not module.startswith(("./", "../")):
+        return None
+    folder = posixpath.normpath(posixpath.join(posixpath.dirname(importer), module))
+    folder = "" if folder == "." else folder
+    main = posixpath.join(folder, "main.tf")
+    if main in rel_paths:
+        return {"path": main, "confidence": "EXTRACTED"}
+    files = sorted(p for p in rel_paths if p.endswith(".tf") and posixpath.dirname(p) == folder)
+    if files:
+        return {"path": files[0], "confidence": "EXTRACTED"}
+    return None
+
+
+def _resolve_xml(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """An XML import or include, relative to the importing file. A
+    schema or class name that is not a path names no file.
+    """
+    return _resolve_script_path(importer, module, rel_paths)
+
+
 _SCRIPT_RESOLVERS = {
     "bash": _resolve_bash,
     "powershell": _resolve_powershell,
@@ -720,6 +749,8 @@ _SCRIPT_RESOLVERS = {
     "css": _resolve_css,
     "scss": _resolve_scss,
     "html": _resolve_html,
+    "hcl": _resolve_hcl,
+    "xml": _resolve_xml,
 }
 
 
@@ -986,6 +1017,15 @@ _CALLABLE_KINDS = ("function", "method", "class")
 _IMPLICIT_SCOPE_LANGUAGES = frozenset(("swift", "kotlin", "csharp"))
 
 
+def _hcl_folder_files(symbols_by_file: dict[str, list[dict]]) -> dict[str, set[str]]:
+    """The Terraform files of each folder that define any symbol."""
+    folders: dict[str, set[str]] = {}
+    for path, symbols in symbols_by_file.items():
+        if symbols and language_for(path) == "hcl":
+            folders.setdefault(posixpath.dirname(path), set()).add(path)
+    return folders
+
+
 def resolve_calls(
     calls: dict[str, list[dict]],
     symbols_by_file: dict[str, list[dict]],
@@ -1044,6 +1084,7 @@ def resolve_calls(
                 symbols_by_file_and_name[file_path][name].append(symbol)
 
     methods = _method_ids(symbols_by_file)
+    hcl_folders = _hcl_folder_files(symbols_by_file)
 
     # Repo-wide owners of each callable name, for the implicit-scope
     # languages' last-resort lookup.
@@ -1063,6 +1104,13 @@ def resolve_calls(
         # Get imports from this file
         imported_targets = imports_by_importer.get(file_path, set())
         exact_targets = exact_by_importer.get(file_path, set())
+        # Terraform scopes names to a folder: every .tf file beside this
+        # one is read as if imported, and by an exact edge.
+        is_hcl = language_for(file_path) == "hcl"
+        if is_hcl:
+            siblings = hcl_folders.get(posixpath.dirname(file_path), set()) - {file_path}
+            imported_targets = imported_targets | siblings
+            exact_targets = exact_targets | siblings
 
         # Many calls share a line; the enclosing symbol depends on the
         # line alone.
@@ -1086,9 +1134,10 @@ def resolve_calls(
             caller_symbol = caller.get("name") if caller else None
             caller_symbol_id = caller.get("symbol_id") if caller else None
 
-            # Step 2: Generate candidates from the callee name
+            # Step 2: Generate candidates from the callee name. A
+            # Terraform reference is one name, such as var.region.
             callee_name = call.get("name", "")
-            candidates = _generate_candidates(callee_name)
+            candidates = [callee_name] if is_hcl else _generate_candidates(callee_name)
 
             # Step 3: Resolve candidates (first hit wins)
             target_info = None

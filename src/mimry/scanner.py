@@ -27,6 +27,7 @@ from .adapters.framework import (
 from .adapters.ts_ast import TS_EXTENSIONS, parse_ts_like
 from .adapters.xcode import extract_xcode_targets, parse_pbxproj
 from .constants import SCHEMA_VERSION, SETTINGS_FILE
+from .core.data_files import DATA_LANGUAGES, symbols_allowed
 from .core.documents import (
     DOCUMENT_ADAPTERS,
     DOCUMENT_EXTENSIONS,
@@ -951,6 +952,9 @@ def adapt(path, root, snapshot=None, settings: IndexSettings | None = None):
         # so an override of `.h` keeps its language.
         if ext == ".h" and is_objc_header(data):
             language = "objc"
+        # Data files keep no symbols when they are lock files or large.
+        if language in DATA_LANGUAGES and not symbols_allowed(path.name, len(data)):
+            language = None
         if language and ext != ".py" and ext not in TS_EXTENSIONS:
             try:
                 source = data.decode("utf-8", errors="ignore")

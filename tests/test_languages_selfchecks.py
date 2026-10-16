@@ -2163,3 +2163,386 @@ def test_svelte_component_reads_module_and_instance_scripts(tmp_path):
         (".btn", "selector", 14, 14),
     }
     assert [(i["module"], i["line"]) for i in result["imports"]] == [("./api", 6)]
+
+
+# Data files: YAML, JSON, TOML, XML and Terraform. Symbols are keys,
+# ids and resource names; values never become symbols.
+
+
+def _symbols(result: dict) -> dict[str, dict]:
+    return {d["name"]: d for d in result["definitions"]}
+
+
+def _lines(result: dict, name: str) -> tuple[int, int]:
+    symbol = _symbols(result)[name]
+    return symbol["line_start"], symbol["line_end"]
+
+
+class TestDataLanguageFor:
+    @pytest.mark.parametrize(
+        ("name", "language"),
+        [
+            ("app.json", "json"),
+            ("tsconfig.jsonc", "json"),
+            ("ci.yml", "yaml"),
+            ("chart.yaml", "yaml"),
+            ("Cargo.toml", "toml"),
+            ("layout.xml", "xml"),
+            ("schema.xsd", "xml"),
+            ("main.tf", "hcl"),
+            ("prod.tfvars", "hcl"),
+            ("config.hcl", "hcl"),
+        ],
+    )
+    def test_data_extensions_map_to_their_grammar(self, name, language):
+        assert language_for(name) == language
+
+    def test_svg_stays_a_document_not_xml(self):
+        assert language_for("logo.svg") is None
+
+
+class TestYamlSymbols:
+    def test_compose_keys_to_depth_two_with_lines(self):
+        source = (
+            "services:\n"
+            "  web:\n"
+            "    image: nginx\n"
+            "    ports:\n"
+            '      - "80:80"\n'
+            "  db:\n"
+            "    image: postgres\n"
+        )
+        result = extract("docker-compose.yml", source)
+
+        assert result["status"] == "ok"
+        assert set(_symbols(result)) == {"services", "services.web", "services.db"}
+        assert _lines(result, "services.web") == (2, 5)
+        assert _lines(result, "services.db") == (6, 7)
+        assert _symbols(result)["services.web"]["kind"] == "key"
+
+    def test_workflow_keys_and_sequence_items_are_not_keys(self):
+        source = (
+            "name: CI\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  test:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@v4\n"
+            "      - run: pytest\n"
+        )
+        result = extract(".github/workflows/ci.yml", source)
+
+        # Depth two only: jobs.test.steps is too deep to be a symbol.
+        assert set(_symbols(result)) == {"name", "on", "jobs", "jobs.test"}
+        assert _lines(result, "jobs.test") == (4, 8)
+
+    def test_kubernetes_object_gives_a_resource_named_by_kind_and_name(self):
+        source = (
+            "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 2\n"
+        )
+        result = extract("k8s/deploy.yaml", source)
+
+        resource = _symbols(result)["Deployment/web"]
+        assert resource["kind"] == "resource"
+        assert (resource["line_start"], resource["line_end"]) == (1, 6)
+
+    def test_every_document_of_a_multi_document_file(self):
+        result = extract("multi.yaml", "a: 1\n---\nb:\n  c: 2\n")
+
+        assert set(_symbols(result)) == {"a", "b", "b.c"}
+
+    def test_templated_name_is_not_a_resource(self):
+        source = "apiVersion: v1\nkind: Service\nmetadata:\n  name: {{ .Values.name }}\n"
+        result = extract("svc.yaml", source)
+
+        assert not any(name.startswith("Service/") for name in _symbols(result))
+
+    def test_helm_template_keeps_the_keys_that_parsed(self):
+        source = (
+            "apiVersion: v1\n"
+            "kind: ConfigMap\n"
+            "metadata:\n"
+            "  name: web\n"
+            "{{- if .Values.extra }}\n"
+            "  labels: {{ .Values.labels }}\n"
+            "{{- end }}\n"
+            "data:\n"
+            "  {{- toYaml .Values.data | nindent 2 }}\n"
+            "  mode: fast\n"
+        )
+        result = extract("templates/cm.yaml", source)
+
+        assert result["status"] == "ok"
+        assert {"apiVersion", "kind", "metadata", "metadata.name"} <= set(_symbols(result))
+
+
+class TestJsonSymbols:
+    def test_tsconfig_like_file_keys_to_depth_two(self):
+        source = (
+            "{\n"
+            '  "compilerOptions": {"target": "es2020", "paths": {"@/*": ["src/*"]}},\n'
+            '  "include": ["src"]\n'
+            "}\n"
+        )
+        result = extract("settings/base.json", source)
+
+        assert set(_symbols(result)) == {
+            "compilerOptions",
+            "compilerOptions.target",
+            "compilerOptions.paths",
+            "include",
+        }
+        assert _lines(result, "compilerOptions.target") == (2, 2)
+
+    def test_top_level_array_gives_no_symbols(self):
+        result = extract("list.json", '[{"name": "a"}, {"name": "b"}]\n')
+
+        assert result["definitions"] == []
+
+    def test_array_objects_are_not_keys(self):
+        result = extract("rows.json", '{"rows": [{"id": 1}]}\n')
+
+        assert set(_symbols(result)) == {"rows"}
+
+    def test_jsonc_comments_are_allowed(self):
+        result = extract("a.jsonc", '{\n  // note\n  "debug": true\n}\n')
+
+        assert set(_symbols(result)) == {"debug"}
+
+
+class TestTomlSymbols:
+    def test_tables_and_their_keys_by_dotted_header(self):
+        source = (
+            '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+            '[dependencies]\nserde = "1"\n\n'
+            "[tool.ruff]\nline-length = 88\n"
+        )
+        result = extract("Cargo.toml", source)
+
+        assert set(_symbols(result)) == {
+            "package",
+            "package.name",
+            "package.version",
+            "dependencies",
+            "dependencies.serde",
+            "tool.ruff",
+            "tool.ruff.line-length",
+        }
+        assert _lines(result, "tool.ruff.line-length") == (9, 9)
+
+    def test_repeated_array_table_is_one_symbol(self):
+        source = '[[bin]]\nname = "a"\n\n[[bin]]\nname = "b"\n'
+        result = extract("bins.toml", source)
+
+        assert _lines(result, "bin") == (1, 2)
+        assert sum(1 for d in result["definitions"] if d["name"] == "bin") == 1
+
+    def test_top_level_keys_are_symbols(self):
+        result = extract("top.toml", 'title = "x"\n[owner]\nname = "y"\n')
+
+        assert {"title", "owner", "owner.name"} <= set(_symbols(result))
+
+
+class TestXmlSymbols:
+    def test_android_ids_are_named_without_the_prefix(self):
+        source = (
+            '<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"\n'
+            '    android:id="@+id/root">\n'
+            '  <TextView android:id="@+id/title" android:text="x"/>\n'
+            "</LinearLayout>\n"
+        )
+        result = extract("res/layout/main.xml", source)
+
+        assert set(_symbols(result)) == {"root", "title"}
+        assert _lines(result, "root") == (1, 4)
+        assert _symbols(result)["title"]["kind"] == "key"
+
+    def test_spring_beans_imports_and_includes(self):
+        source = (
+            "<beans>\n"
+            '  <import resource="other.xml"/>\n'
+            '  <bean id="svc" class="a.B"/>\n'
+            '  <include file="x.xml"/>\n'
+            "</beans>\n"
+        )
+        result = extract("applicationContext.xml", source)
+
+        assert set(_symbols(result)) == {"svc"}
+        assert [(i["module"], i["line"]) for i in result["imports"]] == [
+            ("other.xml", 2),
+            ("x.xml", 4),
+        ]
+
+    def test_schema_location_keeps_local_paths_only(self):
+        source = (
+            '<root xsi:schemaLocation="http://ns.example/a local.xsd '
+            'http://ns.example/b https://cdn.example/remote.xsd"/>\n'
+        )
+        result = extract("doc.xml", source)
+
+        assert [i["module"] for i in result["imports"]] == ["local.xsd"]
+
+    def test_maven_pom_is_a_resource_named_by_coordinates(self):
+        source = (
+            "<project>\n"
+            "  <modelVersion>4.0.0</modelVersion>\n"
+            "  <groupId>com.example</groupId>\n"
+            "  <artifactId>app</artifactId>\n"
+            "</project>\n"
+        )
+        result = extract("pom.xml", source)
+
+        resource = _symbols(result)["com.example:app"]
+        assert resource["kind"] == "resource"
+        assert (resource["line_start"], resource["line_end"]) == (1, 5)
+
+
+TERRAFORM_MODULE = """variable "region" {
+  default = "eu-west-1"
+}
+
+locals {
+  name = "${var.region}-app"
+  b    = aws_s3_bucket.b.arn
+}
+
+resource "aws_s3_bucket" "b" {
+  bucket = local.name
+  tags   = merge(var.tags, { x = length(var.list) })
+}
+
+data "aws_iam_policy_document" "p" {
+  statement {
+    resources = [aws_s3_bucket.b.arn]
+  }
+}
+
+module "bucket" {
+  source = "./modules/bucket"
+  region = var.region
+  x      = module.other.out
+}
+
+output "arn" {
+  value = module.bucket.arn
+}
+
+provider "aws" {
+  region = var.region
+}
+"""
+
+
+class TestTerraformSymbols:
+    def test_blocks_get_their_reference_names(self):
+        result = extract("infra/main.tf", TERRAFORM_MODULE)
+
+        assert set(_symbols(result)) == {
+            "var.region",
+            "local.name",
+            "local.b",
+            "aws_s3_bucket.b",
+            "data.aws_iam_policy_document.p",
+            "module.bucket",
+            "output.arn",
+            "provider.aws",
+        }
+        assert _symbols(result)["aws_s3_bucket.b"]["kind"] == "resource"
+        assert _lines(result, "aws_s3_bucket.b") == (10, 13)
+        assert _lines(result, "local.b") == (7, 7)
+
+    def test_references_become_calls_named_as_read(self):
+        result = extract("infra/main.tf", TERRAFORM_MODULE)
+        calls = {(c["name"], c["line"]) for c in result["calls"]}
+
+        assert ("var.region", 6) in calls
+        assert ("local.name", 11) in calls
+        assert ("aws_s3_bucket.b", 7) in calls
+        assert ("var.list", 12) in calls
+        assert ("module.other", 24) in calls
+        assert ("module.bucket", 28) in calls
+
+    def test_builtin_roots_and_function_names_are_not_references(self):
+        source = 'resource "x" "y" {\n  a = count.index\n  b = length(var.list)\n}\n'
+        names = {c["name"] for c in extract("m.tf", source)["calls"]}
+
+        assert names == {"var.list"}
+
+    def test_local_module_source_is_an_import_registry_is_not(self):
+        local = extract("m.tf", 'module "a" {\n  source = "./modules/bucket"\n}\n')
+        registry = extract("m.tf", 'module "b" {\n  source = "hashicorp/consul/aws"\n}\n')
+
+        assert [(i["module"], i["line"]) for i in local["imports"]] == [("./modules/bucket", 2)]
+        assert registry["imports"] == []
+
+
+class TestDataFileSecrets:
+    def test_api_key_name_is_kept_and_value_never_is(self):
+        result = extract("app.yml", "api_key: hunter2-secret-value\n")
+
+        assert set(_symbols(result)) == {"api_key"}
+        assert "hunter2-secret-value" not in str(result)
+
+
+class TestDataFilesThroughScanner:
+    """What the scanner keeps of a data file: its symbols, and nothing
+    for lock files, large files or files that hold a secret value.
+    """
+
+    @staticmethod
+    def _adapt(tmp_path, rel: str, text: str):
+        from mimry import scanner
+
+        repo = tmp_path / "repo"
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        record, symbols, *_ = scanner.adapt(target, repo)
+        return record, symbols
+
+    def test_settings_json_keys_are_symbols(self, tmp_path):
+        record, symbols = self._adapt(
+            tmp_path, "config/settings.json", '{"retries": 3, "db": {"host": "h"}}\n'
+        )
+
+        assert record["adapter"] == "tree-sitter-json"
+        assert {s["name"] for s in symbols} == {"retries", "db", "db.host"}
+
+    def test_lock_file_gets_no_symbols(self, tmp_path):
+        record, symbols = self._adapt(
+            tmp_path, "package-lock.json", '{"name": "x", "lockfileVersion": 3}\n'
+        )
+
+        assert symbols == []
+        assert record["adapter"] == "generic"
+
+    def test_file_over_256_kb_gets_no_symbols(self, tmp_path):
+        big = "{" + ",".join(f'"k{i}": {i}' for i in range(40000)) + "}\n"
+        assert len(big.encode("utf-8")) > 256 * 1024
+
+        record, symbols = self._adapt(tmp_path, "config/big.json", big)
+
+        assert symbols == []
+        assert record["adapter"] == "generic"
+
+    def test_secret_value_refuses_the_file_so_no_value_is_indexed(self, tmp_path):
+        from mimry.scanner import SensitiveContentError
+
+        with pytest.raises(SensitiveContentError):
+            self._adapt(
+                tmp_path, "config/creds.json", '{"api_key": "privacy-canary-value-123456789"}\n'
+            )
+
+    def test_manifests_keep_the_config_manifest_adapter(self, tmp_path):
+        record, symbols = self._adapt(
+            tmp_path, "package.json", '{"scripts": {"test": "pytest"}}\n'
+        )
+        assert record["adapter"] == "config-manifest"
+        assert symbols == []
+
+        record, symbols = self._adapt(
+            tmp_path, ".github/workflows/ci.yml", "jobs:\n  test:\n    runs-on: x\n"
+        )
+        assert record["adapter"] == "config-manifest"
+        assert symbols == []

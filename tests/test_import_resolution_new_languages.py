@@ -16,7 +16,7 @@ import pytest
 
 from mimry.commands import cmd_init
 from mimry.core.languages import extract
-from mimry.core.resolve import resolve_imports
+from mimry.core.resolve import resolve_calls, resolve_imports
 from mimry.indexer import write_index
 from mimry.queries import symbol_matches
 from mimry.storage import load_pointer
@@ -1801,3 +1801,137 @@ def test_vue_component_does_not_hide_its_script_functions():
         {"name": "helper", "kind": "function", "language": "tsx", "line_start": 3, "line_end": 4},
     ]
     assert [sym["name"] for sym in _targetable(jsx)] == ["Card"]
+
+
+class TestTerraformModuleSource:
+    """A local module source names a folder, and links to its files."""
+
+    def test_local_folder_resolves_to_its_main_tf(self):
+        imports = {"infra/main.tf": ["./modules/bucket"]}
+        rel_paths = {
+            "infra/main.tf",
+            "infra/modules/bucket/main.tf",
+            "infra/modules/bucket/variables.tf",
+        }
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert results == [
+            {
+                "importer": "infra/main.tf",
+                "target": "infra/modules/bucket/main.tf",
+                "confidence": "EXTRACTED",
+            }
+        ]
+
+    def test_folder_without_main_tf_resolves_to_its_first_tf_file(self):
+        imports = {"infra/main.tf": ["../shared/net"]}
+        rel_paths = {"infra/main.tf", "shared/net/vpc.tf", "shared/net/dns.tf"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["shared/net/dns.tf"]
+
+    def test_missing_folder_gives_no_edge(self):
+        results = resolve_imports({"infra/main.tf": ["./modules/none"]}, {"infra/main.tf"})
+
+        assert results == []
+
+    def test_registry_source_gives_no_edge(self):
+        imports = {"infra/main.tf": ["hashicorp/consul/aws"]}
+        rel_paths = {"infra/main.tf", "hashicorp/consul/aws/main.tf"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestTerraformCallScope:
+    """A reference reads a name defined in its folder, as Terraform."""
+
+    def test_variable_in_a_sibling_file_is_the_call_target(self):
+        symbols_by_file = {
+            "infra/main.tf": [
+                {
+                    "name": "aws_s3_bucket.b",
+                    "kind": "resource",
+                    "symbol_id": "b",
+                    "line_start": 1,
+                    "line_end": 3,
+                },
+            ],
+            "infra/variables.tf": [
+                {
+                    "name": "var.region",
+                    "kind": "resource",
+                    "symbol_id": "r",
+                    "line_start": 1,
+                    "line_end": 3,
+                },
+            ],
+        }
+        calls = {"infra/main.tf": [{"name": "var.region", "line": 2}]}
+
+        results = resolve_calls(calls, symbols_by_file, [])
+
+        assert len(results) == 1
+        assert results[0]["caller_symbol"] == "aws_s3_bucket.b"
+        assert results[0]["target_file"] == "infra/variables.tf"
+        assert results[0]["target_symbol"] == "var.region"
+        assert results[0]["confidence"] == "EXTRACTED"
+
+    def test_module_block_is_read_from_a_sibling_outputs_file(self):
+        symbols_by_file = {
+            "infra/main.tf": [
+                {
+                    "name": "module.bucket",
+                    "kind": "resource",
+                    "symbol_id": "m",
+                    "line_start": 1,
+                    "line_end": 3,
+                },
+            ],
+            "infra/outputs.tf": [
+                {
+                    "name": "output.arn",
+                    "kind": "resource",
+                    "symbol_id": "o",
+                    "line_start": 1,
+                    "line_end": 3,
+                },
+            ],
+        }
+        calls = {"infra/outputs.tf": [{"name": "module.bucket", "line": 2}]}
+
+        results = resolve_calls(calls, symbols_by_file, [])
+
+        assert [(r["target_file"], r["target_symbol"]) for r in results] == [
+            ("infra/main.tf", "module.bucket")
+        ]
+
+    def test_same_name_in_another_folder_is_not_read(self):
+        symbols_by_file = {
+            "infra/main.tf": [],
+            "other/variables.tf": [
+                {
+                    "name": "var.region",
+                    "kind": "resource",
+                    "symbol_id": "r",
+                    "line_start": 1,
+                    "line_end": 3,
+                },
+            ],
+        }
+        calls = {"infra/main.tf": [{"name": "var.region", "line": 2}]}
+
+        assert resolve_calls(calls, symbols_by_file, []) == []
+
+
+class TestXmlImports:
+    def test_include_resolves_to_a_file_beside_the_importer(self):
+        imports = {"config/app.xml": ["other.xml", "classpath:shared.xml"]}
+        rel_paths = {"config/app.xml", "config/other.xml"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("config/other.xml", "EXTRACTED")
+        ]
