@@ -733,7 +733,7 @@ def _write_files_jsonl(idx, records):
                 ),
             )
             con.execute(
-                "insert into files_fts values(?,?,?,?,?,?,?)",
+                "insert into files_fts values(?,?,?,?,?,?,?,?)",
                 (
                     record["file_id"],
                     record["rel_path"],
@@ -741,6 +741,7 @@ def _write_files_jsonl(idx, records):
                     record["extension"],
                     record["content_hint"],
                     record["metadata_text"],
+                    "",
                     "",
                 ),
             )

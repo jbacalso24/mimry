@@ -134,6 +134,12 @@ def _filter_and_page(rows, *, scope, languages_by_path):
     return filtered[start : start + scope["limit"]]
 
 
+# Weight of the words from recent commit subjects that touched a file
+# (history_terms). Zero keeps the index and ranking as they were before
+# that column was filled.
+HISTORY_TERMS_WEIGHT = 0.3
+
+
 def _fts_match_query(terms: list[str]) -> str:
     # Prefix each normalized token for identifier/path fragments; quote
     # to keep FTS syntax safe.
@@ -162,11 +168,12 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
     try:
         con = connect(idx)
         # First weight is unindexed file_id; rel_path, filename,
-        # extension, content_hint, metadata_text, body follow.
+        # extension, content_hint, metadata_text, body, history_terms
+        # follow.
         rows = con.execute(
-            "select file_id, bm25(files_fts, 0.0, 1.0, 1.4, 0.4, 0.8, 0.8, 0.8) as rank "
+            "select file_id, bm25(files_fts, 0.0, 1.0, 1.4, 0.4, 0.8, 0.8, 0.8, ?) as rank "
             "from files_fts where files_fts match ? order by rank, rel_path, file_id limit 80",
-            (match,),
+            (HISTORY_TERMS_WEIGHT, match),
         ).fetchall()
         con.close()
     except Exception:

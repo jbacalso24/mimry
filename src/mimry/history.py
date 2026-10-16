@@ -16,7 +16,7 @@ from typing import Any
 
 from .core.languages import EXTENSION_LANGUAGE
 from .intent import TOKEN_RE, query_terms, text_terms
-from .security import redact_sensitive_text
+from .security import REDACTED, redact_sensitive_text
 
 # Newest commits kept. Older history is not indexed.
 HISTORY_COMMIT_LIMIT = 5000
@@ -26,6 +26,10 @@ HISTORY_BODY_CHARS = 2000
 HISTORY_FORMAT = 1
 # History lines a preflight adds for paths the task names.
 HISTORY_MENTION_LINES = 2
+# Newest commits per file whose subjects become file search vocabulary.
+HISTORY_TERMS_COMMITS = 30
+# Commits touching more files than this teach nothing about one file.
+HISTORY_TERMS_MAX_FILES = 50
 
 GIT_MISSING = "git is not installed, so commit history is unavailable"
 NOT_A_REPO = "This folder is not a git repository, so it has no commit history"
@@ -49,6 +53,7 @@ _FIELD = "\x1f"
 _LOG_FORMAT = "--format=%x1e%H%x1f%aI%x1f%s%x1f%b"
 _STATUS_WORDS = {"A": "added", "D": "removed", "R": "renamed", "M": "changed", "T": "changed"}
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
+_PR_NUMBER = re.compile(r"#\d+")
 
 
 def ensure_history_schema(con: sqlite3.Connection) -> None:
@@ -234,6 +239,76 @@ def _trim(con: sqlite3.Connection) -> None:
     con.execute("delete from commit_files where commit_id <= ?", (cutoff,))
     con.execute("delete from commits_fts where rowid <= ?", (cutoff,))
     con.execute("delete from commits where id <= ?", (cutoff,))
+
+
+def _root(parent: dict[str, str], name: str) -> str:
+    """The lineage a path belongs to: the root of its rename chain."""
+    while parent.get(name, name) != name:
+        name = parent[name]
+    return name
+
+
+def history_terms_by_path(con: sqlite3.Connection) -> dict[str, str]:
+    """Per indexed path, the words of its recent commit subjects.
+
+    One query reads every file change of the commits that touched at
+    most HISTORY_TERMS_MAX_FILES files, newest first. A rename joins the
+    old and new paths into one lineage, so a renamed file keeps the
+    commits from before the rename. Each lineage takes its newest
+    HISTORY_TERMS_COMMITS commits, and its words are the deduplicated,
+    sorted terms of their subjects with PR numbers and the redaction
+    placeholder removed.
+    """
+    rows = con.execute(
+        "select c.id, c.subject, cf.path, cf.old_path from commit_files cf "
+        "join commits c on c.id = cf.commit_id "
+        "where cf.commit_id not in (select commit_id from commit_files "
+        "group by commit_id having count(*) > ?) order by c.id desc",
+        (HISTORY_TERMS_MAX_FILES,),
+    ).fetchall()
+    parent: dict[str, str] = {}
+    for _commit_id, _subject, path, old_path in rows:
+        if old_path:
+            first, second = _root(parent, path), _root(parent, old_path)
+            if first != second:
+                parent[first] = second
+    terms_of: dict[int, frozenset[str]] = {}
+    words: dict[str, set[str]] = {}
+    taken: dict[str, int] = {}
+    last_commit: dict[str, int] = {}
+    for commit_id, subject, path, _old_path in rows:
+        root = _root(parent, path)
+        if last_commit.get(root) == commit_id or taken.get(root, 0) >= HISTORY_TERMS_COMMITS:
+            continue
+        last_commit[root] = commit_id
+        taken[root] = taken.get(root, 0) + 1
+        if commit_id not in terms_of:
+            text = _PR_NUMBER.sub(" ", subject.replace(REDACTED, " "))
+            terms_of[commit_id] = text_terms(text)
+        words.setdefault(root, set()).update(terms_of[commit_id])
+    by_root = {root: " ".join(sorted(found)) for root, found in words.items()}
+    return {path: by_root.get(_root(parent, path), "") for _id, _s, path, _o in rows}
+
+
+def refresh_history_terms(con: sqlite3.Connection, weight: float) -> int:
+    """Store each file's history terms in files_fts.
+
+    Returns the number of rows written.
+
+    Only rows whose stored text differs are written. With weight 0 the
+    column is left empty: an FTS column's text counts toward bm25's
+    length normalisation even at weight 0, so filling it would move
+    scores. The caller holds the index lock and commits.
+    """
+    wanted = history_terms_by_path(con) if weight > 0 else {}
+    stored = con.execute("select rowid, rel_path, history_terms from files_fts").fetchall()
+    changed = [
+        (wanted.get(rel_path, ""), rowid)
+        for rowid, rel_path, current in stored
+        if (current or "") != wanted.get(rel_path, "")
+    ]
+    con.executemany("update files_fts set history_terms = ? where rowid = ?", changed)
+    return len(changed)
 
 
 def update_history(con: sqlite3.Connection, root: Path) -> dict[str, Any]:

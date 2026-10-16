@@ -13,6 +13,7 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
+from . import search
 from .config_manifest_adapter import is_config_manifest
 from .constants import SCHEMA_VERSION
 from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
@@ -27,7 +28,7 @@ from .core.resolve import (
     resolve_table_refs,
 )
 from .core.tsconfig import build_ts_paths
-from .history import update_history
+from .history import refresh_history_terms, update_history
 from .paths import graph_output_dir, idx_path, now, pointer_file
 from .pieces import PIECES_FTS_CREATE, file_pieces
 from .reuse import (
@@ -867,7 +868,11 @@ def _sync_history_in_place(generation: Path, root: Path) -> dict:
     """
     con = connect(generation)
     try:
-        return update_history(con, root)
+        stats = update_history(con, root)
+        if stats["status"] in ("updated", "rebuilt"):
+            refresh_history_terms(con, search.HISTORY_TERMS_WEIGHT)
+            con.commit()
+        return stats
     finally:
         con.close()
 
@@ -1069,7 +1074,7 @@ def write_index(root, ptr, *, full: bool = False):
                     )
                     fts_body = record.get("fts_body", {}).get(file_rec["file_id"], "")
                     con.execute(
-                        "insert into files_fts values(?,?,?,?,?,?,?)",
+                        "insert into files_fts values(?,?,?,?,?,?,?,?)",
                         (
                             file_rec["file_id"],
                             file_rec["rel_path"],
@@ -1078,6 +1083,7 @@ def write_index(root, ptr, *, full: bool = False):
                             file_rec["content_hint"],
                             file_rec["metadata_text"],
                             fts_body,
+                            "",
                         ),
                     )
                     for start, end, name, body in record.get("pieces", {}).get(
@@ -1088,6 +1094,7 @@ def write_index(root, ptr, *, full: bool = False):
                             (file_rec["file_id"], start, end, name, body),
                         )
                 history_stats = update_history(con, root)
+                refresh_history_terms(con, search.HISTORY_TERMS_WEIGHT)
                 for symbol in symbols:
                     con.execute(
                         "insert or replace into symbols values(?,?,?,?,?,?)",
