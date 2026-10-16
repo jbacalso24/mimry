@@ -308,3 +308,13 @@ def test_nudge_query_drops_regex_fragments(repo, monkeypatch, capsys):
     text = _hook(monkeypatch, capsys, repo, _shell("rg '\"(acc|mean|top|n_|scored)' x.log"))
 
     assert text.startswith('MIMRY can answer this: run `mimry find "acc mean top scored"`')
+
+
+@pytest.mark.parametrize("pattern", ["helper call|leaf", "(helper|leaf)_file"])
+def test_phrase_with_a_symbol_name_gets_the_nudge_not_its_symbol(
+    repo, monkeypatch, capsys, pattern
+):
+    text = _hook(monkeypatch, capsys, repo, _grep(pattern))
+
+    assert text.startswith("MIMRY can answer this: run `mimry find")
+    assert "MIMRY knows" not in text

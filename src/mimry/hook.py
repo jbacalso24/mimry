@@ -34,6 +34,13 @@ REGEX_CONSTRUCT = re.compile(r"\||\.[*+]|\\[wsbdWSBD]|\[[^\]]*\]|\(.*\)|\(\?i\)"
 ESCAPED_CLASS = re.compile(r"\\[wsbdWSBD]")
 WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
 SEPARATOR = re.compile(r"[|&;]+")
+# One regex token: an escape pair, a whole [...] class or one character.
+REGEX_TOKEN = re.compile(r"\\.|\[(?:\\.|[^\]\\])*\]|.", re.DOTALL)
+# A trailing call opener: (, \(, \s*( or \s*\(.
+CALL_OPENER = re.compile(r"(?:\\s\*)?\\?\($")
+# A plain name, or a dotted one such as Foo.bar.
+DOTTED_NAME = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*")
+LEADING_WORD = re.compile(r"([A-Za-z]+)\s+")
 SEARCH_PROGRAMS = {"grep", "rg", "ag", "ack", "git"}
 # These recurse into subdirectories without needing -r.
 RECURSIVE_BY_DEFAULT = {"rg", "ag", "ack", "git"}
@@ -312,11 +319,92 @@ def tree_search_patterns(tool_name: str, tool_input: dict, command: str, root: P
     return shell_tree_patterns(command, root)
 
 
+def _group_end(tokens: list[str]) -> int:
+    """Index of the ``)`` closing the group opened at ``tokens[0]``.
+
+    -1 when the group never closes.
+    """
+    depth = 0
+    for i, tok in enumerate(tokens):
+        if tok == "(":
+            depth += 1
+        elif tok == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+def _alternatives(pattern: str) -> list[str] | None:
+    """Top-level ``|`` alternatives of ``pattern``, as text.
+
+    One group around the whole pattern is taken off first. None when a
+    ``)`` closes a group that was never opened.
+    """
+    tokens = REGEX_TOKEN.findall(pattern)
+    if tokens[:1] == ["("] and _group_end(tokens) == len(tokens) - 1:
+        tokens = tokens[1:-1]
+        if tokens[:2] == ["?", ":"]:
+            tokens = tokens[2:]
+    parts: list[list[str]] = [[]]
+    depth = 0
+    for tok in tokens:
+        if tok == "(":
+            depth += 1
+        elif tok == ")":
+            if depth == 0:
+                return None
+            depth -= 1
+        elif tok == "|" and depth == 0:
+            parts.append([])
+            continue
+        parts[-1].append(tok)
+    return ["".join(part) for part in parts]
+
+
+def _alternative_name(alternative: str) -> str | None:
+    """The one name an alternative spells, else None.
+
+    Anchors, word boundaries, one trailing call opener and one leading
+    declaration word go first, so ``def foo`` names foo.
+    """
+    text = alternative
+    previous = None
+    while text != previous:
+        previous = text
+        text = text.removeprefix("^").removeprefix("\\b").removeprefix("\\<")
+        text = text.removesuffix("$").removesuffix("\\b").removesuffix("\\>")
+        text = CALL_OPENER.sub("", text)
+    declared = LEADING_WORD.match(text)
+    if declared and declared.group(1) in DECLARATION_WORDS:
+        text = text[declared.end() :]
+    if DOTTED_NAME.fullmatch(text) is None:
+        return None
+    return text.rsplit(".", 1)[-1]
+
+
+def _pattern_names(pattern: str) -> list[str]:
+    """Names ``pattern`` spells, or [] when a part is not a name."""
+    names: list[str] = []
+    for alternative in _alternatives(pattern) or []:
+        name = _alternative_name(alternative)
+        if name is None:
+            return []
+        names.append(name)
+    return names
+
+
 def symbol_candidates(patterns: list[str]) -> list[str]:
-    """Identifiers in ``patterns`` that could name a symbol."""
+    """Identifiers that ``patterns`` search for as whole symbols.
+
+    A pattern names symbols only when all of it is whole names, such as
+    ``foo``, ``def foo`` or ``(foo|bar)``. A phrase, a wildcard or a
+    glued group gives nothing for that pattern, and the caller falls
+    back to the nudge.
+    """
     names: list[str] = []
     for pattern in patterns:
-        for raw in WORD.findall(ESCAPED_CLASS.sub(" ", pattern)):
+        for raw in _pattern_names(pattern):
             word = usable_word(raw)
             # Dunder names such as __init__ are defined in nearly every
             # file, so an answer naming one would be noise.

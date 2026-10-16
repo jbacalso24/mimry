@@ -147,10 +147,10 @@ def test_glob_query_leaves_out_file_extensions(pattern, query):
             ["def feedback_rank_signals|def apply_feedback_to_rows"],
             ["feedback_rank_signals", "apply_feedback_to_rows"],
         ),
-        ([r"\bapply_feedback\b.*x"], ["apply_feedback"]),
-        (["ab|return|self|Foo.bar"], ["Foo", "bar"]),
+        ([r"\bapply_feedback\b.*x"], []),
+        (["ab|return|self|Foo.bar"], ["bar"]),
         (["leaf", "leaf|main"], ["leaf", "main"]),
-        (["connection refused"], ["connection", "refused"]),
+        (["connection refused"], []),
         (["a1|xy"], []),
         (["_escape_control_characters"], ["_escape_control_characters"]),
         (["_private|_x|_x1"], ["_private", "_x1"]),
@@ -166,6 +166,47 @@ def test_symbol_candidates_drop_keywords_and_short_words(patterns, names):
 def test_symbol_candidates_are_capped():
     pattern = "|".join(f"name{i:02d}" for i in range(40))
     assert len(symbol_candidates([pattern])) == hook.SYMBOL_CANDIDATE_LIMIT
+
+
+@pytest.mark.parametrize(
+    ("pattern", "names"),
+    [
+        ("apply_feedback", ["apply_feedback"]),
+        ("def apply_feedback", ["apply_feedback"]),
+        (r"\bapply_feedback\b", ["apply_feedback"]),
+        (r"apply_feedback\(", ["apply_feedback"]),
+        (r"apply_feedback\s*\(", ["apply_feedback"]),
+        ("apply_feedback(", ["apply_feedback"]),
+        ("^apply_feedback$", ["apply_feedback"]),
+        ("class Router", ["Router"]),
+        ("foo|bar_baz", ["foo", "bar_baz"]),
+        ("(foo|bar_baz)", ["foo", "bar_baz"]),
+        ("(?:foo|bar_baz)", ["foo", "bar_baz"]),
+    ],
+)
+def test_whole_symbol_patterns_name_their_symbols(pattern, names):
+    assert symbol_candidates([pattern]) == names
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "escape terminal control",
+        "(format|parse)_file",
+        "foo.*bar",
+        "TODO: fix",
+        "foo)|bar",
+        "(foo|bar",
+        "x(|y",
+        "def",
+    ],
+)
+def test_phrases_and_glued_groups_name_nothing(pattern):
+    assert symbol_candidates([pattern]) == []
+
+
+def test_a_bad_pattern_does_not_hide_a_good_one():
+    assert symbol_candidates(["escape terminal control", "apply_feedback"]) == ["apply_feedback"]
 
 
 @pytest.mark.parametrize(
