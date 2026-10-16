@@ -75,22 +75,29 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      # PyPI's /packages/source/ URL lags a fresh upload, so wait until the
-      # sdist the PKGBUILD downloads answers before rendering the package.
-      - name: Wait for the sdist on PyPI
+      # A HEAD can answer from one CDN edge while makepkg's GET 404s from another, so
+      # download the sdist with a GET, check it against PyPI's sha256 and hand it to makepkg.
+      - name: Fetch and verify the sdist from PyPI
         run: |
           version="${GITHUB_REF_NAME#v}"
-          url="https://files.pythonhosted.org/packages/source/m/mimry/mimry-$version.tar.gz"
+          file="mimry-$version.tar.gz"
+          url="https://files.pythonhosted.org/packages/source/m/mimry/$file"
+          fetch() {
+            local sha
+            sha=$(curl -fsSL "https://pypi.org/pypi/mimry/$version/json" | python -c 'import json,sys; print(next(f["digests"]["sha256"] for f in json.load(sys.stdin)["urls"] if f["packagetype"] == "sdist"))' 2>/dev/null) || return 1
+            curl -fsSL -o "/tmp/$file" "$url" || return 1
+            echo "$sha  /tmp/$file" | sha256sum -c --status
+          }
           attempts=0
-          until curl -fsSIL -o /dev/null "$url"; do
+          until fetch; do
             attempts=$((attempts + 1))
             if [ "$attempts" -ge 30 ]; then
-              echo "::error::$url still does not answer after 15 minutes. Rerun this job once PyPI serves it."
+              echo "::error::$url does not match the sha256 PyPI reports after 15 minutes. Rerun this job once PyPI serves it."
               exit 1
             fi
             sleep 30
           done
-          echo "sdist $url is available on PyPI"
+          echo "verified $url against PyPI's sha256"
 
       - name: Render, build, install and smoke-test the package
         run: |
@@ -98,6 +105,11 @@ jobs:
           useradd -m builder
           cp -r "$GITHUB_WORKSPACE" /home/builder/mimry
           chown -R builder: /home/builder/mimry
+          # makepkg skips a source already in its build directory (SRCDEST defaults to
+          # the startdir), so update.sh and makepkg use this verified file, not a new download.
+          mkdir -p /home/builder/aur
+          cp "/tmp/mimry-$version.tar.gz" /home/builder/aur/
+          chown -R builder: /home/builder/aur
           sudo -u builder bash /home/builder/mimry/packaging/aur/update.sh "$version" /home/builder/aur
           cd /home/builder/aur
           sudo -u builder makepkg --noconfirm
