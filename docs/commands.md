@@ -23,7 +23,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry route "<task>"` | Recommend an agent role (`--json` for tools) |
 | `mimry brief "<task>" --agent <role>` | Write a role-specific brief |
 | `mimry init` / `mimry index` | Set up a repo and build the index |
-| `mimry reindex` / `mimry refresh` | Update the index ahead of time (`--full` re-parses everything); query commands update a stale index on their own |
+| `mimry reindex` / `mimry refresh` | Update the index ahead of time (`--full` re-parses everything); query commands index a repo that was never indexed, update a stale index, and rebuild missing graph files on their own |
 | `mimry status` | Is the index current? (`--verify` re-hashes every file) |
 | `mimry doctor` | Read-only install, parser, index, and cache diagnostics (`--json` for tools); common problems and fixes are in [troubleshooting](troubleshooting.md) |
 | `mimry watch` | Poll for changes and refresh when they settle |

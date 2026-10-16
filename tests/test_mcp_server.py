@@ -306,6 +306,20 @@ def test_mcp_refresh_rebuilds_index_and_reports_status(tmp_path: Path, monkeypat
     assert "OK Indexed repo for the first time" in payload["stdout"]
 
 
+def test_mcp_callers_index_a_set_up_repo_that_was_never_indexed(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    assert mimry_init(str(repo), skip_graph=True)["returncode"] == 0
+
+    payload = mimry_symbol("create_session", str(repo), relations="callers")
+
+    assert "error" not in payload
+    assert "graph_error" not in payload
+    assert payload["relation"] == "callers"
+    assert payload["reindexed"] == "indexed 4 files"
+
+
 def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(
     tmp_path: Path, monkeypatch
 ):

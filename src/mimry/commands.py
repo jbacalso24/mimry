@@ -38,6 +38,7 @@ from .feedback import (
 from .indexer import write_index
 from .install_info import repair_command
 from .lifecycle import (
+    build_graph_first,
     change_summary,
     command_root,
     health,
@@ -340,21 +341,15 @@ def cmd_status(a):
 
 
 def _fresh_index(command):
-    """Reindex first when files changed since the last index."""
-    return _reindex_first(command, include_missing=False)
-
-
-def _fresh_index_or_first(command):
-    """Like _fresh_index, and index a repo that was never indexed."""
-    return _reindex_first(command, include_missing=True)
-
-
-def _reindex_first(command, *, include_missing: bool):
+    """Index a repo that was never indexed, reindex a stale one, and
+    build missing graph files before the command reads them.
+    """
 
     @wraps(command)
     def guarded(a):
+        root = command_root(a)
         started = time.perf_counter()
-        stats = refresh_if_stale(command_root(a), include_missing=include_missing)
+        stats = refresh_if_stale(root, include_missing=True)
         if stats is not None and not getattr(a, "json", False):
             elapsed = ui.took(time.perf_counter() - started)
             if stats.get("set_up_worktree"):
@@ -366,9 +361,25 @@ def _reindex_first(command, *, include_missing: bool):
                 ui.ok(f"Indexed first - {ui.count(stats['files'], 'file')} ({elapsed})")
             else:
                 ui.ok(f"Reindexed first - {change_summary(stats)} ({elapsed})")
+        _build_graph_first(root, a)
         return command(a)
 
     return guarded
+
+
+def _build_graph_first(root: Path, a) -> None:
+    """Rebuild missing graph files, as `mimry refresh` would.
+
+    If the rebuild fails, say so and let the command's own graph check
+    report what is left, which still tells the user to run refresh.
+    """
+    try:
+        elapsed = build_graph_first(root)
+    except Exception as exc:
+        ui.warn(f"Could not build the graph first: {exc}")
+        return
+    if elapsed is not None and not getattr(a, "json", False):
+        ui.ok(f"Built the graph first ({ui.took(elapsed)})")
 
 
 def _relative_status_path(root: Path, maybe_path: str | Path | None) -> str:
@@ -627,7 +638,7 @@ def cmd_semantic(a):
         return 0
 
 
-@_fresh_index_or_first
+@_fresh_index
 def cmd_find(a):
     start = Path(getattr(a, "find_directory", a.root)).resolve()
     root = indexed_root(start)
@@ -1077,10 +1088,12 @@ def cmd_cache_wipe(a):
 def cmd_report(a):
     """Print the current MIMRY graph report.
 
-    The report is read-only. If the graph is not current, warn the user
-    but still print the report.
+    Missing graph files are built first. A stale index is not reindexed.
+    If the graph is still not current, warn the user but still print the
+    report.
     """
     root = Path(a.root).resolve()
+    _build_graph_first(root, a)
     ptr = require(root)
     _, graph = index_and_graph_health(root, ptr)
 
@@ -1165,6 +1178,7 @@ def cmd_export(a):
     from .core.export import ExportTargetError
 
     root = Path(a.root).resolve()
+    _build_graph_first(root, a)
     ptr = require(root)
     _, graph = index_and_graph_health(root, ptr)
 

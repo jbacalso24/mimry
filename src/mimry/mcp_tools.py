@@ -21,6 +21,7 @@ from mimry.freshness import index_freshness
 from mimry.indexer import write_index
 from mimry.lifecycle import (
     INDEX_REBUILT_NOTE,
+    build_graph_first,
     change_summary,
     rebuild_outdated_index,
     refresh_if_stale,
@@ -285,15 +286,26 @@ def _index_operation(*, exclusive: bool = False, refresh: bool = False):
         def guarded(*args, **kwargs):
             bound = func_signature.bind_partial(*args, **kwargs)
             root_path = _root(bound.arguments.get("root"))
-            stats = refresh_if_stale(root_path) if refresh else None
+            stats = None
+            graph_error = None
+            if refresh:
+                stats = refresh_if_stale(root_path, include_missing=True)
+                try:
+                    build_graph_first(root_path)
+                except Exception as exc:  # the payload's graph health still reports what is left
+                    graph_error = str(exc)
             with active_index_pointer(root_path, exclusive=exclusive):
                 result = func(*args, **kwargs)
             if stats is not None and isinstance(result, dict):
                 if stats.get("set_up_worktree"):
                     result["set_up_worktree"] = True
                     result["reindexed"] = f"set up this worktree, indexed {stats['files']} files"
+                elif stats.get("changes") is None:
+                    result["reindexed"] = f"indexed {stats['files']} files"
                 else:
                     result["reindexed"] = change_summary(stats)
+            if graph_error is not None and isinstance(result, dict):
+                result["graph_error"] = f"Could not build the graph first: {graph_error}"
             return result
 
         return guarded

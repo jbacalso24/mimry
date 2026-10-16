@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from . import ui
 from .constants import SCHEMA_VERSION
-from .core.artifacts import graph_health
+from .core.artifacts import graph_health, graph_path, manifest_path, report_path
 from .freshness import index_freshness
 from .indexer import write_index
 from .install_info import repair_command
@@ -284,6 +284,33 @@ def refresh_if_stale(root: Path, *, include_missing: bool = False) -> dict | Non
     if active is None:
         return _set_up_new_worktree(root)
     return write_index(root, require(root, validate=False))
+
+
+def build_graph_first(root: Path) -> float | None:
+    """Build what a graph command needs when graph files are missing.
+
+    A set-up repo that was never indexed gets indexed, which publishes
+    the graph too. A current index whose graph files are gone gets the
+    rebuild that `mimry refresh` runs. A stale index is left alone:
+    query commands reindex it through refresh_if_stale first, and
+    export and report refuse it.
+
+    Returns the seconds the rebuild took, or None when nothing was
+    needed or MIMRY is not set up. The check is one stat per artifact,
+    so a query on a current, complete index pays nothing more. Graph
+    files that are present but out of date are still reported by the
+    commands' own graph health check.
+    """
+    with active_index_pointer(root) as ptr:
+        if not ptr:
+            return None
+        if all(p(root).exists() for p in (graph_path, report_path, manifest_path)):
+            return None
+        if index_freshness(root, ptr)["state"] == "stale":
+            return None
+    started = time.perf_counter()
+    write_index(root, require(root, validate=False))
+    return time.perf_counter() - started
 
 
 def change_summary(stats: dict) -> str:

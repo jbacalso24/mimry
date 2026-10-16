@@ -1525,21 +1525,21 @@ testpaths = ["tests"]
     assert "MIMRY narrows context" in text
 
 
-def test_context_pack_degrades_when_graph_relationships_missing(tmp_path):
+def test_context_pack_rebuilds_missing_graph_relationships(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
     assert run_cli(repo, cache, "index").returncode == 0
-    # Indexing always publishes a graph now, so degradation has to be
-    # provoked.
+    # Indexing always publishes a graph now, so the missing graph has
+    # to be provoked. The context command builds it again first.
     shutil.rmtree(repo / ".mimry" / "mimry-out" / "graph")
 
     res = run_cli(repo, cache, "context", "auth session")
 
     assert res.returncode == 0, res.stderr
+    assert "OK Built the graph first" in res.stdout
     text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
-    assert "MIMRY relationship data is missing or stale" in text
-    assert "No relationship path was invented" in text
+    assert "MIMRY relationship data is missing or stale" not in text
 
 
 def test_preflight_force_refreshes_even_when_current(tmp_path):
@@ -2454,7 +2454,7 @@ def test_find_semantic_blends_labels_without_hiding_exact_match(tmp_path):
     assert "similar wording" in res.stdout
 
 
-def test_semantic_missing_index_degrades_honestly(tmp_path):
+def test_semantic_indexes_a_never_indexed_repo_first(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"
     assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
@@ -2462,8 +2462,9 @@ def test_semantic_missing_index_degrades_honestly(tmp_path):
     res = run_cli(repo, cache, "semantic", "session repository")
 
     assert res.returncode == 0, res.stderr
-    assert "! Semantic search is missing" in res.stdout
-    assert "mimry refresh" in res.stdout
+    assert "OK Indexed first" in res.stdout
+    assert "! Semantic search is missing" not in res.stdout
+    assert "src/auth/session.py" in _posix(res.stdout)
 
 
 def test_context_semantic_marks_semantic_reasons_and_keeps_source_truth(tmp_path):
@@ -2614,6 +2615,67 @@ def test_find_indexes_a_never_indexed_repo_first(tmp_path):
     assert res.returncode == 0, res.stderr
     assert "Indexed first" in res.stdout
     assert _result_paths(res.stdout)[0] == "src/auth/middleware.py"
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("callers", "create_session"),
+        ("impact", "src/auth/session.py"),
+        ("path", "src/auth/session.py", "src/auth/middleware.py"),
+        ("explain", "create_session"),
+    ],
+)
+def test_graph_commands_index_a_never_indexed_repo_first(tmp_path, args):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+
+    res = run_cli(repo, cache, *args)
+
+    assert res.returncode == 0, res.stderr
+    assert "Indexed first" in res.stdout
+    assert "mimry refresh" not in res.stdout + res.stderr
+    assert "graph files" not in res.stdout + res.stderr
+
+
+def test_graph_command_rebuilds_missing_graph_files_without_asking_for_refresh(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    graph_dir = repo / ".mimry" / "mimry-out" / "graph"
+    graph_files = ("graph.json", "GRAPH_REPORT.md", "manifest.json")
+    for name in graph_files:
+        (graph_dir / name).unlink()
+
+    res = run_cli(repo, cache, "callers", "create_session")
+
+    assert res.returncode == 0, res.stderr
+    assert "OK Built the graph first" in res.stdout
+    assert "mimry refresh" not in res.stdout + res.stderr
+    assert "No static callers of create_session found" in res.stdout
+    assert (graph_dir / "graph.json").exists()
+
+    for name in graph_files:
+        (graph_dir / name).unlink()
+    res = run_cli(repo, cache, "callers", "create_session", "--json")
+
+    assert res.returncode == 0, res.stderr
+    assert json.loads(res.stdout)["relation"] == "callers"
+    assert "Built the graph first" not in res.stdout
+
+
+def test_status_after_init_reports_not_indexed_and_builds_nothing(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+
+    res = run_cli(repo, cache, "status")
+
+    assert "has not been indexed yet" in res.stdout
+    assert "Indexed" not in res.stdout and "Built" not in res.stdout
+    assert not (repo / ".mimry" / "mimry-out" / "graph" / "graph.json").exists()
 
 
 def test_why_separates_outside_missing_and_skipped_paths(tmp_path):
