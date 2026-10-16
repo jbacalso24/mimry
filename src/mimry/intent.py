@@ -98,6 +98,9 @@ MIGRATION_SEGMENTS = {"migrations", "migration", "versions", "alembic"}
 # it -- but it is weaker evidence than live source for any intent,
 # because by definition nothing depends on it any more.
 RETIRED_SEGMENTS = {"archive", "archived", "legacy", "deprecated", "old", "attic", "graveyard"}
+# HTML and stylesheets are parsed, but they are not source here: a
+# repository's HTML is often generated docs, and an edit task about
+# code should not reach it first (#364).
 SOURCE_EXTS = {
     *(".py", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"),
     *(".go", ".rs", ".java", ".kt", ".cs", ".php", ".swift", ".rb", ".scala"),
@@ -106,7 +109,7 @@ SOURCE_EXTS = {
     *(".dart", ".m", ".zig"),
     *(".ex", ".exs", ".hs", ".ml", ".mli", ".r", ".jl"),
     *(".sol", ".f90", ".f95", ".f03", ".f08", ".pas", ".pp", ".dpr", ".lpr"),
-    *(".css", ".scss", ".html", ".htm", ".vue", ".svelte"),
+    *(".vue", ".svelte"),
 }
 # Code that ships with a project but is not the product: an edit task is
 # almost never about it, so it is supporting context rather than a

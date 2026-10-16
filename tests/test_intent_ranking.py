@@ -839,3 +839,14 @@ def test_intent_terms_cut_a_long_headline_to_its_first_24_terms():
 
     assert len(terms) == INTENT_TERM_LIMIT
     assert terms == query_terms(headline)[:INTENT_TERM_LIMIT]
+
+
+def test_components_are_source_but_html_and_stylesheets_are_not():
+    """Generated HTML docs must not take the source boost (#364)."""
+    from mimry.intent import is_source_file
+
+    assert is_source_file("src/App.vue")
+    assert is_source_file("src/routes/Page.svelte")
+    assert not is_source_file("website/public/2.x/retrofit/Invocation.html")
+    assert not is_source_file("src/styles/main.scss")
+    assert not is_source_file("src/site.css")
