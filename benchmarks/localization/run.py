@@ -44,6 +44,7 @@ from pathlib import Path
 from build_tasks import SETS, fetch_rows, task_path
 
 from mimry.core.artifacts import load_graph, node_source_file
+from mimry.intent import query_terms
 
 TOP = 10
 # `mimry find` prints "  %2d  <path>" per result. Reason lines are
@@ -55,6 +56,13 @@ SCORE_LINE = re.compile(r"^      (score -?\d+: .*)$")
 DIAGNOSE_DEPTH = 50
 # Diagnosis searches the file graph this many hops for a partner file.
 PARTNER_HOPS = 3
+# Neighbour records cover files one hop from the top results.
+SEED_COUNT = 3
+# A seed with more non-gold neighbours keeps this many of them.
+NEIGHBOUR_SAMPLE = 200
+LINKED_SYMBOL_CAP = 10
+TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs"}
+CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
 def score(ranked: list[str], gold: list[str]) -> dict:
@@ -156,6 +164,33 @@ def parse_find_explained(output: str, depth: int = TOP) -> list[tuple[str, str |
     return results[:depth]
 
 
+def _file_edges(graph: dict) -> tuple[dict[str, dict], list[tuple[str, str, str, str, str]]]:
+    """Graph nodes by id, and the edges that join two files.
+
+    Each edge is (source file, target file, relation, source id,
+    target id). Edges with an endpoint outside the graph, or with both
+    ends in one file, are dropped.
+    """
+    nodes = {
+        str(node["id"]): node for node in graph.get("nodes") or [] if node.get("id") is not None
+    }
+
+    def file_of(end: object) -> str | None:
+        node = nodes.get(str(end)) if end else None
+        return node_source_file(node) if node else None
+
+    edges = []
+    for edge in graph.get("links") or graph.get("edges") or []:
+        source_id = edge.get("source") or edge.get("from")
+        target_id = edge.get("target") or edge.get("to")
+        source, target = file_of(source_id), file_of(target_id)
+        if not source or not target or source == target:
+            continue
+        relation = edge.get("relation") or edge.get("type") or "relates"
+        edges.append((source, target, relation, str(source_id), str(target_id)))
+    return nodes, edges
+
+
 def partner_links(
     graph: dict, gold: list[str], top: list[str], rank: dict[str, int | None]
 ) -> dict:
@@ -167,23 +202,12 @@ def partner_links(
     """
     top_set = set(top)
     found = {path for path in gold if path in top_set}
-    file_of = {
-        str(node["id"]): node_source_file(node)
-        for node in graph.get("nodes") or []
-        if node.get("id") is not None
-    }
-
-    def endpoint_file(end: object) -> str | None:
-        return file_of.get(str(end)) if end else None
 
     neighbours: dict[str, set[str]] = defaultdict(set)
     relations: dict[tuple[str, str], set[str]] = defaultdict(set)
-    for edge in graph.get("links") or graph.get("edges") or []:
-        source = endpoint_file(edge.get("source") or edge.get("from"))
-        target = endpoint_file(edge.get("target") or edge.get("to"))
-        if not source or not target or source == target:
-            continue
-        relations[(source, target)].add(edge.get("relation") or edge.get("type") or "relates")
+    _, edges = _file_edges(graph)
+    for source, target, relation, _, _ in edges:
+        relations[(source, target)].add(relation)
         neighbours[source].add(target)
         neighbours[target].add(source)
 
@@ -220,19 +244,154 @@ def partner_links(
     return partners
 
 
+def _tokens(text: str) -> set[str]:
+    """Lower-case words of a name or path, split on case and symbols."""
+    return set(re.findall(r"[a-z0-9]+", CAMEL_BOUNDARY.sub(" ", text).lower()))
+
+
+def _top_package(path: str) -> str | None:
+    head, sep, _ = path.partition("/")
+    return head if sep else None
+
+
+def _stem(path: str) -> str:
+    """The name a file is about: no folder, extensions or test affix.
+
+    index.test.ts -> index, test_foo.py -> foo, foo_test.py -> foo.
+    """
+    stem = posixpath.basename(path).lower().split(".")[0]
+    stem = re.sub(r"^test[_-]", "", stem)
+    return re.sub(r"[_-]test$", "", stem)
+
+
+def _is_test(path: str) -> bool:
+    *folders, name = path.lower().split("/")
+    return (
+        any(folder in TEST_DIRS for folder in folders)
+        or name.startswith("test_")
+        or any(marker in name for marker in ("_test.", "-test.", ".test.", ".spec."))
+    )
+
+
+def _neighbour_record(
+    seed: str,
+    seed_rank: int,
+    seed_is_gold: bool,
+    other: str,
+    between: dict[str, dict[str, list[tuple[str, str, str]]]],
+    nodes: dict[str, dict],
+    rank: dict[str, int],
+    gold_set: set[str],
+    terms: list[str],
+) -> dict:
+    links = between[seed][other]
+    directions = {direction for direction, _, _ in links}
+    direction = "both" if len(directions) == 2 else next(iter(directions))
+    # Names on the neighbour's side of the edges. File nodes are
+    # skipped: their label is a path, not a symbol.
+    linked = sorted(
+        {
+            str(nodes[node_id]["label"])
+            for _, _, node_id in links
+            if node_id in nodes
+            and nodes[node_id].get("type") != "file"
+            and nodes[node_id].get("label")
+        }
+    )
+    symbol_words = _tokens(" ".join(linked))
+    path_words = _tokens(other)
+    return {
+        "seed_rank": seed_rank,
+        "seed_is_gold": seed_is_gold,
+        "file": other,
+        "is_gold": other in gold_set,
+        "rank": rank.get(other),
+        "relations": sorted({relation for _, relation, _ in links}),
+        "direction": direction,
+        "edge_count": len(links),
+        "linked_symbols": linked[:LINKED_SYMBOL_CAP],
+        "linked_symbol_query_overlap": len({term for term in terms if term in symbol_words}),
+        "neighbour_degree": len(between[other]),
+        "same_dir": posixpath.dirname(seed) == posixpath.dirname(other),
+        "same_top_package": _top_package(seed) is not None
+        and _top_package(seed) == _top_package(other),
+        "name_stem_match": _stem(seed) != "" and _stem(seed) == _stem(other),
+        "is_test": _is_test(other),
+        "query_overlap_path": len({term for term in terms if term in path_words}),
+    }
+
+
+def neighbour_records(
+    graph: dict, query: str, explained: list[tuple[str, str | None]], gold: list[str]
+) -> list[dict]:
+    """Features of each file one hop from the top SEED_COUNT results.
+
+    `direction` is read from the seed: "out" means the seed links to
+    the neighbour. A seed with more than NEIGHBOUR_SAMPLE non-gold
+    neighbours keeps every gold one and NEIGHBOUR_SAMPLE non-gold ones
+    spaced evenly through the file-sorted list. `neighbour_total`
+    counts all of them.
+    """
+    nodes, edges = _file_edges(graph)
+    gold_set = set(gold)
+    terms = query_terms(query)
+    rank = {path: position for position, (path, _) in enumerate(explained, 1)}
+    # between[a][b]: the edges joining files a and b, each as
+    # (direction from a, relation, node id on b's side).
+    between: dict[str, dict[str, list[tuple[str, str, str]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for source, target, relation, source_id, target_id in edges:
+        between[source][target].append(("out", relation, target_id))
+        between[target][source].append(("in", relation, source_id))
+
+    records = []
+    for seed_rank, (seed, _) in enumerate(explained[:SEED_COUNT], 1):
+        seed_is_gold = seed in gold_set
+        items = [
+            _neighbour_record(
+                seed, seed_rank, seed_is_gold, other, between, nodes, rank, gold_set, terms
+            )
+            for other in sorted(between.get(seed, {}))
+        ]
+        gold_items = [item for item in items if item["is_gold"]]
+        other_items = [item for item in items if not item["is_gold"]]
+        if len(other_items) > NEIGHBOUR_SAMPLE:
+            count = len(other_items)
+            other_items = [
+                other_items[i * count // NEIGHBOUR_SAMPLE] for i in range(NEIGHBOUR_SAMPLE)
+            ]
+        records.append(
+            {
+                "seed_rank": seed_rank,
+                "seed": seed,
+                "seed_is_gold": seed_is_gold,
+                "neighbour_total": len(items),
+                "neighbours": sorted(gold_items + other_items, key=lambda item: item["file"]),
+            }
+        )
+    return records
+
+
 def diagnosis(
-    explained: list[tuple[str, str | None]], gold: list[str], graph: dict | None = None
+    explained: list[tuple[str, str | None]],
+    gold: list[str],
+    graph: dict | None = None,
+    query: str = "",
 ) -> dict:
     """Where each gold file ranked within DIAGNOSE_DEPTH, how the gold
-    files outside the top 10 connect to the top 10, and why the top 10
-    and those gold files scored as they did."""
+    files outside the top 10 connect to the top 10, the neighbours of
+    the top results, and why the top 10 and those gold files scored as
+    they did."""
     rank = {path: position for position, (path, _) in enumerate(explained, 1)}
     keep = {path for path, _ in explained[:TOP]} | set(gold)
     gold_rank = {path: rank.get(path) for path in sorted(gold)}
     top = [path for path, _ in explained[:TOP]]
+    graph = graph or {}
     return {
         "gold_rank": gold_rank,
-        "partners": partner_links(graph or {}, gold, top, gold_rank),
+        "partners": partner_links(graph, gold, top, gold_rank),
+        "neighbours": neighbour_records(graph, query, explained, gold),
         "explain": [
             {"rank": position, "path": path, "score": line}
             for position, (path, line) in enumerate(explained, 1)
@@ -325,7 +484,7 @@ def run_instance(
             "lookup_ms": round(lookup_ms),
         }
         | score(ranked, task["gold"])
-        | ({"diagnosis": diagnosis(explained, task["gold"], graph)} if diagnose else {})
+        | ({"diagnosis": diagnosis(explained, task["gold"], graph, query)} if diagnose else {})
     )
 
 

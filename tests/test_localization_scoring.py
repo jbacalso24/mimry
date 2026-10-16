@@ -5,6 +5,7 @@ network: the dataset is never fetched here.
 """
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ LOC = Path(__file__).resolve().parents[1] / "benchmarks" / "localization"
 # on the path first.
 sys.path.insert(0, str(LOC))
 import build_tasks  # noqa: E402
+import partner_report  # noqa: E402
 
 
 def _load_run():
@@ -313,3 +315,155 @@ def test_partner_edges_inside_one_file_ignored():
     assert m5["direct"] == []
     assert m5["hops_to_found_gold"] is None
     assert m5["hops_to_top10"] is None
+
+
+def _node(node_id, label, path):
+    return {"id": node_id, "label": label, "type": "symbol", "source_file": path}
+
+
+FEATURE_GRAPH = {
+    "nodes": [
+        _node("s_found", "found_handler", "pkg/found.py"),
+        _node("s_found2", "helper", "pkg/found.py"),
+        _node("s_parse", "parse_request", "pkg/helpers.py"),
+        _node("s_build", "BuildRequestParser", "pkg/helpers.py"),
+        _node("s_test", "test_found", "pkg/found_test.py"),
+        _node("s_other", "other", "other/x.py"),
+    ],
+    "links": [
+        {"source": "s_found", "target": "s_parse", "relation": "calls"},
+        {"source": "s_build", "target": "s_found", "relation": "imports"},
+        {"source": "s_found", "target": "s_found2", "relation": "contains"},
+        {"source": "s_test", "target": "s_found", "relation": "imports"},
+        {"source": "s_found", "target": "s_other", "relation": "calls"},
+    ],
+}
+FEATURE_EXPLAINED = [
+    ("pkg/found.py", None),
+    ("other/x.py", None),
+    ("pkg/helpers.py", None),
+    ("pkg/found_test.py", None),
+]
+FEATURE_GOLD = ["pkg/found.py", "pkg/helpers.py"]
+
+
+def test_neighbour_features_from_a_hand_made_graph():
+    records = run.neighbour_records(
+        FEATURE_GRAPH, "parse request helpers", FEATURE_EXPLAINED, FEATURE_GOLD
+    )
+    assert [record["seed_rank"] for record in records] == [1, 2, 3]
+    first = records[0]
+    assert first["seed"] == "pkg/found.py" and first["seed_is_gold"]
+    assert first["neighbour_total"] == 3
+    by_file = {item["file"]: item for item in first["neighbours"]}
+    assert sorted(by_file) == ["other/x.py", "pkg/found_test.py", "pkg/helpers.py"]
+    assert by_file["pkg/helpers.py"] == {
+        "seed_rank": 1,
+        "seed_is_gold": True,
+        "file": "pkg/helpers.py",
+        "is_gold": True,
+        "rank": 3,
+        "relations": ["calls", "imports"],
+        "direction": "both",
+        "edge_count": 2,
+        "linked_symbols": ["BuildRequestParser", "parse_request"],
+        "linked_symbol_query_overlap": 2,
+        "neighbour_degree": 1,
+        "same_dir": True,
+        "same_top_package": True,
+        "name_stem_match": False,
+        "is_test": False,
+        "query_overlap_path": 1,
+    }
+    test_file = by_file["pkg/found_test.py"]
+    assert test_file["direction"] == "in" and test_file["edge_count"] == 1
+    assert test_file["linked_symbols"] == ["test_found"]
+    assert test_file["linked_symbol_query_overlap"] == 0
+    assert test_file["name_stem_match"] and test_file["is_test"] and test_file["same_dir"]
+    assert test_file["rank"] == 4 and not test_file["is_gold"]
+    other = by_file["other/x.py"]
+    assert other["direction"] == "out" and other["linked_symbols"] == ["other"]
+    assert not other["same_dir"] and not other["same_top_package"]
+    assert not other["name_stem_match"]
+    [back] = records[2]["neighbours"]
+    assert back["file"] == "pkg/found.py" and back["direction"] == "both"
+    assert back["seed_rank"] == 3 and back["seed_is_gold"]
+    assert back["linked_symbols"] == ["found_handler"]
+
+
+def test_neighbour_sample_keeps_every_gold_and_caps_the_rest():
+    count = 250
+    graph = {
+        "nodes": [{"id": "seed", "source_file": "big/seed.py"}]
+        + [{"id": f"id{i}", "source_file": f"big/n{i:03d}.py"} for i in range(count)],
+        "links": [
+            {"source": "seed", "target": f"id{i}", "relation": "imports"} for i in range(count)
+        ],
+    }
+    gold = ["big/seed.py", "big/n007.py", "big/n200.py"]
+    [seed] = run.neighbour_records(graph, "unrelated", [("big/seed.py", None)], gold)
+    assert seed["neighbour_total"] == count
+    kept = [item["file"] for item in seed["neighbours"]]
+    assert "big/n007.py" in kept and "big/n200.py" in kept
+    assert len(kept) == run.NEIGHBOUR_SAMPLE + 2
+    assert kept == sorted(kept)
+    assert "big/n000.py" in kept
+    again = run.neighbour_records(graph, "unrelated", [("big/seed.py", None)], gold)
+    assert again == [seed]
+
+
+def test_name_stem_drops_folder_extensions_and_test_affixes():
+    assert run._stem("src/serve-static/index.ts") == "index"
+    assert run._stem("src/serve-static/index.test.ts") == "index"
+    assert run._stem("pkg/foo.py") == run._stem("pkg/test_foo.py") == "foo"
+    assert run._stem("pkg/foo_test.py") == "foo"
+    assert run._stem("pkg/serve-static.ts") != run._stem("pkg/index.ts")
+
+
+def test_partner_report_on_a_tiny_results_file(tmp_path):
+    def neighbour(file, is_gold, **features):
+        base = {
+            "seed_rank": 1,
+            "seed_is_gold": True,
+            "file": file,
+            "is_gold": is_gold,
+            "rank": None,
+            "relations": ["imports"],
+            "direction": "out",
+            "edge_count": 1,
+            "linked_symbols": [],
+            "linked_symbol_query_overlap": 0,
+            "neighbour_degree": 1,
+            "same_dir": False,
+            "same_top_package": False,
+            "name_stem_match": False,
+            "is_test": False,
+            "query_overlap_path": 0,
+        }
+        return base | features
+
+    seed = {
+        "seed_rank": 1,
+        "seed": "a/g.py",
+        "seed_is_gold": True,
+        "neighbour_total": 3,
+        "neighbours": [
+            neighbour("b/m.py", True, edge_count=2, same_dir=True, rank=12),
+            neighbour("c/o.py", False, direction="in", name_stem_match=True),
+        ],
+    }
+    instance = {
+        "instance_id": "x-1",
+        "status": "scored",
+        "gold": ["a/g.py", "b/m.py"],
+        "diagnosis": {"gold_rank": {"a/g.py": 1, "b/m.py": 12}, "neighbours": [seed]},
+    }
+    path = tmp_path / "results.json"
+    path.write_text(json.dumps({"instances": [instance], "summary": {}}), encoding="utf-8")
+    text = partner_report.partner_features_report(path)
+    assert "Missing gold partners: 1." in text
+    # One kept non-gold neighbour stands for 2 of the 3 neighbours.
+    assert "| any neighbour | 3 | 1 | 33.3% | 1 of 1 (100.0%) |" in text
+    assert "| edge_count >= 2 | 1 | 1 | 100.0% | 1 of 1 (100.0%) |" in text
+    assert "| name_stem_match | 2 | 0 | 0.0% | 0 of 1 (0.0%) |" in text
+    assert "| edge_count >= 3 | 0 | 0 | n/a | 0 of 1 (0.0%) |" in text
