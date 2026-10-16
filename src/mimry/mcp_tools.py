@@ -44,14 +44,14 @@ from mimry.plan import (
 from mimry.queries import (
     IMPACT_MAX_DEPTH,
     calls_payload,
+    explain_payload,
     impact_payload,
     oversized_message,
     path_payload,
-    run_explain,
     run_path,
     run_preflight,
-    run_why,
     symbol_matches,
+    why_payload,
     write_context_pack,
 )
 from mimry.routing import route_payload, write_brief
@@ -731,10 +731,7 @@ def mimry_explain(query: str, root: str | None = None, limit: int = 5) -> dict[s
 
     Includes graph evidence and verification hints.
     """
-    root_path = _root(root)
-    return _capture_command(
-        run_explain, SimpleNamespace(root=str(root_path), query=sanitize_query(query), limit=limit)
-    )
+    return sanitize_data(explain_payload(_root(root), query, limit))
 
 
 @tool
@@ -804,16 +801,7 @@ def mimry_why(
     surface: str, query: str, root: str | None = None, limit: int = 25
 ) -> dict[str, Any]:
     """Explain why a file or symbol ranked for a task query."""
-    root_path = _root(root)
-    return _capture_command(
-        run_why,
-        SimpleNamespace(
-            root=str(root_path),
-            surface=sanitize_query(surface),
-            query=sanitize_query(query),
-            limit=limit,
-        ),
-    )
+    return sanitize_data(why_payload(_root(root), surface, query, limit))
 
 
 @tool

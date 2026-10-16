@@ -340,16 +340,36 @@ def test_mcp_explain_path_why_and_feedback_tools_return_agent_payloads(
         verification="pytest passed",
     )
 
-    assert explain["returncode"] == 0 and '"fix auth session" maps to repo' in explain["stdout"]
-    assert (
-        why["returncode"] == 0
-        and 'Why src/auth/session.py ranks for "fix auth session"' in why["stdout"]
-    )
+    assert "src/auth/session.py" in [row["path"] for row in explain["files"]]
+    assert why["found"] is True and why["path"] == "src/auth/session.py"
     assert path["returncode"] == 0
     assert "connects to" in path["stdout"] or "No connection found" in path["stdout"]
     assert feedback["returncode"] == 0
     assert feedback["feedback"]["outcome"] == "passed"
     assert "src/auth/session.py" in feedback["feedback"]["changed_paths"]
+
+
+def test_mcp_why_and_explain_return_fields_not_cli_text(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    assert mimry_preflight("fix auth session", str(repo))["returncode"] == 0
+
+    explain = mimry_explain("fix auth session", str(repo), limit=3)
+    hit = mimry_why("src/auth/session.py", "fix auth session", str(repo))
+    miss = mimry_why("zzz_missing.py", "fix auth session", str(repo))
+
+    text_keys = {"stdout", "stderr", "returncode"}
+    assert text_keys.isdisjoint(explain) and text_keys.isdisjoint(hit)
+    assert {"query", "root", "index", "graph", "start_with", "files", "verify"} <= set(explain)
+    assert {"surface", "query", "found", "graph", "verify", "path", "rank", "of"} <= set(hit)
+    assert hit["signals"] and isinstance(hit["score"], (int, float))
+    assert miss["found"] is False and text_keys.isdisjoint(miss)
+    assert miss["error"]["code"] == "not_indexed"
+    assert miss["recommended"].startswith("Check the path")
+    unranked = mimry_why("src/auth/session.py", "zzqxwv qqpl", str(repo))
+    assert unranked["found"] is False and "error" not in unranked
+    assert unranked["summary"].startswith("src/auth/session.py is not in the top")
 
 
 def test_mcp_reports_outdated_schema_as_upgrade_not_corruption(tmp_path: Path, monkeypatch):
@@ -834,14 +854,14 @@ def test_explain_path_and_why_reindex_a_file_added_since_the_last_index(
     explained = mimry_explain("zebra", str(repo))
 
     assert "reindexed" in explained
-    assert "src/zebra.py" in explained["stdout"]
-    assert "may be out of date" not in explained["stdout"]
+    assert "src/zebra.py" in [row["path"] for row in explained["files"]]
+    assert explained["index"]["state"] == "current"
 
     zebra.write_text(ZEBRA + "\ndef zebra_two():\n    return 2\n", encoding="utf-8")
     why = mimry_why("src/zebra.py", "zebra", str(repo))
 
     assert "reindexed" in why
-    assert "not in the top" not in why["stdout"]
+    assert why["found"] is True
 
     zebra.write_text(ZEBRA + "\ndef zebra_three():\n    return 3\n", encoding="utf-8")
     path = mimry_path("src/zebra.py", "src/auth/session.py", str(repo))

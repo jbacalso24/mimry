@@ -847,47 +847,83 @@ def _symbol_rows(
     return out
 
 
-def run_explain(a):
-    """The explain answer, for a caller that holds the index lock."""
-    root = Path(a.root).resolve()
+def _explain_answer(root: Path, query: str, limit: int) -> dict:
+    """The explain answer as data, shared by the text and MCP paths."""
     ptr = require(root)
     fresh, graph = index_and_graph_health(root, ptr)
-    query = sanitize_query(a.query)
-    verbose = getattr(a, "verbose", False)
     rows = start_order(
         find_rows(
             Path(ptr["indexPath"]),
             query,
-            getattr(a, "limit", 5),
+            limit,
             True,
             root=root,
             root_id=ptr.get("rootId"),
         ),
         query,
     )
-    ui.title(f"How {ui.quote(query)} maps to {root_name(root)}")
-    _print_index_note(fresh, graph)
-    print_results_section("Most relevant files", rows, verbose=verbose)
-
-    symbols = _symbol_rows(fresh, rows, limit=6, query=query)
-    if symbols:
-        print()
-        ui.title("Key symbols")
-        ui.table([(name, kind, location) for name, kind, _language, location in symbols])
-
+    edges = []
     if graph["status"] == "current":
         edges = relationship_edges(root, [r["path"] for r in rows], max_edges=6)
-        if edges:
-            print()
-            ui.title("How they connect")
-            ui.table([(e["source"], e["relation"], e["target"]) for e in edges])
+    return {
+        "root": root,
+        "query": query,
+        "fresh": fresh,
+        "graph": graph,
+        "rows": rows,
+        "symbols": _symbol_rows(fresh, rows, limit=6, query=query),
+        "edges": edges,
+        "verify": _verification_commands(fresh),
+    }
+
+
+def run_explain(a):
+    """The explain answer, for a caller that holds the index lock."""
+    root = Path(a.root).resolve()
+    query = sanitize_query(a.query)
+    answer = _explain_answer(root, query, getattr(a, "limit", 5))
+    rows = answer["rows"]
+    ui.title(f"How {ui.quote(query)} maps to {root_name(root)}")
+    _print_index_note(answer["fresh"], answer["graph"])
+    print_results_section("Most relevant files", rows, verbose=getattr(a, "verbose", False))
+
+    if answer["symbols"]:
+        print()
+        ui.title("Key symbols")
+        ui.table([(name, kind, location) for name, kind, _language, location in answer["symbols"]])
+
+    if answer["edges"]:
+        print()
+        ui.title("How they connect")
+        ui.table([(e["source"], e["relation"], e["target"]) for e in answer["edges"]])
 
     source = rows[0] if rows else None
     if source:
         print()
         print(f"Start with {source['path']} - read it and its tests before editing.")
-    print_verification(_verification_commands(fresh))
+    print_verification(answer["verify"])
     return 0
+
+
+def explain_payload(root: Path, query: str, limit: int = 5) -> dict:
+    """The explain answer as data, for the MCP tool."""
+    query = sanitize_query(query)
+    answer = _explain_answer(root.resolve(), query, limit)
+    rows = answer["rows"]
+    return {
+        "query": query,
+        "root": str(answer["root"]),
+        "index": {"state": answer["fresh"]["state"]},
+        "graph": {"status": answer["graph"]["status"]},
+        "start_with": rows[0]["path"] if rows else None,
+        "files": rows,
+        "symbols": [
+            {"name": name, "kind": kind, "language": language, "location": location}
+            for name, kind, language, location in answer["symbols"]
+        ],
+        "edges": answer["edges"],
+        "verify": answer["verify"],
+    }
 
 
 def run_path(a, found: list | None = None):
@@ -1534,22 +1570,26 @@ def _outside_repo(root: Path, surface: str) -> bool:
     return False
 
 
-def run_why(a):
-    """The why answer, for a caller that holds the index lock."""
-    root = Path(a.root).resolve()
+def _why_answer(root: Path, surface: str, query: str, limit: int) -> dict:
+    """Where a surface ranks for a task query, as data.
+
+    ``mimry why`` prints this and the MCP tool returns it, so both name
+    the same rank and the same miss.
+    """
     ptr = require(root)
     fresh, graph = index_and_graph_health(root, ptr)
     idx = Path(ptr["indexPath"])
-    query = sanitize_query(a.query)
-    window = max(getattr(a, "limit", 25), 25)
+    query = sanitize_query(query)
+    surface = sanitize_query(surface)
+    window = max(limit, 25)
     rows = find_rows(idx, query, window, True, root=root, root_id=ptr.get("rootId"))
-    surface = sanitize_query(a.surface)
     surface_lower = surface.lower()
     exact = None
     for row in rows:
         if surface_lower == row["path"].lower() or surface_lower in row["path"].lower():
             exact = row
             break
+    visible_files = []
     if exact is None:
         visible_files, visible_symbols = filter_index_records(
             load_jsonl(idx / "files.jsonl"), load_jsonl(idx / "symbols.jsonl")
@@ -1561,63 +1601,140 @@ def run_why(a):
                 exact = next((row for row in rows if row["path"] == path), None)
                 if exact:
                     break
-    status = 0
-    if exact is None and _outside_repo(root, surface):
-        ui.warn(f"{surface} is outside the repository")
-        status = 1
-    elif exact is None and (oversized := _oversized_as(surface, fresh)) is not None:
-        ui.warn(_oversized_message(*oversized))
-        status = 1
-    elif exact is None and not any(
-        _indexed_as(surface, f.get("rel_path", "")) for f in visible_files
-    ):
+    miss = None
+    if exact is None:
+        miss = _why_miss(root, surface, query, window, fresh, visible_files)
+    evidence = None
+    if graph["status"] == "current":
+        evidence = surface_evidence(root, surface)
+    return {
+        "surface": surface,
+        "query": query,
+        "rows": rows,
+        "exact": exact,
+        "miss": miss,
+        "fresh": fresh,
+        "graph": graph,
+        "evidence": evidence,
+        "verify": _verification_commands(fresh),
+    }
+
+
+def _why_miss(
+    root: Path, surface: str, query: str, window: int, fresh: dict, visible_files: list
+) -> dict:
+    """Why a surface did not rank: a code, a message, a hint and the CLI
+    exit status.
+    """
+    if _outside_repo(root, surface):
+        message = f"{surface} is outside the repository"
+        return {"code": "outside_repo", "message": message, "hint": None, "status": 1}
+    oversized = _oversized_as(surface, fresh)
+    if oversized is not None:
+        message = _oversized_message(*oversized)
+        return {"code": "oversized", "message": message, "hint": None, "status": 1}
+    if not any(_indexed_as(surface, f.get("rel_path", "")) for f in visible_files):
         # Missing and skipped-as-secret look the same on purpose.
-        ui.warn(f"{surface} is not in the index")
-        ui.detail("Check the path, or run `mimry index` if the file is new.")
-        status = 1
-    elif exact is None:
-        ui.warn(f"{surface} is not in the top {window} results for {ui.quote(query)}")
-        ui.detail(f'Try a narrower query, or `mimry find "{surface}"`.')
+        return {
+            "code": "not_indexed",
+            "message": f"{surface} is not in the index",
+            "hint": "Check the path, or run `mimry index` if the file is new.",
+            "status": 1,
+        }
+    return {
+        "code": "not_ranked",
+        "message": f"{surface} is not in the top {window} results for {ui.quote(query)}",
+        "hint": f'Try a narrower query, or `mimry find "{surface}"`.',
+        "status": 0,
+    }
+
+
+def _print_why(answer: dict, verbose: bool) -> None:
+    exact, rows, graph = answer["exact"], answer["rows"], answer["graph"]
+    if exact is None:
+        miss = answer["miss"]
+        ui.warn(miss["message"])
+        if miss["hint"]:
+            ui.detail(miss["hint"])
     else:
-        ui.title(f"Why {exact['path']} ranks for {ui.quote(query)}")
+        ui.title(f"Why {exact['path']} ranks for {ui.quote(answer['query'])}")
         print()
         details = [
             ("Rank", f"#{rows.index(exact) + 1} of {len(rows)}"),
             ("Signals", ui.reason_summary(exact["reason"])),
         ]
-        if getattr(a, "verbose", False):
+        if verbose:
             details += [("Score", str(exact["score"])), ("Raw", exact["reason"])]
         ui.table(details)
     if graph["status"] != "current":
         ui.warn(f"The graph files are {graph['status']}. Run `mimry refresh` for graph evidence.")
+    elif answer["evidence"]["node_count"]:
+        evidence = answer["evidence"]
+        surface = answer["surface"]
+        print()
+        ui.title("In the graph")
+        # Only name nodes the connections below do not already show.
+        shown = {
+            surface,
+            *(e["source"] for e in evidence["edges"]),
+            *(e["target"] for e in evidence["edges"]),
+        }
+        others = [n["label"] for n in evidence["nodes"] if n["label"] not in shown]
+        ui.table([(e["source"], e["relation"], e["target"]) for e in evidence["edges"]])
+        if evidence["edge_count"] > len(evidence["edges"]):
+            ui.detail(
+                ui.faint(f"+{evidence['edge_count'] - len(evidence['edges']):,} more connections")
+            )
+        if others:
+            ui.detail(
+                "Also: "
+                + _joined(others, evidence["node_count"] - len(evidence["nodes"]) + len(others))
+            )
+    print_verification(answer["verify"])
+
+
+def run_why(a):
+    """The why answer, for a caller that holds the index lock."""
+    answer = _why_answer(Path(a.root).resolve(), a.surface, a.query, getattr(a, "limit", 25))
+    _print_why(answer, verbose=getattr(a, "verbose", False))
+    return answer["miss"]["status"] if answer["miss"] else 0
+
+
+def why_payload(root: Path, surface: str, query: str, limit: int = 25) -> dict:
+    """The why answer as data, for the MCP tool.
+
+    A hit gives the rank, the plain-language signals and the raw reason.
+    A miss gives ``summary`` and ``recommended``, and an ``error`` only
+    when it is a failure.
+    """
+    answer = _why_answer(root.resolve(), surface, query, limit)
+    exact, rows = answer["exact"], answer["rows"]
+    payload = {
+        "surface": answer["surface"],
+        "query": answer["query"],
+        "found": exact is not None,
+        "graph": {"status": answer["graph"]["status"], "evidence": answer["evidence"]},
+        "verify": answer["verify"],
+    }
+    if exact is not None:
+        payload.update(
+            path=exact["path"],
+            rank=rows.index(exact) + 1,
+            of=len(rows),
+            signals=ui.reason_summary(exact["reason"]),
+            score=exact["score"],
+            reason=exact["reason"],
+        )
     else:
-        evidence = surface_evidence(root, surface)
-        if evidence["node_count"]:
-            print()
-            ui.title("In the graph")
-            # Only name nodes the connections below do not already show.
-            shown = {
-                surface,
-                *(e["source"] for e in evidence["edges"]),
-                *(e["target"] for e in evidence["edges"]),
-            }
-            others = [n["label"] for n in evidence["nodes"] if n["label"] not in shown]
-            ui.table([(e["source"], e["relation"], e["target"]) for e in evidence["edges"]])
-            if evidence["edge_count"] > len(evidence["edges"]):
-                ui.detail(
-                    ui.faint(
-                        f"+{evidence['edge_count'] - len(evidence['edges']):,} more connections"
-                    )
-                )
-            if others:
-                ui.detail(
-                    "Also: "
-                    + _joined(
-                        others, evidence["node_count"] - len(evidence["nodes"]) + len(others)
-                    )
-                )
-    print_verification(_verification_commands(fresh))
-    return status
+        miss = answer["miss"]
+        payload["summary"] = miss["message"]
+        if miss["status"]:
+            # Like `mimry impact`, only a failure carries an error; a
+            # surface that is indexed but not ranked is a normal answer.
+            payload["error"] = {"code": miss["code"], "message": miss["message"]}
+        if miss["hint"]:
+            payload["recommended"] = miss["hint"]
+    return payload
 
 
 def _joined(items: list[str], total: int) -> str:
