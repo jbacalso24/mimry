@@ -2,6 +2,42 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.5.0 - 2026-10-17
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`; it refreshes the skills, always-on rules and hooks you installed.
+  The first command after upgrading rebuilds the index, and it now indexes source files the secret scanner used to skip by mistake.
+- Install and `init` now add only `.mimry/` to ignore files, and `init` removes the `mimry-out/` line older versions added ([#316](https://github.com/jbacalso24/mimry/pull/316), [#351](https://github.com/jbacalso24/mimry/pull/351)).
+- `mimry_why` and `mimry_explain` return fields instead of CLI text, so MCP clients that read their `stdout` should read the fields ([#348](https://github.com/jbacalso24/mimry/pull/348)).
+- The post-commit hook records feedback for the last context pack only when the commit is about that task ([#340](https://github.com/jbacalso24/mimry/pull/340)).
+
+### New features
+
+- `mimry history` searches commit messages and changed files, preflight names the commits behind a removed or renamed path, and the `mimry_history` MCP tool does the same ([#315](https://github.com/jbacalso24/mimry/pull/315), [#347](https://github.com/jbacalso24/mimry/pull/347)).
+- Suggested checks come from Makefile and justfile targets, tox and nox sessions, CI workflow steps and the scripts they run; nested packages run from their own folder with their own package manager, and checks guessed from tool names appear only when the project names none ([#313](https://github.com/jbacalso24/mimry/pull/313), [#323](https://github.com/jbacalso24/mimry/pull/323), [#350](https://github.com/jbacalso24/mimry/pull/350)).
+- `find` matches Chinese, Japanese and Korean words in content and file names ([#322](https://github.com/jbacalso24/mimry/pull/322)).
+- `callers`, `callees` and `impact` pick one of two same-named symbols with `--line N` or `--file path:N` ([#319](https://github.com/jbacalso24/mimry/pull/319)).
+- Preflight, the context pack, `route` and `explain` list the files to edit first, and tests first only when the task is about tests ([#317](https://github.com/jbacalso24/mimry/pull/317)).
+- `explain` ranks its key symbols by the task and shows how they connect ([#320](https://github.com/jbacalso24/mimry/pull/320), [#352](https://github.com/jbacalso24/mimry/pull/352)).
+- Plan commands accept the plan name shown in `plan list` ([#349](https://github.com/jbacalso24/mimry/pull/349)).
+
+### Fixes
+
+- The secret scanner no longer skips source files over a JSON array, a `typeof` check or a short number under a credential-looking name, and `status -v` names the files it skips ([#337](https://github.com/jbacalso24/mimry/pull/337)).
+- `route` matches role words whole, so "helper" no longer routes to docs or "latest" to QA ([#338](https://github.com/jbacalso24/mimry/pull/338)).
+- The grep hook answers with a symbol only when the whole pattern names it ([#339](https://github.com/jbacalso24/mimry/pull/339)).
+- `impact` leaves local variables out of its targets and credits their calls to the enclosing function ([#342](https://github.com/jbacalso24/mimry/pull/342)).
+- `doctor` reports a missing grammar cache folder the same way `index` does, without a reinstall hint ([#343](https://github.com/jbacalso24/mimry/pull/343)).
+- `bench` passes over release and bump commits that start with an emoji, and pre-commit-only changes ([#318](https://github.com/jbacalso24/mimry/pull/318), [#346](https://github.com/jbacalso24/mimry/pull/346)).
+- `install --status` keeps `--no-mcp` in its repair hint, `--file` misses name the file and suggest close paths, and a failed `why` lookup prints only the miss ([#349](https://github.com/jbacalso24/mimry/pull/349)).
+- Help for every option, `mimry update --help`, local times in `status -v` and the pack, and readable small size limits ([#321](https://github.com/jbacalso24/mimry/pull/321), [#351](https://github.com/jbacalso24/mimry/pull/351)).
+
+### Other changes
+
+- The README walks through one task before and after ([#314](https://github.com/jbacalso24/mimry/pull/314)).
+- The AUR build fetches and verifies the sdist once ([#311](https://github.com/jbacalso24/mimry/pull/311)), and the CI job limit is 45 minutes ([#345](https://github.com/jbacalso24/mimry/pull/345)).
+
 ## 0.4.1 - 2026-10-16
 
 ### Upgrade notes
