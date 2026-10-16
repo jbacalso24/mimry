@@ -87,11 +87,11 @@ def score(ranked: list[str], gold: list[str]) -> dict:
     }
 
 
-def run(cmd: list[str], cwd: Path, env: dict[str, str] | None = None) -> str:
+def run(cmd: list[str], cwd: Path, env: dict[str, str] | None = None, ok=(0,)) -> str:
     out = subprocess.run(
         cmd, cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace"
     )
-    if out.returncode != 0:
+    if out.returncode not in ok:
         raise RuntimeError(f"exit {out.returncode}: {out.stderr.strip()[-500:]}")
     return out.stdout
 
@@ -128,7 +128,9 @@ def checkout(work: Path, repo_name: str, sha: str) -> Path:
 
 
 def mimry(repo: Path, env: dict[str, str], *args: str) -> str:
-    return run([sys.executable, "-m", "mimry.cli", "--root", str(repo), *args], repo, env)
+    # find exits 1 when nothing matches: an empty ranking.
+    ok = (0, 1) if args[0] == "find" else (0,)
+    return run([sys.executable, "-m", "mimry.cli", "--root", str(repo), *args], repo, env, ok)
 
 
 def parse_find(output: str, depth: int = TOP) -> list[str]:

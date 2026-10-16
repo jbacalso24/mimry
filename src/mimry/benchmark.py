@@ -156,6 +156,9 @@ def _env(sandbox: Path) -> dict[str, str]:
 _COMMAND_TIMEOUT_SECONDS = int(os.environ.get("MIMRY_BENCHMARK_COMMAND_TIMEOUT", "60"))
 
 
+SEARCH_COMMANDS = frozenset({"find", "related", "semantic"})
+
+
 def _run(
     repo: Path, env: dict[str, str], *args: str, timeout: int | None = None
 ) -> tuple[str, str, float]:
@@ -172,7 +175,8 @@ def _run(
         check=False,
     )
     elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
-    if result.returncode:
+    # A search with no matches exits 1, like grep: still an answer.
+    if result.returncode and not (result.returncode == 1 and args[0] in SEARCH_COMMANDS):
         detail = (result.stderr or result.stdout).strip()
         if PRIVACY_CANARY in detail:
             detail = "[REDACTED: privacy canary detected in failed command output]"
