@@ -8,10 +8,23 @@ from .tsconfig import resolve_ts_alias
 
 SYMBOL_KIND_PRIORITY = {"class": 0, "interface": 1, "function": 2, "method": 3, "sql_table": 4}
 
-_JS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
-_TS_ALIAS_LANGUAGES = frozenset(("typescript", "tsx", "javascript"))
+# Vue and Svelte components import like TypeScript, so their targets
+# are probed with the same suffixes.
+_JS_EXTENSIONS = (
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".vue",
+    ".svelte",
+)
+_TS_ALIAS_LANGUAGES = frozenset(("typescript", "tsx", "javascript", "vue", "svelte"))
 # Languages where `from '.'` and `from '..'` name a folder's index file.
-_DIRECTORY_IMPORT_LANGUAGES = frozenset(("typescript", "tsx", "javascript"))
+_DIRECTORY_IMPORT_LANGUAGES = frozenset(("typescript", "tsx", "javascript", "vue", "svelte"))
 
 
 # Languages whose quoted and angle includes follow the C rules.
@@ -613,6 +626,84 @@ def _resolve_go(
     ]
 
 
+def _resolve_css(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """`@import "x.css"` and `url(x.css)` are relative to the importing
+    file. A bare package path such as `bootstrap/dist/css/bootstrap.css`
+    is under node_modules/.
+    """
+    found = _resolve_script_path(importer, module, rel_paths)
+    if found or module.startswith(("./", "../")):
+        return found
+    candidate = posixpath.normpath("node_modules/" + module)
+    if candidate in rel_paths:
+        return {"path": candidate, "confidence": "INFERRED"}
+    return None
+
+
+def _sass_candidates(module: str) -> list[str]:
+    """The files a Sass module path may name, before a folder is added:
+    the partial or plain file, or the folder's _index file. A module
+    that spells its extension names that file, or its partial.
+    """
+    directory, _, name = module.rpartition("/")
+    prefix = directory + "/" if directory else ""
+    if name.endswith((".scss", ".css")):
+        bare = name.removeprefix("_")
+        return [prefix + name, prefix + "_" + bare]
+    stem = name.removeprefix("_")
+    return [
+        f"{prefix}_{stem}.scss",
+        f"{prefix}{stem}.scss",
+        f"{prefix}_{stem}/_index.scss",
+        f"{prefix}{stem}/_index.scss",
+    ]
+
+
+def _resolve_scss(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """Sass partials (`_vars.scss`), plain files and folder indexes, the
+    way `@use "base/vars"` finds them: relative to the importing file,
+    then the repo root, then node_modules/. `~pkg/x` and a bare package
+    path go to node_modules/ only, and a `./` or `../` path stays
+    relative to the importing file.
+    """
+    folder = posixpath.dirname(importer)
+    here = folder + "/" if folder else ""
+    if module.startswith("~"):
+        bases = [("node_modules/", "INFERRED")]
+        module = module[1:]
+    elif module.startswith(("./", "../")):
+        bases = [(here, "EXTRACTED")]
+    else:
+        bases = [(here, "EXTRACTED"), ("", "INFERRED"), ("node_modules/", "INFERRED")]
+    for base, confidence in bases:
+        for candidate in _sass_candidates(module):
+            path = posixpath.normpath(base + candidate)
+            if path in rel_paths:
+                return {"path": path, "confidence": confidence}
+    return None
+
+
+def _resolve_html(
+    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+) -> dict | None:
+    """A page's stylesheet or script. A path from the repo root starts
+    with `/`, and when nothing is there it is tried in public/ and
+    static/. Any other path is relative to the page.
+    """
+    if not module.startswith("/"):
+        return _resolve_script_path(importer, module, rel_paths)
+    path = module.lstrip("/")
+    for base, confidence in (("", "EXTRACTED"), ("public/", "INFERRED"), ("static/", "INFERRED")):
+        candidate = posixpath.normpath(base + path)
+        if candidate in rel_paths:
+            return {"path": candidate, "confidence": confidence}
+    return None
+
+
 _SCRIPT_RESOLVERS = {
     "bash": _resolve_bash,
     "powershell": _resolve_powershell,
@@ -626,6 +717,9 @@ _SCRIPT_RESOLVERS = {
     "r": _resolve_r,
     "julia": _resolve_julia,
     "solidity": _resolve_solidity,
+    "css": _resolve_css,
+    "scss": _resolve_scss,
+    "html": _resolve_html,
 }
 
 
@@ -1249,6 +1343,10 @@ def _generate_candidates(callee_name: str) -> list[str]:
     "renew_login", get ["renew_login"]
     """
     # Split on dots first
+    # A selector named by its sigil (`.btn` from `@extend .btn`) is one
+    # name, not a member access, so the dot does not split it.
+    if callee_name[:1] in (".", "#", "%"):
+        return [callee_name]
     parts = callee_name.split(".")
 
     # Strip call syntax: remove everything from ( onwards in each part

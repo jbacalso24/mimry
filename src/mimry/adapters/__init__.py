@@ -93,7 +93,8 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
             " Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart,"
             " Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, and Pascal"
             " functions, classes, methods, interfaces, modules, imports, calls, and inheritance"
-            " relationships without reading every file."
+            " relationships, and CSS, SCSS, HTML, Vue, and Svelte selectors, element ids,"
+            " components, and imports without reading every file."
         ),
         notes=(
             "Extracts definitions (functions, classes, structs, interfaces, traits, enums),"

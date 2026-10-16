@@ -109,7 +109,7 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 29 languages with tree-sitter |
+| Code graph | Maps imports, calls and inheritance across 34 languages with tree-sitter |
 | Deterministic | The same code gives the same symbols, graph, rankings and context pack on every machine; CI checks every change against committed golden values ([how](docs/determinism.md)) |
 | Documents | Indexes Markdown, text, PDF, Word and Excel files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
@@ -152,8 +152,18 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 | Solidity | `.sol` |
 | Fortran | `.f03`, `.f08`, `.f90`, `.f95` |
 | Pascal | `.dpr`, `.lpr`, `.pas`, `.pp` |
+| CSS | `.css` |
+| SCSS | `.scss` |
+| HTML | `.htm`, `.html` |
+| Vue | `.vue` |
+| Svelte | `.svelte` |
 
 Fortran is read in free form only. Fixed-form `.f` and `.for` files do not parse with the grammar MIMRY uses, so they get no symbols or edges.
+
+The markup and style languages get what an agent searches them by.
+CSS and SCSS give their class and id selectors, custom properties, keyframes, Sass mixins, functions, placeholders and variables, with `@import`, `@use` and `@forward` as imports.
+HTML gives each element id and the local stylesheets and scripts it loads.
+Vue and Svelte give each component (named after its file) and run the JavaScript or TypeScript and CSS or SCSS passes over their `<script>` and `<style>` blocks, so their line numbers match the file.
 
 MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Word and Excel files.
 
@@ -162,7 +172,7 @@ Some files get more structure than their text:
 - SQL: `CREATE TABLE` statements in `.sql` files and in Python string literals, plus Alembic migrations and their revision lineage.
 - Manifests: `package.json`, `pyproject.toml`, `tsconfig.json`, `vite.config.*`, `next.config.*`, `app.json`, `app.config.*`, `.env.example`, `CLAUDE.md`, `AGENTS.md` and `README.md` give their commands, frameworks, entry points and env variable names, never values.
 
-Other JSON, YAML, TOML, HTML and CSS files are indexed as text, so `mimry find` matches their content, but they have no symbols.
+Other JSON, YAML and TOML files are indexed as text, so `mimry find` matches their content, but they have no symbols.
 
 Other extensions can be mapped to a supported language in `mimry.toml`, see [Configuration](#configuration).
 
@@ -170,7 +180,6 @@ Other extensions can be mapped to a supported language in `mimry.toml`, see [Con
 
 We're adding these next; progress is tracked in [#47](https://github.com/jbacalso24/mimry/issues/47), where you can ask for yours.
 
-- [ ] Web and markup: HTML, CSS, SCSS, Vue, Svelte
 - [ ] Data and config: YAML, XML, Terraform (HCL), and JSON and TOML files beyond the manifests above
 - [ ] Apps and systems: Groovy
 

@@ -1892,3 +1892,274 @@ def test_solidity_fortran_pascal_test_file_names_are_tests(name):
 @pytest.mark.parametrize("name", ["Vault.sol", "geometry.f90", "Shapes.pas", "Latest.pas"])
 def test_solidity_fortran_pascal_source_names_are_not_tests(name):
     assert not TEST_NAME_RE.search(name), f"{name} should not be a test file"
+
+
+# Web and markup: CSS, SCSS, HTML, Vue and Svelte. Each source is an
+# everyday file. Line numbers in the expectations are the file's own.
+WEB_CSS_SOURCE = """\
+@import "reset.css";
+@import url("theme/dark.css") screen;
+
+:root {
+  --brand: #0a6cff;
+  --gap: 8px;
+}
+
+.btn,
+.btn-primary {
+  padding: var(--gap);
+  color: var(--brand);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+#main > .card:not(.hidden) .title {
+  font-weight: 600;
+}
+
+@media (min-width: 600px) {
+  .btn {
+    padding: calc(var(--gap) * 2);
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+"""
+
+WEB_SCSS_SOURCE = """\
+@use "base/vars" as v;
+@use "sass:math";
+@forward "base/mixins" show button;
+@import "legacy";
+
+$brand: #0a6cff !default;
+%placeholder { color: red; }
+
+@mixin rounded($r: 4px) {
+  border-radius: $r;
+}
+
+@function double($n) {
+  @return $n * 2;
+}
+
+.card {
+  @include rounded(2px);
+  &-title { font-weight: bold; }
+  &__body { color: $brand; }
+  .x { @extend .btn; }
+}
+"""
+
+WEB_HTML_SOURCE = """\
+<!doctype html>
+<html>
+<head>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="modulepreload" href="/js/app.js">
+  <script src="https://cdn.example.com/x.js"></script>
+</head>
+<body>
+  <div id="checkout" class="wrap"><img src="a.png"></div>
+  <input id="email" type="text">
+  <script>
+    function greet(name) { return name }
+  </script>
+</body>
+</html>
+"""
+
+WEB_VUE_SOURCE = """\
+<template>
+  <div class="card"><span>{{ name }}</span></div>
+</template>
+
+<script setup lang="ts">
+import { fetchUser } from '../api'
+const props = defineProps<{ name: string }>()
+</script>
+
+<style scoped lang="scss">
+.card { color: red; }
+</style>
+"""
+
+WEB_SVELTE_SOURCE = """\
+<script context="module" lang="ts">
+  export const prerender = true
+</script>
+
+<script lang="ts">
+  import { fetchUser } from './api'
+  export let count: number = 0
+  $: doubled = count * 2
+</script>
+
+<button on:click={() => count++}>{doubled}</button>
+
+<style>
+  .btn { color: red; }
+</style>
+"""
+
+
+def _web_definitions(result):
+    return {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+
+
+def test_web_languages_map_their_extensions():
+    assert language_for("app/site.css") == "css"
+    assert language_for("app/site.scss") == "scss"
+    assert language_for("index.html") == "html"
+    assert language_for("index.htm") == "html"
+    assert language_for("src/UserCard.vue") == "vue"
+    assert language_for("src/Counter.svelte") == "svelte"
+    assert language_for("legacy/site.less") is None
+
+
+def test_css_extracts_selectors_variables_keyframes_and_imports(tmp_path):
+    """A selector is one symbol per name. `.btn` keeps its first rule,
+    since the @media rule that sets it too is not adjacent. The
+    `.btn-primary` symbol runs on to its second rule, which is adjacent.
+    A class inside :not() is not defined. Custom properties are
+    variables, and @keyframes is a type.
+    """
+    result = _extract(tmp_path, "sample.css", WEB_CSS_SOURCE)
+    assert result["status"] == "ok", result["status"]
+    assert _web_definitions(result) == {
+        ("--brand", "variable", 4, 7),
+        ("--gap", "variable", 4, 7),
+        (".btn", "selector", 9, 13),
+        (".btn-primary", "selector", 9, 17),
+        ("#main", "selector", 19, 21),
+        (".card", "selector", 19, 21),
+        (".title", "selector", 19, 21),
+        ("spin", "type", 29, 32),
+    }
+    assert [(i["module"], i["line"]) for i in result["imports"]] == [
+        ("reset.css", 1),
+        ("theme/dark.css", 2),
+    ]
+    assert result["calls"] == []
+
+
+def test_css_remote_imports_are_not_files(tmp_path):
+    source = (
+        '@import url("https://fonts.example.com/x.css");\n@import "//cdn.example.com/y.css";\n'
+    )
+    result = _extract(tmp_path, "remote.css", source)
+    assert result["status"] == "ok"
+    assert result["imports"] == []
+
+
+def test_scss_extracts_mixins_functions_placeholders_variables_and_calls(tmp_path):
+    """Sass gives its mixins and functions as functions, a placeholder
+    as a selector and a top-level variable as a variable. `&-title` is
+    `.card-title` because its parent is one plain class. @include and
+    @extend are calls. The namespace, `show` and `!default` lines are
+    the grammar's gaps: the rest of the file is still read.
+    """
+    result = _extract(tmp_path, "sample.scss", WEB_SCSS_SOURCE)
+    assert result["status"] == "ok", result["status"]
+    assert _web_definitions(result) == {
+        ("$brand", "variable", 6, 6),
+        ("%placeholder", "selector", 7, 7),
+        ("rounded", "function", 9, 11),
+        ("double", "function", 13, 15),
+        (".card", "selector", 17, 22),
+        (".card-title", "selector", 19, 19),
+        (".card__body", "selector", 20, 20),
+        (".x", "selector", 21, 21),
+    }
+    assert [(i["module"], i["line"]) for i in result["imports"]] == [
+        ("base/vars", 1),
+        ("base/mixins", 3),
+        ("legacy", 4),
+    ]
+    assert [(c["name"], c["line"]) for c in result["calls"]] == [("rounded", 18), (".btn", 21)]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        ".a, .b {\n  &-x { color: red; }\n}\n",
+        ".a .b {\n  &-x { color: red; }\n}\n",
+    ],
+)
+def test_scss_nested_suffix_needs_one_plain_parent(tmp_path, source):
+    """`&-x` under a list of selectors, or under a descendant selector,
+    has no single class to extend, so it is not a symbol.
+    """
+    result = _extract(tmp_path, "nest.scss", source)
+    names = {d["name"] for d in result["definitions"]}
+    assert not {name for name in names if name.endswith("-x")}
+
+
+def test_stylesheet_keeps_the_rules_that_parse(tmp_path):
+    """Syntax the grammar lacks (@container, media ranges) or a broken
+    rule does not cost the stylesheet its other selectors.
+    """
+    source = (
+        "@container side (min-width: 400px) { .card { display: grid; } }\n"
+        "@media (width >= 600px) { #main { inset: 0; } }\n"
+        ".btn { color: red; }\n"
+        ".broken { color: red;\n"
+    )
+    result = _extract(tmp_path, "site.css", source)
+    assert result["status"] == "ok"
+    assert {".card", "#main", ".btn"} <= {d["name"] for d in result["definitions"]}
+
+
+def test_html_extracts_ids_local_assets_and_inline_scripts(tmp_path):
+    """An element id is a #id selector. Only local stylesheets, modules
+    and scripts are imports, so the CDN script is left out. The inline
+    script keeps its function's real line.
+    """
+    result = _extract(tmp_path, "index.html", WEB_HTML_SOURCE)
+    assert result["status"] == "ok", result["status"]
+    assert _web_definitions(result) == {
+        ("#checkout", "selector", 9, 9),
+        ("#email", "selector", 10, 10),
+        ("greet", "function", 12, 12),
+    }
+    assert [(i["module"], i["line"]) for i in result["imports"]] == [
+        ("css/main.css", 4),
+        ("/js/app.js", 5),
+    ]
+
+
+def test_vue_component_and_blocks_keep_their_real_lines(tmp_path):
+    """The component is named after its file and spans every line. The
+    script's `props` sits on line 7, and the style block's selector on
+    line 11, because the blocks are parsed in place.
+    """
+    result = _extract(tmp_path, "UserCard.vue", WEB_VUE_SOURCE)
+    assert result["status"] == "ok", result["status"]
+    assert _web_definitions(result) == {
+        ("UserCard", "component", 1, 12),
+        ("props", "variable", 7, 7),
+        (".card", "selector", 11, 11),
+    }
+    assert [(i["module"], i["line"]) for i in result["imports"]] == [("../api", 6)]
+    assert [(c["name"], c["line"]) for c in result["calls"]] == [("defineProps", 7)]
+
+
+def test_svelte_component_reads_module_and_instance_scripts(tmp_path):
+    """Both script blocks are TypeScript and both are read: the module
+    script's export and the instance script's `export let`. `$:` is a
+    statement, not a definition.
+    """
+    result = _extract(tmp_path, "Counter.svelte", WEB_SVELTE_SOURCE)
+    assert result["status"] == "ok", result["status"]
+    assert _web_definitions(result) == {
+        ("Counter", "component", 1, 15),
+        ("prerender", "variable", 2, 2),
+        ("count", "variable", 7, 7),
+        (".btn", "selector", 14, 14),
+    }
+    assert [(i["module"], i["line"]) for i in result["imports"]] == [("./api", 6)]

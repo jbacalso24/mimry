@@ -106,6 +106,7 @@ SOURCE_EXTS = {
     *(".dart", ".m", ".zig"),
     *(".ex", ".exs", ".hs", ".ml", ".mli", ".r", ".jl"),
     *(".sol", ".f90", ".f95", ".f03", ".f08", ".pas", ".pp", ".dpr", ".lpr"),
+    *(".css", ".scss", ".html", ".htm", ".vue", ".svelte"),
 }
 # Code that ships with a project but is not the product: an edit task is
 # almost never about it, so it is supporting context rather than a

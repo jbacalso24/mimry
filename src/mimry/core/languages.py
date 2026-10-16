@@ -60,6 +60,12 @@ EXTENSION_LANGUAGE = {
     ".pp": "pascal",
     ".dpr": "pascal",
     ".lpr": "pascal",
+    ".css": "css",
+    ".scss": "scss",
+    ".html": "html",
+    ".htm": "html",
+    ".vue": "vue",
+    ".svelte": "svelte",
 }
 
 # Display name for each EXTENSION_LANGUAGE value.
@@ -97,6 +103,11 @@ LANGUAGE_LABELS: dict[str, str] = {
     "solidity": "Solidity",
     "fortran": "Fortran",
     "pascal": "Pascal",
+    "css": "CSS",
+    "scss": "SCSS",
+    "html": "HTML",
+    "vue": "Vue",
+    "svelte": "Svelte",
     # Symbol-only languages, with no extension entry.
     "markdown": "Markdown",
     "sql": "SQL",
@@ -490,6 +501,31 @@ NODE_TYPES = {
         "calls": frozenset(["exprCall", "inherited"]),
         "bases": frozenset(["declClass"]),
     },
+    # Selectors are definitions only in a rule's own selectors list (see
+    # _in_selectors). Declarations are kept only when they are custom
+    # properties or top-level SCSS variables.
+    "css": {
+        "definitions": frozenset(
+            ["class_selector", "id_selector", "declaration", "keyframes_statement"]
+        ),
+        "imports": frozenset(["import_statement"]),
+        "calls": frozenset(),
+    },
+    "scss": {
+        "definitions": frozenset(
+            [
+                "class_selector",
+                "id_selector",
+                "placeholder",
+                "declaration",
+                "keyframes_statement",
+                "mixin_statement",
+                "function_statement",
+            ]
+        ),
+        "imports": frozenset(["import_statement", "use_statement", "forward_statement"]),
+        "calls": frozenset(["include_statement", "extend_statement"]),
+    },
 }
 
 
@@ -570,6 +606,20 @@ _LANGUAGE_KINDS = {
     ("pascal", "unit"): "module",
     ("pascal", "program"): "module",
     ("pascal", "library"): "module",
+    # A selector is named with its dot, hash or percent sign. A
+    # keyframes name is type-like, and a custom property or SCSS
+    # variable is a variable.
+    ("css", "class_selector"): "selector",
+    ("css", "id_selector"): "selector",
+    ("css", "declaration"): "variable",
+    ("css", "keyframes_statement"): "type",
+    ("scss", "class_selector"): "selector",
+    ("scss", "id_selector"): "selector",
+    ("scss", "placeholder"): "selector",
+    ("scss", "declaration"): "variable",
+    ("scss", "keyframes_statement"): "type",
+    ("scss", "mixin_statement"): "function",
+    ("scss", "function_statement"): "function",
 }
 
 
@@ -637,6 +687,8 @@ def _definition_span(language: str, node: Any) -> Any:
     if language == "zig" and node.type == "FnProto" and node.parent is not None:
         if node.parent.type == "Decl":
             return node.parent
+    if language in _STYLE_LANGUAGES:
+        return _style_span(node)
     return node
 
 
@@ -759,6 +811,11 @@ def _definition_name(language: str, node: Any, source: bytes) -> str | None:
     function_declarator to find it, then check for qualified_identifier
     (e.g. Widget::draw) and take only the final part.
     """
+    # SCSS @function is a function_statement, which the PowerShell rule
+    # below would take for its own, so the stylesheet rule comes first.
+    if language in _STYLE_LANGUAGES:
+        return _style_name(node, source)
+
     # PowerShell functions, classes and methods name themselves with a
     # bare function_name or simple_name child, not a `name` field. A
     # method's type literal holds type_identifier, not simple_name, so
@@ -2175,6 +2232,409 @@ def _php_import(node: Any, source: bytes) -> str | None:
     return _generic_import_module("php", node, source)
 
 
+# CSS and SCSS: selectors, custom properties, keyframes, Sass mixins,
+# functions, placeholders and variables, with their imports and calls.
+_STYLE_LANGUAGES = frozenset(("css", "scss"))
+# Markup whose code sits in blocks: each block is parsed by the pass for
+# its own language (see _extract_embedded).
+_EMBEDDED_LANGUAGES = frozenset(("html", "vue", "svelte"))
+_STYLE_SELECTOR_NODES = frozenset(("class_selector", "id_selector", "placeholder"))
+_REMOTE_PREFIXES = ("http:", "https:", "//", "data:")
+_SUFFIX_NAME = re.compile(r"[\w-]+")
+_PLAIN_CLASS = re.compile(r"\.[A-Za-z_][\w-]*")
+# A name Sass builds at run time (interpolation, or a variable in it) is
+# not a name the file states.
+_DYNAMIC_NAME = re.compile(r"#\{|\$")
+
+
+# Lines of SCSS that this grammar does not parse. Their error nodes are
+# tolerated: @use and @forward (`as`, `show`, `with`), `!default` and
+# `!global`, `@extend %placeholder` in a block, and `#{...}`
+# interpolation.
+def _in_selectors(node: Any) -> bool:
+    """Whether a selector node is in a rule's own selector list. A class
+    inside a pseudo-class argument, as in :not(.x), does not define
+    `.x`, and a class inside an @extend defines nothing either.
+    """
+    current = node.parent
+    while current is not None:
+        if current.type == "selectors":
+            return True
+        if current.type in ("arguments", "block", "stylesheet", "extend_statement"):
+            return False
+        current = current.parent
+    return False
+
+
+def _selector_rule(node: Any) -> Any:
+    """The rule_set whose selector list holds a selector, or None."""
+    current = node
+    while current is not None and current.type != "selectors":
+        current = current.parent
+    if current is None or current.parent is None or current.parent.type != "rule_set":
+        return None
+    return current.parent
+
+
+def _nested_class_prefix(node: Any, source: bytes) -> str | None:
+    """The class an SCSS `&-suffix` extends. Only a parent rule that
+    selects exactly one plain class gives a name, as
+    `.card { &-title {} }` gives `.card-title`.
+    """
+    own = _selector_rule(node)
+    if own is None or own.parent is None or own.parent.type != "block":
+        return None
+    outer = own.parent.parent
+    if outer is None or outer.type != "rule_set":
+        return None
+    selectors = _direct_child(outer, "selectors")
+    if selectors is None:
+        return None
+    text = _text(source, selectors).strip()
+    return text if _PLAIN_CLASS.fullmatch(text) else None
+
+
+def _style_name(node: Any, source: bytes) -> str | None:
+    """The name a stylesheet node defines, or None."""
+    kind = node.type
+    if kind == "class_selector":
+        if not _in_selectors(node):
+            return None
+        cls = _direct_child_text(node, source, "class_name")
+        if cls is None:
+            return None
+        if _direct_child(node, "nesting_selector") is None:
+            name = "." + cls
+        else:
+            prefix = _nested_class_prefix(node, source)
+            if prefix is None or _SUFFIX_NAME.fullmatch(cls) is None:
+                return None
+            name = prefix + cls
+        return None if _DYNAMIC_NAME.search(name) else name
+    if kind == "id_selector":
+        if not _in_selectors(node) or _direct_child(node, "nesting_selector") is not None:
+            return None
+        ident = _direct_child_text(node, source, "id_name")
+        return "#" + ident if ident and not _DYNAMIC_NAME.search(ident) else None
+    if kind == "placeholder":
+        if not _in_selectors(node):
+            return None
+        ident = _direct_child_text(node, source, "identifier")
+        return "%" + ident if ident else None
+    if kind == "declaration":
+        name = _direct_child_text(node, source, "property_name")
+        if name is None or node.parent is None:
+            return None
+        if name.startswith("--") and node.parent.type == "block":
+            return name
+        if name.startswith("$") and node.parent.type == "stylesheet":
+            return name
+        return None
+    if kind == "keyframes_statement":
+        return _direct_child_text(node, source, "keyframes_name")
+    if kind in ("mixin_statement", "function_statement"):
+        return _direct_child_text(node, source, "identifier")
+    return None
+
+
+def _style_span(node: Any) -> Any:
+    """The lines a stylesheet definition covers: a selector's rule, a
+    custom property's rule, or the node itself.
+    """
+    if node.type in _STYLE_SELECTOR_NODES:
+        rule = _selector_rule(node)
+        if rule is not None:
+            return rule
+    if node.type == "declaration" and node.parent is not None:
+        if node.parent.type == "block" and node.parent.parent is not None:
+            return node.parent.parent
+    return node
+
+
+def _merge_style_rules(definitions: list[dict]) -> list[dict]:
+    """One symbol per selector or variable name. It takes the first
+    definition's lines, and runs to the last definition only when every
+    definition sits next to the one before it (at most one blank line
+    between). Otherwise it keeps the first definition's lines.
+    """
+    groups: dict[tuple[str, str], list[int]] = {}
+    for index, definition in enumerate(definitions):
+        if definition["kind"] in ("selector", "variable"):
+            groups.setdefault((definition["name"], definition["kind"]), []).append(index)
+    replaced: dict[int, dict] = {}
+    dropped: set[int] = set()
+    for indices in groups.values():
+        if len(indices) < 2:
+            continue
+        spans = [(definitions[i]["line_start"], definitions[i]["line_end"]) for i in indices]
+        adjacent = all(spans[k + 1][0] - spans[k][1] <= 2 for k in range(len(spans) - 1))
+        first = definitions[indices[0]]
+        if adjacent:
+            first = {**first, "line_end": spans[-1][1]}
+        replaced[indices[0]] = first
+        dropped.update(indices[1:])
+    return [
+        replaced.get(index, definition)
+        for index, definition in enumerate(definitions)
+        if index not in dropped
+    ]
+
+
+def _style_imports(node: Any, source: bytes) -> list[str]:
+    """Every path an @import, @use or @forward names, quoted or in
+    url(). Remote and built-in Sass modules are not files, so they are
+    left out.
+    """
+    paths = []
+    for child in _walk(node):
+        if child.type == "string_value":
+            value = _unquote(_text(source, child))
+        elif child.type == "plain_value":
+            value = _text(source, child).strip()
+        else:
+            continue
+        if value and not value.lower().startswith((*_REMOTE_PREFIXES, "sass:")):
+            paths.append(value)
+    return paths
+
+
+def _scss_call(node: Any, source: bytes) -> str | None:
+    """A mixin an @include names, or the selector an @extend names."""
+    if node.type == "include_statement":
+        return _direct_child_text(node, source, "identifier")
+    selector = _direct_child(node, "class_selector")
+    if selector is not None:
+        cls = _direct_child_text(selector, source, "class_name")
+        return "." + cls if cls else None
+    placeholder = _direct_child(node, "placeholder")
+    if placeholder is not None:
+        ident = _direct_child_text(placeholder, source, "identifier")
+        return "%" + ident if ident else None
+    return None
+
+
+# Embedded blocks. A block's code is parsed alone: every byte outside it
+# becomes a space, and newlines stay, so each name keeps its real line.
+_BLANK_TABLE = bytes(i if i in (10, 13) else 32 for i in range(256))
+_HTML_SCRIPT_TYPES = ("", "module", "text/javascript", "application/javascript")
+
+
+def _blank_outside(raw: bytes, start: int, end: int) -> bytes:
+    """The file with every byte outside [start, end) set to a space."""
+    blanked = bytearray(raw.translate(_BLANK_TABLE))
+    blanked[start:end] = raw[start:end]
+    return bytes(blanked)
+
+
+def _tag_attributes(tag: Any, raw: bytes) -> dict[str, str]:
+    """The attributes of one start tag: lower-cased name to value."""
+    attributes = {}
+    for child in _children(tag):
+        if child.type != "attribute":
+            continue
+        name = _direct_child(child, "attribute_name")
+        if name is None:
+            continue
+        value = next(
+            (_text(raw, part) for part in _walk(child) if part.type == "attribute_value"), ""
+        )
+        attributes[_text(raw, name).strip().lower()] = value.strip()
+    return attributes
+
+
+def _block_dialect(lang: str, is_script: bool, attributes: dict[str, str]) -> str | None:
+    """The language a script or style block holds, or None when MIMRY
+    does not parse it (a Less style block, a JSON script, and so on).
+    """
+    if lang == "html":
+        kind = attributes.get("type", "").lower()
+        if is_script:
+            return "javascript" if kind in _HTML_SCRIPT_TYPES else None
+        return "css" if kind in ("", "text/css") else None
+    tag_lang = attributes.get("lang", "").lower()
+    if is_script:
+        return {
+            "": "javascript",
+            "js": "javascript",
+            "javascript": "javascript",
+            "jsx": "javascript",
+            "ts": "typescript",
+            "typescript": "typescript",
+            "tsx": "tsx",
+        }.get(tag_lang)
+    return {"": "css", "css": "css", "scss": "scss"}.get(tag_lang)
+
+
+def _embedded_blocks(lang: str, root: Any, raw: bytes):
+    """(dialect, start, end) of each script and style block whose code
+    MIMRY parses, in document order.
+    """
+    for node in _walk(root):
+        if node.type not in ("script_element", "style_element"):
+            continue
+        start_tag = _direct_child(node, "start_tag")
+        body = _direct_child(node, "raw_text")
+        if start_tag is None or body is None:
+            continue
+        attributes = _tag_attributes(start_tag, raw)
+        dialect = _block_dialect(lang, node.type == "script_element", attributes)
+        if dialect is not None:
+            yield dialect, body.start_byte, body.end_byte
+
+
+def _script_block(path: Path, text: str, dialect: str) -> tuple[dict, str]:
+    """One script block through the TypeScript or JavaScript pass: the
+    symbols and imports parse_ts_like gives a .ts or .js file, with the
+    calls and inheritance of extract. ``text`` is the whole file with
+    the block alone kept, so its lines are the file's lines. Returns
+    (result, status).
+    """
+    from ..adapters.ts_ast import parse_ts_like
+
+    suffix = {"javascript": ".js", "typescript": ".ts", "tsx": ".tsx"}[dialect]
+    symbols, _edges, modules, _exports, status, _adapter = parse_ts_like(
+        path, path.parent, {"file_id": ""}, source=text, extension=suffix
+    )
+    lines = text.split("\n")
+    imports = []
+    for module in modules:
+        line = next((n for n, value in enumerate(lines, 1) if module in value), 1)
+        imports.append({"module": module, "line": line})
+    result = extract(path, text, language=dialect)
+    definitions = [
+        {key: symbol[key] for key in ("name", "kind", "line_start", "line_end", "exported")}
+        for symbol in symbols
+    ]
+    block = {
+        "definitions": definitions,
+        "imports": imports,
+        "calls": result["calls"],
+        "inherits": result["inherits"],
+    }
+    return block, (status if status != "ok" else result["status"])
+
+
+def _component_symbol(path: Path, raw: bytes) -> dict:
+    """A Vue or Svelte file is one component, named after the file, that
+    spans every line.
+    """
+    lines = raw.count(b"\n") + (0 if raw.endswith(b"\n") else 1)
+    return {
+        "name": path.stem,
+        "kind": "component",
+        "line_start": 1,
+        "line_end": max(lines, 1),
+        "exported": True,
+    }
+
+
+def _local_path(value: str | None) -> str | None:
+    """A page's asset path without its query or hash, or None when it is
+    remote or inline.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    if value.lower().startswith(_REMOTE_PREFIXES):
+        return None
+    return re.split(r"[?#]", value, maxsplit=1)[0] or None
+
+
+def _html_tags(root: Any, raw: bytes) -> tuple[list[dict], list[dict]]:
+    """The #id selectors of a page, and the local stylesheets and
+    scripts it loads.
+    """
+    definitions = []
+    imports = []
+    for node in _walk(root):
+        if node.type not in ("start_tag", "self_closing_tag"):
+            continue
+        attributes = _tag_attributes(node, raw)
+        line = node.start_point.row + 1
+        if attributes.get("id"):
+            definitions.append(
+                {
+                    "name": "#" + attributes["id"],
+                    "kind": "selector",
+                    "line_start": line,
+                    "line_end": node.end_point.row + 1,
+                    "exported": False,
+                }
+            )
+        tag = (_direct_child_text(node, raw, "tag_name") or "").lower()
+        asset = None
+        if tag == "script":
+            asset = attributes.get("src")
+        elif tag == "link":
+            rel = set(attributes.get("rel", "").lower().split())
+            if rel & {"stylesheet", "modulepreload"}:
+                asset = attributes.get("href")
+        local = _local_path(asset)
+        if local:
+            imports.append({"module": local, "line": line})
+    return definitions, imports
+
+
+def _extract_embedded(path: Path, lang: str, source: str) -> dict:
+    """HTML, Vue and Svelte. Their script and style blocks go through
+    the passes of their own languages. A Vue or Svelte file is also one
+    component symbol, and an HTML page names each id. The host grammar
+    only locates the blocks, so errors in the markup around them do not
+    fail the file.
+    """
+    from tree_sitter import Parser
+
+    raw = source.encode("utf-8")
+    try:
+        root = Parser(load_language(lang)).parse(raw).root_node
+    except GrammarUnavailableError:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": GRAMMAR_UNAVAILABLE,
+        }
+    except Exception as exc:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": f"parse_error:{exc.__class__.__name__}",
+        }
+    definitions: list[dict] = []
+    imports: list[dict] = []
+    calls: list[dict] = []
+    inherits: list[dict] = []
+    statuses: list[str] = []
+    if lang == "html":
+        tag_definitions, tag_imports = _html_tags(root, raw)
+        definitions += tag_definitions
+        imports += tag_imports
+    else:
+        definitions.append(_component_symbol(path, raw))
+    for dialect, start, end in _embedded_blocks(lang, root, raw):
+        text = _blank_outside(raw, start, end).decode("utf-8", "replace")
+        if dialect in _STYLE_LANGUAGES:
+            block = extract(path, text, language=dialect)
+            status = block["status"]
+        else:
+            block, status = _script_block(path, text, dialect)
+        definitions += block["definitions"]
+        imports += block["imports"]
+        calls += block["calls"]
+        inherits += block["inherits"]
+        statuses.append(status)
+    return {
+        "definitions": definitions,
+        "imports": imports,
+        "calls": calls,
+        "inherits": inherits,
+        "status": next((status for status in statuses if status != "ok"), "ok"),
+    }
+
+
 _IMPORT_READERS = {
     "rust": _rust_import,
     "php": _php_import,
@@ -2200,6 +2660,8 @@ _IMPORT_READERS = {
     "solidity": _solidity_import,
     "fortran": _fortran_import,
     "pascal": _pascal_import,
+    "css": _style_imports,
+    "scss": _style_imports,
 }
 
 
@@ -2396,6 +2858,7 @@ _CALL_READERS = {
     "solidity": _solidity_call,
     "fortran": _fortran_call,
     "pascal": _pascal_call,
+    "scss": _scss_call,
 }
 
 
@@ -2585,6 +3048,9 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
             "status": "parse_error:unsupported_language",
         }
 
+    if lang in _EMBEDDED_LANGUAGES:
+        return _extract_embedded(path, lang, source)
+
     if lang not in NODE_TYPES:
         return {
             "definitions": [],
@@ -2707,9 +3173,17 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
 
     if lang in ("haskell", "elixir"):
         definitions = _merge_equations(definitions, owners)
+    if lang in _STYLE_LANGUAGES:
+        definitions = _merge_style_rules(definitions)
 
-    # Check for parse errors
-    if root_node.has_error and not _only_pascal_in_clauses(lang, root_node, source):
+    # Check for parse errors. A stylesheet keeps the rules that parsed,
+    # as a browser skips the ones it cannot read: the grammars lack
+    # newer syntax such as @container queries and media ranges.
+    if (
+        root_node.has_error
+        and lang not in _STYLE_LANGUAGES
+        and not _only_pascal_in_clauses(lang, root_node, source)
+    ):
         return {
             "definitions": definitions,
             "imports": imports,

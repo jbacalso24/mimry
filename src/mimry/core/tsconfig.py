@@ -11,7 +11,18 @@ from __future__ import annotations
 import json
 import posixpath
 
-_JS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
+_JS_EXTENSIONS = (
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".vue",
+    ".svelte",
+)
 CONFIG_NAMES = ("tsconfig.json", "jsconfig.json")
 
 

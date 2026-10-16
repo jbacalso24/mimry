@@ -1583,3 +1583,221 @@ def test_fortran_and_pascal_names_match_without_case(tmp_path):
     assert ("go", "report") in _graph_pairs(root, "calls")
     assert ("Run", "draw") in _graph_pairs(root, "calls")
     assert ("TCircle", "TShape") in _graph_pairs(root, "inherits")
+
+
+class TestStyleImports:
+    """CSS `@import` is relative to the stylesheet, and a bare package
+    path is under node_modules/. SCSS partials follow Sass's rules.
+    """
+
+    def test_css_import_resolves_beside_the_stylesheet(self):
+        imports = {"src/app.css": ["./base.css"]}
+        rel_paths = {"src/app.css", "src/base.css"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("src/base.css", "EXTRACTED")]
+
+    def test_css_bare_package_path_resolves_under_node_modules(self):
+        imports = {"src/app.css": ["bootstrap/dist/css/bootstrap.css"]}
+        rel_paths = {"src/app.css", "node_modules/bootstrap/dist/css/bootstrap.css"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("node_modules/bootstrap/dist/css/bootstrap.css", "INFERRED")
+        ]
+
+    def test_css_missing_import_is_no_edge(self):
+        imports = {"src/app.css": ["./missing.css"]}
+        rel_paths = {"src/app.css"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "src/styles/base/_vars.scss",
+            "src/styles/base/vars.scss",
+            "src/styles/base/_vars/_index.scss",
+            "src/styles/base/vars/_index.scss",
+        ],
+    )
+    def test_scss_module_path_finds_each_partial_form(self, target):
+        """`@use "base/vars"` is `_vars.scss`, `vars.scss`, or a folder
+        index, beside the importer.
+        """
+        imports = {"src/styles/main.scss": ["base/vars"]}
+        rel_paths = {"src/styles/main.scss", target}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [(target, "EXTRACTED")]
+
+    def test_scss_module_falls_back_to_the_repo_root(self):
+        imports = {"src/styles/main.scss": ["tokens/colors"]}
+        rel_paths = {"src/styles/main.scss", "tokens/_colors.scss"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("tokens/_colors.scss", "INFERRED")
+        ]
+
+    def test_scss_tilde_and_bare_packages_resolve_under_node_modules(self):
+        imports = {"src/main.scss": ["~bootstrap/scss/functions", "bootstrap/scss/mixins"]}
+        rel_paths = {
+            "src/main.scss",
+            "node_modules/bootstrap/scss/_functions.scss",
+            "node_modules/bootstrap/scss/_mixins.scss",
+        }
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("node_modules/bootstrap/scss/_functions.scss", "INFERRED"),
+            ("node_modules/bootstrap/scss/_mixins.scss", "INFERRED"),
+        ]
+
+    def test_scss_dot_relative_path_does_not_reach_the_root(self):
+        """`./vars` names a file beside the importer. A file of that
+        name at the root is not the same module.
+        """
+        imports = {"src/styles/main.scss": ["./vars"]}
+        rel_paths = {"src/styles/main.scss", "vars.scss"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_scss_built_in_and_missing_modules_are_no_edge(self):
+        imports = {"src/main.scss": ["sass:math", "./nope"]}
+        rel_paths = {"src/main.scss"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestHtmlAssetImports:
+    """A page's local stylesheet or script is relative to the page. A
+    path from `/` is the repo root, then public/ and static/.
+    """
+
+    def test_page_asset_resolves_beside_the_page(self):
+        imports = {"public/index.html": ["css/main.css"]}
+        rel_paths = {"public/index.html", "public/css/main.css"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("public/css/main.css", "EXTRACTED")
+        ]
+
+    def test_rooted_asset_resolves_from_the_repo_root(self):
+        imports = {"public/index.html": ["/js/app.js"]}
+        rel_paths = {"public/index.html", "js/app.js"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("js/app.js", "EXTRACTED")]
+
+    @pytest.mark.parametrize("folder", ["public", "static"])
+    def test_rooted_asset_falls_back_to_public_then_static(self, folder):
+        imports = {"index.html": ["/css/site.css"]}
+        rel_paths = {"index.html", f"{folder}/css/site.css"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            (f"{folder}/css/site.css", "INFERRED")
+        ]
+
+    def test_missing_rooted_asset_is_no_edge(self):
+        imports = {"index.html": ["/missing.js"]}
+        rel_paths = {"index.html"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+class TestVueAndSvelteImports:
+    """Vue and Svelte files import like TypeScript, so a component is
+    found with or without its extension.
+    """
+
+    def test_typescript_import_finds_a_vue_component_without_extension(self):
+        imports = {"src/main.ts": ["./components/UserCard"]}
+        rel_paths = {"src/main.ts", "src/components/UserCard.vue"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/components/UserCard.vue", "EXTRACTED")
+        ]
+
+    def test_component_imports_a_svelte_file_and_a_typescript_module(self):
+        imports = {"src/App.vue": ["./Counter.svelte", "../api"]}
+        rel_paths = {"src/App.vue", "src/Counter.svelte", "api.ts"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("api.ts", "EXTRACTED"),
+            ("src/Counter.svelte", "EXTRACTED"),
+        ]
+
+    def test_missing_component_is_no_edge(self):
+        imports = {"src/App.vue": ["./Nope"]}
+        rel_paths = {"src/App.vue"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+
+def test_vue_component_and_its_style_link_into_the_graph(tmp_path):
+    """A Vue file imports its component and a TypeScript module, and a
+    function in the script calls the module's function across files.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "src/App.vue": (
+                '<script setup lang="ts">\n'
+                "import UserCard from './components/UserCard.vue'\n"
+                "</script>\n"
+                "<template><UserCard /></template>\n"
+            ),
+            "src/components/UserCard.vue": (
+                '<script setup lang="ts">\n'
+                "import { fetchUser } from '../api'\n"
+                "function load() { return fetchUser(1) }\n"
+                "</script>\n"
+                '<style scoped lang="scss">\n'
+                ".card { color: red; }\n"
+                "</style>\n"
+            ),
+            "src/api.ts": "export function fetchUser(id: number) {\n  return id\n}\n",
+        },
+    )
+
+    assert ("load", "fetchUser") in _graph_pairs(root, "calls")
+
+
+def test_vue_component_does_not_hide_its_script_functions():
+    """A Vue component spans its file, so `impact` still names the
+    functions in its script. A JSX component still holds its locals.
+    """
+    from mimry.queries import _targetable
+
+    vue = [
+        {
+            "name": "UserCard",
+            "kind": "component",
+            "language": "vue",
+            "line_start": 1,
+            "line_end": 9,
+        },
+        {"name": "load", "kind": "function", "language": "vue", "line_start": 4, "line_end": 6},
+    ]
+    assert [sym["name"] for sym in _targetable(vue)] == ["UserCard", "load"]
+    jsx = [
+        {"name": "Card", "kind": "component", "language": "tsx", "line_start": 1, "line_end": 9},
+        {"name": "helper", "kind": "function", "language": "tsx", "line_start": 3, "line_end": 4},
+    ]
+    assert [sym["name"] for sym in _targetable(jsx)] == ["Card"]

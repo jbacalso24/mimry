@@ -1281,6 +1281,13 @@ def _impact_error(payload: dict, code: str, message: str, **extra) -> dict:
 _BODY_KINDS = frozenset({"function", "method", "component"})
 
 
+def _file_component(sym: dict) -> bool:
+    """A Vue or Svelte component spans its whole file, so it holds the
+    script's functions only by position. They are not its locals.
+    """
+    return sym.get("kind") == "component" and sym.get("language") in ("vue", "svelte")
+
+
 def _outer_bodies(syms: list[dict]) -> list[tuple[dict, dict | None]]:
     """Each symbol of a file with the outermost function, method or
     component whose body holds it, or None when no body does.
@@ -1288,7 +1295,7 @@ def _outer_bodies(syms: list[dict]) -> list[tuple[dict, dict | None]]:
     bodies = [
         (start, end, sym)
         for sym, start, end in _symbol_spans(syms)
-        if sym.get("kind") in _BODY_KINDS
+        if sym.get("kind") in _BODY_KINDS and not _file_component(sym)
     ]
     pairs = []
     for sym in syms:
