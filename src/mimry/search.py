@@ -137,7 +137,7 @@ def _filter_and_page(rows, *, scope, languages_by_path):
 # Weight of the words from recent commit subjects that touched a file
 # (history_terms). Zero keeps the index and ranking as they were before
 # that column was filled.
-HISTORY_TERMS_WEIGHT = 0.3
+HISTORY_TERMS_WEIGHT = 0.8
 
 
 def _fts_match_query(terms: list[str]) -> str:
