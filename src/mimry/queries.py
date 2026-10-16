@@ -1743,9 +1743,9 @@ def _print_why(answer: dict, verbose: bool) -> None:
         if verbose:
             details += [("Score", str(exact["score"])), ("Raw", exact["reason"])]
         ui.table(details)
-    if status:
-        # A miss stops here: no evidence or verify block.
-        return status
+    if answer["miss"] and answer["miss"]["status"]:
+        # A failed lookup stops here: no evidence or verify block.
+        return
     if graph["status"] != "current":
         ui.warn(f"The graph files are {graph['status']}. Run `mimry refresh` for graph evidence.")
     elif answer["evidence"]["node_count"]:
