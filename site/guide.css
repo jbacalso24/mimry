@@ -25,6 +25,7 @@ code { font-size:.88em; background:var(--panel); padding:.12em .38em; border-rad
 .skip:focus { top:12px; }
 .top { min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:24px; border-bottom:1px solid var(--rule); }
 .brand { font-weight:800; font-size:1.2rem; text-decoration:none; }
+.brand svg { width:1.2em; height:1.2em; vertical-align:-0.25em; margin-right:0.4em; }
 .top nav, footer nav { display:flex; flex-wrap:wrap; gap:20px; align-items:center; }
 .top nav a { color:var(--slate); text-decoration:none; padding-block:6px; }
 .top nav a[aria-current="page"] { color:var(--ink); text-decoration:underline; text-decoration-color:var(--mark); text-decoration-thickness:3px; text-underline-offset:6px; }

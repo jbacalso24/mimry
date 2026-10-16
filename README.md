@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/banner.png" alt="MIMRY - The local context engine for AI coding agents" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/jbacalso24/mimry/main/assets/logo.svg" alt="MIMRY" width="240">
+  </picture>
 </p>
-
-<h1 align="center">MIMRY</h1>
 
 <!-- mcp-name: io.github.jbacalso24/mimry -->
 
