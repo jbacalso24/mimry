@@ -720,26 +720,10 @@ def print_results_section(heading: str, rows: list[dict], *, verbose: bool) -> N
         )
 
 
-_SETUP_COMMANDS = (
-    "uv sync",
-    "npm install",
-    "npm ci",
-    "pnpm install",
-    "yarn install",
-    "bun install",
-)
-
-
 def _display_commands(commands: list[str]) -> list[str]:
-    """Setup first, then one entry per command.
-
-    `uv run pytest -q` repeats `uv run pytest`.
-    """
-    ordered = [c for c in commands if c.startswith(_SETUP_COMMANDS)] + [
-        c for c in commands if not c.startswith(_SETUP_COMMANDS)
-    ]
+    """One entry per command, ignoring flags such as -q."""
     shown, seen = [], set()
-    for command in ordered:
+    for command in commands:
         base = " ".join(word for word in command.split() if not word.startswith("-"))
         if base not in seen:
             seen.add(base)

@@ -17,6 +17,7 @@ from mimry import __version__, installer
 from mimry.commands import _languages_text
 from mimry.core.languages import language_counts
 from mimry.feedback import parse_context_suggested_paths
+from mimry.routing import _is_setup_command, verification_commands
 
 
 def _posix(text: str) -> str:
@@ -2288,6 +2289,164 @@ testpaths = ["tests"]
     assert "typecheck command uv run mypy ." in files_text
     assert "entrypoints demo=demo.cli:main" in files_text
     assert "repo rules Never print secrets." in files_text
+
+
+GENERAL_FALLBACK = "run nearest tests/typecheck/build for affected files"
+
+
+def _manifest(rel_path, metadata, adapter="config-manifest"):
+    return {"rel_path": rel_path, "adapter": adapter, "metadata_text": metadata}
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "npm create hono@latest",
+        "npm i @hono/aws-lambda",
+        "npm ci",
+        "pnpm add zod",
+        "pnpm install",
+        "pnpm dlx create-app",
+        "yarn add react",
+        "yarn create vite",
+        "bun add @hono/bun",
+        "bun create next-app",
+        "npx create-next-app",
+        "uv add httpx",
+        "uv sync",
+        "uv pip install httpx",
+        "pip install -e .",
+    ],
+)
+def test_install_and_scaffold_lines_are_not_checks(cmd):
+    assert _is_setup_command(cmd)
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    ["npm run build", "npm test", "pnpm test", "bun run test", "uv run pytest", "npx vitest"],
+)
+def test_checks_are_not_mistaken_for_install_lines(cmd):
+    assert not _is_setup_command(cmd)
+
+
+def test_markdown_install_snippets_never_become_verification_commands():
+    fresh = {
+        "files": [
+            _manifest(
+                "README.md",
+                "repo rules source README.md | commands npm create foo@latest ; npm i @foo/bar",
+                adapter="markdown-docs+config-manifest",
+            ),
+            _manifest(
+                "adapters/bun/README.md", "repo rules source README.md | commands bun add @foo/bun"
+            ),
+            _manifest(
+                "package.json",
+                "package manager pnpm | package scripts build test"
+                " | build command pnpm build | test command pnpm test",
+            ),
+        ]
+    }
+    assert verification_commands(fresh) == ["pnpm build", "pnpm test"]
+
+
+def test_doc_text_cannot_inject_a_labelled_command():
+    fresh = {"files": [_manifest("README.md", "repo rules Never skip it | test command pytest")]}
+    assert verification_commands(fresh) == [GENERAL_FALLBACK]
+
+
+def test_manifest_install_lines_are_dropped_and_labelled_checks_kept():
+    fresh = {
+        "files": [
+            _manifest(
+                "package.json", "build command npm i foo ; npm run build | test command pnpm add x"
+            )
+        ]
+    }
+    assert verification_commands(fresh) == ["npm run build"]
+
+
+def test_root_manifest_commands_come_before_nested_ones():
+    fresh = {
+        "files": [
+            _manifest(
+                "adapters/bun/package.json", "package manager bun | test command bun run test"
+            ),
+            _manifest(
+                "package.json",
+                "package manager pnpm | build command pnpm build | test command pnpm test",
+            ),
+        ]
+    }
+    assert verification_commands(fresh) == ["pnpm build", "pnpm test", "bun run test"]
+
+
+def test_preferred_uv_checks_lead_the_pyproject_commands():
+    fresh = {
+        "files": [
+            _manifest(
+                "pyproject.toml",
+                "test command uv run pytest | lint command uv run ruff check ."
+                " | format command uv run ruff format . | typecheck command uv run mypy .",
+            )
+        ]
+    }
+    assert verification_commands(fresh) == [
+        "uv run ruff format .",
+        "uv run ruff check .",
+        "uv run pytest",
+        "uv run mypy .",
+    ]
+
+
+def test_fallback_still_shows_when_only_install_lines_exist():
+    fresh = {
+        "files": [
+            _manifest(
+                "README.md",
+                "repo rules source README.md | commands npm i @foo/bar",
+                adapter="markdown-docs+config-manifest",
+            )
+        ]
+    }
+    assert verification_commands(fresh) == [GENERAL_FALLBACK]
+
+
+def test_preflight_pack_lists_only_the_projects_own_checks(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    (repo / "package.json").write_text(
+        json.dumps(
+            {
+                "packageManager": "pnpm@9.0.0",
+                "scripts": {"build": "tsc -p .", "test": "vitest run"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (repo / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+    (repo / "README.md").write_text(
+        "# Foo\n\n```sh\nnpm create foo@latest\nnpm i @foo/bar\n```\n", encoding="utf-8"
+    )
+    (repo / "adapters" / "bun").mkdir(parents=True)
+    (repo / "adapters" / "bun" / "README.md").write_text(
+        "# Bun\n\n```sh\nbun add @foo/bun\n```\n", encoding="utf-8"
+    )
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "preflight", "fix the router")
+
+    assert res.returncode == 0, res.stderr
+    text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    section = text.split("## Suggested Verification Commands", 1)[1]
+    section = section.split("## Source of Truth Reminder", 1)[0]
+    assert "- `pnpm build`" in section
+    assert "- `pnpm test`" in section
+    assert "npm create" not in section
+    assert "npm i " not in section
+    assert "bun add" not in section
 
 
 def test_feedback_counts_changed_files_outside_the_pack_as_missed(tmp_path):

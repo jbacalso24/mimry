@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
+from .config_manifest_adapter import DOC_NAMES
 from .freshness import index_freshness
 from .paths import output_dir
 from .search import find_rows
@@ -313,40 +314,49 @@ def project_test_command(fresh: dict[str, Any]) -> str | None:
     return None
 
 
+_SETUP_SUBCOMMANDS = {
+    "npm": {"i", "install", "ci", "add", "create", "init"},
+    "pnpm": {"i", "install", "add", "create", "dlx"},
+    "yarn": {"install", "add", "create", "dlx"},
+    "bun": {"i", "install", "add", "create"},
+    "uv": {"add", "sync", "pip"},
+    "pip": {"install"},
+    "pip3": {"install"},
+}
+
+
+def _is_setup_command(cmd: str) -> bool:
+    """Install or scaffold line, e.g. `npm i x`."""
+    words = cmd.split()
+    if len(words) < 2:
+        return False
+    head, sub = words[0], words[1]
+    return sub in _SETUP_SUBCOMMANDS.get(head, ()) or (head == "npx" and sub.startswith("create-"))
+
+
+def _is_check_manifest(f: dict[str, Any]) -> bool:
+    """Manifests hold the project's checks; docs never do."""
+    if "config-manifest" not in f.get("adapter", ""):
+        return False
+    return PurePosixPath(f.get("rel_path", "")).name not in DOC_NAMES
+
+
 def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[str]:
     commands: list[str] = []
     command_re = re.compile(
         r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) command (?P<cmd>[^|]+)"
     )
-    doc_commands_re = re.compile(r"(?:^|\| )commands (?P<cmds>[^|]+)")
-    for f in fresh.get("files", []):
-        if "config-manifest" not in f.get("adapter", ""):
-            continue
-        metadata = f.get("metadata_text", "")
-        for match in command_re.finditer(metadata):
+    # Root manifests first, so the root wins over nested packages.
+    manifests = sorted(
+        (f for f in fresh.get("files", []) if _is_check_manifest(f)),
+        key=lambda f: f.get("rel_path", "").count("/"),
+    )
+    for f in manifests:
+        for match in command_re.finditer(f.get("metadata_text", "")):
             for cmd in match.group("cmd").split(";"):
                 cmd = cmd.strip()
-                if cmd and cmd not in commands:
+                if cmd and cmd not in commands and not _is_setup_command(cmd):
                     commands.append(cmd)
-        for match in doc_commands_re.finditer(metadata):
-            for cmd in match.group("cmds").split(";"):
-                cmd = cmd.strip()
-                if cmd and any(
-                    cmd.startswith(prefix)
-                    for prefix in (
-                        "uv ",
-                        "npm ",
-                        "pnpm ",
-                        "yarn ",
-                        "bun ",
-                        "pytest",
-                        "ruff",
-                        "make ",
-                        "just ",
-                    )
-                ):
-                    if cmd not in commands:
-                        commands.append(cmd)
     preferred = [
         cmd
         for cmd in ("uv run ruff format .", "uv run ruff check .", "uv run pytest")
@@ -366,8 +376,6 @@ def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[
     }
     if not selected:
         return [fallbacks.get(role, fallbacks["general"])]
-    if role == "tooly" and "uv run pytest -q" not in selected:
-        selected.append("uv run pytest -q")
     return selected[:8]
 
 
