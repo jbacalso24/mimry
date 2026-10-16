@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import subprocess
@@ -1093,17 +1094,33 @@ def calls_payload(
     span_ends = _symbol_ends(_symbols_by_path(fresh)) if line is not None else None
     payload = call_lookup(load_graph(root), name, relation, depth, wanted, line, span_ends)
     if payload["target"] is None and not payload["ambiguous"]:
-        payload["error"] = _missing_target_error(name, file, payload, line)
+        payload["error"] = _unindexed_file_error(file, root, fresh) or _missing_target_error(
+            name, file, payload, line
+        )
     return payload
+
+
+def _unindexed_file_error(file: str | None, root: Path, fresh: dict) -> dict | None:
+    """The miss for a --file path no indexed file matches, or None.
+
+    A match is the whole path or a path ending in it, as the graph
+    filter reads it. Suggestions are the closest indexed paths.
+    """
+    if not file:
+        return None
+    wanted = normalize_file_filter(file, root)
+    paths = sorted(f["rel_path"] for f in fresh["files"])
+    if any(path == wanted or path.endswith("/" + wanted) for path in paths):
+        return None
+    suggestions = difflib.get_close_matches(wanted, paths, n=3, cutoff=0.6)
+    message = f"{file} is not in the index."
+    return {"code": "unknown_file", "message": message, "suggestions": suggestions}
 
 
 def _missing_target_error(name: str, file: str | None, payload: dict, line: int | None) -> dict:
     if payload.get("line_missed"):
         message = line_missed_message(name, file, line)
         return {"code": "unknown_line", "message": message}
-    if file and payload.get("file_matched") is False:
-        message = f"No file in the graph matches {ui.quote(file)}."
-        return {"code": "unknown_file", "message": message}
     where = f"in {file}" if file else "in the graph"
     message = f"No function or method named {ui.quote(name)} is {where}."
     return {"code": "unknown_symbol", "message": message}
@@ -1429,9 +1446,12 @@ def impact_payload(
                 return _impact_error(
                     payload, "unknown_symbol", size_message, candidates=candidates
                 )
-            if file and lookup.get("file_matched") is False:
-                message, code = f'No file in the graph matches "{file}".', "unknown_file"
-            elif file:
+            miss = _unindexed_file_error(file, root, fresh)
+            if miss:
+                return _impact_error(
+                    payload, miss["code"], miss["message"], suggestions=miss["suggestions"]
+                )
+            if file:
                 message = f'No function or method named "{target}" is in {file}.'
                 code = "unknown_symbol"
             else:
@@ -1509,12 +1529,16 @@ def _print_impact(payload: dict) -> None:
     if error:
         print(error["message"])
         candidates = error.get("candidates") or []
+        suggestions = error.get("suggestions") or []
         if candidates and error["code"] == "unknown_line":
             ui.detail("Candidates:")
             ui.table([(_at(c["path"], c["line"]), c["kind"]) for c in candidates], indent=4)
         elif candidates:
             ui.detail("Did you mean:")
             ui.table([(c["name"], _at(c["path"], c["line"])) for c in candidates], indent=4)
+        elif suggestions:
+            ui.detail("Did you mean:")
+            ui.table([(path,) for path in suggestions], indent=4)
         return
     ui.title(payload["summary"])
     if payload["targets"]:
@@ -1719,6 +1743,9 @@ def _print_why(answer: dict, verbose: bool) -> None:
         if verbose:
             details += [("Score", str(exact["score"])), ("Raw", exact["reason"])]
         ui.table(details)
+    if status:
+        # A miss stops here: no evidence or verify block.
+        return status
     if graph["status"] != "current":
         ui.warn(f"The graph files are {graph['status']}. Run `mimry refresh` for graph evidence.")
     elif answer["evidence"]["node_count"]:

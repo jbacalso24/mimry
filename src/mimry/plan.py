@@ -474,10 +474,31 @@ class PlanStore:
             )
         return payload
 
+    def _resolve_unlocked(self, plan_ref: str) -> str:
+        """The plan ID for a plan ID or a plan name from `plan list`.
+
+        An exact ID is used as it is. A name must match one plan; zero
+        matches keeps the ID error, and two or more name every ID.
+        """
+        if _PLAN_ID.fullmatch(plan_ref):
+            return plan_ref
+        named = [item["planId"] for item in self._inventory_unlocked() if item["name"] == plan_ref]
+        if len(named) == 1:
+            return named[0]
+        if not named:
+            raise PlanError(
+                "plan ID must match plan- followed by 24 lowercase hex characters"
+                " (or a plan name from `mimry plan list`)"
+            )
+        raise PlanError(
+            f"plan name {plan_ref} matches {len(named)} plans: {', '.join(named)};"
+            " use one of those plan IDs"
+        )
+
     def load(self, plan_id: str) -> dict[str, Any]:
         self._require_initialized()
         with shared_file_lock(self.lock_path):
-            return self._load_unlocked(plan_id)
+            return self._load_unlocked(self._resolve_unlocked(plan_id))
 
     def create(self, root_text: str, name: str | None = None) -> dict[str, Any]:
         self._require_initialized()
@@ -498,6 +519,7 @@ class PlanStore:
     ) -> tuple[dict[str, Any], list[str]]:
         self._require_initialized()
         with exclusive_file_lock(self.lock_path):
+            plan_id = self._resolve_unlocked(plan_id)
             plan = self._load_unlocked(plan_id)
             child_ids = split_leaf(plan, node_id, children)
             atomic_write_json(self.path(plan_id), canonical_plan(plan))
@@ -506,17 +528,20 @@ class PlanStore:
     def list(self) -> list[dict[str, str]]:
         self._require_initialized()
         with shared_file_lock(self.lock_path):
-            if not self.directory.exists():
-                return []
-            inventory = []
-            for path in sorted(self.directory.glob("plan-*.json"), key=lambda item: item.name):
-                plan_id = path.stem
-                plan = self._load_unlocked(plan_id)
-                inventory.append(
-                    {
-                        "planId": plan_id,
-                        "name": plan["name"],
-                        "rootText": _display_text(plan["nodes"][plan["root"]]["text"]),
-                    }
-                )
-            return inventory
+            return self._inventory_unlocked()
+
+    def _inventory_unlocked(self) -> list[dict[str, str]]:
+        if not self.directory.exists():
+            return []
+        inventory = []
+        for path in sorted(self.directory.glob("plan-*.json"), key=lambda item: item.name):
+            plan_id = path.stem
+            plan = self._load_unlocked(plan_id)
+            inventory.append(
+                {
+                    "planId": plan_id,
+                    "name": plan["name"],
+                    "rootText": _display_text(plan["nodes"][plan["root"]]["text"]),
+                }
+            )
+        return inventory

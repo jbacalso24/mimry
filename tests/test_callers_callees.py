@@ -372,7 +372,24 @@ def test_a_name_missing_from_the_graph_exits_1_for_every_lookup(tmp_path):
         res = _mimry(repo, cache, *args)
 
         assert res.returncode == 1, (args, res.stdout, res.stderr)
-        assert "No " in res.stdout
+        assert "No " in res.stdout or "is not in the index" in res.stdout
+
+
+def test_unindexed_file_suggests_close_indexed_paths(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+
+    text = _mimry(repo, cache, "callers", "helper", "--file", "app/oen.py")
+    payload = json.loads(
+        _mimry(repo, cache, "callers", "helper", "--file", "app/oen.py", "--json").stdout
+    )
+
+    assert text.returncode == 1, text.stderr
+    assert "app/oen.py is not in the index." in text.stdout
+    assert "Did you mean:" in text.stdout and "app/one.py" in text.stdout
+    assert "helper2" not in text.stdout
+    assert payload["error"]["code"] == "unknown_file"
+    assert "app/one.py" in payload["error"]["suggestions"]
 
 
 def test_ambiguous_name_lists_candidates_until_file_picks_one(tmp_path):
@@ -427,7 +444,7 @@ def test_file_filter_that_matches_no_file_says_so(tmp_path):
     assert payload["target"] is None
     assert payload["ambiguous"] is False
     assert payload["file_matched"] is False
-    assert 'No file in the graph matches "nope.py".' in text.stdout
+    assert "nope.py is not in the index." in text.stdout
 
 
 def test_json_has_the_documented_shape(tmp_path):

@@ -336,3 +336,15 @@ def test_git_ignore_flag_leaves_a_file_without_the_block_alone(ignore_file, caps
 
     assert ignore_file.read_text(encoding="utf-8") == "node_modules/\n"
     assert "Removed MIMRY from the global git ignore" not in capsys.readouterr().out
+
+
+def test_repair_hint_after_a_no_mcp_install_keeps_no_mcp(user, capsys):
+    installer.install_skill("claude-code", project=False, root=user, mcp=False)
+    (_global_skill(user) / "references" / "mcp.md").unlink()
+    capsys.readouterr()
+
+    _, code = _status(user, project=False)
+    out = capsys.readouterr().out
+
+    assert code == 2
+    assert "Run `mimry install --platform claude-code --no-mcp` to repair it." in out

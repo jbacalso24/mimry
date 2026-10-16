@@ -3327,3 +3327,18 @@ def test_why_separates_outside_missing_and_skipped_paths(tmp_path):
     assert "is not in the index" in skipped.stdout + skipped.stderr
     assert "canaryQ7x" not in skipped.stdout + skipped.stderr
     assert "not in the top" in unranked.stdout + unranked.stderr
+
+
+def test_why_miss_prints_only_the_miss_line(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "why", "zz_nothing_here", "--query", "x")
+
+    out = res.stdout + res.stderr
+    assert res.returncode == 1
+    assert "zz_nothing_here is not in the index" in out
+    assert "Verify with" not in out
+    assert "Start with" not in out

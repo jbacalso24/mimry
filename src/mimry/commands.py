@@ -931,6 +931,10 @@ def _print_calls(a, relation: str) -> int:
                 [(_location(c["path"], c["line"]), c["kind"]) for c in payload["candidates"]],
                 indent=4,
             )
+        elif payload["error"]["code"] == "unknown_file":
+            if payload["error"]["suggestions"]:
+                ui.detail("Did you mean:")
+                ui.table([(path,) for path in payload["error"]["suggestions"]], indent=4)
         elif payload["candidates"]:
             ui.detail("Did you mean:")
             ui.table(

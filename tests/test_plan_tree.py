@@ -558,3 +558,19 @@ def test_plan_help_exposes_only_the_narrow_command_surface():
         "note",
     ):
         assert omitted not in out
+
+
+def test_a_plan_name_from_plan_list_resolves_to_its_id(tmp_path: Path):
+    root = initialized_repo(tmp_path)
+    plan_id, root_id = new_plan(root, name="ship-feature")
+    code, tree, err = run(root, "plan", "tree", "ship-feature")
+    assert code == 0, err
+    assert run(root, "plan", "tree", plan_id)[1] == tree
+    code, _, err = run(root, "plan", "tree", "no-such-plan")
+    assert code == 2
+    assert "plan ID must match" in err and "mimry plan list" in err
+    other_id, _ = new_plan(root, "Other text", name="ship-feature")
+    code, _, err = run(root, "plan", "tree", "ship-feature")
+    assert code == 2
+    assert plan_id in err and other_id in err
+    assert run(root, "plan", "split", plan_id, root_id, "--child", "A")[0] == 0

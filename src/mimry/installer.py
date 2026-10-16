@@ -1494,6 +1494,8 @@ def install_status_with_code(
         flags = " --project" if project else ""
         flags += " --always-on" if always_on_stale else ""
         flags += " --hooks" if hooks_partial else ""
+        # Keep the install's --no-mcp choice, or repair registers MCP.
+        flags += " --no-mcp" if no_mcp else ""
         verb = "install" if not result["skill"] else "repair"
         ui.detail(f"Run `mimry install --platform {key}{flags}` to {verb} it.")
     return result, code
