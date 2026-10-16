@@ -83,6 +83,8 @@ Three opt-in ways refresh the index for you; none runs by default.
 - `mimry watch [--interval SECONDS]` polls in the foreground (every 2 seconds by default) and refreshes once a burst of edits settles.
 - `mimry git-hooks install` adds post-commit, post-merge, post-checkout, and post-rewrite hooks that refresh in the background, so `git commit` returns immediately.
   The post-commit hook first records feedback from the commit, then refreshes.
+  A commit that touches none of the files the last pack suggested counts against that pack only when its message or a changed file's name shares a word with the pack's task.
+  Otherwise nothing is recorded, so an unrelated typo fix does not log misses.
   Running it again is safe, `mimry git-hooks status` shows what is installed, and `mimry git-hooks uninstall` removes only MIMRY's lines.
 
 If a hook manager such as husky owns your hooks, add `mimry refresh` to its post-commit hook instead.

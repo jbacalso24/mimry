@@ -283,7 +283,7 @@ def test_commit_touching_only_unsuggested_files_records_every_file_as_missed(
     (repo / "unrelated_a.txt").write_text("a\n")
     (repo / "unrelated_b.txt").write_text("b\n")
     _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "unrelated")
+    _git(repo, "commit", "-q", "-m", "fix auth session bug")
 
     res = run_cli(repo, cache, "feedback", "--from-commit")
 
@@ -293,6 +293,86 @@ def test_commit_touching_only_unsuggested_files_records_every_file_as_missed(
     assert row["suggested_paths"] == suggested
     assert sorted(row["changed_paths"]) == ["unrelated_a.txt", "unrelated_b.txt"]
     assert sorted(row["missed_paths"]) == ["unrelated_a.txt", "unrelated_b.txt"]
+
+
+SHARE_QUERY = "remove share_extension.py leftovers"
+
+
+def _share_pack_repo(tmp_path, monkeypatch):
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    repo = _repo(tmp_path, cache)
+    assert run_cli(repo, cache, "preflight", SHARE_QUERY).returncode == 0
+    return repo, cache
+
+
+@requires_git
+def test_unrelated_commit_records_nothing_for_the_pack(tmp_path, monkeypatch):
+    repo, cache = _share_pack_repo(tmp_path, monkeypatch)
+    assert not {"README.md", ".gitignore"} & set(parse_context_suggested_paths(_only_pack(repo)))
+
+    (repo / "README.md").write_text("# Typo fixed\n")
+    (repo / ".gitignore").write_text("*.pyc\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "Fix typo in README")
+
+    res = run_cli(repo, cache, "feedback", "--from-commit")
+
+    assert res.returncode == 0, res.stderr
+    assert "commit shares no file or task word with the last context pack" in res.stdout
+    assert _rows(repo) == []
+
+
+@requires_git
+def test_related_commit_records_unsuggested_readme_as_missed(tmp_path, monkeypatch):
+    repo, cache = _share_pack_repo(tmp_path, monkeypatch)
+    assert "README.md" not in parse_context_suggested_paths(_only_pack(repo))
+
+    (repo / "README.md").write_text("# Share extension removed\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "Remove share extension leftovers")
+
+    res = run_cli(repo, cache, "feedback", "--from-commit")
+
+    assert res.returncode == 0, res.stderr
+    [row] = _rows(repo)
+    assert row["query"] == SHARE_QUERY
+    assert row["changed_paths"] == ["README.md"]
+    assert row["missed_paths"] == ["README.md"]
+
+
+@requires_git
+def test_commit_with_a_file_named_after_the_task_is_related(tmp_path, monkeypatch):
+    repo, cache = _share_pack_repo(tmp_path, monkeypatch)
+    assert "share_extension.py" not in parse_context_suggested_paths(_only_pack(repo))
+
+    (repo / "share_extension.py").write_text("# gone\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "Tidy")
+
+    res = run_cli(repo, cache, "feedback", "--from-commit")
+
+    assert res.returncode == 0, res.stderr
+    [row] = _rows(repo)
+    assert row["missed_paths"] == ["share_extension.py"]
+
+
+@requires_git
+def test_commit_touching_a_suggested_file_records_whatever_its_message(tmp_path, monkeypatch):
+    repo, cache = _share_pack_repo(tmp_path, monkeypatch)
+    picked = parse_context_suggested_paths(_only_pack(repo))[0]
+
+    (repo / picked).write_text((repo / picked).read_text() + "\n# touched\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "Fix typo")
+
+    res = run_cli(repo, cache, "feedback", "--from-commit")
+
+    assert res.returncode == 0, res.stderr
+    assert "Saved feedback for" in res.stdout
+    [row] = _rows(repo)
+    assert picked in row["changed_paths"]
+    assert row["missed_paths"] == []
 
 
 @requires_git

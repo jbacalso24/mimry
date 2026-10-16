@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .feedback import (
@@ -20,6 +20,7 @@ from .feedback import (
     parse_context_suggested_paths,
     record_feedback,
 )
+from .intent import ACTION_TERMS, query_terms
 from .paths import TASK_PACK_PATTERN, output_dir
 from .scanner import _git_output
 
@@ -49,6 +50,38 @@ def _committer_time(root: Path, rev: str) -> int | None:
         return int(out.decode("ascii").strip())
     except ValueError:
         return None
+
+
+def _task_terms(text: str) -> set[str]:
+    """The words that name a task, without the action verbs."""
+    return {term for term in query_terms(text) if term not in ACTION_TERMS}
+
+
+def _commit_task_terms(root: Path, sha: str) -> set[str]:
+    """Task words in the commit's subject and body."""
+    out = _git_output(root, "log", "-1", "--format=%B", sha, "--")
+    if out is None:
+        return set()
+    return _task_terms(out.decode("utf-8", errors="replace"))
+
+
+def _about_same_task(query: str, changed: list[str], message_terms: set[str]) -> bool:
+    """True when the commit is about the pack's task.
+
+    The commit message shares a task word with the query, or a changed
+    file's stem (share_extension for share_extension.py) is made only of
+    query words.
+    """
+    task = _task_terms(query)
+    if not task:
+        return False
+    if message_terms & task:
+        return True
+    for name in changed:
+        stem = _task_terms(PurePosixPath(name).stem)
+        if stem and stem <= task:
+            return True
+    return False
 
 
 def _already_recorded(idx: Path, root_id: str, payload: dict[str, Any], mtime: float) -> bool:
@@ -114,15 +147,21 @@ def record_commit_feedback(
         return None, "no context pack since the previous commit"
 
     changed_set = set(changed)
+    message_terms = _commit_task_terms(root, sha)
     scored = []
     for pack, mtime in candidates:
         suggested = normalize_paths(root, parse_context_suggested_paths(pack))
-        scored.append((len(changed_set.intersection(suggested)), mtime, pack, suggested))
-    # A pack that shares no file with the commit still counts: every
-    # changed file is then a miss, which is worth learning from.
-    _, mtime, pack, suggested = max(scored, key=lambda item: (item[0], item[1]))
+        query = _pack_query(pack)
+        overlap = len(changed_set.intersection(suggested))
+        # A pack with no shared file counts only when the commit is
+        # about its task, so an unrelated typo fix records no misses.
+        if overlap == 0 and not _about_same_task(query, changed, message_terms):
+            continue
+        scored.append((overlap, mtime, pack, suggested, query))
+    if not scored:
+        return None, "commit shares no file or task word with the last context pack"
+    _, mtime, pack, suggested, query = max(scored, key=lambda item: (item[0], item[1]))
 
-    query = _pack_query(pack)
     if not query:
         return None, "the context pack has no task query"
 
