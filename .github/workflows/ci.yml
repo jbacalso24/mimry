@@ -12,8 +12,8 @@ jobs:
   release-floor:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    # Windows runs take about 27 minutes; 30 cancelled healthy runs
-    # (#227, #344).
+    # Windows runs take about 17 minutes with parallel tests; 30
+    # cancelled healthy runs before them (#227, #344).
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -82,14 +82,14 @@ jobs:
           venv_python=".artifact-venv/bin/python"
           [ -x ".artifact-venv/Scripts/python.exe" ] && venv_python=".artifact-venv/Scripts/python.exe"
           UV_CACHE_DIR="$PWD/.artifact-uv-cache" uv --no-cache pip install \
-            --python "$venv_python" "$artifact_root" pytest
+            --python "$venv_python" "$artifact_root" pytest pytest-xdist
           "$venv_python" -c "from importlib.metadata import version; print('unlocked tree-sitter', version('tree-sitter')); print('unlocked language-pack', version('tree-sitter-language-pack'))"
           # Run from outside the checkout so the installed artifact is exercised
           # rather than the working tree. TMPDIR is portable; /tmp is not.
           scratch="$(mktemp -d)"
           (
             cd "$scratch"
-            "$GITHUB_WORKSPACE/$venv_python" -m pytest -q \
+            "$GITHUB_WORKSPACE/$venv_python" -m pytest -q -n auto \
               "$GITHUB_WORKSPACE/$artifact_root/tests/test_mimry_cli.py" \
               "$GITHUB_WORKSPACE/$artifact_root/tests/test_languages_selfchecks.py" \
               "$GITHUB_WORKSPACE/$artifact_root/tests/test_adapters.py" \
