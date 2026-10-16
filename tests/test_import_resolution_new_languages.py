@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from mimry.commands import cmd_init
 from mimry.core.languages import extract
 from mimry.core.resolve import resolve_imports
@@ -483,6 +485,140 @@ class TestPythonAbsoluteImports:
     def test_stdlib_name_is_no_edge(self):
         imports = {"tests/test_main.py": ["os.path"]}
         rel_paths = {"tests/test_main.py", "src/pkg/__init__.py", "src/pkg/util.py"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_stdlib_name_inside_package_is_no_edge(self):
+        """Issue 273: a bare name in a package is not a sibling."""
+        imports = {"pkg/utils.py": ["types"]}
+        rel_paths = {"pkg/__init__.py", "pkg/types.py", "pkg/utils.py"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_package_sibling_is_not_an_absolute_bare_import(self):
+        imports = {"pkg/utils.py": ["helpers"]}
+        rel_paths = {"pkg/__init__.py", "pkg/helpers.py", "pkg/utils.py"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_script_folder_bare_name_resolves_beside_importer(self):
+        """A script folder (no __init__.py) resolves its sibling."""
+        imports = {"scripts/run.py": ["helpers"]}
+        rel_paths = {"scripts/run.py", "scripts/helpers.py"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("scripts/helpers.py", "INFERRED")
+        ]
+
+    def test_repo_top_level_package_with_stdlib_name_still_resolves(self):
+        """A repo's own types/ package at the root still resolves."""
+        imports = {"pkg/utils.py": ["types"]}
+        rel_paths = {"pkg/__init__.py", "pkg/utils.py", "types/__init__.py"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("types/__init__.py", "EXTRACTED")
+        ]
+
+    def test_src_layout_package_with_stdlib_name_still_resolves(self):
+        imports = {"src/pkg/utils.py": ["types"]}
+        rel_paths = {"src/pkg/__init__.py", "src/pkg/utils.py", "src/types/__init__.py"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/types/__init__.py"]
+
+    def test_python_relative_forms_are_unchanged(self):
+        """Relative forms keep their leading dots and still resolve."""
+        rel_paths = {
+            "pkg/__init__.py",
+            "pkg/types.py",
+            "pkg/utils.py",
+            "pkg/sub/__init__.py",
+            "pkg/sub/a.py",
+            "pkg/x.py",
+        }
+        imports = {
+            "pkg/types.py": [".utils", ".utils.helper"],
+            "pkg/sub/a.py": ["..x"],
+        }
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["importer"], r["target"], r["confidence"]) for r in results] == [
+            ("pkg/sub/a.py", "pkg/x.py", "EXTRACTED"),
+            ("pkg/types.py", "pkg/utils.py", "EXTRACTED"),
+        ]
+
+    def test_dotted_absolute_import_inside_package_is_unchanged(self):
+        imports = {"pkg/types.py": ["pkg.utils"]}
+        rel_paths = {"pkg/__init__.py", "pkg/types.py", "pkg/utils.py"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("pkg/utils.py", "EXTRACTED")]
+
+
+class TestTypeScriptDirectoryImports:
+    """Issue 275: `from '.'` and `from '..'` load the folder's index."""
+
+    @pytest.mark.parametrize("index", ["index.ts", "index.tsx", "index.js"])
+    def test_dot_resolves_to_index_beside_importer(self, index):
+        imports = {"src/mw/index.test.ts": ["."]}
+        rel_paths = {"src/mw/index.test.ts", f"src/mw/{index}"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            (f"src/mw/{index}", "EXTRACTED")
+        ]
+
+    @pytest.mark.parametrize("specifier", ["..", "../"])
+    def test_dotdot_resolves_to_parent_index(self, specifier):
+        imports = {"src/mw/sub/a.ts": [specifier]}
+        rel_paths = {"src/mw/sub/a.ts", "src/mw/index.ts"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/mw/index.ts", "EXTRACTED")
+        ]
+
+    def test_dot_slash_resolves_to_index(self):
+        imports = {"src/mw/index.test.ts": ["./"]}
+        rel_paths = {"src/mw/index.test.ts", "src/mw/index.ts"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["src/mw/index.ts"]
+
+    def test_dot_at_repository_root_resolves_to_root_index(self):
+        imports = {"index.test.ts": ["."]}
+        rel_paths = {"index.test.ts", "index.ts"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [r["target"] for r in results] == ["index.ts"]
+
+    def test_directory_without_index_is_no_edge(self):
+        imports = {"src/mw/a.ts": [".", "..", "./", "../"]}
+        rel_paths = {"src/mw/a.ts", "src/b.ts"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_trailing_slash_does_not_match_a_sibling_file(self):
+        """A trailing slash names a folder, not a sibling src/mw.ts."""
+        imports = {"src/mw/index.test.ts": ["./"]}
+        rel_paths = {"src/mw/index.test.ts", "src/mw.ts"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_dot_in_python_stays_no_edge(self):
+        imports = {"pkg/types.py": ["."]}
+        rel_paths = {"pkg/__init__.py", "pkg/types.py"}
 
         assert resolve_imports(imports, rel_paths) == []
 

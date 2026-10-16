@@ -9,6 +9,8 @@ SYMBOL_KIND_PRIORITY = {"class": 0, "interface": 1, "function": 2, "method": 3, 
 
 _JS_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
 _TS_ALIAS_LANGUAGES = frozenset(("typescript", "tsx", "javascript"))
+# Languages where `from '.'` and `from '..'` name a folder's index file.
+_DIRECTORY_IMPORT_LANGUAGES = frozenset(("typescript", "tsx", "javascript"))
 
 
 # Languages whose quoted and angle includes follow the C rules.
@@ -149,12 +151,18 @@ def _resolve_import(
 
     # Sanitize module string
     module = module.strip() if module else ""
-    if not module or module in (".", ".."):
+    if not module:
         return None
 
     # Shell, PowerShell, Lua, Perl and Zig imports follow their own
     # rules.
     language = language_for(importer, overrides)
+    if module in (".", ".."):
+        # Only JS/TS name a folder this way. Normalize to the trailing
+        # slash form that rule 1 resolves to the folder's index file.
+        if language not in _DIRECTORY_IMPORT_LANGUAGES:
+            return None
+        module += "/"
     if language in _SCRIPT_RESOLVERS:
         return _SCRIPT_RESOLVERS[language](importer, module, rel_paths, exact_lookup)
     if language == "dart":
@@ -207,7 +215,8 @@ def _resolve_import(
     # A bare Python module (`import pkg`) is absolute too. Rule 3 gets
     # the first look because a bare name is also the importer-relative
     # form.
-    if "/" not in module and "." not in module and importer.endswith(".py"):
+    bare_python = "/" not in module and "." not in module and importer.endswith(".py")
+    if bare_python:
         result = _rule2_dotted_absolute(module, rel_paths, package_roots)
         if result:
             return result
@@ -219,8 +228,19 @@ def _resolve_import(
         if result:
             return result
 
+    # Inside a package a bare name is absolute, so it resolves from the
+    # package roots above or not at all. The suffix match below would
+    # link `from types import X` in pkg/utils.py to a sibling types.py.
+    if bare_python and _in_python_package(importer, rel_paths):
+        return None
+
     # Rule 4: Suffix match
     return _rule4_suffix_match(module, rel_paths, suffix_lookup, importer, overrides)
+
+
+def _in_python_package(importer: str, rel_paths: set[str]) -> bool:
+    """True when the importer's folder is a Python package."""
+    return posixpath.join(posixpath.dirname(importer), "__init__.py") in rel_paths
 
 
 _SUFFIX_INDEX_LANGUAGES = frozenset(("lua", "perl", "powershell"))
@@ -473,10 +493,14 @@ def _rule1_relative(
     """
     importer_dir = posixpath.dirname(importer)
 
-    # Join and normalize
+    # Join and normalize. A root-level importer makes the folder ".",
+    # which is no path prefix at all.
     candidate = posixpath.normpath(posixpath.join(importer_dir, module))
+    if candidate == ".":
+        candidate = ""
 
-    suffixes = _relative_suffixes(importer, overrides)
+    # A trailing slash names a folder, so only its index file can match.
+    suffixes = () if module.endswith("/") else _relative_suffixes(importer, overrides)
 
     # Probe: exact path and with suffixes
     for suffix in suffixes:
@@ -584,15 +608,18 @@ def _rule2_dotted_absolute(
 def _rule3_relative_to_package(importer: str, module: str, rel_paths: set[str]) -> dict | None:
     """Rule 3: Relative to importer's package (Python).
 
-    Try same as rule 2 but rooted at importer's directory. This handles
-    the case where scanner recorded `from .payments import x` as just
-    `"payments"`. Only applies to bare module names (no / or .).
+    Only a script folder (no __init__.py) puts its own folder on the
+    import path, so inside a package a bare name is never importer-
+    relative: Python 3 absolute imports do not look at siblings.
+    Only applies to bare module names (no / or .).
     Confidence: INFERRED
     """
     # Only apply to bare module names (no / or .)
     if "/" in module or "." in module:
         return None
 
+    if _in_python_package(importer, rel_paths):
+        return None
     importer_dir = posixpath.dirname(importer)
 
     # Try as module in importer's directory
