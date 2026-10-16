@@ -654,13 +654,16 @@ def mimry_symbol(
     relations: str | None = None,
     depth: int = 1,
     file: str | None = None,
+    line: int | None = None,
 ) -> dict[str, Any]:
     """Search indexed symbols by name, falling back to file names.
 
     Set relations to "callers" (what calls the symbol) or "callees"
     (what it calls), with depth 1 to 3 for how many calls away to
-    follow. file picks one symbol when several share the name. Without
-    relations this only searches.
+    follow. file picks one symbol when several share the name, and
+    file may end in ":N" to pick by line; line picks the symbol that
+    starts on that line, or else spans it. Without relations this only
+    searches.
     """
     root_path = _root(root)
     name = sanitize_query(name)
@@ -685,8 +688,13 @@ def mimry_symbol(
             "returncode": 2,
             "error": {"code": "invalid_depth", "message": "depth must be 1, 2 or 3"},
         }
+    if line is not None and line < 1:
+        return {
+            "returncode": 2,
+            "error": {"code": "invalid_line", "message": "line must be 1 or more"},
+        }
     ptr = require(root_path)
-    payload = calls_payload(root_path, ptr, name, relations, depth, file)
+    payload = calls_payload(root_path, ptr, name, relations, depth, file, line)
     return sanitize_data({**payload, "root": str(root_path)})
 
 
@@ -756,17 +764,24 @@ def mimry_impact(
     changed: bool = False,
     depth: int = 3,
     root: str | None = None,
+    line: int | None = None,
 ) -> dict[str, Any]:
     """What a change touches: callers, importers and tests to run.
 
-    target is a symbol name (file picks one when several share it) or a
-    repo-relative file path. changed=True uses the working tree against
-    HEAD instead. depth is 1 to 5, how many calls back to follow.
+    target is a symbol name (file picks one when several share it, and
+    line picks by the line it starts on or spans) or a repo-relative
+    file path. changed=True uses the working tree against HEAD instead.
+    depth is 1 to 5, how many calls back to follow.
     """
     if not 1 <= depth <= IMPACT_MAX_DEPTH:
         return {
             "returncode": 2,
             "error": {"code": "invalid_depth", "message": "depth must be 1 to 5"},
+        }
+    if line is not None and line < 1:
+        return {
+            "returncode": 2,
+            "error": {"code": "invalid_line", "message": "line must be 1 or more"},
         }
     root_path = _root(root)
     ptr = require(root_path)
@@ -777,6 +792,7 @@ def mimry_impact(
         file=sanitize_query(file) if file else None,
         changed=changed,
         depth=depth,
+        line=line,
     )
     return sanitize_data(payload)
 

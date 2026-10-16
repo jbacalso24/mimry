@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import stat
 from collections import defaultdict, deque
 from datetime import UTC, datetime
@@ -586,15 +587,70 @@ def empty_call_payload(name: str, relation: str, depth: int) -> dict:
     }
 
 
-def call_lookup(
-    graph: dict, name: str, relation: str, depth: int, file: str | None = None
-) -> dict:
-    """The answer to ``mimry callers`` / ``mimry callees`` for one name.
+_FILE_LINE_RE = re.compile(r"^(?P<file>.+):(?P<line>\d+)$")
 
-    ``name`` must resolve to exactly one symbol, narrowed by ``file``.
-    When several share it, ``ambiguous`` is set and ``candidates`` lists
-    them. When none does, ``candidates`` holds symbols whose name
-    contains ``name`` case-insensitively.
+
+def split_file_line(file: str | None, line: int | None) -> tuple[str | None, int | None]:
+    """A ``--file`` value may end in ``:N``, a line like ``--line N``.
+
+    An explicit ``line`` wins over the one in ``file``.
+    """
+    match = _FILE_LINE_RE.match(file) if file else None
+    if match is None:
+        return file, line
+    return match["file"], int(match["line"]) if line is None else line
+
+
+def ambiguity_message(name: str, candidates: list[dict]) -> str:
+    """The hint that picks one candidate: a file, else a line."""
+    paths = [c["path"] for c in candidates]
+    if len(set(paths)) == len(paths):
+        hint = "add --file <path> to pick one"
+    elif len(set(paths)) == 1:
+        hint = "add --line N (or --file <path>:N) to pick one"
+    else:
+        hint = "add --file <path>, or --line N (or --file <path>:N) for one that shares its file"
+    return f'Several symbols are named "{name}"; {hint}.'
+
+
+def line_missed_message(name: str, file: str | None, line: int) -> str:
+    where = f" in {file}" if file else ""
+    return f'No symbol named "{name}" starts at or spans line {line}{where}.'
+
+
+def _starts_or_spans(node: dict, line: int, span_ends: dict[tuple[str, int], int]) -> bool:
+    """Whether ``line`` is where this symbol starts, or inside its span.
+
+    The graph keeps only start lines, so ``span_ends`` supplies the last
+    line of each symbol, keyed by (path, first line).
+    """
+    start = node.get("line")
+    if start is None:
+        return False
+    if start == line:
+        return True
+    end = span_ends.get((node_source_file(node) or "", start), start)
+    return start <= line <= end
+
+
+def call_lookup(
+    graph: dict,
+    name: str,
+    relation: str,
+    depth: int,
+    file: str | None = None,
+    line: int | None = None,
+    span_ends: dict[tuple[str, int], int] | None = None,
+) -> dict:
+    """The answer to ``mimry callers`` / ``mimry callees`` for a name.
+
+    ``name`` must resolve to exactly one symbol, narrowed by ``file``
+    and, when several share it, by ``line``: the symbol that starts on
+    that line, else the one whose span contains it. When several still
+    match, ``ambiguous`` is set and ``candidates`` lists them. When
+    ``line`` picks none, ``line_missed`` is set and ``candidates`` lists
+    the symbols with that name. When none has the name, ``candidates``
+    holds symbols whose name contains ``name``, ignoring case.
     """
     payload = empty_call_payload(name, relation, depth)
     wanted_file = file.replace("\\", "/") if file else None
@@ -614,6 +670,16 @@ def call_lookup(
         return (row["path"], row["line"] or 0, row["name"])
 
     targets = [n for n in symbols if _symbol_label(n) == name and in_file(n)]
+    if line is not None and targets:
+        at_line = [n for n in targets if _starts_or_spans(n, line, span_ends or {})]
+        starts = [n for n in at_line if n.get("line") == line]
+        # A symbol starting on the line beats one that only spans it.
+        at_line = starts or at_line
+        if not at_line:
+            payload["line_missed"] = True
+            payload["candidates"] = sorted((_symbol_row(n) for n in targets), key=by_location)
+            return payload
+        targets = at_line
     if len(targets) > 1:
         payload["ambiguous"] = True
         payload["candidates"] = sorted((_symbol_row(n) for n in targets), key=by_location)

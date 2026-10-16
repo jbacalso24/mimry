@@ -16,9 +16,9 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry context "<task>"` | Write a context pack without the preflight checks |
 | `mimry explain "<task>"` | Files, key symbols, and how they connect |
 | `mimry path <a> <b>` | Shortest relationship path between two files or symbols (`--json` for tools) |
-| `mimry callers <name>` | Functions that call a function, from the graph (`--depth` follows the chain up to 3 calls, `--file` picks one of several, `--json` for tools) |
+| `mimry callers <name>` | Functions that call a function, from the graph (`--depth` follows the chain up to 3 calls, `--file` picks one of several, `--line N` picks the symbol that starts on line N or spans it, `--file path:N` does the same, `--json` for tools) |
 | `mimry callees <name>` | Functions that a function calls, with the same options |
-| `mimry impact <name-or-path>` | What a change touches: callers by depth, the files that import it, and the tests to run (`--changed` checks the working tree against HEAD, `--depth` follows up to 5 calls, `--file` picks one of several, `--json` for tools) |
+| `mimry impact <name-or-path>` | What a change touches: callers by depth, the files that import it, and the tests to run (`--changed` checks the working tree against HEAD, `--depth` follows up to 5 calls, `--file` and `--line` pick one of several as for `callers`, `--json` for tools) |
 | `mimry history "<query>"` | Find the commits that added, removed or renamed files matching a query (`--limit N`, `--json` for tools) |
 | `mimry why <file> --query "<task>"` | Why a file ranks for a query |
 | `mimry route "<task>"` | Recommend an agent role (`--json` for tools) |
@@ -128,7 +128,9 @@ Scripts and hooks can tell an answer from a miss by the exit code.
 | Empty or whitespace-only task or query | 2 |
 | Invalid argument values, such as a bad depth or outcome | 2 |
 
-A name that several symbols share exits 0 and lists the candidates, so you can add `--file`.
+A name that several symbols share exits 0 and lists the candidates with their `path:line`.
+Add `--file <path>` when they are in different files, or `--line N` (or `--file <path>:N`) when some share one.
+A `--line` that starts no candidate and spans none exits 1 and lists the candidates.
 `path` between two indexed names with no connection also exits 0, because that is an answer.
 `status` keeps its own codes: 1 when MIMRY is not set up, 2 when the index is not current.
 `hook-check` and `hook-refresh` always exit 0, so a hook never fails the agent's tool call.

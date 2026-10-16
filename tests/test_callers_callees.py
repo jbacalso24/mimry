@@ -877,3 +877,166 @@ def test_extends_cycle_terminates_and_unparsable_config_is_none():
 
     assert set(table) == {"a", "b"}
     assert parse_tsconfig("{ nope") is None
+
+
+# Module function ReadInConfig starts on line 1, the method on line 10.
+# reload calls the method; use_function calls the module function.
+VIPER = """def ReadInConfig():
+    return load_defaults()
+
+
+def load_defaults():
+    return {}
+
+
+class Viper:
+    def ReadInConfig(self):
+        return load_defaults()
+
+    def reload(self):
+        return self.ReadInConfig()
+
+
+def use_function():
+    return ReadInConfig()
+"""
+
+
+def _viper_repo(tmp_path: Path, cache: Path) -> Path:
+    repo = _repo(tmp_path, cache)
+    (repo / "pkg").mkdir()
+    (repo / "pkg" / "config.py").write_text(VIPER, encoding="utf-8")
+    return repo
+
+
+def test_same_name_twice_in_one_file_asks_for_a_line(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _viper_repo(tmp_path, cache)
+
+    res = _mimry(repo, cache, "callers", "ReadInConfig")
+
+    assert res.returncode == 0, res.stderr
+    assert (
+        'Several symbols are named "ReadInConfig"; add --line N (or --file <path>:N) to pick one.'
+        in res.stdout
+    )
+    assert "--file <path> to pick" not in res.stdout
+    assert "pkg/config.py:1 " in res.stdout and "pkg/config.py:10 " in res.stdout
+
+
+def test_line_picks_the_definition_for_callers_callees_and_impact(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _viper_repo(tmp_path, cache)
+
+    module = _mimry(repo, cache, "callers", "ReadInConfig", "--line", "1")
+    method = _mimry(repo, cache, "callers", "ReadInConfig", "--line", "10")
+    assert module.returncode == 0, module.stderr
+    assert "1 caller of ReadInConfig (pkg/config.py:1)" in module.stdout
+    assert "use_function" in module.stdout and "reload" not in module.stdout
+    assert "1 caller of ReadInConfig (pkg/config.py:10)" in method.stdout
+    assert "reload" in method.stdout and "use_function" not in method.stdout
+
+    callees = _mimry(repo, cache, "callees", "ReadInConfig", "--line", "10")
+    assert callees.returncode == 0, callees.stderr
+    assert "callee of ReadInConfig (pkg/config.py:10)" in callees.stdout
+
+    impact = _mimry(repo, cache, "impact", "ReadInConfig", "--line", "10")
+    assert impact.returncode == 0, impact.stderr
+    assert "Targets (1)\n  ReadInConfig (pkg/config.py:10)" in impact.stdout
+    assert "reload (pkg/config.py:13)" in impact.stdout
+    assert "use_function" not in impact.stdout
+
+
+def test_a_line_inside_a_span_picks_the_symbol_it_belongs_to(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _viper_repo(tmp_path, cache)
+
+    # Line 11 is the method's return, not where the method starts.
+    res = _mimry(repo, cache, "callers", "ReadInConfig", "--line", "11", "--json")
+
+    assert res.returncode == 0, res.stderr
+    payload = json.loads(res.stdout)
+    assert payload["target"]["line"] == 10
+    assert [r["name"] for r in payload["results"]] == ["reload"]
+
+
+def test_file_with_a_trailing_line_works_like_line(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _viper_repo(tmp_path, cache)
+
+    by_flag = json.loads(
+        _mimry(repo, cache, "callers", "ReadInConfig", "--line", "10", "--json").stdout
+    )
+    by_suffix = json.loads(
+        _mimry(
+            repo, cache, "callers", "ReadInConfig", "--file", "./pkg/config.py:10", "--json"
+        ).stdout
+    )
+
+    assert by_suffix["target"] == by_flag["target"]
+    assert by_suffix["results"] == by_flag["results"]
+    assert by_suffix["target"]["line"] == 10
+
+
+def test_a_line_that_matches_neither_lists_the_candidates_and_exits_1(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _viper_repo(tmp_path, cache)
+
+    callers = _mimry(repo, cache, "callers", "ReadInConfig", "--line", "5")
+    impact = _mimry(repo, cache, "impact", "ReadInConfig", "--line", "99")
+
+    assert callers.returncode == 1, callers.stderr
+    assert 'No symbol named "ReadInConfig" starts at or spans line 5.' in callers.stdout
+    assert "Candidates:" in callers.stdout
+    assert "pkg/config.py:1 " in callers.stdout and "pkg/config.py:10 " in callers.stdout
+    assert impact.returncode == 1, impact.stderr
+    assert "pkg/config.py:10 " in impact.stdout
+
+
+def test_candidates_in_different_files_still_suggest_file(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+    _add_second_helper(repo)
+
+    res = _mimry(repo, cache, "callers", "helper")
+
+    assert 'Several symbols are named "helper"; add --file <path> to pick one.' in res.stdout
+    assert "--line" not in res.stdout
+
+
+def test_mcp_symbol_and_impact_accept_line(tmp_path, monkeypatch):
+    cache = tmp_path / "cache"
+    repo = _viper_repo(tmp_path, cache)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    callers = mcp_tools.mimry_symbol("ReadInConfig", str(repo), relations="callers", line=10)
+    by_suffix = mcp_tools.mimry_symbol(
+        "ReadInConfig", str(repo), relations="callers", file="pkg/config.py:10"
+    )
+    impact = mcp_tools.mimry_impact("ReadInConfig", root=str(repo), line=10)
+    bad = mcp_tools.mimry_symbol("ReadInConfig", str(repo), relations="callers", line=0)
+
+    assert callers["target"]["line"] == 10
+    assert [r["name"] for r in callers["results"]] == ["reload"]
+    assert by_suffix["target"] == callers["target"]
+    assert [t["line"] for t in impact["targets"]] == [10]
+    assert bad["returncode"] == 2 and bad["error"]["code"] == "invalid_line"
+    assert input_schema(mcp_tools.mimry_symbol)["properties"]["line"]["default"] is None
+    assert "line" in input_schema(mcp_tools.mimry_impact)["properties"]
+
+
+def test_split_file_line_and_ambiguity_hints():
+    from mimry.core.artifacts import ambiguity_message, split_file_line
+
+    assert split_file_line("app/one.py:12", None) == ("app/one.py", 12)
+    assert split_file_line("app/one.py:12", 3) == ("app/one.py", 3)
+    assert split_file_line("app/one.py", None) == ("app/one.py", None)
+    assert split_file_line("C:/repo/one.py", None) == ("C:/repo/one.py", None)
+    assert split_file_line(None, 4) == (None, 4)
+
+    one = [{"path": "a.py", "line": 1}, {"path": "b.py", "line": 2}]
+    same = [{"path": "a.py", "line": 1}, {"path": "a.py", "line": 2}]
+    mixed = [*one, {"path": "a.py", "line": 9}]
+    assert ambiguity_message("f", one).endswith("add --file <path> to pick one.")
+    assert ambiguity_message("f", same).endswith("add --line N (or --file <path>:N) to pick one.")
+    assert "--line N" in ambiguity_message("f", mixed)

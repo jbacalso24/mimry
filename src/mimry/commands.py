@@ -21,6 +21,7 @@ from .cache_safety import (
 )
 from .commit_feedback import record_commit_feedback
 from .core.artifacts import (
+    ambiguity_message,
     load_graph,
     report_path,
 )
@@ -904,7 +905,7 @@ def _print_calls(a, relation: str) -> int:
     ptr = require(root)
     name = sanitize_query(a.name)
     file = sanitize_query(a.file) if a.file else None
-    payload = calls_payload(root, ptr, name, relation, a.depth, file)
+    payload = calls_payload(root, ptr, name, relation, a.depth, file, getattr(a, "line", None))
     if getattr(a, "json", False):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 1 if "error" in payload else 0
@@ -915,17 +916,20 @@ def _print_calls(a, relation: str) -> int:
     target = payload["target"]
     if target is None:
         if payload["ambiguous"]:
-            print(f"Several symbols are named {ui.quote(name)}; add --file <path> to pick one.")
+            print(ambiguity_message(name, payload["candidates"]))
             ui.table(
-                [
-                    (c["name"], c["kind"], _location(c["path"], c["line"]))
-                    for c in payload["candidates"]
-                ],
+                [(_location(c["path"], c["line"]), c["kind"]) for c in payload["candidates"]],
                 indent=4,
             )
             return 0
         print(payload["error"]["message"])
-        if payload["candidates"]:
+        if payload["error"]["code"] == "unknown_line":
+            ui.detail("Candidates:")
+            ui.table(
+                [(_location(c["path"], c["line"]), c["kind"]) for c in payload["candidates"]],
+                indent=4,
+            )
+        elif payload["candidates"]:
             ui.detail("Did you mean:")
             ui.table(
                 [(c["name"], _location(c["path"], c["line"])) for c in payload["candidates"]],

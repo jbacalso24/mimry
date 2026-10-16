@@ -339,7 +339,15 @@ def build_parser():
             help="How many calls away to follow, 1 to 3 (default 1)",
         )
         s.add_argument(
-            "--file", help="Keep only the symbol defined in this file, when the name is shared"
+            "--file",
+            help="Keep only the symbol defined in this file, when the name is shared"
+            " (path:N also picks a line)",
+        )
+        s.add_argument(
+            "--line",
+            type=_positive_int,
+            help="Keep the symbol that starts on this line, or else spans it, when the name"
+            " is shared",
         )
         s.add_argument("--json", action="store_true", help="Print the structured answer as JSON")
         s.set_defaults(func=func)
@@ -354,7 +362,14 @@ def build_parser():
         help="Use the symbols and files changed in the working tree against HEAD, instead",
     )
     s.add_argument(
-        "--file", help="Keep only the symbol defined in this file, when the name is shared"
+        "--file",
+        help="Keep only the symbol defined in this file, when the name is shared"
+        " (path:N also picks a line)",
+    )
+    s.add_argument(
+        "--line",
+        type=_positive_int,
+        help="Keep the symbol that starts on this line, or else spans it, when the name is shared",
     )
     s.add_argument(
         "--depth",

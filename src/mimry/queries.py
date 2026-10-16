@@ -13,6 +13,7 @@ from .cache_safety import IndexOutsideCacheError
 from .constants import NON_CODE_KINDS
 from .core.artifacts import (
     INFERRED_NOTE,
+    ambiguity_message,
     call_lookup,
     call_relations,
     call_rows,
@@ -20,11 +21,13 @@ from .core.artifacts import (
     empty_call_payload,
     graph_health,
     importing_files,
+    line_missed_message,
     load_graph,
     node_source_file,
     relationship_edges,
     relationship_lines,
     shortest_path,
+    split_file_line,
     surface_evidence,
 )
 from .core.languages import EXTENSION_LANGUAGE
@@ -1003,11 +1006,17 @@ def path_payload(result: dict) -> dict:
 
 
 def calls_payload(
-    root: Path, ptr: dict, name: str, relation: str, depth: int, file: str | None
+    root: Path,
+    ptr: dict,
+    name: str,
+    relation: str,
+    depth: int,
+    file: str | None,
+    line: int | None = None,
 ) -> dict:
     """The callers or callees answer, shared by the CLI and MCP. Checks
     graph health first, as ``mimry path`` does."""
-    _fresh, health = index_and_graph_health(root, ptr)
+    fresh, health = index_and_graph_health(root, ptr)
     if health["status"] != "current":
         payload = empty_call_payload(name, relation, depth)
         payload["error"] = {
@@ -1015,14 +1024,19 @@ def calls_payload(
             "message": f"The graph files are {health['status']}, so calls can't be checked",
         }
         return payload
+    file, line = split_file_line(file, line)
     wanted = normalize_file_filter(file, root) if file else None
-    payload = call_lookup(load_graph(root), name, relation, depth, wanted)
+    span_ends = _symbol_ends(_symbols_by_path(fresh)) if line is not None else None
+    payload = call_lookup(load_graph(root), name, relation, depth, wanted, line, span_ends)
     if payload["target"] is None and not payload["ambiguous"]:
-        payload["error"] = _missing_target_error(name, file, payload)
+        payload["error"] = _missing_target_error(name, file, payload, line)
     return payload
 
 
-def _missing_target_error(name: str, file: str | None, payload: dict) -> dict:
+def _missing_target_error(name: str, file: str | None, payload: dict, line: int | None) -> dict:
+    if payload.get("line_missed"):
+        message = line_missed_message(name, file, line)
+        return {"code": "unknown_line", "message": message}
     if file and payload.get("file_matched") is False:
         message = f"No file in the graph matches {ui.quote(file)}."
         return {"code": "unknown_file", "message": message}
@@ -1037,9 +1051,11 @@ _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @
 _OPEN_END = 10**9
 
 
-def impact_usage(target: str | None, file: str | None, changed: bool) -> str | None:
+def impact_usage(
+    target: str | None, file: str | None, changed: bool, line: int | None = None
+) -> str | None:
     """Why these arguments cannot go together, or None when they can."""
-    if changed and (target or file):
+    if changed and (target or file or line is not None):
         return "Pass a symbol or file, or --changed, not both."
     if not changed and not target:
         return "Name a symbol or file to check, or pass --changed."
@@ -1107,6 +1123,27 @@ def _symbol_spans(symbols: list[dict]) -> list[tuple[dict, int, int]]:
             end = later[0] - 1 if later else _OPEN_END
         spans.append((sym, start, end))
     return spans
+
+
+def _symbols_by_path(fresh: dict) -> dict[str, list[dict]]:
+    """Code symbols of the index, grouped by repo-relative file path."""
+    files_by_id = {f["file_id"]: f["rel_path"] for f in fresh["files"]}
+    by_path: dict[str, list[dict]] = defaultdict(list)
+    for sym in fresh["symbols"]:
+        if sym.get("kind") in NON_CODE_KINDS:
+            continue
+        if (rel := files_by_id.get(sym.get("file_id"))) is not None:
+            by_path[rel].append(sym)
+    return by_path
+
+
+def _symbol_ends(symbols_by_path: dict[str, list[dict]]) -> dict[tuple[str, int], int]:
+    """Last line of each code symbol, keyed by (path, first line)."""
+    return {
+        (rel, start): end
+        for rel, syms in symbols_by_path.items()
+        for _sym, start, end in _symbol_spans(syms)
+    }
 
 
 def _graph_symbol_ids(graph: dict) -> dict[tuple, str]:
@@ -1191,10 +1228,11 @@ def impact_payload(
     file: str | None,
     changed: bool,
     depth: int,
+    line: int | None = None,
 ) -> dict:
     """What a change touches, for ``mimry impact`` and MCP alike.
 
-    ``target`` is a symbol name (narrowed by ``file``) or a
+    ``target`` is a symbol name (narrowed by ``file`` and ``line``) or a
     repo-relative file path; ``changed`` uses the working tree against
     HEAD instead.
     Callers are followed ``depth`` calls back. Importers are the files
@@ -1212,9 +1250,10 @@ def impact_payload(
         "test_command": None,
         "summary": "",
     }
-    usage = impact_usage(target, file, changed)
+    usage = impact_usage(target, file, changed, line)
     if usage:
         return _impact_error(payload, "usage", usage)
+    file, line = split_file_line(file, line)
     fresh, health = index_and_graph_health(root, ptr)
     payload["test_command"] = project_test_command(fresh)
     if health["status"] != "current":
@@ -1223,12 +1262,7 @@ def impact_payload(
     graph = load_graph(root)
     files_by_id = {f["file_id"]: f["rel_path"] for f in fresh["files"]}
     indexed = set(files_by_id.values())
-    symbols_by_path: dict[str, list[dict]] = defaultdict(list)
-    for sym in fresh["symbols"]:
-        if sym.get("kind") in NON_CODE_KINDS:
-            continue
-        if (rel := files_by_id.get(sym.get("file_id"))) is not None:
-            symbols_by_path[rel].append(sym)
+    symbols_by_path = _symbols_by_path(fresh)
 
     # Each pick is (path, symbol record) for one target symbol.
     picks: list[tuple[str, dict]] = []
@@ -1256,19 +1290,23 @@ def impact_payload(
                 if any(start <= hi and lo <= end for lo, hi in ranges)
             ]
         target_files, label = touched, "The working tree"
-    elif not file and (rel := normalize_file_filter(target, root)) in indexed:
+    elif not file and line is None and (rel := normalize_file_filter(target, root)) in indexed:
         picks = _file_picks(symbols_by_path, rel)
         target_files, label = {rel}, rel
     else:
         wanted = normalize_file_filter(file, root) if file else None
-        lookup = call_lookup(graph, target, "callers", depth, wanted)
+        span_ends = _symbol_ends(symbols_by_path) if line is not None else None
+        lookup = call_lookup(graph, target, "callers", depth, wanted, line, span_ends)
         if lookup["target"] is None:
             candidates = lookup["candidates"]
             if lookup["ambiguous"]:
-                # Candidates answer until --file picks one.
-                message = f'Several symbols are named "{target}"; add --file <path> to pick one.'
+                # Candidates answer until --file or --line picks one.
+                message = ambiguity_message(target, candidates)
                 payload.update(summary=message, ambiguous=True, candidates=candidates)
                 return payload
+            if lookup.get("line_missed"):
+                message = line_missed_message(target, file, line)
+                return _impact_error(payload, "unknown_line", message, candidates=candidates)
             size_message = None if file else _oversized_text(root, fresh, target)
             if size_message:
                 return _impact_error(
@@ -1348,14 +1386,17 @@ def _print_impact(payload: dict) -> None:
     if payload.get("ambiguous"):
         print(payload["summary"])
         ui.table(
-            [(c["name"], c["kind"], _at(c["path"], c["line"])) for c in payload["candidates"]],
+            [(_at(c["path"], c["line"]), c["kind"]) for c in payload["candidates"]],
             indent=4,
         )
         return
     if error:
         print(error["message"])
         candidates = error.get("candidates") or []
-        if candidates:
+        if candidates and error["code"] == "unknown_line":
+            ui.detail("Candidates:")
+            ui.table([(_at(c["path"], c["line"]), c["kind"]) for c in candidates], indent=4)
+        elif candidates:
             ui.detail("Did you mean:")
             ui.table([(c["name"], _at(c["path"], c["line"])) for c in candidates], indent=4)
         return
@@ -1416,7 +1457,15 @@ def run_impact(a):
     ptr = require(root)
     target = sanitize_query(a.target) if a.target else None
     file = sanitize_query(a.file) if a.file else None
-    payload = impact_payload(root, ptr, target=target, file=file, changed=a.changed, depth=a.depth)
+    payload = impact_payload(
+        root,
+        ptr,
+        target=target,
+        file=file,
+        changed=a.changed,
+        depth=a.depth,
+        line=getattr(a, "line", None),
+    )
     if getattr(a, "json", False):
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
