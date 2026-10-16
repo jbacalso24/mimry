@@ -800,8 +800,10 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     }
 
 
-def _document_record(path, root, document: DocumentText, snapshot):
-    """The file record of a document, and its redacted text."""
+def _document_record(path, root, document: DocumentText, snapshot, references):
+    """The file record of a document. Table references come only from
+    the redacted text that the index and context surfaces may show.
+    """
     text = document_text(document.parts)
     safe_text = redact_sensitive_text(text) if text else ""
     f = file_record(
@@ -814,7 +816,10 @@ def _document_record(path, root, document: DocumentText, snapshot):
     )
     if document.truncated:
         f["metadata_text"] += " truncated: part of this document is not indexed"
-    return f, safe_text
+    table_refs = sql_table_references(safe_text) if safe_text else []
+    if table_refs:
+        references["table_refs"] = table_refs
+    return f
 
 
 def adapt(
@@ -962,14 +967,8 @@ def adapt(
         # once per index run.
         if document is None:
             document = extract_document_parts(path, data=data)
-        f, safe_text = _document_record(path, root, document, snapshot)
+        f = _document_record(path, root, document, snapshot, references)
         ext = path.suffix.lower()
-        # Populate table_refs only from the same redacted text allowed
-        # into the searchable index and semantic/context surfaces.
-        if safe_text:
-            table_refs = sql_table_references(safe_text)
-            if table_refs:
-                references["table_refs"] = table_refs
     else:
         # Go/Rust/C# via core.languages
         language = EXTENSION_LANGUAGE.get(ext)
