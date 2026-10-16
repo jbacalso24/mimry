@@ -9,7 +9,9 @@ import pytest
 
 from mimry.bench import (
     NO_CANDIDATES,
+    SKIP_MANIFESTS_ONLY,
     SKIP_NO_MODIFIED,
+    SKIP_RELEASE,
     SKIP_TOO_BROAD,
     _task_query,
     run_bench,
@@ -106,8 +108,10 @@ def test_select_picks_squash_and_merge_commits_with_base_and_gold(tmp_path):
     selection = select_tasks(repo, 20)
 
     # The plain "Tweak the guide" commit is not a candidate at all.
+    # "Release notes" and "Bump deps" name no version, so they are not
+    # release commits; only the changelog edit lacks a source change.
     assert selection.candidates == 5
-    assert selection.skipped == Counter({SKIP_TOO_BROAD: 1, SKIP_NO_MODIFIED: 1})
+    assert selection.passed_over == Counter({SKIP_TOO_BROAD: 1, SKIP_NO_MODIFIED: 1})
     assert [task.commit for task in selection.tasks] == [bump, merge, squash]
 
     bump_task, merge_task, squash_task = selection.tasks
@@ -213,7 +217,11 @@ def test_summary_counts_located_tasks_and_skips():
     summary = summarize(results, Counter({SKIP_NO_MODIFIED: 2}))
 
     assert summary["tasks"] == 3
+    assert summary["passed_over"] == 2
+    assert summary["passed_over_reasons"] == {SKIP_NO_MODIFIED: 2}
+    # The old keys keep their values for existing --json readers.
     assert summary["skipped"] == 2
+    assert summary["skipped_reasons"] == {SKIP_NO_MODIFIED: 2}
     assert summary["located"] == 2
     assert summary["mean_recall_at_5"] == pytest.approx(0.5)
     assert summary["median_first_gold_rank"] == 2
@@ -279,7 +287,78 @@ def test_a_task_with_only_added_files_is_skipped(tmp_path):
 
     assert selection.tasks == []
     assert selection.candidates == 1
-    assert selection.skipped == Counter({SKIP_NO_MODIFIED: 1})
+    assert selection.passed_over == Counter({SKIP_NO_MODIFIED: 1})
+
+
+def _release_and_dependency_repo(tmp_path: Path) -> Path:
+    repo = _new_repo(tmp_path)
+    _commit(
+        repo,
+        "Add manifests",
+        {"package.json": '{"name": "app"}\n', "pnpm-lock.yaml": "lockfileVersion: 1\n"},
+    )
+    _commit(repo, "Release version 0.27.3 (#31)", {"pyproject.toml": "version = '0.27.3'\n"})
+    _commit(
+        repo,
+        "Bump foo from 1.0 to 1.1 (#32)",
+        {
+            "package.json": '{"name": "app", "foo": "1.1"}\n',
+            "pnpm-lock.yaml": "lockfileVersion: 2\n",
+        },
+    )
+    _commit(
+        repo, "chore(deps): update x (#33)", {"src/parser.py": "def parse(text):\n    return []\n"}
+    )
+    _commit(
+        repo,
+        "Refresh lockfiles (#34)",
+        {
+            "package.json": '{"name": "app", "foo": "1.2"}\n',
+            "pnpm-lock.yaml": "lockfileVersion: 3\n",
+        },
+    )
+    return repo
+
+
+def test_release_bump_and_manifest_only_commits_are_passed_over(tmp_path):
+    repo = _release_and_dependency_repo(tmp_path)
+    _commit(repo, "Fix lexer (#35)", {"src/lexer.py": "def lex(text):\n    return []\n"})
+
+    selection = select_tasks(repo, 20)
+
+    assert selection.candidates == 5
+    assert selection.passed_over == Counter({SKIP_RELEASE: 3, SKIP_MANIFESTS_ONLY: 1})
+    [task] = selection.tasks
+    assert task.query == "Fix lexer"
+    assert task.gold == ("src/lexer.py",)
+
+
+def test_passed_over_line_names_each_reason(tmp_path, capsys):
+    repo = _release_and_dependency_repo(tmp_path)
+    _commit(repo, "Fix lexer (#35)", {"src/lexer.py": "def lex(text):\n    return []\n"})
+
+    assert run_bench(repo, tasks=20) == 0
+
+    out = capsys.readouterr().out
+    assert "passed over" in out
+    assert "4 commits while selecting" in out
+    assert "3 release or bump commit" in out
+    assert "1 changed only manifests or lock files" in out
+    assert "skipped" not in out
+
+
+def test_json_keeps_the_old_skip_keys_next_to_the_new_ones(tmp_path, capsys):
+    repo = _release_and_dependency_repo(tmp_path)
+    _commit(repo, "Fix lexer (#35)", {"src/lexer.py": "def lex(text):\n    return []\n"})
+
+    assert run_bench(repo, tasks=20, as_json=True) == 0
+
+    summary = json.loads(capsys.readouterr().out)["summary"]
+    expected = {SKIP_RELEASE: 3, SKIP_MANIFESTS_ONLY: 1}
+    assert summary["passed_over"] == 4
+    assert summary["passed_over_reasons"] == expected
+    assert summary["skipped"] == 4
+    assert summary["skipped_reasons"] == expected
 
 
 @pytest.mark.parametrize(

@@ -33,6 +33,7 @@ from typing import Any
 
 from . import ui
 from .benchmark import _env, _paths, _run, percentile, recall_at_k, token_proxy
+from .config_manifest_adapter import CONFIG_FILENAMES
 
 DEFAULT_TASKS = 20
 MAX_FILES = 30
@@ -52,10 +53,25 @@ LOCK_FILES = frozenset(
         "poetry.lock",
         "Cargo.lock",
         "go.sum",
+        "bun.lock",
+        "bun.lockb",
     }
 )
+# Release, version-bump and dependency-bot commits, matched on the
+# subject without its " (#N)" suffix.  A version number is required
+# after "release" or "bump", so "Bump the cache" is still measured.
+RELEASE_OR_BUMP_SUBJECT = re.compile(
+    r"^(?:(?:prepare )?release(?: version)? v?\d|bump(?: version)?(?: to)? v?\d"
+    r"|chore\(release\)"
+    r"|v?\d+\.\d+\.\d+$"
+    r"|(?:bump|update|upgrade) .* (?:from|to) v?\d+(?:\.\d+)+"
+    r"|(?:build|chore)\(deps)",
+    re.IGNORECASE,
+)
 SKIP_TOO_BROAD = f"touching more than {MAX_FILES} files"
-SKIP_NO_MODIFIED = "no_modified_files"
+SKIP_NO_MODIFIED = "only added files"
+SKIP_RELEASE = "release or bump commit"
+SKIP_MANIFESTS_ONLY = "changed only manifests or lock files"
 REMOVE_ATTEMPTS = 5
 REMOVE_PAUSE_SECONDS = 0.5
 # A commit bullet or trailer: the only lines a squash body may hold
@@ -89,7 +105,7 @@ class Task:
 class Selection:
     tasks: list[Task] = field(default_factory=list)  # newest first
     candidates: int = 0
-    skipped: Counter[str] = field(default_factory=Counter)
+    passed_over: Counter[str] = field(default_factory=Counter)
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -171,17 +187,27 @@ def _excluded(path: str) -> bool:
     return name.startswith("CHANGELOG") or name in LOCK_FILES
 
 
+def _manifest_or_lock(path: str) -> bool:
+    name = path.rsplit("/", 1)[-1]
+    return name in LOCK_FILES or name in CONFIG_FILENAMES
+
+
+def _release_subject(subject: str) -> bool:
+    match = SQUASH_SUBJECT.match(subject)
+    return RELEASE_OR_BUMP_SUBJECT.match(match.group("title") if match else subject) is not None
+
+
 def _names(output: str) -> list[str]:
     return [name for name in output.split("\0") if name]
 
 
 def _build_task(repo: Path, commit: str, base: str, query: str) -> tuple[Task | None, str]:
     # --no-renames: a renamed file counts as its new path being added.
-    if (
-        len(_names(_git(repo, "diff", "--name-only", "--no-renames", "-z", base, commit)))
-        > MAX_FILES
-    ):
+    changed = _names(_git(repo, "diff", "--name-only", "--no-renames", "-z", base, commit))
+    if len(changed) > MAX_FILES:
         return None, SKIP_TOO_BROAD
+    if changed and all(_manifest_or_lock(name) for name in changed):
+        return None, SKIP_MANIFESTS_ONLY
     # Added files are absent at the base, so MIMRY cannot rank them.
     modified = _names(
         _git(repo, "diff", "--name-only", "--no-renames", "--diff-filter=M", "-z", base, commit)
@@ -196,7 +222,7 @@ def select_tasks(repo: Path, wanted: int) -> Selection:
     """The newest `wanted` pull requests that make usable tasks.
 
     Commits that look like pull requests but cannot be a task are
-    counted as skipped, with the reason.  Plain commits are ignored.
+    counted as passed over, with the reason.  Plain commits are ignored.
     """
     selection = Selection()
     for record in _first_parent_log(repo):
@@ -210,9 +236,12 @@ def select_tasks(repo: Path, wanted: int) -> Selection:
         if query is None:
             continue
         selection.candidates += 1
+        if _release_subject(subject):
+            selection.passed_over[SKIP_RELEASE] += 1
+            continue
         task, reason = _build_task(repo, commit, parents[0], query)
         if task is None:
-            selection.skipped[reason] += 1
+            selection.passed_over[reason] += 1
             continue
         selection.tasks.append(task)
         if len(selection.tasks) == wanted:
@@ -362,14 +391,18 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
-def summarize(results: list[dict[str, Any]], skipped: Counter[str]) -> dict[str, Any]:
+def summarize(results: list[dict[str, Any]], passed_over: Counter[str]) -> dict[str, Any]:
     count = len(results)
     located = [r for r in results if r["first_gold_rank"] is not None]
     finds = [r["find_ms"] for r in results]
+    total = sum(passed_over.values())
     return {
         "tasks": count,
-        "skipped": sum(skipped.values()),
-        "skipped_reasons": dict(skipped),
+        "passed_over": total,
+        "passed_over_reasons": dict(passed_over),
+        # The same counts under the names they had before "passed over".
+        "skipped": total,
+        "skipped_reasons": dict(passed_over),
         "located": len(located),
         "mean_recall_at_5": _mean([r["recall_at_5"] for r in results]),
         "mean_recall_at_10": _mean([r["recall_at_10"] for r in results]),
@@ -404,10 +437,11 @@ def _render(repo: Path, results: list[dict[str, Any]], summary: dict[str, Any]) 
             )
         )
     ui.table(rows)
-    reasons = ", ".join(f"{n} {reason}" for reason, n in summary["skipped_reasons"].items())
+    reasons = ", ".join(f"{n} {reason}" for reason, n in summary["passed_over_reasons"].items())
+    passed_over = ui.count(summary["passed_over"], "commit") + " while selecting"
     summary_rows = [
         ("tasks", str(summary["tasks"])),
-        ("skipped", f"{summary['skipped']}" + (f" ({reasons})" if reasons else "")),
+        ("passed over", passed_over + (f" ({reasons})" if reasons else "")),
         ("mean recall@5", _cell(summary["mean_recall_at_5"], "{:.2f}")),
         ("mean recall@10", _cell(summary["mean_recall_at_10"], "{:.2f}")),
         ("median first gold rank", _cell(summary["median_first_gold_rank"], "{:g}")),
@@ -439,11 +473,17 @@ def run_bench(
         selection = select_tasks(repo, tasks)
         if not selection.tasks:
             if selection.candidates:
-                note = f"No task left: all {selection.candidates} candidate commits were skipped."
+                note = (
+                    f"No task left: all {selection.candidates} candidate commits were passed over."
+                )
             else:
                 note = NO_CANDIDATES
             if as_json:
-                payload = {"tasks": [], "summary": summarize([], selection.skipped), "note": note}
+                payload = {
+                    "tasks": [],
+                    "summary": summarize([], selection.passed_over),
+                    "note": note,
+                }
                 print(json.dumps(payload, indent=2))
             else:
                 print(note)
@@ -453,7 +493,7 @@ def run_bench(
     except (RuntimeError, OSError) as exc:
         ui.fail("mimry bench stopped", str(exc))
         return 2
-    summary = summarize(results, selection.skipped)
+    summary = summarize(results, selection.passed_over)
     if as_json:
         print(json.dumps({"tasks": results, "summary": summary}, indent=2))
     else:
