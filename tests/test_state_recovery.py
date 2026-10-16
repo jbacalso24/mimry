@@ -31,6 +31,11 @@ from mimry.storage import (
     save_pointer,
 )
 
+# Upper bound for a thread to reach a point or finish. A healthy run
+# returns at once; the bound only stops a hang. Real work such as a
+# full index can take seconds on a loaded CI runner.
+_WAIT = 60
+
 
 def _pointer(root: Path, root_id: str) -> dict[str, object]:
     return {
@@ -423,22 +428,22 @@ def test_pointer_recovery_cannot_overwrite_newer_writer(tmp_path: Path, monkeypa
     def pause_recovery(path, payload, **kwargs):
         if Path(path) == pointer_path and payload.get("generationId") != "newer-generation":
             entered_recovery.set()
-            assert release_recovery.wait(5)
+            assert release_recovery.wait(_WAIT)
         return original(path, payload, **kwargs)
 
     monkeypatch.setattr(state, "atomic_write_json", pause_recovery)
     loaded = []
     loader = threading.Thread(target=lambda: loaded.append(load_pointer(repo)))
     loader.start()
-    assert entered_recovery.wait(5)
+    assert entered_recovery.wait(_WAIT)
     newer = {**current, "generationId": "newer-generation", "indexPath": current["indexPath"]}
     writer = threading.Thread(target=lambda: save_pointer(repo, newer))
     writer.start()
     time.sleep(0.05)
     assert writer.is_alive(), "writer must wait for pointer recovery lock"
     release_recovery.set()
-    loader.join(5)
-    writer.join(5)
+    loader.join(_WAIT)
+    writer.join(_WAIT)
     assert (
         json.loads(pointer_path.read_text(encoding="utf-8"))["generationId"] == "newer-generation"
     )
@@ -460,7 +465,7 @@ def test_concurrent_pointer_backup_writes_remain_valid_json(tmp_path: Path, monk
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join(5)
+        thread.join(_WAIT)
     primary = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
     backup = json.loads((repo / ".mimry" / "pointer.json.bak").read_text(encoding="utf-8"))
     assert primary["rootId"] == backup["rootId"] == "root"
@@ -600,7 +605,7 @@ def test_wipe_and_publication_share_lock_and_publication_never_dangles(
     def paused_rmtree(path, *args, **kwargs):
         if Path(path).name == "generations" and not wipe_entered.is_set():
             wipe_entered.set()
-            assert allow_wipe.wait(5)
+            assert allow_wipe.wait(_WAIT)
         return original_rmtree(path, *args, **kwargs)
 
     monkeypatch.setattr("mimry.commands.shutil.rmtree", paused_rmtree)
@@ -611,7 +616,7 @@ def test_wipe_and_publication_share_lock_and_publication_never_dangles(
         )
     )
     wipe.start()
-    assert wipe_entered.wait(5)
+    assert wipe_entered.wait(_WAIT)
 
     publish_result: list[dict] = []
     publisher = threading.Thread(
@@ -621,8 +626,8 @@ def test_wipe_and_publication_share_lock_and_publication_never_dangles(
     time.sleep(0.05)
     assert publisher.is_alive(), "publisher must wait for the cache wipe's per-root index lock"
     allow_wipe.set()
-    wipe.join(10)
-    publisher.join(30)
+    wipe.join(_WAIT)
+    publisher.join(_WAIT)
 
     assert wipe_result == [0]
     assert publish_result
@@ -667,13 +672,13 @@ def test_feedback_waiting_for_publication_resolves_and_persists_to_new_generatio
     def pause_before_publish(root, pointer):
         if pointer.get("generationId") != old.get("generationId"):
             publishing.set()
-            assert release.wait(5)
+            assert release.wait(_WAIT)
         return original_save(root, pointer)
 
     monkeypatch.setattr("mimry.indexer.save_pointer", pause_before_publish)
     publisher = threading.Thread(target=lambda: write_index(repo, old, full=True))
     publisher.start()
-    assert publishing.wait(5)
+    assert publishing.wait(_WAIT)
 
     feedback_result: list[int] = []
     args = SimpleNamespace(
@@ -696,8 +701,8 @@ def test_feedback_waiting_for_publication_resolves_and_persists_to_new_generatio
     time.sleep(0.05)
     assert feedback.is_alive(), "feedback must wait for the publication operation lock"
     release.set()
-    publisher.join(30)
-    feedback.join(10)
+    publisher.join(_WAIT)
+    feedback.join(_WAIT)
 
     assert feedback_result == [0]
     current = load_pointer(repo)
@@ -724,14 +729,14 @@ def test_reader_holds_generation_lifetime_across_two_publications_and_gc(
             observed.append(
                 (Path(pointer["indexPath"]) / "files.jsonl").read_text(encoding="utf-8")
             )
-            assert release_reader.wait(5)
+            assert release_reader.wait(_WAIT)
             observed.append(
                 (Path(pointer["indexPath"]) / "files.jsonl").read_text(encoding="utf-8")
             )
 
     reader_thread = threading.Thread(target=reader)
     reader_thread.start()
-    assert reader_entered.wait(5)
+    assert reader_entered.wait(_WAIT)
     publishers = [
         threading.Thread(target=lambda: write_index(repo, original, full=True)) for _ in range(2)
     ]
@@ -742,9 +747,9 @@ def test_reader_holds_generation_lifetime_across_two_publications_and_gc(
     assert Path(original["indexPath"]).is_dir()
 
     release_reader.set()
-    reader_thread.join(10)
+    reader_thread.join(_WAIT)
     for publisher in publishers:
-        publisher.join(30)
+        publisher.join(_WAIT)
 
     assert observed[0] == observed[1]
     current = load_pointer(repo)
@@ -873,18 +878,18 @@ def test_lock_timeout_is_bounded_and_actionable(tmp_path: Path):
     def holder():
         with state.exclusive_file_lock(lock):
             entered.set()
-            assert release.wait(5)
+            assert release.wait(_WAIT)
 
     thread = threading.Thread(target=holder)
     thread.start()
-    assert entered.wait(5)
+    assert entered.wait(_WAIT)
     started = time.monotonic()
     with pytest.raises(state.StateLockTimeoutError) as raised:
         with state.exclusive_file_lock(lock, timeout=0.08, poll_interval=0.01):
             pass
     elapsed = time.monotonic() - started
     release.set()
-    thread.join(5)
+    thread.join(_WAIT)
 
     assert elapsed < 0.5
     assert str(lock) in str(raised.value)
@@ -911,14 +916,14 @@ def test_cache_wipe_all_refuses_without_touching_cache_while_root_writer_is_acti
     def writer():
         with state.exclusive_file_lock(base / "operation.lock"):
             entered.set()
-            assert release.wait(5)
+            assert release.wait(_WAIT)
 
     thread = threading.Thread(target=writer)
     thread.start()
-    assert entered.wait(5)
+    assert entered.wait(_WAIT)
     result = cmd_cache_wipe(SimpleNamespace(root=str(repo), all=True))
     release.set()
-    thread.join(5)
+    thread.join(_WAIT)
 
     assert result == 2
     assert Path(pointer["indexPath"]).is_dir()
