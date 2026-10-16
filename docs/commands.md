@@ -231,7 +231,7 @@ A first paragraph made only of commit bullets or trailers, such as `Co-authored-
 The files the pull request modified are the answer, leaving out `CHANGELOG*` and lock files.
 Files it added are not counted, because they do not exist at the base and MIMRY cannot rank them.
 A pull request that touches more than 30 files, or modifies no file left after the exclusions, is passed over and counted.
-Release, version-bump and dependency-bot commits (by subject, such as `Release 0.4.0`, `Bump foo from 1.0 to 1.1` or `chore(deps): update x`) and commits that change only manifests and lock files are passed over too, and counted under their own reason.
+Release, version-bump and dependency-bot commits (by subject, such as `Release 0.4.0`, `Bump foo from 1.0 to 1.1` or `chore(deps): update x`, with any leading emoji or `:shortcode:` ignored) and commits that change only manifests, lock files and pre-commit config are passed over too, and counted under their own reason.
 For each task, MIMRY indexes the commit's base in a throwaway worktree with its own cache, then runs `mimry find` with the task text.
 The run never touches your working tree or your index, and it makes no network or model calls.
 

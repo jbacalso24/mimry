@@ -361,6 +361,45 @@ def test_json_keeps_the_old_skip_keys_next_to_the_new_ones(tmp_path, capsys):
     assert summary["skipped_reasons"] == expected
 
 
+def test_gitmoji_release_and_bump_commits_are_passed_over(tmp_path):
+    repo = _new_repo(tmp_path)
+    _commit(repo, "Add pre-commit config", {".pre-commit-config.yaml": "repos: []\n"})
+    _commit(
+        repo,
+        "\u2b06 Bump pre-commit hooks (#41)",
+        {".pre-commit-config.yaml": "repos: [{repo: x}]\n"},
+    )
+    _commit(
+        repo,
+        "\U0001f516 Release version 0.27.3 (#42)",
+        {"src/parser.py": "def parse(text):\n    return []\n"},
+    )
+    _commit(
+        repo,
+        ":bookmark: Release 1.2.0 (#43)",
+        {"src/lexer.py": "def lex(text):\n    return []\n"},
+    )
+    _commit(
+        repo,
+        "\u2728 Add history command (#44)",
+        {"src/parser.py": "def parse(text):\n    return ['x']\n"},
+    )
+    _commit(
+        repo,
+        "Bump the parser to handle X (#45)",
+        {"src/parser.py": "def parse(text):\n    return ['y']\n"},
+    )
+
+    selection = select_tasks(repo, 20)
+
+    assert selection.candidates == 5
+    assert selection.passed_over == Counter({SKIP_RELEASE: 2, SKIP_MANIFESTS_ONLY: 1})
+    assert [task.query for task in selection.tasks] == [
+        "Bump the parser to handle X",
+        "\u2728 Add history command",
+    ]
+
+
 @pytest.mark.parametrize(
     ("subject", "body", "query"),
     [

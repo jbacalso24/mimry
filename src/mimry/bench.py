@@ -57,6 +57,9 @@ LOCK_FILES = frozenset(
         "bun.lockb",
     }
 )
+# Tooling config that changes no code.  A commit touching only these
+# is passed over as a manifest-or-lock change.
+TOOLING_CONFIG_FILES = frozenset({".pre-commit-config.yaml", ".pre-commit-hooks.yaml"})
 # Release, version-bump and dependency-bot commits, matched on the
 # subject without its " (#N)" suffix.  A version number is required
 # after "release" or "bump", so "Bump the cache" is still measured.
@@ -68,6 +71,9 @@ RELEASE_OR_BUMP_SUBJECT = re.compile(
     r"|(?:build|chore)\(deps)",
     re.IGNORECASE,
 )
+# A leading gitmoji: non-ASCII symbols or a :shortcode: such as
+# :bookmark:, with any spaces around them.  Removed before matching.
+LEADING_GITMOJI = re.compile(r"^(?:\s|[^\x00-\x7f]|:[a-z0-9_+-]+:)+")
 SKIP_TOO_BROAD = f"touching more than {MAX_FILES} files"
 SKIP_NO_MODIFIED = "only added files"
 SKIP_RELEASE = "release or bump commit"
@@ -189,12 +195,13 @@ def _excluded(path: str) -> bool:
 
 def _manifest_or_lock(path: str) -> bool:
     name = path.rsplit("/", 1)[-1]
-    return name in LOCK_FILES or name in CONFIG_FILENAMES
+    return name in LOCK_FILES or name in CONFIG_FILENAMES or name in TOOLING_CONFIG_FILES
 
 
 def _release_subject(subject: str) -> bool:
     match = SQUASH_SUBJECT.match(subject)
-    return RELEASE_OR_BUMP_SUBJECT.match(match.group("title") if match else subject) is not None
+    title = LEADING_GITMOJI.sub("", match.group("title") if match else subject)
+    return RELEASE_OR_BUMP_SUBJECT.match(title) is not None
 
 
 def _names(output: str) -> list[str]:
