@@ -327,16 +327,22 @@ def risk_severity(gates: list[str]) -> dict[str, Any]:
     }
 
 
-_TEST_COMMAND_RE = re.compile(r"(?:^|\| )test command (?P<cmd>[^|]+)")
+_TEST_COMMAND_RE = re.compile(r"(?:^|\| )test (?P<kind>command|guess) (?P<cmd>[^|]+)")
 
 
 def project_test_command(fresh: dict[str, Any]) -> str | None:
-    """The project's test command, as its config manifest records it."""
+    """The project's test command, as its config manifest records it.
+
+    A tool-name guess counts only when no manifest names a real one.
+    """
+    guessed: str | None = None
     for f in _check_manifests(fresh):
-        match = _TEST_COMMAND_RE.search(f.get("metadata_text", ""))
-        if match:
-            return match.group("cmd").split(";")[0].strip() or None
-    return None
+        for match in _TEST_COMMAND_RE.finditer(f.get("metadata_text", "")):
+            cmd = match.group("cmd").split(";")[0].strip() or None
+            if match.group("kind") == "command":
+                return cmd
+            guessed = guessed or cmd
+    return guessed
 
 
 _SETUP_SUBCOMMANDS = {
@@ -389,16 +395,21 @@ def _check_manifests(fresh: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def verification_commands(fresh: dict[str, Any], role: str = "general") -> list[str]:
-    commands: list[str] = []
+    real: list[str] = []
+    guessed: list[str] = []
     command_re = re.compile(
-        r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) command (?P<cmd>[^|]+)"
+        r"(?:^|\| )(?P<label>test|lint|format|typecheck|build|migrate) "
+        r"(?P<kind>command|guess) (?P<cmd>[^|]+)"
     )
     for f in _check_manifests(fresh):
         for match in command_re.finditer(f.get("metadata_text", "")):
+            bucket = real if match.group("kind") == "command" else guessed
             for cmd in match.group("cmd").split(";"):
                 cmd = cmd.strip()
-                if cmd and cmd not in commands and not _is_setup_command(cmd):
-                    commands.append(cmd)
+                if cmd and cmd not in bucket and not _is_setup_command(cmd):
+                    bucket.append(cmd)
+    # Guesses are used only when no manifest names a real command.
+    commands = real or guessed
     preferred = [
         cmd
         for cmd in ("uv run ruff format .", "uv run ruff check .", "uv run pytest")

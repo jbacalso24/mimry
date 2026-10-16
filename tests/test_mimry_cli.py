@@ -2334,9 +2334,10 @@ testpaths = ["tests"]
 
     assert "build backend hatchling.build" in files_text
     assert "framework hints fastapi pytest" in files_text
-    assert "test command uv run pytest" in files_text
-    assert "lint command uv run ruff check ." in files_text
-    assert "typecheck command uv run mypy ." in files_text
+    assert "test guess uv run pytest" in files_text
+    assert "lint guess uv run ruff check ." in files_text
+    assert "typecheck guess uv run mypy ." in files_text
+    assert "command uv run" not in files_text
     assert "entrypoints demo=demo.cli:main" in files_text
     assert "repo rules Never print secrets." in files_text
 
@@ -2398,7 +2399,7 @@ def test_nested_pyproject_commands_carry_their_directory(tmp_path):
         '[project]\ndependencies = []\n\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
     )
     text = extract_config_metadata(tmp_path / "tools" / "cli" / "pyproject.toml", tmp_path)
-    assert "test command cd tools/cli && uv run pytest" in text
+    assert "test guess cd tools/cli && uv run pytest" in text
     assert "package manager uv python" in text
 
 
@@ -2683,6 +2684,88 @@ def test_ci_workflow_with_job_defaults_is_not_read(tmp_path):
     assert "test command" not in text
 
 
+def test_ci_repo_script_steps_count_as_checks(tmp_path):
+    text = _check_text(
+        tmp_path,
+        ".github/workflows/ci.yml",
+        "jobs:\n  test:\n    steps:\n"
+        "      - run: uv run bash scripts/test.sh\n"
+        "      - run: ./scripts/lint.sh\n"
+        "      - run: script/test\n",
+    )
+    assert "test command uv run bash scripts/test.sh; script/test" in text
+    assert "lint command ./scripts/lint.sh" in text
+
+
+@pytest.mark.parametrize("run", ["bash ../evil.sh", "bash /etc/x.sh", "sh ./a/../test.sh"])
+def test_ci_script_outside_the_repo_is_not_a_check(tmp_path, run):
+    text = _check_text(
+        tmp_path,
+        ".github/workflows/ci.yml",
+        f"jobs:\n  test:\n    steps:\n      - run: {run}\n",
+    )
+    assert "command" not in text
+
+
+PYPROJECT_WITH_TOOLS = (
+    "[project]\ndependencies = []\n\n"
+    '[dependency-groups]\ndev = ["pytest>=8", "ruff>=0.8", "mypy>=1"]\n'
+)
+
+
+def test_ci_scripts_replace_the_pyproject_tool_guesses(tmp_path):
+    _write(tmp_path / "pyproject.toml", PYPROJECT_WITH_TOOLS)
+    _write(
+        tmp_path / ".github" / "workflows" / "ci.yml",
+        "jobs:\n  test:\n    steps:\n"
+        "      - run: uv run bash scripts/test.sh\n"
+        "      - run: ./scripts/lint.sh\n",
+    )
+    fresh = {
+        "files": [
+            _manifest(path, extract_config_metadata(tmp_path / path, tmp_path))
+            for path in ("pyproject.toml", ".github/workflows/ci.yml")
+        ]
+    }
+    assert "test guess uv run pytest" in fresh["files"][0]["metadata_text"]
+    assert verification_commands(fresh) == ["uv run bash scripts/test.sh", "./scripts/lint.sh"]
+
+
+def test_tool_guesses_stand_when_the_project_names_no_check(tmp_path):
+    _write(tmp_path / "pyproject.toml", PYPROJECT_WITH_TOOLS)
+    fresh = {
+        "files": [
+            _manifest(
+                "pyproject.toml", extract_config_metadata(tmp_path / "pyproject.toml", tmp_path)
+            )
+        ]
+    }
+    assert verification_commands(fresh) == [
+        "uv run ruff format .",
+        "uv run ruff check .",
+        "uv run pytest",
+        "uv run mypy .",
+    ]
+
+
+def test_a_real_check_drops_the_tool_guesses():
+    fresh = {
+        "files": [
+            _manifest(
+                "pyproject.toml", "test guess uv run pytest | lint guess uv run ruff check ."
+            ),
+            _manifest("Makefile", "test command make test"),
+        ]
+    }
+    assert verification_commands(fresh) == ["make test"]
+    assert project_test_command(fresh) == "make test"
+
+
+def test_project_test_command_falls_back_to_a_guess():
+    fresh = {"files": [_manifest("pyproject.toml", "test guess uv run pytest")]}
+    assert project_test_command(fresh) == "uv run pytest"
+
+
 def test_check_sources_are_ordered_manifests_make_tox_then_ci():
     fresh = {
         "files": [
@@ -2738,8 +2821,8 @@ def test_preferred_uv_checks_lead_the_pyproject_commands():
         "files": [
             _manifest(
                 "pyproject.toml",
-                "test command uv run pytest | lint command uv run ruff check ."
-                " | format command uv run ruff format . | typecheck command uv run mypy .",
+                "test guess uv run pytest | lint guess uv run ruff check ."
+                " | format guess uv run ruff format . | typecheck guess uv run mypy .",
             )
         ]
     }

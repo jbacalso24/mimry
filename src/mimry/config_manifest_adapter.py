@@ -275,8 +275,9 @@ def _pyproject_toml(text: str, rel_dir: str = ".") -> list[str]:
     if "mypy" in tool or "mypy" in deps:
         checks.append(("typecheck", "uv run mypy ."))
     prefix = _command_prefix(rel_dir)
+    # A tool name is a guess at the check, not the project's command.
     if prefix is not None:
-        parts.extend(f"{label} command {prefix}{cmd}" for label, cmd in checks)
+        parts.extend(f"{label} guess {prefix}{cmd}" for label, cmd in checks)
     parts.append("package manager uv python")
     return parts
 
@@ -418,6 +419,13 @@ CI_TOOL_LABELS = (
 )
 CI_SCRIPT_RE = re.compile(r"(?:npm|pnpm|yarn|bun)(?: run)? (?P<script>[A-Za-z][\w:-]*)(?:\s|$)")
 CI_MAKE_RE = re.compile(r"make (?P<target>[A-Za-z0-9_][\w.-]*)(?:\s|$)")
+# A repo script run through an optional runner, as in
+# `uv run bash scripts/test.sh`. The path needs a directory part and
+# starts inside the repo: no leading slash, no `..` (checked in code).
+CI_REPO_SCRIPT_RE = re.compile(
+    r"(?:(?:uv|poetry|pdm) run )?(?:(?:bash|sh) )?"
+    r"(?P<path>(?:\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)(?:\s|$)"
+)
 
 
 def _check_label(name: str) -> str | None:
@@ -525,6 +533,10 @@ def _ci_label(cmd: str) -> str | None:
     match = CI_MAKE_RE.match(cmd)
     if match:
         return _check_label(match.group("target"))
+    match = CI_REPO_SCRIPT_RE.match(cmd)
+    if match and ".." not in match.group("path").split("/"):
+        script = posixpath.basename(match.group("path"))
+        return _check_label(posixpath.splitext(script)[0])
     return None
 
 
