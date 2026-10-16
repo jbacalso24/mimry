@@ -334,8 +334,9 @@ def _normalized_terms(q: str) -> list[str]:
 def cjk_bigrams(run: str) -> list[str]:
     """Overlapping character pairs of a CJK run, in order.
 
-    FTS5 tokenizes a CJK run as one word, so "漢字" inside "日本語漢字"
-    is invisible to it. Indexing and querying pairs makes any two-or-
+    FTS5 tokenizes a CJK run as one word, so a short name inside a
+    longer run is invisible to it. Indexing and querying pairs makes
+    any two-or-
     more-character substring of a run reachable. A one-character run is
     its own gram.
     """
