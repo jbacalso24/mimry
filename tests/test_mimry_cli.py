@@ -733,8 +733,8 @@ def test_claude_skill_body_is_platform_specific(tmp_path):
             id="glob-tool-no-extension",
         ),
         pytest.param(
-            {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}},
-            "<what you are looking for>",
+            {"tool_name": "Glob", "tool_input": {"pattern": "**/*session*.py"}},
+            "session",
             id="glob-tool-star",
         ),
     ],
@@ -878,7 +878,7 @@ def test_hook_check_honors_root_and_never_fails(tmp_path):
     (repo / ".mimry" / "pointer.json").write_text("{}", encoding="utf-8")
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src")
-    grep = json.dumps({"tool_name": "Grep", "tool_input": {"pattern": "x|y"}}).encode()
+    grep = json.dumps({"tool_name": "Grep", "tool_input": {"pattern": "auth|session"}}).encode()
 
     def hook(*root_args: str, payload: bytes = grep) -> subprocess.CompletedProcess:
         return subprocess.run(
