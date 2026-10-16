@@ -278,6 +278,39 @@ See [benchmarks/localization](benchmarks/localization/README.md) for the protoco
 
 To measure MIMRY on your own repository's merged pull requests, run `mimry bench`; see [Benchmark your repository](docs/commands.md#benchmark-your-repository).
 
+### One task, start to finish
+
+Task `fastapi/typer#1820` from the holdout2 run: "Respect wait=False when launching URLs with xdg-open".
+The fix changed `typer/main.py`.
+Its 75.3% saving is the median for that run, so it is a typical task, not the best one.
+
+**Without MIMRY**
+
+The agent runs seven keyword searches for `respect`, `wait`, `false`, `launching`, `urls`, `xdg` and `open`, which cost 1,927 tokens.
+It then reads `typer/main.py` from the top, up to the benchmark's 2,000-line limit per read, which costs 13,491 tokens.
+Total: 15,418 tokens.
+
+**With MIMRY**
+
+`mimry preflight "Respect wait=False when launching URLs with xdg-open"` costs 1,876 tokens.
+The agent then reads six line ranges in the order of the context pack, which cost 1,937 tokens:
+
+| File | Lines read | Tokens |
+|---|---|---|
+| `tests/test_launch.py` | 44-52, 119-134 | 184 |
+| `docs_src/launch/tutorial001_py310.py` | 6-9 | 28 |
+| `docs_src/launch/tutorial002_py310.py` | 10-20 | 105 |
+| `typer/_click/utils.py` | 111-136, 333-368 | 536 |
+| `typer/_click/_termui_impl.py` | 306-309, 345-414 | 476 |
+| `typer/main.py` (the file the fix changed) | 1474-1482, 1932-2009 | 608 |
+
+Total: 3,813 tokens.
+
+MIMRY opened six files instead of one and still read 75.3% fewer tokens: 3,813 against 15,418.
+
+The numbers come from [`results.holdout2.ranges.0.4.1.json`](benchmarks/tokens/results.holdout2.ranges.0.4.1.json), measured with MIMRY 0.4.1 in token benchmark run 38884765315.
+To reproduce them, see [Running it](benchmarks/tokens/README.md#running-it).
+
 ## How it works
 
 1. **Index.** MIMRY parses each file into symbols and edges for imports, calls and inheritance, and stores the index in your user cache directory, outside the repository.
