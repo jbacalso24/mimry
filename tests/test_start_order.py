@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from mimry.intent import start_order
+from mimry.queries import explain_payload
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = "src/billing/ledger.py"
@@ -254,3 +255,85 @@ def test_explain_puts_matching_source_symbols_before_matching_test_symbols(tmp_p
 
     assert explain.returncode == 0, explain.stderr
     assert _key_symbols(explain.stdout)[0] == "escape_markup"
+
+
+CONNECT_TASK = "round invoice total to cents"
+CONNECT_SOURCES = {
+    "src/billing/money.py": (
+        "def round_to_cents(value):\n"
+        '    """Round a money amount to two decimal places."""\n'
+        "    return round(value, 2)\n"
+    ),
+    "src/billing/invoice.py": (
+        "from src.billing.money import round_to_cents\n\n\n"
+        "class Invoice:\n"
+        "    def __enter__(self):\n"
+        "        return self\n\n"
+        "    def __exit__(self, *exc):\n"
+        "        return False\n\n\n"
+        "def invoice_total(lines):\n"
+        '    """Sum the line amounts and round the invoice total to cents."""\n'
+        "    return round_to_cents(_sum_amounts(lines))\n\n\n"
+        "def _sum_amounts(lines):\n"
+        '    return sum(line["amount"] for line in lines)\n'
+    ),
+}
+
+
+def _connect_rows(stdout: str) -> list[list[str]]:
+    """The How they connect rows split into columns, [] when absent."""
+    if "How they connect" not in stdout:
+        return []
+    rows = []
+    for line in stdout.split("How they connect", 1)[1].splitlines()[1:]:
+        if not line.strip():
+            break
+        rows.append(line.split())
+    return rows
+
+
+def _connect_repo(tmp_path: Path) -> tuple[Path, Path]:
+    repo = tmp_path / "repo"
+    for rel, text in CONNECT_SOURCES.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(text, encoding="utf-8")
+    cache = tmp_path / "cache"
+    assert _run_cli(repo, cache, "init").returncode == 0
+    return repo, cache
+
+
+def test_how_they_connect_links_the_key_symbols_and_skips_filler(tmp_path):
+    repo, cache = _connect_repo(tmp_path)
+
+    explain = _run_cli(repo, cache, "explain", CONNECT_TASK)
+
+    assert explain.returncode == 0, explain.stderr
+    rows = _connect_rows(explain.stdout)
+    assert ["invoice_total", "calls", "round_to_cents"] in rows, explain.stdout
+    assert ["src/billing/invoice.py", "imports", "src/billing/money.py"] in rows
+    assert not [r for r in rows if "__enter__" in r or "_sum_amounts" in r], explain.stdout
+
+
+def test_how_they_connect_is_left_out_when_nothing_qualifies(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / STOP_FILE).parent.mkdir(parents=True)
+    (repo / STOP_FILE).write_text(STOP_SOURCE, encoding="utf-8")
+    cache = tmp_path / "cache"
+    assert _run_cli(repo, cache, "init").returncode == 0
+
+    explain = _run_cli(repo, cache, "explain", STOP_TASK)
+
+    assert explain.returncode == 0, explain.stderr
+    assert "How they connect" not in explain.stdout
+
+
+def test_explain_payload_carries_the_same_connections_as_the_text(tmp_path, monkeypatch):
+    repo, cache = _connect_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+
+    explain = _run_cli(repo, cache, "explain", CONNECT_TASK)
+    payload = explain_payload(repo, CONNECT_TASK)
+
+    assert payload["edges"], explain.stdout
+    expected = [[e["source"], e["relation"], e["target"]] for e in payload["edges"]]
+    assert expected == _connect_rows(explain.stdout)

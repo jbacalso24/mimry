@@ -19,6 +19,7 @@ from .core.artifacts import (
     call_relations,
     call_rows,
     calls_note,
+    connection_edges,
     empty_call_payload,
     graph_health,
     importing_files,
@@ -26,7 +27,6 @@ from .core.artifacts import (
     line_missed_message,
     load_graph,
     node_source_file,
-    relationship_edges,
     relationship_lines,
     shortest_path,
     split_file_line,
@@ -849,6 +849,19 @@ def _symbol_rows(
     return out
 
 
+def _is_key_symbol(name: str, query: str) -> bool:
+    """Whether a symbol is about the task, not filler from its files.
+
+    A dunder method counts only when the task names it. Any other symbol
+    counts when a task term matches one of its name tokens.
+    """
+    if name.startswith("__") and name.endswith("__"):
+        return name.lower() in query.lower()
+    terms = location_terms(query_terms(query))
+    tokens = text_terms(name)
+    return any(term_matches_token(term, t) for term in terms for t in tokens)
+
+
 def _explain_answer(root: Path, query: str, limit: int) -> dict:
     """The explain answer as data, shared by the text and MCP paths."""
     ptr = require(root)
@@ -864,16 +877,23 @@ def _explain_answer(root: Path, query: str, limit: int) -> dict:
         ),
         query,
     )
+    symbols = _symbol_rows(fresh, rows, limit=6, query=query)
+    # Each location is "path" or "path:line"; a path has no colon.
+    key_symbols = {
+        (name, loc.rsplit(":", 1)[0])
+        for name, _kind, _lang, loc in symbols
+        if _is_key_symbol(name, query)
+    }
     edges = []
     if graph["status"] == "current":
-        edges = relationship_edges(root, [r["path"] for r in rows], max_edges=6)
+        edges = connection_edges(root, [r["path"] for r in rows], key_symbols, max_edges=6)
     return {
         "root": root,
         "query": query,
         "fresh": fresh,
         "graph": graph,
         "rows": rows,
-        "symbols": _symbol_rows(fresh, rows, limit=6, query=query),
+        "symbols": symbols,
         "edges": edges,
         "verify": _verification_commands(fresh),
     }

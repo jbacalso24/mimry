@@ -989,19 +989,59 @@ def relationship_edges(root: Path, selected_paths: list[str], max_edges: int = 1
         tf = node_source_file(t)
         if sf not in selected and tf not in selected:
             continue
-        edges.append(
-            {
-                "source": str(s.get("label") or s.get("id")),
-                "relation": str(e.get("relation") or e.get("type") or "relates"),
-                "target": str(t.get("label") or t.get("id")),
-                "source_file": sf or "?",
-                "target_file": tf or "?",
-                "confidence": str(e.get("confidence") or e.get("confidence_score") or ""),
-            }
-        )
+        edges.append(_edge_record(e, s, t, sf, tf))
         if len(edges) >= max_edges:
             break
     return edges
+
+
+def _edge_record(e: dict, s: dict, t: dict, sf: str | None, tf: str | None) -> dict:
+    return {
+        "source": str(s.get("label") or s.get("id")),
+        "relation": str(e.get("relation") or e.get("type") or "relates"),
+        "target": str(t.get("label") or t.get("id")),
+        "source_file": sf or "?",
+        "target_file": tf or "?",
+        "confidence": str(e.get("confidence") or e.get("confidence_score") or ""),
+    }
+
+
+def connection_edges(
+    root: Path, top_paths: list[str], key_symbols: set[tuple[str, str]], max_edges: int = 6
+) -> list[dict]:
+    """Graph edges that link the task's top files and key symbols.
+
+    An endpoint counts when it is one of ``top_paths`` (a file), or one
+    of ``key_symbols`` (name, path). Edges between two different top
+    files come first, then the rest in graph order. A ``defines`` edge
+    comes last, since the key symbols table already shows where each
+    symbol lives.
+    """
+    g = load_graph(root)
+    nodes = g.get("nodes") or []
+    links = g.get("links") or g.get("edges") or []
+    id_to_node = {str(n.get("id")): n for n in nodes if n.get("id")}
+    top = set(top_paths)
+
+    def admitted(node: dict) -> bool:
+        if node.get("type") == "symbol":
+            name = str(node.get("label") or node.get("id"))
+            return (name, node_source_file(node)) in key_symbols
+        return node_source_file(node) in top
+
+    ranked = []
+    for e in links:
+        s = id_to_node.get(str(e.get("source")))
+        t = id_to_node.get(str(e.get("target")))
+        if not s or not t or not admitted(s) or not admitted(t):
+            continue
+        sf = node_source_file(s)
+        tf = node_source_file(t)
+        cross_top = sf in top and tf in top and sf != tf
+        defines = _edge_relation(e) == "defines"
+        ranked.append(((not cross_top, defines), _edge_record(e, s, t, sf, tf)))
+    ranked.sort(key=lambda item: item[0])
+    return [row for _, row in ranked[:max_edges]]
 
 
 def relationship_lines(root: Path, selected_paths: list[str], max_lines: int = 12) -> list[str]:
