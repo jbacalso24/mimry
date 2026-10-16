@@ -349,3 +349,101 @@ def test_changed_symbol_with_callers_does_not_fall_back(tmp_path):
     assert {t["name"] for t in payload["targets"]} == {"used"}
     assert payload["fallback"] == []
     assert "No callers for the changed symbols" not in text
+
+
+# A function holds the locals curNode and i; a class holds a method with
+# the local order. emptyParams is a module-level constant.
+TS_NODE = """export const emptyParams: Record<string, string> = {}
+
+export function insert(path: string): number {
+  let curNode = 0
+  for (let i = 0; i < path.length; i++) {
+    curNode += path.charCodeAt(i)
+  }
+  return curNode
+}
+
+export class Router {
+  add(path: string): number {
+    const order = insert(path)
+    return order
+  }
+}
+"""
+
+# Calls insert from a local, so the call must be credited to register.
+TS_CALLER = """import { insert, Router } from "./node"
+
+export function register(path: string): number {
+  const r = new Router()
+  const total = insert(path)
+  return r.add(path) + total
+}
+"""
+
+# An arrow component with a local, as React files write them.
+TS_PANEL = """export const Panel = () => {
+  const count = 2
+  return <div>{count}</div>
+}
+"""
+
+PY_BOX = """class Box:
+    def size(self):
+        total = 0
+
+        def helper():
+            return 1
+
+        return total + helper()
+
+
+def top():
+    return 2
+"""
+
+
+def test_ts_targets_skip_locals_but_keep_functions_classes_methods_and_constants(tmp_path):
+    repo, cache = _repo(
+        tmp_path,
+        {
+            "src/node.ts": TS_NODE,
+            "src/caller.ts": TS_CALLER,
+            "src/ui/Panel.tsx": TS_PANEL,
+        },
+    )
+
+    text = _mimry(repo, cache, "impact", "src/node.ts").stdout
+    names = {t["name"] for t in _json(repo, cache, "src/node.ts")["targets"]}
+    panel = {t["name"] for t in _json(repo, cache, "src/ui/Panel.tsx")["targets"]}
+
+    assert names == {"emptyParams", "insert", "Router", "add"}
+    assert panel == {"Panel"}
+    assert "curNode" not in text and "order" not in text
+    assert {c["name"] for c in _json(repo, cache, "src/node.ts")["callers"]} == {"register"}
+
+
+def test_ts_caller_through_a_local_is_credited_to_the_function(tmp_path):
+    repo, cache = _repo(tmp_path, {"src/node.ts": TS_NODE, "src/caller.ts": TS_CALLER})
+
+    callers = {c["name"] for c in _json(repo, cache, "insert")["callers"]}
+
+    assert callers == {"add", "register"}
+
+
+def test_changed_inside_a_function_body_targets_the_function_only(tmp_path):
+    repo, cache = _repo(tmp_path, {"src/node.ts": TS_NODE, "src/caller.ts": TS_CALLER})
+    edited = TS_NODE.replace("let curNode = 0", "let curNode = 1")
+    (repo / "src" / "node.ts").write_text(edited, encoding="utf-8")
+
+    payload = _json(repo, cache, "--changed")
+
+    assert {t["name"] for t in payload["targets"]} == {"insert"}
+
+
+def test_python_nested_def_is_not_a_target_but_methods_are(tmp_path):
+    repo, cache = _repo(tmp_path, {"app/box.py": PY_BOX})
+
+    names = {t["name"] for t in _json(repo, cache, "app/box.py")["targets"]}
+
+    assert names == {"Box", "size", "top"}

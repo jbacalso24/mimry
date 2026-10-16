@@ -151,7 +151,8 @@ For `callers` and `callees` at depth 2 or 3, a result is `EXTRACTED` only when s
 
 `mimry impact` answers what breaks if a change lands, before you make it.
 Give it a symbol name or a repo-relative file path, or pass `--changed` to check the symbols and files that differ from HEAD.
-A file path covers every symbol defined in it.
+A file path covers every symbol defined in it, except locals.
+A variable or nested function inside a function, method or component body is not a target; the enclosing body is.
 `--changed` checks each edited symbol, whose line range overlaps a changed hunk, and each untracked file, whose symbols all count.
 When none of a changed file's symbols has a caller, `--changed` uses the tests that `mimry impact <file>` selects for that file, and lists the file in `fallback`.
 Document headings and SQL tables are not code, so they are never targets; a changed Markdown file still counts for importers.

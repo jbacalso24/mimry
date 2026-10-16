@@ -21,6 +21,7 @@ from .core.artifacts import (
     empty_call_payload,
     graph_health,
     importing_files,
+    lift_call_edges,
     line_missed_message,
     load_graph,
     node_source_file,
@@ -1203,9 +1204,60 @@ def _impact_error(payload: dict, code: str, message: str, **extra) -> dict:
     return payload
 
 
+# Kinds whose body holds locals; a symbol nested in one is not a target.
+_BODY_KINDS = frozenset({"function", "method", "component"})
+
+
+def _outer_bodies(syms: list[dict]) -> list[tuple[dict, dict | None]]:
+    """Each symbol of a file with the outermost function, method or
+    component whose body holds it, or None when no body does.
+    """
+    bodies = [
+        (start, end, sym)
+        for sym, start, end in _symbol_spans(syms)
+        if sym.get("kind") in _BODY_KINDS
+    ]
+    pairs = []
+    for sym in syms:
+        line = sym.get("line_start")
+        holders = [
+            (start, body)
+            for start, end, body in bodies
+            if line is not None and start < line <= end
+        ]
+        pairs.append((sym, min(holders, key=lambda h: h[0])[1] if holders else None))
+    return pairs
+
+
+def _targetable(syms: list[dict]) -> list[dict]:
+    """Symbols ``impact`` can name: those not nested in a function,
+    method or component of the same file. A method inside a class stays
+    and a variable inside a method does not. The index keeps locals for
+    other commands; only impact drops them.
+    """
+    return [sym for sym, holder in _outer_bodies(syms) if holder is None]
+
+
+def _lifted_graph(graph: dict, symbols_by_path: dict[str, list[dict]], ids: dict) -> dict:
+    """The graph with each call made from a local moved to the body that
+    holds it. The index records ``const x = f()`` as a call from ``x``,
+    so without this a local would be listed as a caller.
+    """
+    lift: dict[str, str] = {}
+    for rel, syms in symbols_by_path.items():
+        for sym, holder in _outer_bodies(syms):
+            if holder is None:
+                continue
+            local = ids.get((rel, sym["name"], sym.get("line_start")))
+            body = ids.get((rel, holder["name"], holder.get("line_start")))
+            if local and body:
+                lift[local] = body
+    return lift_call_edges(graph, lift) if lift else graph
+
+
 def _file_picks(symbols_by_path: dict[str, list[dict]], rel: str) -> list[tuple[str, dict]]:
-    """Each code symbol in a file, as ``impact <file>`` picks them."""
-    return [(rel, sym) for sym in symbols_by_path.get(rel, [])]
+    """Each target symbol in a file, as ``impact <file>`` picks them."""
+    return [(rel, sym) for sym in _targetable(symbols_by_path.get(rel, []))]
 
 
 def _picked_ids(ids: dict[tuple, str], picks: list[tuple[str, dict]]) -> set[str]:
@@ -1290,6 +1342,8 @@ def impact_payload(
     files_by_id = {f["file_id"]: f["rel_path"] for f in fresh["files"]}
     indexed = set(files_by_id.values())
     symbols_by_path = _symbols_by_path(fresh)
+    ids = _graph_symbol_ids(graph)
+    graph = _lifted_graph(graph, symbols_by_path, ids)
 
     # Each pick is (path, symbol record) for one target symbol.
     picks: list[tuple[str, dict]] = []
@@ -1306,7 +1360,7 @@ def impact_payload(
             payload.update(summary=NO_CHANGES_MESSAGE, no_changes=True)
             return payload
         for rel in sorted(touched):
-            syms = symbols_by_path.get(rel, [])
+            syms = _targetable(symbols_by_path.get(rel, []))
             if rel in changes["untracked"]:
                 picks += [(rel, sym) for sym in syms]
                 continue
@@ -1354,7 +1408,6 @@ def impact_payload(
         ]
         target_files, label = {row["path"]}, row["name"]
 
-    ids = _graph_symbol_ids(graph)
     targets = sorted(
         (
             {
