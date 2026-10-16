@@ -220,11 +220,16 @@ We're adding these next; progress is tracked in [#47](https://github.com/jbacals
 | Kilo Code | `kilo` | ✅ | [manual](#manual-mcp-setup) |
 | Antigravity, CodeBuddy, Hermes, OpenClaw, Trae | see `mimry install --list-platforms` | ✅ | [manual](#manual-mcp-setup) |
 | Aider, Pi Agent | see `mimry install --list-platforms` | ✅ | none |
-| Windsurf, Cline, Roo Code, Zed, JetBrains | [#80](https://github.com/jbacalso24/mimry/issues/80) | 🚧 | 🚧 |
-| Grok | [#93](https://github.com/jbacalso24/mimry/issues/93) | 🚧 | 🚧 |
+| Windsurf | `windsurf` | ✅ | [manual](#manual-mcp-setup) |
+| Cline | `cline` | ✅ | [manual](#manual-mcp-setup) |
+| Roo Code | `roo` | ✅ | [manual](#manual-mcp-setup) |
+| Zed | `zed` | ✅ | ✅, or printed to paste in when its settings file has comments |
+| JetBrains Junie | `junie` | ✅ | ✅ |
+| Grok Build | `grok` | ✅ | not yet |
 
-✅ means `mimry install` sets it up, manual means you add the MCP server by hand, and 🚧 means support is in progress.
+✅ means `mimry install` sets it up, and manual means you add the MCP server by hand.
 none means the agent has no MCP support, so the skill alone covers it.
+not yet means `mimry install` does not register an MCP server for the agent yet.
 
 See [docs/agents.md](docs/agents.md) for where each agent's files go and how its MCP server is registered.
 

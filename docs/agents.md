@@ -18,9 +18,11 @@ It also reports a skill or always-on block written by an older MIMRY as out of d
 | Agent | Registration |
 |---|---|
 | Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Factory Droid, Kimi, Amp, Devin | Through the agent's own CLI, at user scope |
-| Cursor, Kiro, OpenCode, VS Code | In the agent's config file |
+| Cursor, Kiro, OpenCode, VS Code, JetBrains Junie | In the agent's config file |
+| Zed | In its `settings.json` under `context_servers`, or printed when that file has comments |
 | Aider, Pi Agent, Agent Skills | None; the agent has no MCP support, so the skill alone covers it |
-| Any other agent, including Kilo Code | `mimry install` prints the snippet to add to its MCP settings |
+| Grok Build | None yet; its docs do not confirm an MCP config file |
+| Any other agent, including Kilo Code, Windsurf, Cline and Roo Code | `mimry install` prints the snippet to add to its MCP settings |
 
 Pass `--no-mcp`, or set `MIMRY_NO_MCP_REGISTRATION=1`, to install the skill without registering the server.
 A `--no-mcp` install remembers that choice, so `--status` shows the MCP server as `not registered (--no-mcp)` and does not report the install as needing repair.
@@ -97,4 +99,115 @@ Check the result with:
 
 ```bash
 mimry install --platform vscode --status
+```
+
+## Windsurf
+
+Install MIMRY for Windsurf with:
+
+```bash
+mimry install --platform windsurf
+```
+
+This installs the MIMRY skill at `~/.codeium/windsurf/skills/mimry/SKILL.md`.
+Add `--project` to install the skill at `.windsurf/skills/mimry/` in the current repository instead.
+Add `--always-on` with `--project` to write the MIMRY section to `AGENTS.md`, which Windsurf reads.
+Windsurf's docs do not confirm where its MCP server config lives, so `mimry install` prints the MCP snippet for you to add by hand.
+Check the result with:
+
+```bash
+mimry install --platform windsurf --status
+```
+
+## Cline
+
+Install MIMRY for Cline with:
+
+```bash
+mimry install --platform cline
+```
+
+This installs the MIMRY skill at `~/.cline/skills/mimry/SKILL.md`.
+Add `--project` to install the skill at `.cline/skills/mimry/` in the current repository instead.
+Add `--always-on` with `--project` to write the MIMRY section to `AGENTS.md`, which Cline reads.
+Cline loads skills only after you turn on Enable Skills under Settings, then Features.
+Cline's MCP settings file is per extension and is not in its docs, so `mimry install` prints the MCP snippet for you to add by hand.
+Check the result with:
+
+```bash
+mimry install --platform cline --status
+```
+
+## Roo Code
+
+Install MIMRY for Roo Code with:
+
+```bash
+mimry install --platform roo
+```
+
+This installs the MIMRY skill at `~/.roo/skills/mimry/SKILL.md`.
+Add `--project` to install the skill at `.roo/skills/mimry/` in the current repository instead.
+Add `--always-on` with `--project` to write the MIMRY section to `AGENTS.md`, which Roo Code reads.
+Roo Code's global MCP settings file is not documented with a path, so `mimry install` prints the MCP snippet for you to add by hand.
+Check the result with:
+
+```bash
+mimry install --platform roo --status
+```
+
+## Zed
+
+Install MIMRY for Zed with:
+
+```bash
+mimry install --platform zed
+```
+
+This installs the MIMRY skill at `~/.agents/skills/mimry/SKILL.md`.
+Add `--project` to install the skill at `.agents/skills/mimry/` in the current repository instead.
+The `.agents` folder is shared with `mimry install --platform agents`, so each install rewrites the same file and the last one wins.
+Add `--always-on` with `--project` to write the MIMRY section to `AGENTS.md`, which Zed reads.
+`mimry install` adds the local MCP server under `context_servers` in Zed's `settings.json`: `~/.config/zed/` on macOS, `$XDG_CONFIG_HOME/zed/` (default `~/.config/zed/`) on Linux, and `%APPDATA%\Zed\` on Windows.
+Zed's settings file usually starts with comments, and MIMRY never rewrites a file it cannot parse as plain JSON.
+In that case `mimry install` prints the `context_servers` entry for you to paste into Zed's settings.
+Check the result with:
+
+```bash
+mimry install --platform zed --status
+```
+
+## JetBrains Junie
+
+Install MIMRY for JetBrains Junie with:
+
+```bash
+mimry install --platform junie
+```
+
+This installs the MIMRY skill at `~/.junie/skills/mimry/SKILL.md` and adds the local MCP server to the `mcpServers` section of `~/.junie/mcp/mcp.json`, the Junie CLI's user config.
+Add `--project` to install the skill at `.junie/skills/mimry/` in the current repository instead.
+Add `--always-on` with `--project` to write the MIMRY section to `AGENTS.md`, which Junie reads.
+The JetBrains IDE plugin keeps its MCP settings in the IDE, and `mimry install` does not write them.
+Check the result with:
+
+```bash
+mimry install --platform junie --status
+```
+
+## Grok Build
+
+Install MIMRY for Grok Build with:
+
+```bash
+mimry install --platform grok
+```
+
+This installs the MIMRY skill at `~/.grok/skills/mimry/SKILL.md`.
+Add `--project` to install the skill at `.grok/skills/mimry/` in the current repository instead.
+Grok Build's docs do not confirm that it reads `AGENTS.md` or an MCP config file, so `--always-on` does nothing and no MCP server is registered.
+Check the result with:
+
+```bash
+mimry install --platform grok --status
 ```

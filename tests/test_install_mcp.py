@@ -687,3 +687,175 @@ def test_install_help_lists_every_platform_from_the_table(capsys):
     assert exc.value.code == 0
     text = " ".join(capsys.readouterr().out.split())
     assert "Target platform: " + ", ".join(sorted(installer.platforms())) in text
+
+
+NEW_PLATFORM_PATHS = [
+    # key, global skill, project skill (relative to home or repo)
+    ("windsurf", ".codeium/windsurf/skills/mimry/SKILL.md", ".windsurf/skills/mimry/SKILL.md"),
+    ("cline", ".cline/skills/mimry/SKILL.md", ".cline/skills/mimry/SKILL.md"),
+    ("roo", ".roo/skills/mimry/SKILL.md", ".roo/skills/mimry/SKILL.md"),
+    ("zed", ".agents/skills/mimry/SKILL.md", ".agents/skills/mimry/SKILL.md"),
+    ("junie", ".junie/skills/mimry/SKILL.md", ".junie/skills/mimry/SKILL.md"),
+    ("grok", ".grok/skills/mimry/SKILL.md", ".grok/skills/mimry/SKILL.md"),
+]
+
+
+@pytest.mark.parametrize(("key", "global_rel", "project_rel"), NEW_PLATFORM_PATHS)
+def test_new_platform_skill_paths(mcp_test_fixture, key, global_rel, project_rel):
+    """Each new platform writes its skill at the confirmed folder."""
+    fixture = mcp_test_fixture
+    home = fixture["fake_home"]
+    repo = fixture["tmp_path"] / "repo"
+    repo.mkdir()
+
+    installer.install_skill(key, project=False, root=fixture["tmp_path"])
+    assert (home / global_rel).is_file()
+
+    installer.install_skill(key, project=True, root=repo)
+    assert (repo / project_rel).is_file()
+
+    assert installer.install_status(key, project=True, root=repo)["skill"] is True
+    installer.uninstall_skill(key, project=True, root=repo)
+    assert not (repo / project_rel).exists()
+    assert installer.install_status(key, project=True, root=repo)["skill"] is False
+
+
+@pytest.mark.parametrize(
+    ("alias", "key"),
+    [("roo-code", "roo"), ("jetbrains", "junie")],
+)
+def test_new_platform_aliases(alias, key):
+    """Aliases resolve to their platform."""
+    assert installer.canonical_platform(alias) == key
+    assert alias in installer.platform_help()
+
+
+@pytest.mark.parametrize("key", ["windsurf", "cline", "roo", "junie"])
+def test_new_platform_always_on_writes_agents_md(mcp_test_fixture, key):
+    """Always-on writes the MIMRY section to the root AGENTS.md."""
+    fixture = mcp_test_fixture
+    repo = fixture["tmp_path"] / "repo"
+    repo.mkdir()
+
+    installer.install_skill(key, project=True, root=repo, always_on=True)
+
+    assert "## MIMRY" in (repo / "AGENTS.md").read_text(encoding="utf-8")
+    assert installer.install_status(key, project=True, root=repo)["always_on"] is True
+
+
+def test_grok_has_no_always_on_or_mcp():
+    """Grok gets the skill alone: no always-on file and no MCP entry."""
+    cfg = installer.platforms()["grok"]
+    assert cfg.always_on_file is None
+    assert cfg.mcp is None
+
+
+def test_junie_writes_mcpservers_entry_and_keeps_others(mcp_test_fixture):
+    """Junie: mimry is added under mcpServers; other servers kept."""
+    fixture = mcp_test_fixture
+    fake_home = fixture["fake_home"]
+    fake_mcp_server = fixture["fake_mcp_server"]
+
+    mcp_path = fake_home / ".junie" / "mcp" / "mcp.json"
+    mcp_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = {"mcpServers": {"other": {"command": "other-mcp"}}, "someOtherKey": "value"}
+    mcp_path.write_text(json.dumps(existing, indent=2) + "\n")
+
+    installer.install_skill("junie", project=False, root=fixture["tmp_path"])
+
+    data = json.loads(mcp_path.read_text())
+    assert data["mcpServers"]["mimry"] == {"command": str(fake_mcp_server), "args": []}
+    assert data["mcpServers"]["other"] == {"command": "other-mcp"}
+    assert data["someOtherKey"] == "value"
+    assert installer.install_status("junie", project=False, root=fixture["tmp_path"])["mcp"]
+
+    installer.uninstall_skill("junie", project=False, root=fixture["tmp_path"])
+    assert json.loads(mcp_path.read_text())["mcpServers"] == {"other": {"command": "other-mcp"}}
+
+
+def test_zed_writes_context_servers_entry(mcp_test_fixture, monkeypatch):
+    """Zed: mimry goes under context_servers, other keys stay."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    fixture = mcp_test_fixture
+    fake_home = fixture["fake_home"]
+    fake_mcp_server = fixture["fake_mcp_server"]
+
+    settings = fake_home / ".config" / "zed" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    existing = {"context_servers": {"other": {"command": "other-mcp"}}, "theme": "x"}
+    settings.write_text(json.dumps(existing) + "\n")
+
+    installer.install_skill("zed", project=False, root=fixture["tmp_path"])
+
+    data = json.loads(settings.read_text())
+    assert data["context_servers"]["mimry"] == {"command": str(fake_mcp_server), "args": []}
+    assert data["context_servers"]["other"] == {"command": "other-mcp"}
+    assert data["theme"] == "x"
+
+
+def test_zed_settings_with_comment_is_never_rewritten(mcp_test_fixture, monkeypatch, capsys):
+    """A Zed settings file that does not parse is left byte for byte,
+    and the entry is printed for the user to add by hand."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    fixture = mcp_test_fixture
+    settings = fixture["fake_home"] / ".config" / "zed" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    original = '{\n  // keep this comment\n  "theme": "x"\n}\n'
+    settings.write_bytes(original.encode("utf-8"))
+
+    installer.register_mcp(installer.platforms()["zed"], dry_run=False)
+
+    assert settings.read_bytes() == original.encode("utf-8")
+    out = capsys.readouterr().out
+    assert '"context_servers"' in out
+    assert '"mimry"' in out
+    assert "mimry-mcp" in out
+
+
+@pytest.mark.parametrize(
+    ("os_name", "env", "parts"),
+    [
+        ("win32", {"APPDATA": "roaming"}, ("roaming", "Zed")),
+        ("linux", {"XDG_CONFIG_HOME": "xdg"}, ("xdg", "zed")),
+        ("darwin", {}, (".config", "zed")),
+    ],
+)
+def test_zed_settings_path_follows_zed_per_os(tmp_path, monkeypatch, os_name, env, parts):
+    monkeypatch.setattr(installer, "_home", lambda: tmp_path)
+    monkeypatch.setattr(installer.sys, "platform", os_name)
+    for name in ("APPDATA", "XDG_CONFIG_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, str(tmp_path / value))
+
+    path = installer.platforms()["zed"].mcp.path
+
+    assert path == tmp_path.joinpath(*parts, "settings.json")
+
+
+def test_zed_and_agents_share_one_skill_file(mcp_test_fixture, monkeypatch):
+    """Both write ~/.agents/skills/mimry; neither breaks the other."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    root = mcp_test_fixture["tmp_path"]
+
+    installer.install_skill("agents", project=False, root=root)
+    installer.install_skill("zed", project=False, root=root)
+
+    assert installer.skill_body("zed") == installer.skill_body("agents")
+    for key in ("agents", "zed"):
+        assert installer.install_status(key, project=False, root=root)["skill"] is True
+
+
+@pytest.mark.parametrize("key", ["windsurf", "cline", "roo", "zed", "junie", "grok"])
+def test_new_platform_uninstall_removes_skill(mcp_test_fixture, key, monkeypatch):
+    """Global install then uninstall leaves no skill behind."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    root = mcp_test_fixture["tmp_path"]
+
+    installer.install_skill(key, project=False, root=root)
+    assert installer.install_status(key, project=False, root=root)["skill"] is True
+
+    installer.uninstall_skill(key, project=False, root=root)
+    assert installer.install_status(key, project=False, root=root)["skill"] is False

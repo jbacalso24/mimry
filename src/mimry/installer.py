@@ -89,6 +89,14 @@ _PLATFORM_ALIASES = {
     "kimi": "kimi",
     "pi": "pi",
     "codebuddy": "codebuddy",
+    "windsurf": "windsurf",
+    "cline": "cline",
+    "roo": "roo",
+    "roo-code": "roo",
+    "zed": "zed",
+    "junie": "junie",
+    "jetbrains": "junie",
+    "grok": "grok",
 }
 _REFERENCES: dict[str, str] = {
     "workflow.md": (
@@ -299,6 +307,18 @@ def _vscode_user_dir() -> Path:
         return _home() / "Library" / "Application Support" / "Code" / "User"
     config_home = os.environ.get("XDG_CONFIG_HOME") or (_home() / ".config")
     return Path(config_home) / "Code" / "User"
+
+
+def _zed_settings_path() -> Path:
+    # Zed's paths::config_dir(): RoamingAppData on Windows, the XDG
+    # config folder on Linux, ~/.config on macOS.
+    if sys.platform == "win32":
+        appdata = Path(os.environ.get("APPDATA") or (_home() / "AppData" / "Roaming"))
+        return appdata / "Zed" / "settings.json"
+    if sys.platform == "darwin":
+        return _home() / ".config" / "zed" / "settings.json"
+    config_home = os.environ.get("XDG_CONFIG_HOME") or (_home() / ".config")
+    return Path(config_home) / "zed" / "settings.json"
 
 
 def platforms() -> dict[str, MimryPlatform]:
@@ -537,6 +557,67 @@ def platforms() -> dict[str, MimryPlatform]:
             global_path=home / ".codebuddy" / "skills" / "mimry" / "SKILL.md",
             always_on_file=Path("AGENTS.md"),
         ),
+        # The Cascade docs (docs.devin.ai) confirm AGENTS.md, but do not
+        # confirm a Windsurf MCP file, so no MCP entry is written.
+        "windsurf": MimryPlatform(
+            key="windsurf",
+            label="Windsurf",
+            project_path=skill(".windsurf"),
+            global_path=home / ".codeium" / "windsurf" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        # The Cline and Roo Code MCP files are per-extension and not
+        # confirmed in their docs, so no MCP entry is written.
+        "cline": MimryPlatform(
+            key="cline",
+            label="Cline",
+            project_path=skill(".cline"),
+            global_path=home / ".cline" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+        ),
+        "roo": MimryPlatform(
+            key="roo",
+            label="Roo Code",
+            project_path=skill(".roo"),
+            global_path=home / ".roo" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+            aliases=("roo-code",),
+        ),
+        # Zed's settings.json usually starts with comments, which the
+        # JSON merge refuses; the entry is then printed to paste in.
+        "zed": MimryPlatform(
+            key="zed",
+            label="Zed",
+            project_path=skill(".agents"),
+            global_path=home / ".agents" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+            mcp=McpJson(
+                _zed_settings_path(),
+                "context_servers",
+                lambda server: {"command": server, "args": []},
+            ),
+        ),
+        "junie": MimryPlatform(
+            key="junie",
+            label="JetBrains Junie",
+            project_path=skill(".junie"),
+            global_path=home / ".junie" / "skills" / "mimry" / "SKILL.md",
+            always_on_file=Path("AGENTS.md"),
+            aliases=("jetbrains",),
+            mcp=McpJson(
+                home / ".junie" / "mcp" / "mcp.json",
+                "mcpServers",
+                lambda server: {"command": server, "args": []},
+            ),
+        ),
+        # Grok Build loads skills, but its docs do not confirm an
+        # AGENTS.md read or an MCP config, so it gets the skill alone.
+        "grok": MimryPlatform(
+            key="grok",
+            label="Grok Build",
+            project_path=skill(".grok"),
+            global_path=home / ".grok" / "skills" / "mimry" / "SKILL.md",
+        ),
     }
 
 
@@ -639,6 +720,9 @@ def skill_body(platform_key: str) -> str:
             " `uv tool install mimry`."
         ),
     }
+    # Zed reads the shared ~/.agents/skills folder, so it writes the
+    # same file as the generic install.
+    platform_notes["zed"] = platform_notes["agents"]
     if platform_key in platform_notes:
         note = platform_notes[platform_key]
     else:

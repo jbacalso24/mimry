@@ -362,6 +362,12 @@ def test_install_lists_expanded_platforms(tmp_path):
         "amp",
         "devin",
         "antigravity",
+        "windsurf",
+        "cline",
+        "roo",
+        "zed",
+        "junie",
+        "grok",
     ):
         assert any(line.split()[:1] == [name] for line in res.stdout.splitlines()), name
 
@@ -382,6 +388,12 @@ def test_expanded_project_platform_paths(tmp_path):
         "antigravity": ".agents/skills/mimry/SKILL.md",
         "pi": ".pi/agent/skills/mimry/SKILL.md",
         "codebuddy": ".codebuddy/skills/mimry/SKILL.md",
+        "windsurf": ".windsurf/skills/mimry/SKILL.md",
+        "cline": ".cline/skills/mimry/SKILL.md",
+        "roo": ".roo/skills/mimry/SKILL.md",
+        "zed": ".agents/skills/mimry/SKILL.md",
+        "junie": ".junie/skills/mimry/SKILL.md",
+        "grok": ".grok/skills/mimry/SKILL.md",
     }
     for platform, rel in cases.items():
         # A sibling, not a child: copying repo into itself made each
@@ -401,7 +413,7 @@ def test_expanded_project_platform_paths(tmp_path):
         assert skill.exists(), platform
         assert "platform-specific MIMRY skill install" in skill.read_text(
             encoding="utf-8"
-        ) or platform in {"antigravity"}
+        ) or platform in {"antigravity", "zed"}
 
 
 def _installed_hook_command(repo: Path, platform: str) -> str:
