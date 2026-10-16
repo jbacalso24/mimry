@@ -736,7 +736,7 @@ def _build_core_graph(
 _TEST_NAME_STOPWORDS = frozenset({"test", "tests", "should", "it"})
 TEST_TERMS_CAP = 300
 # Experiment: also credit every file a test file imports.
-TEST_TERMS_FROM_IMPORTS = True
+TEST_TERMS_FROM_IMPORTS = False
 
 
 def _is_test_name(name: str) -> bool:
