@@ -18,7 +18,7 @@ from typing import Any
 
 from . import __version__, installer, ui
 from .cache_safety import IndexOutsideCacheError, validated_current_index_path
-from .core.languages import grammar_error_reason, is_network_failure
+from .core.languages import grammar_error_reason, is_grammar_download_failure, is_network_failure
 from .install_info import (
     direct_url,
     editable_folder,
@@ -461,8 +461,7 @@ def _parser_check() -> dict[str, Any]:
         try:
             parser = get_parser(language)
         except Exception as exc:
-            # Matched by name: a stub pack may not define DownloadError.
-            if exc.__class__.__name__ == "DownloadError":
+            if is_grammar_download_failure(exc):
                 # Same wording as the index warning: only a network
                 # failure gets the network hint.
                 reason = grammar_error_reason(exc)
@@ -473,6 +472,23 @@ def _parser_check() -> dict[str, Any]:
                         f"tree-sitter grammars could not be downloaded ({reason})",
                         "Check your network or proxy; MIMRY downloads each grammar once, "
                         "on first use.",
+                        state="download_failed",
+                        language=language,
+                    )
+                if "cache directory" in reason.lower():
+                    # The pack finds its cache folder from the user's
+                    # profile; no reinstall fixes a missing folder.
+                    where = (
+                        "USERPROFILE points to a folder that contains AppData\\Local"
+                        if sys.platform == "win32"
+                        else "HOME (or XDG_CACHE_HOME) points to a folder you can write to"
+                    )
+                    return _check(
+                        "parsers.tree_sitter",
+                        "error",
+                        f"tree-sitter grammars failed ({reason})",
+                        f"The grammar cache folder could not be found. Check that {where}, "
+                        "then run `mimry doctor` again.",
                         state="download_failed",
                         language=language,
                     )

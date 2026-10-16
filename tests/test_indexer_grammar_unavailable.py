@@ -259,7 +259,56 @@ def test_doctor_reports_a_failed_download_as_a_download_failure(monkeypatch):
     assert check["summary"] == (
         "tree-sitter grammars failed (Could not determine system cache directory)"
     )
-    assert "suggestion" not in check
+    assert "grammar cache folder" in check["suggestion"]
+    assert "pinned parser pack" not in check["suggestion"]
+
+
+def test_doctor_blames_the_cache_folder_for_a_plain_runtime_error(monkeypatch):
+    # The pack raises a plain RuntimeError, not DownloadError, when the
+    # cache folder cannot be found.
+    class ParserPack:
+        @staticmethod
+        def get_parser(language):
+            raise RuntimeError("Download error: Could not determine system cache directory")
+
+    monkeypatch.setitem(sys.modules, "tree_sitter_language_pack", ParserPack)
+
+    check = doctor._parser_check()
+
+    assert check["state"] == "download_failed"
+    assert check["state"] != "grammar_missing"
+    assert check["summary"] == (
+        "tree-sitter grammars failed (Could not determine system cache directory)"
+    )
+    assert "grammar cache folder" in check["suggestion"]
+    assert "pip install" not in check["suggestion"]
+    assert "pinned parser pack" not in check["suggestion"]
+
+
+def test_loader_treats_a_cache_folder_runtime_error_as_a_download_failure(monkeypatch):
+    import tree_sitter_language_pack as pack
+
+    def fail(lang):
+        raise RuntimeError("Download error: Could not determine system cache directory")
+
+    monkeypatch.setattr(pack, "get_parser", fail)
+
+    with pytest.raises(languages.GrammarUnavailableError):
+        languages.load_parser("go")
+    assert languages.grammar_failure_reason() == "Could not determine system cache directory"
+
+
+def test_loader_lets_an_unrelated_runtime_error_through(monkeypatch):
+    import tree_sitter_language_pack as pack
+
+    def fail(lang):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(pack, "get_parser", fail)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        languages.load_parser("go")
+    assert languages.grammar_failure_reason() is None
 
 
 def test_doctor_gives_the_network_hint_only_for_a_network_failure(monkeypatch):

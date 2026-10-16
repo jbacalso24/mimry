@@ -1496,6 +1496,18 @@ def is_network_failure(reason: str | None) -> bool:
     return bool(reason) and _NETWORK_FAILURE.search(reason) is not None
 
 
+def is_grammar_download_failure(error: BaseException) -> bool:
+    """Whether the pack raised a grammar download failure.
+
+    Matched by the DownloadError name, since a stub pack may not define
+    it. Some failures, such as a missing cache folder, come out as a
+    plain RuntimeError with the same ``Download error:`` prefix.
+    """
+    if error.__class__.__name__ == "DownloadError":
+        return True
+    return _DOWNLOAD_PREFIX.match(str(error)) is not None
+
+
 def grammar_failure_reason() -> str | None:
     """Why this process's grammar download failed, or None."""
     return _download_reason
@@ -1504,9 +1516,9 @@ def grammar_failure_reason() -> str | None:
 def _pack_grammar(getter: str, lang: str) -> Any:
     """Call ``tree_sitter_language_pack.<getter>(lang)``.
 
-    This is the one grammar loader. After a DownloadError, every later
-    call in this process raises GrammarUnavailableError without trying
-    again. Other errors pass through.
+    This is the one grammar loader. After a download failure, every
+    later call in this process raises GrammarUnavailableError without
+    trying again. Other errors pass through.
     """
     global _download_failed, _download_reason
     import tree_sitter_language_pack as pack
@@ -1515,7 +1527,9 @@ def _pack_grammar(getter: str, lang: str) -> Any:
         raise GrammarUnavailableError(lang)
     try:
         return getattr(pack, getter)(lang)
-    except pack.DownloadError as exc:
+    except Exception as exc:
+        if not is_grammar_download_failure(exc):
+            raise
         _download_failed = True
         _download_reason = grammar_error_reason(exc)
         raise GrammarUnavailableError(lang) from exc
