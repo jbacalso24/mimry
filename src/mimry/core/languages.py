@@ -13,6 +13,7 @@ from .data_files import (
     extract_xml,
     extract_yaml,
 )
+from .sql_files import extract_statement, new_result, statement_spans, trigger_header
 
 EXTENSION_LANGUAGE = {
     ".py": "python",
@@ -75,6 +76,7 @@ EXTENSION_LANGUAGE = {
     ".htm": "html",
     ".vue": "vue",
     ".svelte": "svelte",
+    ".sql": "sql",
     ".json": "json",
     ".jsonc": "json",
     ".yaml": "yaml",
@@ -3122,14 +3124,56 @@ _DATA_EXTRACTORS = {
 
 
 # Languages that parse the whole file at once, not as a node walk.
-_WHOLE_FILE_LANGUAGES = _EMBEDDED_LANGUAGES | DATA_LANGUAGES
+_WHOLE_FILE_LANGUAGES = _EMBEDDED_LANGUAGES | DATA_LANGUAGES | {"sql"}
 
 
 def _extract_whole_file(path: Path, lang: str, source: str) -> dict:
-    """HTML, Vue and Svelte, and the data languages."""
+    """HTML, Vue and Svelte, the data languages, and SQL."""
     if lang in _EMBEDDED_LANGUAGES:
         return _extract_embedded(path, lang, source)
+    if lang == "sql":
+        return _extract_sql(source)
     return _extract_data(path, lang, source)
+
+
+def _extract_sql(source: str) -> dict:
+    """SQL objects and references, one statement at a time. A statement
+    the grammar does not know costs only itself, so the objects around
+    it are kept, as for a data file.
+    """
+    from tree_sitter import Parser
+
+    raw = source.encode("utf-8")
+    try:
+        parser = Parser(load_language("sql"))
+    except GrammarUnavailableError:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": GRAMMAR_UNAVAILABLE,
+        }
+    except Exception as exc:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": f"parse_error:{exc.__class__.__name__}",
+        }
+    result = new_result()
+    seen: set = set()
+    row = 0
+    counted = 0
+    for start, end in statement_spans(raw):
+        row += raw.count(b"\n", counted, start)
+        counted = start
+        chunk = raw[start:end]
+        root = parser.parse(chunk).root_node
+        if not extract_statement(root, chunk, row, result, seen):
+            trigger_header(chunk, row, result, seen)
+    return {**result, "status": "ok"}
 
 
 def _extract_data(path: Path, lang: str, source: str) -> dict:

@@ -592,15 +592,22 @@ def _fortran_module_files(files, symbols) -> dict:
 
 
 def _table_symbols(files, symbols) -> dict:
-    """lower(table_name) -> [(rel_path, symbol_id), ...]."""
+    """lower(table_name) -> [(rel_path, symbol_id), ...].
+
+    A table is listed under its full name and its last name, so the
+    reference `users` finds `public.users`.
+    """
     rel_path_of = {f["file_id"]: f["rel_path"] for f in files}
     tables: dict[str, list] = {}
     for sym in symbols:
-        if sym.get("kind") != "sql_table":
+        kind = sym.get("kind")
+        if kind != "sql_table" and not (kind == "table" and sym.get("language") == "sql"):
             continue
         rel_path = rel_path_of.get(sym["file_id"])
         if rel_path is not None:
-            tables.setdefault(sym.get("name", "").lower(), []).append((rel_path, sym["symbol_id"]))
+            name = sym.get("name", "").lower()
+            for key in {name, name.rpartition(".")[2]}:
+                tables.setdefault(key, []).append((rel_path, sym["symbol_id"]))
     return tables
 
 

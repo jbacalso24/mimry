@@ -466,8 +466,9 @@ def _is_sensitive_label(label: str, value: str = "") -> bool:
 
 # Parsed languages whose unquoted values are literal data, not
 # expressions. They are judged as text, so `auth: <secret>` in a YAML
-# file is still a literal credential.
-_LITERAL_VALUE_LANGUAGES = frozenset(("bash", "yaml", "json", "toml", "xml"))
+# file is still a literal credential, and an INSERT row in a SQL dump
+# is too.
+_LITERAL_VALUE_LANGUAGES = frozenset(("bash", "yaml", "json", "toml", "xml", "sql"))
 
 
 def is_code_path(path: str | Path) -> bool:

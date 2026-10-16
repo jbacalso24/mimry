@@ -1,6 +1,6 @@
 {
-  "canonicalDigest": "0b1549b69d4339cb5815b3876fc11bc1a40bdc93786769bb27f7534676127e3a",
-  "contextDigest": "14280c8994a9f8f79ea0f44608666cde194e00e9fff10ee08de512ae768cb9f6",
+  "canonicalDigest": "929b5407bf814c4be65a15785a38bb0997d2281cd0b44f8338162420e0b0017f",
+  "contextDigest": "c62e90d3429974ec7d98df31cee5789c28af90e2455023b9769465411edc1644",
   "contextLines": [
     "# MIMRY Context Pack",
     "## Query",
@@ -65,8 +65,8 @@
     "- `Session` (class, php) - `svc/php/Session.php:5`",
     "- `extend` (function, php) - `svc/php/Session.php:12`",
     "- `renew` (function, php) - `svc/php/Session.php:7`",
-    "- `sessions` (sql_table, sql) - `db/schema.sql:1`",
-    "- `users` (sql_table, sql) - `db/schema.sql:6`",
+    "- `sessions` (table, sql) - `db/schema.sql:1`",
+    "- `users` (table, sql) - `db/schema.sql:6`",
     "- `extend_expiry` (function, python) - `backend/services/session_service.py:9`",
     "- `renew_login` (function, python) - `backend/services/session_service.py:4`",
     "## Graph Relationships / Communities",

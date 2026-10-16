@@ -94,8 +94,9 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
             " Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, and Pascal"
             " functions, classes, methods, interfaces, modules, imports, calls, and inheritance"
             " relationships, CSS, SCSS, HTML, Vue, and Svelte selectors, element ids,"
-            " components, and imports, and JSON, YAML, TOML, XML and Terraform keys, ids and"
-            " resources without reading every file."
+            " components, and imports, SQL tables, views, functions, triggers and indexes,"
+            " and JSON, YAML, TOML, XML and Terraform keys, ids and resources without reading"
+            " every file."
         ),
         notes=(
             "Extracts definitions (functions, classes, structs, interfaces, traits, enums),"

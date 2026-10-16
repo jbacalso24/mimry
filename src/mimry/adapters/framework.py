@@ -94,7 +94,13 @@ def enrich_framework_facts(
 
     if ext == ".sql":
         sql_facts = sql_schema_facts_from_text(
-            source_text or _read_text(path), path, root, file_record, symbols, edges
+            source_text or _read_text(path),
+            path,
+            root,
+            file_record,
+            symbols,
+            edges,
+            with_symbols=False,
         )
         adapters.append("sql-schema")
         facts.extend(sql_facts or ["sql schema file"])
@@ -314,7 +320,13 @@ def sql_schema_facts_from_text(
     file_record: dict[str, Any],
     symbols: list[dict[str, Any]],
     edges: list[dict[str, Any]],
+    *,
+    with_symbols: bool = True,
 ) -> list[str]:
+    """Schema facts for CREATE TABLE text, and a sql_table symbol per
+    table when ``with_symbols``. A .sql file gets its tables from the
+    SQL parser instead, so it asks for no symbols here.
+    """
     facts: list[str] = []
     for match in _SQL_TABLE_RE.finditer(text):
         table = match.group("name").split(".")[-1]
@@ -322,16 +334,17 @@ def sql_schema_facts_from_text(
         rel = path.relative_to(root).as_posix()
         column_text = " columns " + " ".join(columns) if columns else ""
         facts.append(f"sql schema table {table}{column_text} file {rel}")
-        _add_framework_symbol(
-            file_record,
-            symbols,
-            edges,
-            table,
-            "sql_table",
-            "sql",
-            _line_for_offset(text, match.start()),
-            _line_for_offset(text, match.end()),
-        )
+        if with_symbols:
+            _add_framework_symbol(
+                file_record,
+                symbols,
+                edges,
+                table,
+                "sql_table",
+                "sql",
+                _line_for_offset(text, match.start()),
+                _line_for_offset(text, match.end()),
+            )
     return facts
 
 

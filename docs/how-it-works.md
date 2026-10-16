@@ -51,7 +51,7 @@ Indexing parses each file once and derives these edges from what it read:
 | `inherits` | symbol to symbol | base classes and implemented interfaces |
 | `references` | file to file, file to symbol | markdown links and SQL table mentions |
 
-39 languages parsed: Python, JavaScript, TypeScript, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart, Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, Pascal, CSS, SCSS, HTML, Vue, Svelte, JSON, YAML, TOML, XML and Terraform (HCL).
+40 languages parsed: Python, JavaScript, TypeScript, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart, Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, Pascal, CSS, SCSS, HTML, Vue, Svelte, SQL, JSON, YAML, TOML, XML and Terraform (HCL).
 Markdown, text, `.docx`, `.pptx`, `.xlsx`, `.pdf`, and `.svg` are indexed for content and can carry `references` edges.
 Documents up to 20 MB are read whole: up to 2,000 pages, sections, sheets or slides and 2,000,000 characters per file.
 Results name the page, section, sheet or slide they match (`read first: pages 12-14`, `section "3.2 Retention"`).

@@ -36,10 +36,11 @@ HEAVY_IGNORES = {
     ".venv",
     "venv",
 }
-# Symbols that are not code: Markdown headings, SQL tables and the keys
-# of data files. The impact command and the PreToolUse hook both skip
-# them. A Terraform resource is code, so it stays.
-NON_CODE_KINDS = frozenset({"heading", "sql_table", "key"})
+# Symbols that are not code: Markdown headings, SQL schema objects and
+# the keys of data files. The impact command and the PreToolUse hook
+# both skip them. A Terraform resource is code, and so is a SQL function
+# or trigger, so they stay.
+NON_CODE_KINDS = frozenset({"heading", "sql_table", "key", "table", "view", "index", "sequence"})
 SENSITIVE_PATTERNS = [
     ".env",
     "*.env",

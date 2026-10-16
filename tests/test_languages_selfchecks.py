@@ -2546,3 +2546,262 @@ class TestDataFilesThroughScanner:
         )
         assert record["adapter"] == "config-manifest"
         assert symbols == []
+
+
+PG_MIGRATION = """\
+CREATE SCHEMA app;
+
+CREATE SEQUENCE public.order_seq START WITH 1;
+
+CREATE TABLE public.users (
+    id SERIAL PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE public.orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    total NUMERIC(10, 2) NOT NULL
+);
+
+ALTER TABLE public.orders ADD COLUMN status TEXT DEFAULT 'new';
+
+CREATE INDEX idx_orders_user ON public.orders (user_id);
+CREATE INDEX ON public.orders (status);
+CREATE TYPE public.mood AS ENUM ('sad', 'ok');
+CREATE DOMAIN public.positive_int AS integer CHECK (VALUE > 0);
+"""
+
+PG_OBJECTS = """\
+CREATE VIEW public.order_totals AS
+SELECT u.id, SUM(o.total) AS total
+FROM public.users u
+JOIN public.orders o ON o.user_id = u.id
+GROUP BY u.id;
+
+CREATE OR REPLACE FUNCTION public.touch_order(p_id bigint)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE public.orders SET total = 0 WHERE id = p_id;
+END;
+$$;
+
+CREATE TRIGGER orders_touch
+AFTER INSERT ON public.orders
+FOR EACH ROW EXECUTE FUNCTION public.touch_order();
+"""
+
+MYSQL_PROCEDURE = """\
+DELIMITER //
+CREATE PROCEDURE add_user(IN p_email VARCHAR(255))
+BEGIN
+    INSERT INTO users (email) VALUES (p_email);
+END //
+DELIMITER ;
+
+CREATE TABLE `shop`.`items` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+"""
+
+SQLITE_SCHEMA = """\
+CREATE TABLE notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  body TEXT NOT NULL
+);
+CREATE INDEX notes_body ON notes(body);
+CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN
+  UPDATE stats SET n = n + 1;
+END;
+CREATE VIEW recent AS SELECT * FROM notes WHERE id > 0;
+"""
+
+
+def _sql_edges(sources: dict[str, str]) -> set[tuple[str, str, str]]:
+    """(caller, target, target file) for every SQL call edge, resolved
+    by the same resolver the indexer uses.
+    """
+    from mimry.core.resolve import resolve_calls
+
+    calls, symbols_by_file = {}, {}
+    for path, source in sources.items():
+        result = extract(path, source)
+        assert result["status"] == "ok"
+        calls[path] = result["calls"]
+        symbols_by_file[path] = result["definitions"]
+    return {
+        (e["caller_symbol"], e["target_symbol"], e["target_file"])
+        for e in resolve_calls(calls, symbols_by_file, [])
+        if e["caller_symbol"] is not None
+    }
+
+
+class TestSqlSymbols:
+    def test_migration_names_objects_as_written_with_lines(self):
+        result = extract("db/migrations/001.sql", PG_MIGRATION)
+
+        kinds = {d["name"]: d["kind"] for d in result["definitions"]}
+        assert kinds == {
+            "app": "module",
+            "public.order_seq": "sequence",
+            "public.users": "table",
+            "public.orders": "table",
+            "idx_orders_user": "index",
+            "public.mood": "type",
+        }
+        assert _lines(result, "public.users") == (5, 8)
+        assert _lines(result, "public.orders") == (10, 14)
+        assert _lines(result, "idx_orders_user") == (18, 18)
+
+    def test_columns_and_unnamed_indexes_are_not_symbols(self):
+        result = extract("db/migrations/001.sql", PG_MIGRATION)
+
+        names = {d["name"] for d in result["definitions"]}
+        assert not names & {"id", "email", "status", "public.positive_int"}
+        assert [d["name"] for d in result["definitions"] if d["kind"] == "index"] == [
+            "idx_orders_user"
+        ]
+
+    def test_view_function_and_trigger_are_objects(self):
+        result = extract("db/objects.sql", PG_OBJECTS)
+
+        assert {d["name"]: d["kind"] for d in result["definitions"]} == {
+            "public.order_totals": "view",
+            "public.touch_order": "function",
+            "orders_touch": "trigger",
+        }
+        assert _lines(result, "public.touch_order") == (7, 14)
+
+    def test_mysql_delimiter_and_backticked_names(self):
+        result = extract("db/procs.sql", MYSQL_PROCEDURE)
+
+        assert {d["name"]: d["kind"] for d in result["definitions"]} == {
+            "add_user": "function",
+            "shop.items": "table",
+        }
+        assert _lines(result, "add_user") == (2, 5)
+
+    def test_sqlite_trigger_body_keeps_the_view_after_it(self):
+        result = extract("db/schema.sql", SQLITE_SCHEMA)
+
+        kinds = {d["name"]: d["kind"] for d in result["definitions"]}
+        assert kinds == {
+            "notes": "table",
+            "notes_body": "index",
+            "notes_ai": "trigger",
+            "recent": "view",
+        }
+        assert _lines(result, "notes_ai") == (6, 8)
+
+
+class TestSqlCallEdges:
+    def test_objects_call_the_tables_and_functions_they_touch(self):
+        edges = _sql_edges({"db/objects.sql": PG_OBJECTS, "db/migration.sql": PG_MIGRATION})
+
+        assert ("public.order_totals", "public.users", "db/migration.sql") in edges
+        assert ("public.order_totals", "public.orders", "db/migration.sql") in edges
+        assert ("public.touch_order", "public.orders", "db/migration.sql") in edges
+        assert ("orders_touch", "public.orders", "db/migration.sql") in edges
+        assert ("orders_touch", "public.touch_order", "db/objects.sql") in edges
+
+    def test_foreign_key_and_index_point_at_their_table(self):
+        edges = _sql_edges({"db/migration.sql": PG_MIGRATION})
+
+        assert ("public.orders", "public.users", "db/migration.sql") in edges
+        assert ("idx_orders_user", "public.orders", "db/migration.sql") in edges
+
+    def test_alter_table_and_plain_queries_have_no_caller(self):
+        result = extract("db/migration.sql", PG_MIGRATION)
+        assert all(c["line"] != 16 for c in result["calls"])
+
+        query = extract("db/queries.sql", "SELECT id FROM users;\nDELETE FROM orders;\n")
+        assert query["definitions"] == []
+        assert query["calls"] == []
+
+    def test_a_name_defined_in_two_files_is_ambiguous_and_gets_no_edge(self):
+        edges = _sql_edges(
+            {
+                "db/a.sql": "CREATE TABLE users (id int);",
+                "db/b.sql": "CREATE TABLE users (id int);",
+                "db/views.sql": "CREATE VIEW v AS SELECT * FROM users;",
+            }
+        )
+        assert not [edge for edge in edges if edge[0] == "v"]
+
+    def test_a_table_in_another_file_is_linked_without_an_import(self):
+        edges = _sql_edges(
+            {
+                "db/users.sql": "CREATE TABLE users (id int);",
+                "db/views.sql": "CREATE VIEW v AS SELECT * FROM public.users;",
+            }
+        )
+        assert ("v", "users", "db/users.sql") in edges
+
+
+class TestSqlTolerance:
+    def test_a_statement_the_grammar_cannot_read_keeps_its_neighbours(self):
+        source = "CREATE TABLE a (id int);\nCOPY a FROM STDIN;\nCREATE TABLE c (id int);\n"
+
+        result = extract("db/dialect.sql", source)
+
+        assert result["status"] == "ok"
+        assert {d["name"] for d in result["definitions"]} == {"a", "c"}
+
+    def test_a_domain_in_the_middle_of_a_migration_keeps_the_rest(self):
+        source = (
+            "CREATE TABLE a (id int);\n"
+            "CREATE DOMAIN d AS integer CHECK (VALUE > 0);\n"
+            "CREATE TABLE b (id int REFERENCES a(id));\n"
+        )
+
+        result = extract("db/domain.sql", source)
+
+        assert {d["name"] for d in result["definitions"]} == {"a", "b"}
+        assert _sql_edges({"db/domain.sql": source}) == {("b", "a", "db/domain.sql")}
+
+
+class TestSqlSizeAndTextSearch:
+    def test_sql_file_over_256_kb_gets_no_symbols(self, tmp_path):
+        rows = "".join(
+            f"INSERT INTO users VALUES ({i}, 'user{i}@example.com');\n" for i in range(9000)
+        )
+        big = "CREATE TABLE users (id int, email text);\n" + rows
+        assert len(big.encode("utf-8")) > 256 * 1024
+
+        record, symbols = TestDataFilesThroughScanner._adapt(tmp_path, "db/dump.sql", big)
+
+        assert symbols == []
+
+    def test_sql_file_under_the_limit_keeps_its_symbols(self, tmp_path):
+        record, symbols = TestDataFilesThroughScanner._adapt(
+            tmp_path, "db/schema.sql", "CREATE TABLE users (id int);\n"
+        )
+
+        assert record["adapter"].endswith("tree-sitter-sql")
+        assert [(s["name"], s["kind"]) for s in symbols] == [("users", "table")]
+
+    def test_sql_values_are_judged_as_text_not_expressions(self):
+        from mimry.security import is_code_path
+
+        assert language_for("db/schema.sql") == "sql"
+        assert not is_code_path("db/schema.sql")
+
+    def test_table_refs_are_the_same_as_before(self):
+        from mimry.adapters.framework import sql_table_references
+
+        sample = (
+            "SELECT * FROM public.sessions s JOIN users u ON u.id = s.user_id;\n"
+            "INSERT INTO audit_log VALUES (1);\n"
+            "UPDATE orders SET total = 0;\n"
+            "DELETE FROM public.carts WHERE id = 1;\n"
+        )
+        assert sql_table_references(sample) == [
+            "audit_log",
+            "carts",
+            "orders",
+            "sessions",
+            "users",
+        ]

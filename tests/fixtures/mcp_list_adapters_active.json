@@ -109,6 +109,7 @@
     ".scss",
     ".sh",
     ".sol",
+    ".sql",
     ".svelte",
     ".swift",
     ".tf",
@@ -133,7 +134,7 @@
     "inheritance_edges",
     "line_ranges"
    ],
-   "agent_use": "Backend, systems and web agents find Python, JavaScript, TypeScript, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart, Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, and Pascal functions, classes, methods, interfaces, modules, imports, calls, and inheritance relationships, CSS, SCSS, HTML, Vue, and Svelte selectors, element ids, components, and imports, and JSON, YAML, TOML, XML and Terraform keys, ids and resources without reading every file.",
+   "agent_use": "Backend, systems and web agents find Python, JavaScript, TypeScript, Go, Rust, C#, Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart, Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, and Pascal functions, classes, methods, interfaces, modules, imports, calls, and inheritance relationships, CSS, SCSS, HTML, Vue, and Svelte selectors, element ids, components, and imports, SQL tables, views, functions, triggers and indexes, and JSON, YAML, TOML, XML and Terraform keys, ids and resources without reading every file.",
    "notes": "Extracts definitions (functions, classes, structs, interfaces, traits, enums), imports with their source paths, inter-symbol call edges, and inheritance (extends/implements/with relationships). Line ranges and call locations enable precise edit targeting. Import resolution uses relative path suffix matching for C/C++ headers, relative and `require` matches for Ruby, and language-specific resolution rules."
   },
   {

@@ -6,7 +6,18 @@ import re
 from .languages import language_for
 from .tsconfig import resolve_ts_alias
 
-SYMBOL_KIND_PRIORITY = {"class": 0, "interface": 1, "function": 2, "method": 3, "sql_table": 4}
+SYMBOL_KIND_PRIORITY = {
+    "class": 0,
+    "interface": 1,
+    "function": 2,
+    "method": 3,
+    "sql_table": 4,
+    "table": 4,
+    "view": 4,
+    "trigger": 4,
+    "index": 5,
+    "sequence": 5,
+}
 
 # Vue and Svelte components import like TypeScript, so their targets
 # are probed with the same suffixes.
@@ -1018,7 +1029,15 @@ _CALLABLE_KINDS = ("function", "method", "class")
 # the function that holds the local.
 BODY_KINDS = frozenset({"function", "method", "component"})
 # Languages where same-module files call each other without imports.
-_IMPLICIT_SCOPE_LANGUAGES = frozenset(("swift", "kotlin", "csharp"))
+_IMPLICIT_SCOPE_LANGUAGES = frozenset(("swift", "kotlin", "csharp", "sql"))
+
+
+def _last_name(name: str) -> str:
+    """The last segment of a dotted SQL name: public.users is users.
+    A reference and its definition may differ in whether they qualify
+    the schema, and a schema is not compared.
+    """
+    return name.rpartition(".")[2]
 
 
 def _hcl_folder_files(symbols_by_file: dict[str, list[dict]]) -> dict[str, set[str]]:
@@ -1080,29 +1099,35 @@ def resolve_calls(
     for file_path, symbols in symbols_by_file.items():
         if file_path not in symbols_by_file_and_name:
             symbols_by_file_and_name[file_path] = {}
+        is_sql = language_for(file_path) == "sql"
         for symbol in symbols:
             name = symbol.get("name")
             if name:
-                if name not in symbols_by_file_and_name[file_path]:
-                    symbols_by_file_and_name[file_path][name] = []
-                symbols_by_file_and_name[file_path][name].append(symbol)
+                key = _last_name(name) if is_sql else name
+                if key not in symbols_by_file_and_name[file_path]:
+                    symbols_by_file_and_name[file_path][key] = []
+                symbols_by_file_and_name[file_path][key].append(symbol)
 
     methods = _method_ids(symbols_by_file)
     hcl_folders = _hcl_folder_files(symbols_by_file)
 
     # Repo-wide owners of each callable name, for the implicit-scope
-    # languages' last-resort lookup.
+    # languages' last-resort lookup. SQL objects are all owners, since
+    # a table is referenced the way a function is.
     owners_by_name: dict[str, list[tuple[str, dict]]] = {}
     for file_path, symbols in symbols_by_file.items():
+        is_sql = language_for(file_path) == "sql"
         for symbol in symbols:
             name = symbol.get("name")
-            if name and symbol.get("kind") in _CALLABLE_KINDS:
-                owners_by_name.setdefault(name, []).append((file_path, symbol))
+            if name and (is_sql or symbol.get("kind") in _CALLABLE_KINDS):
+                key = _last_name(name) if is_sql else name
+                owners_by_name.setdefault(key, []).append((file_path, symbol))
 
     # Process each file's calls
     for file_path, call_list in calls.items():
         # Get symbols in this file
         file_symbols = symbols_by_file.get(file_path, [])
+        is_sql = language_for(file_path) == "sql"
         file_classes = [s for s in file_symbols if s.get("kind") in _CONTAINER_KINDS]
 
         # Get imports from this file
@@ -1139,9 +1164,15 @@ def resolve_calls(
             caller_symbol_id = caller.get("symbol_id") if caller else None
 
             # Step 2: Generate candidates from the callee name. A
-            # Terraform reference is one name, such as var.region.
+            # Terraform reference is one name, such as var.region, and a
+            # SQL reference is looked up by its last name.
             callee_name = call.get("name", "")
-            candidates = [callee_name] if is_hcl else _generate_candidates(callee_name)
+            if is_hcl:
+                candidates = [callee_name]
+            elif is_sql:
+                candidates = [_last_name(callee_name)]
+            else:
+                candidates = _generate_candidates(callee_name)
 
             # Step 3: Resolve candidates (first hit wins)
             target_info = None
@@ -1355,7 +1386,7 @@ def _unique_owner(name: str, caller_file: str, owners_by_name: dict) -> dict | N
         return None
     return {
         "file": path,
-        "symbol": name,
+        "symbol": symbol.get("name", name),
         "symbol_id": symbol.get("symbol_id"),
         "confidence": "INFERRED",
     }

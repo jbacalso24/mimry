@@ -147,7 +147,7 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 39 languages with tree-sitter |
+| Code graph | Maps imports, calls and inheritance across 40 languages with tree-sitter |
 | Deterministic | The same code gives the same symbols, graph, rankings and context pack on every machine; CI checks every change against committed golden values ([how](docs/determinism.md)) |
 | Documents | Indexes Markdown, text, PDF, Word, Excel and PowerPoint files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
@@ -195,6 +195,7 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 | HTML | `.htm`, `.html` |
 | Vue | `.vue` |
 | Svelte | `.svelte` |
+| SQL | `.sql` |
 | JSON | `.json`, `.jsonc` |
 | YAML | `.yaml`, `.yml` |
 | TOML | `.toml` |
@@ -212,7 +213,7 @@ MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Wor
 
 Some files get more structure than their text:
 
-- SQL: `CREATE TABLE` statements in `.sql` files and in Python string literals, plus Alembic migrations and their revision lineage.
+- SQL: `.sql` files give their schema objects and the tables they touch, see below. Python string literals keep their `CREATE TABLE` names, and Alembic migrations keep their revision lineage.
 - Manifests: `package.json`, `pyproject.toml`, `tsconfig.json`, `vite.config.*`, `next.config.*`, `app.json`, `app.config.*`, `.env.example`, `CLAUDE.md`, `AGENTS.md` and `README.md` give their commands, frameworks, entry points and env variable names, never values.
 
 The data formats get the names an agent looks them up by.
@@ -224,6 +225,13 @@ A `var.region` reference finds the variable in the same folder, and a module's l
 Values are never symbols, so a secret stored as a value is never indexed.
 Lock files and files over 256 KB get no symbols, and manifests keep their own adapter above.
 Every data file is also indexed as text, so `mimry find` matches its content.
+
+SQL files name each schema object as the source writes it, such as `public.users`: tables, views, materialized views, indexes, sequences, schemas and types, and functions, procedures and triggers.
+A view, function, trigger or index that reads or writes a table gets a call edge to it, and so does a foreign key's `REFERENCES` target.
+A plain query or an `ALTER TABLE` belongs to no object, so it adds no edge.
+A statement the parser does not know costs only itself, and the objects around it are kept.
+A trigger written with a `BEGIN ... END` body gives its name and table, but its body is not read.
+Files over 256 KB get no symbols, so a large dump stays text-searchable.
 
 Other extensions can be mapped to a supported language in `mimry.toml`, see [Configuration](#configuration).
 

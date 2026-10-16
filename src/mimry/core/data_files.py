@@ -13,6 +13,9 @@ from __future__ import annotations
 import json
 
 DATA_LANGUAGES = frozenset(("yaml", "json", "toml", "xml", "hcl"))
+# Languages whose files over the size limit keep no symbols: the data
+# formats, and SQL dumps, which are mostly INSERT rows.
+SIZE_LIMITED_LANGUAGES = DATA_LANGUAGES | frozenset(("sql",))
 # Files above this size get no symbols. They stay text-searchable.
 MAX_SYMBOL_BYTES = 256 * 1024
 # Generated lock files. Their keys are not worth symbols.
