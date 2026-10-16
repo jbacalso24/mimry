@@ -47,8 +47,11 @@ jobs:
         run: uv run ruff check .
 
       - name: Test
-        # The slowest tests, to keep Windows run time in view (#344).
-        run: uv run pytest -q --durations=40
+        # Each test pays for subprocess and git start-up, which is slow
+        # on Windows: 2000 tests took 24 minutes there in one process
+        # (#344). Spread them over the runner's cores, and keep the
+        # slowest in view.
+        run: uv run pytest -q -n auto --durations=40
 
       # Fast portable check on fixed in-memory input, then the real gate: the
       # whole pipeline (scanner, parsers, graph, SQLite/FTS, semantic, context
