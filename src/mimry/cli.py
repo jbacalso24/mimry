@@ -552,13 +552,18 @@ def _cmd_mcp(a) -> int:
 
 
 def _configure_console() -> None:
-    # Human output must not crash on strict Windows code pages.
-    # Structured artifacts keep their explicit UTF-8 writers and remain
-    # untouched.
+    # Piped output (agent shells, Git Bash, CI) is UTF-8 everywhere, so
+    # names and symbols come through exactly. A terminal keeps its
+    # encoding: Python already writes Unicode to a Windows console via
+    # the console API.
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
-        if callable(reconfigure):
+        if not callable(reconfigure):
+            continue
+        if stream.isatty():
             reconfigure(errors="backslashreplace")
+        else:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def _hook_check_root(args) -> str | None:
@@ -579,6 +584,7 @@ def main(argv=None):
 
         from .hook import cmd_hook_check
 
+        _configure_console()
         return cmd_hook_check(SimpleNamespace(root=hook_root))
     from pathlib import Path
 

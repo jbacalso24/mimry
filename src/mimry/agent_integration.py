@@ -13,6 +13,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from mimry.cli import _configure_console
+
 REQUIRED_TOOLS = {
     "mimry_context",
     "mimry_find",
@@ -238,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         "--json-output", type=Path, help="Optional path for the machine-readable report."
     )
     args = parser.parse_args(argv)
+    _configure_console()
 
     with tempfile.TemporaryDirectory(prefix="mimry-agent-integration-") as raw_sandbox:
         sandbox = Path(raw_sandbox).resolve()
