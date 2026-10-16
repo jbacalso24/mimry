@@ -573,7 +573,7 @@ def _cmd_feedback_active(a, root: Path, ptr: dict, action: str | None):
     if not payload["query"]:
         ui.fail(
             "Feedback needs the task it is about",
-            'Pass --query "<task>", or --json with a query field.',
+            'Pass --query "<task>", or --from-json with a query field.',
         )
         return 2
     redacted_fields = payload.get("redacted_fields") or []

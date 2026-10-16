@@ -661,6 +661,23 @@ def test_unwritable_mcp_config_warns_and_the_install_completes(
     assert not (fake_home / ".cursor" / "mcp.json.tmp").exists()
 
 
+def test_install_help_lists_every_platform_alias_from_the_table(capsys):
+    """Each alias is listed with its platform, as --list-platforms does.
+
+    The windows alias gets a note of its own.
+    """
+    with pytest.raises(SystemExit) as exc:
+        main(["install", "--help"])
+
+    assert exc.value.code == 0
+    text = " ".join(capsys.readouterr().out.split())
+    for cfg in installer.platforms().values():
+        if cfg.aliases:
+            assert f"{', '.join(cfg.aliases)} for {cfg.key}" in text
+    assert "claude, windows for claude-code" in text
+    assert "The windows alias is not a Windows-only mode" in text
+
+
 def test_install_help_lists_every_platform_from_the_table(capsys):
     """#176: the --platform help comes from the platform table, so it
     cannot drift from what the installer supports."""

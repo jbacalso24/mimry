@@ -20,7 +20,7 @@ Run `benchmarks/feedback/run.py --repo <path> --commits N --work <dir> --out <fi
    Each clone is indexed with `mimry init --skip-graph` and `mimry index`, and each arm has its own `MIMRY_CACHE_HOME` under `--work`.
 6. Both arms run the same queries in the same order.
    - `off` runs `mimry find --limit 20` for the query and never records feedback.
-   - `on` runs the same find, then records the task as feedback with `mimry feedback --json`.
+   - `on` runs the same find, then records the task as feedback with `mimry feedback --from-json`.
      The payload holds the query, the top 10 paths the find returned as `suggested`, the gold files as `changed`, empty `opened` and `ignored`, `outcome` `unknown`, and the notes `Recorded from commit <sha12>`.
      Later tasks in the `on` arm see that feedback.
 7. Each task records, per arm, the top 20 paths, the rank of each gold file (or null), hit@1, hit@5 and hit@10 (any gold file in the top k), recall@10 (fraction of gold files in the top 10) and the reciprocal rank of the first gold file.

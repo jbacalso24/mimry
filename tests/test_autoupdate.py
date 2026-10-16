@@ -10,12 +10,34 @@ import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
 from mimry.autoupdate import (
+    announce_watch_start,
     git_hooks_install,
     git_hooks_status,
     git_hooks_uninstall,
+    report_refresh,
     watch,
 )
 from mimry.storage import load_pointer
+
+
+def test_watch_start_line_names_the_folder_and_how_to_stop(tmp_path, capsys):
+    announce_watch_start(tmp_path / "my-app")
+
+    out = capsys.readouterr().out
+    assert "Watching my-app for changes" in out
+    assert "Ctrl+C to stop" in out
+
+
+def test_refresh_line_names_the_changed_files_and_how_long_it_took(capsys):
+    report_refresh(("a.py", "b.py"), 0.42)
+
+    assert capsys.readouterr().out.strip().endswith("Refreshed 2 files (a.py, b.py) in 0.4s")
+
+
+def test_refresh_line_caps_the_names_it_lists(capsys):
+    report_refresh(("a.py", "b.py", "c.py", "d.py"), 1.0)
+
+    assert "Refreshed 4 files (a.py, b.py, c.py, +1 more) in 1.0s" in capsys.readouterr().out
 
 
 def test_watch_stops_when_pointer_becomes_none(tmp_path, monkeypatch):

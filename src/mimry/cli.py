@@ -70,7 +70,7 @@ def build_parser():
     )
     from .doctor import cmd_doctor
     from .hook import cmd_hook_check, cmd_hook_refresh
-    from .installer import cmd_install, cmd_uninstall, platform_keys
+    from .installer import cmd_install, cmd_uninstall, platform_help
     from .upgrade import cmd_upgrade
 
     p = argparse.ArgumentParser(
@@ -87,19 +87,28 @@ def build_parser():
     )
     sub = p.add_subparsers(dest="command", required=True)
     s = sub.add_parser(
-        "init", help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees"
+        "init",
+        help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees",
+        description=(
+            "Set up MIMRY for this repo: create the .mimry/ folder, add it to .gitignore, and"
+            " keep the index outside the repo. Run `mimry index` next to build the index."
+        ),
     )
     s.add_argument("--root-type", default="repo")
+    # init never builds the graph; accepted for old scripts.
     s.add_argument(
         "--skip-graph",
         dest="skip_graph",
         action="store_true",
-        help="Create MIMRY metadata without building graph artifacts",
+        help=argparse.SUPPRESS,
     )
     s.set_defaults(func=cmd_init)
     full_help = "Re-read and re-parse every file instead of reusing unchanged ones"
-    for name in ("index", "reindex"):
-        s = sub.add_parser(name)
+    for name, summary in (
+        ("index", "Build or update the index of this repo's files and symbols"),
+        ("reindex", "Update the index now, instead of waiting for the next query"),
+    ):
+        s = sub.add_parser(name, help=summary)
         s.add_argument("--full", action="store_true", help=full_help)
         s.set_defaults(func=cmd_index)
     s = sub.add_parser("refresh", help="Run internal graph build, MIMRY index, then status")
@@ -116,7 +125,14 @@ def build_parser():
         help="Run the full refresh (graph build + MIMRY index) before context generation",
     )
     s.set_defaults(func=cmd_preflight)
-    s = sub.add_parser("status")
+    s = sub.add_parser(
+        "status",
+        help="Show whether the index is current and what changed since it was built",
+        description=(
+            "Report whether the index is current, and list the files that changed since it was"
+            " built. Exit code: 0 when current, 1 when MIMRY is not set up, 2 when out of date."
+        ),
+    )
     s.add_argument(
         "--verify",
         action="store_true",
@@ -138,7 +154,15 @@ def build_parser():
         help="Re-hash indexed files while checking freshness; still performs no writes",
     )
     s.set_defaults(func=cmd_doctor)
-    s = sub.add_parser("upgrade", aliases=["update"], help="Upgrade MIMRY to the latest release")
+    # argparse prints the primary name for an alias; the help says so.
+    s = sub.add_parser(
+        "upgrade",
+        aliases=["update"],
+        help="Upgrade MIMRY to the latest release",
+        description=(
+            "Upgrade MIMRY to the latest release. `mimry update` is an alias for this command."
+        ),
+    )
     s.add_argument(
         "--stop-servers",
         action="store_true",
@@ -165,7 +189,10 @@ def build_parser():
     )
     s.add_argument(
         "--out",
-        help="Output path (default: .mimry/mimry-out/export/<format>)",
+        help=(
+            "Output path (default under .mimry/mimry-out/export/: graph.html, graph.graphml or"
+            " graph.cypher for those formats, and an obsidian folder for obsidian)"
+        ),
     )
     s.add_argument(
         "--force",
@@ -181,9 +208,9 @@ def build_parser():
     s = sub.add_parser("adapters", help="List built-in and planned MIMRY adapter plugins")
     s.add_argument("--active-only", action="store_true")
     s.set_defaults(func=cmd_adapters)
-    s = sub.add_parser("find")
+    s = sub.add_parser("find", help="Rank files that match a query, best match first")
     s.add_argument("--everywhere", action="store_true", help="Search the whole indexed repository")
-    s.add_argument("query")
+    s.add_argument("query", help="Words to look for, such as a file name, symbol or topic")
     s.add_argument(
         "--limit", type=_positive_int, default=10, help="Results per page (default: 10)"
     )
@@ -191,7 +218,11 @@ def build_parser():
         "--offset",
         type=_non_negative_int,
         default=None,
-        help="Enable stable pagination and skip filtered results (pass 0 on the first page)",
+        help=(
+            "Page through results: skip this many matches that pass the filters, then show"
+            " --limit. Pass 0 for page one. Leave it out for the compact top results, which can"
+            " rank differently from page one"
+        ),
     )
     s.add_argument(
         "--language",
@@ -232,13 +263,22 @@ def build_parser():
     s = sub.add_parser(
         "semantic",
         help="Local-only semantic search over bounded path/symbol/adapter/content-hint chunks",
+        description=(
+            "Search by meaning rather than exact words, locally, over chunks of file paths,"
+            " symbols and content. Run `mimry semantic index` to rebuild the chunks and"
+            " `mimry semantic status` to check them."
+        ),
     )
     s.add_argument("query", nargs="?", help='Query text, or "index"/"status"')
     s.add_argument("--limit", type=int, default=10)
     s.set_defaults(func=cmd_semantic)
-    s = sub.add_parser("related")
-    s.add_argument("query")
-    s.add_argument("--limit", type=int, default=10)
+    s = sub.add_parser(
+        "related",
+        help="Find files connected to a query through the code graph",
+        description="List files connected to a query through the code graph, best match first.",
+    )
+    s.add_argument("query", help="Words, a file name or a symbol to find related files for")
+    s.add_argument("--limit", type=int, default=10, help="How many files to show (default 10)")
     s.set_defaults(func=cmd_related)
     s = sub.add_parser(
         "route",
@@ -259,11 +299,18 @@ def build_parser():
     )
     s.add_argument("--limit", type=int, default=8)
     s.set_defaults(func=cmd_brief)
-    s = sub.add_parser("symbol")
-    s.add_argument("name")
+    s = sub.add_parser(
+        "symbol",
+        help="Find where a function, class or Markdown heading is defined",
+        description=(
+            "Look up a function, class or Markdown heading by name, and print where it is"
+            " defined. When no symbol matches, it lists files with a similar name."
+        ),
+    )
+    s.add_argument("name", help="Function, class or heading name; part of a name works")
     s.set_defaults(func=cmd_symbol)
-    s = sub.add_parser("context")
-    s.add_argument("query")
+    s = sub.add_parser("context", help="Write a context pack for a task, without preflight checks")
+    s.add_argument("query", help="The task to write the context pack for")
     s.add_argument(
         "--semantic",
         action="store_true",
@@ -297,7 +344,17 @@ def build_parser():
         default="unknown",
     )
     f.add_argument("--notes", help="Optional bounded note; no source contents or secrets")
-    f.add_argument("--json", help="Read feedback payload JSON from a file")
+    # Both spellings share one dest; usage shows the first only.
+    f.add_argument(
+        "--from-json",
+        "--json",
+        dest="from_json",
+        metavar="FILE",
+        help=(
+            "Read the feedback payload from a JSON file. --json is the older name and still"
+            " works; use --from-json"
+        ),
+    )
     f.add_argument(
         "--from-commit",
         nargs="?",
@@ -469,7 +526,7 @@ def build_parser():
         "install",
         help="Install MIMRY as an agent skill for Claude Code, Codex, Hermes, or Agent Skills",
     )
-    i.add_argument("--platform", help=f"Target platform: {platform_keys()}")
+    i.add_argument("--platform", help=platform_help())
     i.add_argument(
         "--project",
         action="store_true",
@@ -516,7 +573,7 @@ def build_parser():
     )
     i.set_defaults(func=cmd_install)
     u = sub.add_parser("uninstall", help="Remove a MIMRY agent skill install")
-    u.add_argument("--platform", required=True, help=f"Target platform: {platform_keys()}")
+    u.add_argument("--platform", required=True, help=platform_help())
     u.add_argument(
         "--project",
         action="store_true",
@@ -555,11 +612,22 @@ def build_parser():
     sub.add_parser("mcp", help="Run the MIMRY MCP stdio server (same as mimry-mcp)").set_defaults(
         func=_cmd_mcp
     )
-    cache = sub.add_parser("cache")
+    cache = sub.add_parser("cache", help="Manage MIMRY's index cache")
     cs = cache.add_subparsers(required=True)
-    w = cs.add_parser("wipe")
-    w.add_argument("--all", action="store_true")
-    w.add_argument("--current", action="store_true")
+    w = cs.add_parser("wipe", help="Delete this repo's cached index")
+    w.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "Turned off: MIMRY cannot yet clear every repo's cache safely, so this refuses and"
+            " exits 2. Run --current in each repo instead"
+        ),
+    )
+    w.add_argument(
+        "--current",
+        action="store_true",
+        help="Delete this repo's cached index; this is also what runs with no flag",
+    )
     w.set_defaults(func=cmd_cache_wipe)
     for name, command in sub.choices.items():
         if name not in {"hook-check", "hook-refresh", "plan", "cache", "mcp", "upgrade", "update"}:

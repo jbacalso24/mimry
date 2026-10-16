@@ -545,6 +545,17 @@ def platform_keys() -> str:
     return ", ".join(sorted(platforms()))
 
 
+def platform_help() -> str:
+    """Keys and aliases for the --platform help."""
+    aliases = "; ".join(
+        f"{', '.join(cfg.aliases)} for {cfg.key}" for cfg in platforms().values() if cfg.aliases
+    )
+    return (
+        f"Target platform: {platform_keys()}. Aliases: {aliases}. The windows alias is not a"
+        " Windows-only mode: claude-code installs the same files on every operating system."
+    )
+
+
 def canonical_platform(name: str) -> str:
     key = _PLATFORM_ALIASES.get(name)
     if not key:
@@ -586,7 +597,6 @@ def platform_table(*, verbose: bool = False) -> str:
 
 
 def skill_body(platform_key: str) -> str:
-    invocation = "$mimry" if platform_key == "codex" else "MIMRY"
     platform_notes = {
         "claude-code": (
             "Claude Code: use this skill with project `.claude/skills/mimry/` installs."
@@ -633,8 +643,6 @@ description: Use local repo memory at the start of every repo task instead of ex
 # MIMRY
 
 MIMRY is local repo intelligence for coding agents. It exists to stop blind grep/read loops and give agents a repo map before edits. It is not proof: source files, tests, build output, and user-visible behavior remain final truth.
-
-Invocation hint for this platform: {invocation}
 
 Platform note: {note}
 

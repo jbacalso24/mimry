@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -11,6 +12,26 @@ from . import ui
 from .freshness import index_freshness
 from .state import StateLockTimeoutError
 from .storage import load_pointer
+
+WATCH_NAMES_SHOWN = 3
+
+
+def _say(line: str) -> None:
+    # Flushed at once: piped output is block-buffered, so without this a
+    # watcher's lines stay hidden until the process exits.
+    ui.ok(line)
+    sys.stdout.flush()
+
+
+def announce_watch_start(root: Path) -> None:
+    _say(f"Watching {root.name or root} for changes; press Ctrl+C to stop")
+
+
+def report_refresh(pending: tuple[str, ...], elapsed: float) -> None:
+    shown = ", ".join(pending[:WATCH_NAMES_SHOWN])
+    if len(pending) > WATCH_NAMES_SHOWN:
+        shown += f", +{len(pending) - WATCH_NAMES_SHOWN} more"
+    _say(f"Refreshed {ui.count(len(pending), 'file')} ({shown}) in {ui.took(elapsed)}")
 
 
 def watch(
@@ -53,7 +74,7 @@ def watch(
     previous_pending = None
 
     try:
-        ui.detail("Watching for changes (Ctrl+C to stop)")
+        announce_watch_start(root)
         while max_cycles is None or cycle < max_cycles:
             cycle += 1
             ptr = load_pointer(root)
@@ -85,7 +106,7 @@ def watch(
                 sleep(interval)
                 continue
             elapsed = time.perf_counter() - started
-            ui.ok(f"Refreshed {ui.count(len(pending), 'file')} in {ui.took(elapsed)}")
+            report_refresh(pending, elapsed)
             previous_pending = None
             sleep(interval)
 

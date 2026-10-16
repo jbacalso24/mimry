@@ -206,7 +206,7 @@ def record(
         "notes": f"Recorded from commit {task['sha'][:12]}",
     }
     payload.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8", newline="\n")
-    loc.mimry(head, env, "feedback", "--json", str(payload))
+    loc.mimry(head, env, "feedback", "--from-json", str(payload))
 
 
 def replay(

@@ -27,9 +27,9 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry reindex` / `mimry refresh` | Update the index ahead of time (`--full` re-parses everything); query commands index a repo that was never indexed, update a stale index, and rebuild missing graph files on their own |
 | `mimry status` | Is the index current? (`--verify` re-hashes every file) |
 | `mimry doctor` | Read-only install, parser, index, and cache diagnostics (`--json` for tools); common problems and fixes are in [troubleshooting](troubleshooting.md) |
-| `mimry watch` | Poll for changes and refresh when they settle |
+| `mimry watch` | Poll for changes and refresh when they settle, printing one line per refresh |
 | `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`); the post-commit hook also records feedback from the commit, and re-running `mimry git-hooks` upgrades existing hooks |
-| `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back; `feedback stats` also shows, for the last 30 days, how many preflights ran, how many commits had a preflight first, and how many of those held a changed file in the preflight's top five; `--from-commit [REV]` records a commit's changed files against the last preflight before it |
+| `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back; `feedback stats` also shows, for the last 30 days, how many preflights ran and how many commits had a preflight first, and, only when at least one commit had one, how many of those held a changed file in the preflight's top five; `--from-json FILE` reads a feedback payload from a JSON file, and `--from-commit [REV]` records a commit's changed files against the last preflight before it |
 | `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
 | `mimry plan ...` | Store and render explicit plan trees |
 | `mimry mcp` | Run the MCP server (same as `mimry-mcp`) |

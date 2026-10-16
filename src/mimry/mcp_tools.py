@@ -872,7 +872,7 @@ def mimry_feedback(
         verification=verification,
         outcome=outcome,
         notes=notes,
-        json=None,
+        from_json=None,
     )
     payload = feedback_payload_from_args(root_path, args)
     if not payload["query"]:

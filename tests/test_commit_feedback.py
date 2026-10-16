@@ -360,7 +360,7 @@ def test_feedback_redacts_password_values(text, expected):
 
 def test_feedback_payload_from_args_is_unchanged(tmp_path):
     args = SimpleNamespace(
-        json=None,
+        from_json=None,
         query="  fix auth session bug password=hunter2 ",
         context=None,
         suggested="src/mimry/feedback.py, ./src/mimry/commands.py,src/mimry/feedback.py",

@@ -588,6 +588,15 @@ def test_agent_lines_use_singular_and_plural_and_fixed_order():
     assert upgrade._agent_lines({}) == []
 
 
+def test_update_help_says_it_is_an_alias_of_upgrade(capsys):
+    with pytest.raises(SystemExit) as raised:
+        main(["update", "--help"])
+
+    assert raised.value.code == 0
+    text = " ".join(capsys.readouterr().out.split())
+    assert "`mimry update` is an alias for this command." in text
+
+
 @pytest.mark.parametrize("argv", [["update"], ["upgrade"]])
 def test_update_is_an_alias_of_upgrade(argv):
     parser = build_parser()

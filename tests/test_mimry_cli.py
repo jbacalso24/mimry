@@ -286,7 +286,7 @@ def test_install_project_claude_alias_writes_claude_code_skill(tmp_path):
     skill = repo / ".claude" / "skills" / "mimry" / "SKILL.md"
     assert skill.exists()
     body = skill.read_text(encoding="utf-8")
-    assert "Invocation hint for this platform: MIMRY" in body
+    assert "Invocation hint" not in body
     assert "the context pack that preflight names" in body
     assert "mimry-out/context/latest.md" not in body
 
@@ -2705,6 +2705,42 @@ def test_feedback_json_records_equivalent_data_and_show_lists_it(tmp_path):
     assert data["changed_paths"] == ["src/auth/session.py"]
     assert data["ignored_paths"] == ["README.md"]
     assert data["verification"] == payload["verification"]
+
+
+@pytest.mark.parametrize("flag", ["--from-json", "--json"])
+def test_feedback_from_json_and_the_older_json_flag_both_record_the_payload(tmp_path, flag):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    feedback_json = tmp_path / "feedback.json"
+    feedback_json.write_text(
+        json.dumps(
+            {
+                "query": "login auth session bridge",
+                "changed": ["src/auth/session.py"],
+                "outcome": "passed",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    res = run_cli(repo, cache, "feedback", flag, str(feedback_json))
+
+    assert res.returncode == 0, res.stderr
+    shown = run_cli(repo, cache, "feedback", "show", _row(res.stdout, "ID:"))
+    assert shown.returncode == 0, shown.stderr
+    assert json.loads(shown.stdout)["changed_paths"] == ["src/auth/session.py"]
+
+
+def test_feedback_help_puts_from_json_in_usage_and_marks_json_as_older(tmp_path):
+    res = run_cli(tmp_path, tmp_path / "cache", "feedback", "--help")
+
+    assert res.returncode == 0, res.stderr
+    usage = res.stdout.split("\n\n", 1)[0]
+    assert "[--from-json FILE]" in usage
+    assert "--json" not in usage
+    assert "--json is the older name" in " ".join(res.stdout.split())
 
 
 def test_feedback_ranking_reasons_boost_missed_opened_changed_and_downrank_ignored(tmp_path):

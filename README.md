@@ -147,6 +147,13 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 
 MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Word and Excel files.
 
+Some files get more structure than their text:
+
+- SQL: `CREATE TABLE` statements in `.sql` files and in Python string literals, plus Alembic migrations and their revision lineage.
+- Manifests: `package.json`, `pyproject.toml`, `tsconfig.json`, `vite.config.*`, `next.config.*`, `app.json`, `app.config.*`, `.env.example`, `CLAUDE.md`, `AGENTS.md` and `README.md` give their commands, frameworks, entry points and env variable names, never values.
+
+Other JSON, YAML, TOML, HTML and CSS files are indexed as text, so `mimry find` matches their content, but they have no symbols.
+
 Other extensions can be mapped to a supported language in `mimry.toml`, see [Configuration](#configuration).
 
 ### Planned
@@ -154,7 +161,7 @@ Other extensions can be mapped to a supported language in `mimry.toml`, see [Con
 We're adding these next; progress is tracked in [#47](https://github.com/jbacalso24/mimry/issues/47), where you can ask for yours.
 
 - [ ] Web and markup: HTML, CSS, SCSS, Vue, Svelte
-- [ ] Data and config: SQL, JSON, YAML, TOML, XML, Terraform (HCL)
+- [ ] Data and config: YAML, XML, Terraform (HCL), and JSON and TOML files beyond the manifests above
 - [ ] Apps and systems: Groovy
 - [ ] Functional and scientific: Elixir, Haskell, OCaml, R, Julia
 - [ ] Other: Solidity, Fortran, Pascal

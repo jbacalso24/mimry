@@ -689,7 +689,7 @@ def test_feedback_waiting_for_publication_resolves_and_persists_to_new_generatio
         verification=None,
         outcome="passed",
         notes=None,
-        json=None,
+        from_json=None,
     )
     feedback = threading.Thread(target=lambda: feedback_result.append(cmd_feedback(args)))
     feedback.start()

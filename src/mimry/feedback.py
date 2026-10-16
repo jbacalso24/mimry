@@ -203,8 +203,8 @@ def _redact_feedback_value(value: Any) -> tuple[Any, bool]:
 
 
 def feedback_payload_from_args(root: Path, args: Any) -> dict[str, Any]:
-    if getattr(args, "json", None):
-        data = json.loads(Path(args.json).read_text(encoding="utf-8"))
+    if getattr(args, "from_json", None):
+        data = json.loads(Path(args.from_json).read_text(encoding="utf-8"))
     else:
         data = {
             "query": getattr(args, "query", "") or "",
