@@ -38,6 +38,7 @@ def _git(repo: Path, *args: str, date: str | None = None) -> str:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     return res.stdout.strip()
 

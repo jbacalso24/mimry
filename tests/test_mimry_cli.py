@@ -87,6 +87,7 @@ def run_cli(work: Path, cache: Path, *args: str):
         cwd=ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
@@ -107,6 +108,7 @@ def run_cli_from_cwd(work: Path, cache: Path, *args: str):
         cwd=work,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
@@ -121,6 +123,7 @@ def run_cli_with_cache_env(work: Path, cache_value: str, *args: str):
         cwd=ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
@@ -818,6 +821,7 @@ def test_hook_check_reminds_once_per_session_and_query(tmp_path):
             env=env,
             input=json.dumps(payload),
             text=True,
+            encoding="utf-8",
             capture_output=True,
             check=False,
         )
@@ -855,6 +859,7 @@ def test_hook_check_ignores_reads(tmp_path):
             env=env,
             input=json.dumps(payload),
             text=True,
+            encoding="utf-8",
             capture_output=True,
             check=False,
         )
@@ -2754,6 +2759,7 @@ def test_find_uses_fts_bm25_for_content_hint_phrase(tmp_path):
     assert "FTS/BM25 match" in res.stdout
 
 
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 def test_git_commands_decode_utf8_in_a_non_ascii_repo_path(tmp_path):
     # Git writes UTF-8; a Windows code page must not break init.
     repo = tmp_path / "数据 sp"

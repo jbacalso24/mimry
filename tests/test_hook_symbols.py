@@ -49,6 +49,7 @@ def _git(cwd: Path, *args: str) -> None:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
 
 
@@ -61,6 +62,7 @@ def _mimry(cwd: Path, cache: Path, *args: str) -> subprocess.CompletedProcess[st
         cwd=cwd,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )

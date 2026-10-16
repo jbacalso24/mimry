@@ -53,8 +53,8 @@ STANDALONE_SECRET_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:"
     r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}|"
     r"github_pat_[A-Za-z0-9_]{20,}|gh[oprsu]_[A-Za-z0-9]{20,}|"
-    r"xox[baprs]-[A-Za-z0-9-]{20,}|"
-    r"AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|"
+    r"xox[a-z]-[A-Za-z0-9-]{20,}|"
+    r"(?:AKIA|ASIA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|"
     r"sk_live_[0-9A-Za-z]{16,}"
     r")(?![A-Za-z0-9])"
 )
@@ -158,7 +158,8 @@ SENSITIVE_VALUE_RE = re.compile(
     r"(?is)(\"type\"\s*:\s*\"service_account\"|"
     r"//firebase\.google\.com/docs/|"
     r"client-key-data\s*:|client-certificate-data\s*:|"
-    r"-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----)"
+    # Any PRIVATE KEY header, even without its END line.
+    r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----)"
 )
 SPACED_SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)(?P<label>\b(?:api[ \t_-]+key|client[ \t_-]+secret|private[ \t_-]+key|"
@@ -395,12 +396,23 @@ def contains_sensitive_text(text: str, *, code: bool = False) -> bool:
     )
 
 
-def redact_sensitive_text(text: str) -> str:
-    """Remove high-confidence credentials from user and adapter text."""
+def redact_standalone_secrets(text: str) -> str:
+    """Redact credentials recognizable by their shape alone.
+
+    Token prefixes and private key headers are caught with or without a
+    label in front of them. redact_sensitive_text and feedback text both
+    run this pass, so the list lives in one place.
+    """
 
     redacted = PRIVATE_KEY_BLOCK_RE.sub(REDACTED, text)
     redacted = STANDALONE_SECRET_RE.sub(REDACTED, redacted)
-    redacted = SENSITIVE_VALUE_RE.sub(REDACTED, redacted)
+    return SENSITIVE_VALUE_RE.sub(REDACTED, redacted)
+
+
+def redact_sensitive_text(text: str) -> str:
+    """Remove high-confidence credentials from user and adapter text."""
+
+    redacted = redact_standalone_secrets(text)
     redacted = _redact_values(redacted, SPACED_SENSITIVE_ASSIGNMENT_RE, _redact_spaced_assignment)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
     redacted = _redact_yaml_quoted_multiline(redacted)

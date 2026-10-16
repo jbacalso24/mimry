@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from mimry.core.documents import extract_document_text
+from mimry.feedback import feedback_payload
 from mimry.mcp_tools import (
     mimry_brief,
     mimry_context,
@@ -66,6 +67,7 @@ def run_cli(repo: Path, cache: Path, *args: str) -> subprocess.CompletedProcess[
         cwd=ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
@@ -1094,6 +1096,78 @@ def test_private_key_and_aws_redaction_removes_secret_bodies():
     assert aws_body not in redacted
     assert VALUE_CANARY not in redacted
     assert redacted.count("[REDACTED]") == 3
+
+
+# One canary per well-known token shape. Repeated-character bodies keep
+# the strings low-entropy, so no secret scanner flags this file.
+TOKEN_SHAPE_CANARIES = (
+    "AKIA" + "A" * 16,
+    "ASIA" + "B" * 16,
+    "ghp_" + "a" * 36,
+    "gho_" + "a" * 36,
+    "ghu_" + "a" * 36,
+    "ghs_" + "a" * 36,
+    "ghr_" + "a" * 36,
+    "github_pat_" + "a" * 40,
+    "xoxb-" + "1" * 24,
+    "xoxc-" + "1" * 24,
+    "-----BEGIN PRIVATE KEY-----",
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+)
+SHAPE_PREFIXES = ("", "key ", "see ")
+
+
+@pytest.mark.parametrize("prefix", SHAPE_PREFIXES)
+@pytest.mark.parametrize("canary", TOKEN_SHAPE_CANARIES)
+def test_token_shapes_are_redacted_with_or_without_a_label(prefix: str, canary: str):
+    text = f"{prefix}{canary} end"
+    assert redact_sensitive_text(text) == f"{prefix}[REDACTED] end"
+
+
+@pytest.mark.parametrize("prefix", SHAPE_PREFIXES)
+@pytest.mark.parametrize("canary", TOKEN_SHAPE_CANARIES)
+def test_token_shapes_are_redacted_in_feedback_free_text(tmp_path: Path, prefix: str, canary: str):
+    payload = feedback_payload(
+        tmp_path, {"query": f"{prefix}{canary}", "notes": f"{prefix}{canary} end"}
+    )
+    assert payload["query"] == f"{prefix}[REDACTED]"
+    assert payload["notes"] == f"{prefix}[REDACTED] end"
+
+
+def test_identifiers_that_only_start_like_token_shapes_are_kept(tmp_path: Path):
+    ordinary = "AKIAN ASIAN ghp gho_ github_pat_ xoxo xoxb AKIA_TABLE ghp_short"
+    assert redact_sensitive_text(ordinary) == ordinary
+    assert feedback_payload(tmp_path, {"notes": ordinary})["notes"] == ordinary
+
+
+def test_feedback_store_redacts_an_aws_key_id_without_a_key_label(tmp_path: Path):
+    # Issue #291: feedback skipped the token shapes, so a key ID with no
+    # ``key=`` label was stored verbatim.
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE, repo)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    key = "AKIA" + "A" * 16
+
+    res = run_cli(
+        repo,
+        cache,
+        "feedback",
+        "--query",
+        "find the handler",
+        "--notes",
+        f"key {key} and password=hunter2",
+        "--outcome",
+        "passed",
+    )
+
+    assert res.returncode == 0, res.stderr
+    feedback_id = res.stdout.split("ID:", 1)[1].split()[0]
+    shown = run_cli(repo, cache, "feedback", "show", feedback_id)
+    assert shown.returncode == 0, shown.stderr
+    assert key not in shown.stdout
+    assert json.loads(shown.stdout)["notes"] == "key [REDACTED] and password=[REDACTED]"
 
 
 def test_cli_and_mcp_lookup_boundaries_never_echo_credential_inputs(tmp_path: Path, monkeypatch):

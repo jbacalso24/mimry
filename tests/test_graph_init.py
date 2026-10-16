@@ -23,6 +23,7 @@ def _run(repo: Path, env: dict[str, str], *args: str) -> subprocess.CompletedPro
         cwd=ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )

@@ -60,6 +60,7 @@ def _run(repo: Path, cache: Path, *args: str, block_pypdf: Path | None = None):
         cwd=ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )

@@ -51,6 +51,7 @@ def _run_cli(repo: Path, cache: Path, *args: str):
         cwd=ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )

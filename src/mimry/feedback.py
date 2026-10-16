@@ -10,6 +10,7 @@ from typing import Any
 
 from .intent import query_terms
 from .paths import now
+from .security import redact_standalone_secrets
 from .state import exclusive_file_lock
 
 VALID_OUTCOMES = {"passed", "failed", "blocked", "partial", "unknown"}
@@ -168,7 +169,10 @@ def _verification(value: Any) -> list[dict[str, str]]:
 def _redact_feedback_string(value: str) -> tuple[str, bool]:
     """Redact likely secrets in user feedback, keeping useful labels."""
 
-    redacted = BEARER_RE.sub(r"\1[REDACTED]", value)
+    # Token shapes come from the shared pass every free-text path uses;
+    # the label rules below stay feedback's own.
+    redacted = redact_standalone_secrets(value)
+    redacted = BEARER_RE.sub(r"\1[REDACTED]", redacted)
     redacted = SECRET_ASSIGNMENT_RE.sub(
         lambda m: f"{m.group('key')}{m.group('sep')}[REDACTED]", redacted
     )
