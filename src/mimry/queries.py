@@ -31,7 +31,18 @@ from .core.languages import EXTENSION_LANGUAGE
 from .freshness import index_freshness
 from .history import history_mentions
 from .indexer import write_index
-from .intent import is_doc_or_plan, is_likely_edit_surface, is_test_file, start_order
+from .intent import (
+    TEST_TERMS,
+    intent_terms,
+    is_doc_or_plan,
+    is_likely_edit_surface,
+    is_test_file,
+    location_terms,
+    query_terms,
+    start_order,
+    term_matches_token,
+    text_terms,
+)
 from .lifecycle import (
     STALE_INDEX_HINT,
     change_summary,
@@ -782,23 +793,55 @@ def _node_text(node: dict) -> str:
     return label if not source or source == label else f"{label} ({source})"
 
 
+def _symbol_sort_key(sym: dict, support: bool, file_rank: int, terms: list[str]) -> tuple:
+    """Symbols whose name matches the task first, most terms first.
+
+    A dunder method ranks behind every matching symbol that is not one,
+    so a generic ``__enter__`` never leads. Within a tier, symbols in
+    edit surfaces come before those in tests and docs (``support``),
+    as the start order puts their files. Then the file's start-order
+    rank and the line.
+    """
+    name = sym["name"]
+    tokens = text_terms(name)
+    matched = sum(1 for term in terms if any(term_matches_token(term, t) for t in tokens))
+    dunder = name.startswith("__") and name.endswith("__")
+    tier = 0 if matched and not dunder else 1 if matched else 2
+    return (tier, support, -matched, file_rank, sym.get("line_start") or 0)
+
+
 def _symbol_rows(
-    fresh: dict, rows: list[dict], limit: int = 12
+    fresh: dict, rows: list[dict], limit: int = 12, query: str | None = None
 ) -> list[tuple[str, str, str, str]]:
-    """(name, kind, language, "path:line") per selected-file symbol."""
-    selected = {row["path"] for row in rows}
+    """(name, kind, language, "path:line") per selected-file symbol.
+
+    Without a query, the first ``limit`` symbols in index order. With
+    one, the best ``limit`` by _symbol_sort_key, so the symbols that
+    match the task are not cut off by an alphabetical slice.
+    """
+    file_rank = {row["path"]: rank for rank, row in enumerate(rows)}
     files_by_id = {f["file_id"]: f for f in fresh["files"]}
     found = []
     for sym in fresh["symbols"]:
         file_rec = files_by_id.get(sym.get("file_id"))
         rel_path = file_rec.get("rel_path") if file_rec else None
-        if rel_path not in selected:
-            continue
+        if rel_path in file_rank:
+            found.append((sym, rel_path))
+    if query is not None:
+        terms = location_terms(query_terms(query))
+        tests_asked = bool(set(intent_terms(query)) & TEST_TERMS)
+
+        def key(item):
+            sym, rel_path = item
+            support = not tests_asked and not is_likely_edit_surface(rel_path)
+            return _symbol_sort_key(sym, support, file_rank[rel_path], terms)
+
+        found.sort(key=key)
+    out = []
+    for sym, rel_path in found[:limit]:
         loc = f":{sym['line_start']}" if sym.get("line_start") else ""
-        found.append((sym["name"], sym["kind"], sym["language"], f"{rel_path}{loc}"))
-        if len(found) >= limit:
-            break
-    return found
+        out.append((sym["name"], sym["kind"], sym["language"], f"{rel_path}{loc}"))
+    return out
 
 
 def run_explain(a):
@@ -823,7 +866,7 @@ def run_explain(a):
     _print_index_note(fresh, graph)
     print_results_section("Most relevant files", rows, verbose=verbose)
 
-    symbols = _symbol_rows(fresh, rows, limit=6)
+    symbols = _symbol_rows(fresh, rows, limit=6, query=query)
     if symbols:
         print()
         ui.title("Key symbols")

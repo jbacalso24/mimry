@@ -135,3 +135,122 @@ def test_a_test_task_starts_with_the_test_file_on_every_surface(tmp_path):
     assert _first_pack_file(pack) == TEST_FILE
     assert json.loads(route.stdout)["likely_files"][0]["path"] == TEST_FILE
     assert f"Start with {TEST_FILE} " in explain.stdout
+
+
+ESCAPE_FILE = "src/termio/utils.py"
+ESCAPE_TASK = "Escape terminal control characters in error messages"
+ESCAPE_SOURCE = '''import sys
+
+
+class Abort(RuntimeError):
+    pass
+
+
+class BadParameter(RuntimeError):
+    pass
+
+
+class Context:
+    pass
+
+
+class Echo:
+    pass
+
+
+class Group:
+    pass
+
+
+class LazyFile:
+    """Open a file on first use, so a bad path fails only when read."""
+
+    def __init__(self, name):
+        self.name = name
+
+
+class PacifyFlushWrapper:
+    """Swallow broken-pipe errors while flushing a stream."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _escape_control_characters(message):
+    """Escape terminal control characters so an error message prints safely."""
+    return "".join(ch if ch.isprintable() else repr(ch)[1:-1] for ch in message)
+'''
+
+
+def _key_symbols(stdout: str) -> list[str]:
+    """The symbol names in the Key symbols table, in printed order."""
+    assert "Key symbols" in stdout, stdout
+    block = stdout.split("Key symbols", 1)[1].splitlines()[1:]
+    names = []
+    for line in block:
+        if not line.strip():
+            break
+        names.append(line.split()[0])
+    return names
+
+
+def test_explain_lists_the_symbol_that_matches_the_task_first(tmp_path):
+    repo = _make_repo(tmp_path)
+    (repo / ESCAPE_FILE).parent.mkdir(parents=True)
+    (repo / ESCAPE_FILE).write_text(ESCAPE_SOURCE, encoding="utf-8")
+    cache = tmp_path / "cache"
+    assert _run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+
+    explain = _run_cli(repo, cache, "explain", ESCAPE_TASK)
+
+    assert explain.returncode == 0, explain.stderr
+    assert _key_symbols(explain.stdout)[0] == "_escape_control_characters"
+
+
+STOP_FILE = "src/report/footer.py"
+STOP_TASK = "render the report footer"
+STOP_SOURCE = '''def zeta_totals(lines):
+    """Render the report footer from the totals."""
+    return sum(lines)
+
+
+def alpha_totals(lines):
+    return len(lines)
+'''
+
+
+def test_explain_without_a_matching_symbol_keeps_start_order_not_alphabetical(tmp_path):
+    repo = _make_repo(tmp_path)
+    (repo / STOP_FILE).parent.mkdir(parents=True)
+    (repo / STOP_FILE).write_text(STOP_SOURCE, encoding="utf-8")
+    cache = tmp_path / "cache"
+    assert _run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+
+    explain = _run_cli(repo, cache, "explain", STOP_TASK)
+
+    assert explain.returncode == 0, explain.stderr
+    assert _key_symbols(explain.stdout) == ["zeta_totals", "alpha_totals"]
+
+
+def test_explain_puts_matching_source_symbols_before_matching_test_symbols(tmp_path):
+    repo = _make_repo(tmp_path)
+    (repo / "src").mkdir(exist_ok=True)
+    (repo / "tests").mkdir(exist_ok=True)
+    (repo / "src" / "escape.py").write_text(
+        "def escape_markup(text):\n    return text\n", encoding="utf-8"
+    )
+    (repo / "tests" / "test_escape.py").write_text(
+        "from src.escape import escape_markup\n\n\n"
+        "def test_escape_markup_in_titles_twice():\n    escape_markup('a')\n",
+        encoding="utf-8",
+    )
+    cache = tmp_path / "cache"
+    assert _run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+
+    explain = _run_cli(repo, cache, "explain", "escape markup in titles")
+
+    assert explain.returncode == 0, explain.stderr
+    assert _key_symbols(explain.stdout)[0] == "escape_markup"
