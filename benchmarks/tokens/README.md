@@ -121,6 +121,7 @@ Five versions are compared, each developed against the dev set only.
 | holdout2, 44 tasks | 0.3.4 | 30.9% | 28 / 32 | 45.3% | 29.8% (24 tasks) |
 | holdout2, 44 tasks | 0.4.0 | 30.9% | 28 / 32 | 45.2% | 29.8% (24 tasks) |
 | holdout2, 44 tasks | 0.4.1 | 30.9% | 28 / 32 | 45.2% | 29.8% (24 tasks) |
+| holdout2, 44 tasks | 0.5.0 | 30.6% | 28 / 32 | 45.2% | 28.7% (24 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 57.8% | 21 / 32 | 69.6% | 69.4% (19 tasks) |
 
 At the baseline MIMRY read more tokens than grep and fully located fewer tasks.
@@ -190,6 +191,12 @@ With full and sed reads every task is located or missed as with 0.4.0, and the t
 With ranges reads MIMRY saves 65.2% against 63.8%, with the same tasks located: the lines to read first now come from each result file's own pieces, and a piece no longer starts on the code above its symbol.
 Per-task numbers are in [results.holdout2.0.4.1.json](results.holdout2.0.4.1.json), [results.holdout2.sed.0.4.1.json](results.holdout2.sed.0.4.1.json) and [results.holdout2.ranges.0.4.1.json](results.holdout2.ranges.0.4.1.json).
 
+0.5.0 was run once in each read mode at release, on commit 0fbcfc9, by the Token benchmark workflow on Linux.
+Every task is located or missed as with 0.4.1 in all three read modes.
+Tests now follow the files to edit unless the task is about tests, so uvicorn#3119 no longer reads a test file before its second gold file.
+hono#5446 reads two more files before its gold file, and that one task accounts for the small drop in total savings.
+Per-task numbers are in [results.holdout2.0.5.0.json](results.holdout2.0.5.0.json), [results.holdout2.sed.0.5.0.json](results.holdout2.sed.0.5.0.json) and [results.holdout2.ranges.0.5.0.json](results.holdout2.ranges.0.5.0.json).
+
 **Rank before the cut** fixes a bug in how graph and content matches combine.
 The graph's matches were cut to the result limit (8 for a context pack) before each file's content score was added, so a file the graph ranked ninth could never lead, however well its content matched.
 Now every graph match gets its content score first, and the cut comes after.
@@ -223,6 +230,7 @@ With `--reads sed`:
 | holdout2, 44 tasks | 0.3.4 | 27.5% | 27 / 30 | 45.4% | 37.8% (23 tasks) |
 | holdout2, 44 tasks | 0.4.0 | 27.5% | 27 / 30 | 45.4% | 37.8% (23 tasks) |
 | holdout2, 44 tasks | 0.4.1 | 27.5% | 27 / 30 | 45.4% | 37.8% (23 tasks) |
+| holdout2, 44 tasks | 0.5.0 | 27.0% | 27 / 30 | 45.3% | 36.4% (23 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 54.1% | 19 / 30 | 62.4% | 71.7% (17 tasks) |
 
 On holdout2, 0.3.0 still reads 37% fewer tokens than grep, against 40% with whole-file reads, and its per-task median barely moves.
@@ -266,6 +274,7 @@ For the rebase-merged tasks above, a gold file the last commit does not touch co
 | holdout2, 44 tasks | 0.3.4 | 63.8% | 28 / 32 | 75.0% | 56.4% (24 tasks) |
 | holdout2, 44 tasks | 0.4.0 | 63.8% | 28 / 32 | 75.0% | 56.4% (24 tasks) |
 | holdout2, 44 tasks | 0.4.1 | 65.2% | 28 / 32 | 75.3% | 57.2% (24 tasks) |
+| holdout2, 44 tasks | 0.5.0 | 64.7% | 28 / 32 | 77.1% | 55.4% (24 tasks) |
 
 On dev, reading the listed ranges halves what MIMRY reads: 677,799 tokens against 0.3.0's 1,285,495 with whole-file reads, while grep reads 1,894,477.
 It locates one task fewer than with whole-file reads (32 against 33): in ripgrep#3472 the ranges missed the change in several of the four gold files, and the second reads used up the budget.
