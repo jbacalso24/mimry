@@ -27,6 +27,7 @@ CORE_TOOLS = (
     "mimry_related",
     "mimry_why",
     "mimry_path",
+    "mimry_impact",
     "mimry_status",
     "mimry_feedback",
 )

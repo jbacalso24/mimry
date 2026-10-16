@@ -213,9 +213,10 @@ def test_uninstall_of_a_fresh_install_leaves_no_mimry_entry_or_empty_event_list(
 
     assert run_cli(repo, cache, "uninstall", *install).returncode == 0
 
-    hooks = _settings(repo, platform).get("hooks", {})
-    assert all(not installer._is_mimry_hook(e) for entries in hooks.values() for e in entries)
-    assert all(entries for entries in hooks.values())
+    # The install created this file, so uninstall deletes it once
+    # MIMRY's entries are gone (#289). A file the user had would stay,
+    # see tests/test_install_record.py.
+    assert not (repo / installer.platforms()[platform].hook_path).exists()
 
 
 def test_status_needs_repair_until_all_three_hooks_are_installed(tmp_path):

@@ -682,9 +682,9 @@ def test_uninstall_project_codex_removes_hooks_when_requested(tmp_path):
     )
 
     assert res.returncode == 0, res.stderr
-    assert "mimry hook-check" not in _norm_hook(
-        (repo / ".codex" / "hooks.json").read_text(encoding="utf-8")
-    )
+    # The install created this file, so uninstall deletes it once
+    # MIMRY's entries are its only content (#289).
+    assert not (repo / ".codex" / "hooks.json").exists()
 
 
 def test_claude_skill_body_is_platform_specific(tmp_path):

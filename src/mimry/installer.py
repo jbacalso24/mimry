@@ -11,7 +11,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from shutil import which
 
 from . import __version__, ui
@@ -166,6 +166,9 @@ _REFERENCES: dict[str, str] = {
         """\n"""
         """- `mimry_feedback(query, root?, context?, suggested?, opened?, changed?, missed?, """
         """ignored?, verification?, outcome?, notes?)`\n"""
+        """\n"""
+        """Other tools, such as `mimry_list_adapters` and `mimry_context`, are listed only"""
+        """ with `MIMRY_MCP_TOOLS=all` in the server's environment.\n"""
         """\n"""
         """CLI commands (not MCP tools by default):\n"""
         """\n"""
@@ -718,7 +721,7 @@ If MCP tools are loaded, prefer them over shell for lookup/context/workflow:
 
 These are CLI commands, not MCP tools by default: `mimry init`, `mimry refresh`, `mimry route "<task>"`, `mimry brief "<task>" --agent <role>`, `mimry context "<task>"`, `mimry semantic "<query>"`, `mimry explain "<task>"`, `mimry adapters --active-only`.
 
-The MCP server lists 8 core tools by default: `mimry_status`, `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_path`, `mimry_why` and `mimry_feedback`.
+The MCP server lists 9 core tools by default: `mimry_status`, `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_path`, `mimry_impact`, `mimry_why` and `mimry_feedback`.
 Set `MIMRY_MCP_TOOLS=all` in the server's environment to list every command as a tool.
 
 CLI fallback is fine when MCP is unavailable.
@@ -738,7 +741,7 @@ Weak/limited signals include generic content hints, semantic-only matches, stale
 
 ## Adapter expectations
 
-Use `mimry adapters --active-only` or `mimry_list_adapters(active_only=True)` to know what MIMRY can currently understand structurally. Current strengths are code/docs/project metadata, not arbitrary binary media. If an adapter is missing, use MIMRY for path/context narrowing, then inspect source manually.
+Use `mimry adapters --active-only` to know what MIMRY can currently understand structurally. Current strengths are code/docs/project metadata, not arbitrary binary media. If an adapter is missing, use MIMRY for path/context narrowing, then inspect source manually.
 
 Known limitation: image pixels are not understood by default yet. Image/media support should be treated as future adapter work unless this install reports an active image adapter.
 
@@ -976,19 +979,31 @@ def _has_any_hook(root: Path, cfg: MimryPlatform) -> bool | None:
     return any(_is_mimry_hook(entry) for event in hooks for entry in _event_entries(hooks, event))
 
 
-def _remove_always_on(root: Path, cfg: MimryPlatform) -> Path | None:
+def _remove_always_on(
+    root: Path, cfg: MimryPlatform, created: frozenset[Path] = frozenset()
+) -> Path | None:
+    """Take MIMRY's always-on section out of the file.
+
+    The file goes only when MIMRY created it and nothing else is left.
+    """
     if cfg.always_on_file is None:
         return None
     dst = (root / cfg.always_on_file).resolve()
-    if not dst.exists():
+    text = _read_text_or_none(dst)
+    if text is None or _section_bounds(text.splitlines(), _ALWAYS_ON_MARKER) is None:
         return None
-    content = dst.read_text(encoding="utf-8")
-    cleaned = _replace_or_append_section(content, _ALWAYS_ON_MARKER, "").strip()
-    if cleaned:
-        _atomic_write(dst, cleaned + "\n")
-    else:
+    cleaned = _replace_or_append_section(text, _ALWAYS_ON_MARKER, "").strip()
+    if not cleaned and dst in created:
         dst.unlink()
+    else:
+        _atomic_write(dst, cleaned + "\n" if cleaned else "")
     return dst
+
+
+def _settings_line(path: Path, root: Path, project: bool, what: str) -> str:
+    """What uninstall did to one file: deleted it, or cut MIMRY out."""
+    shown = _shown(path, root, project)
+    return f"Removed {shown}" if not path.exists() else f"Removed MIMRY's {what} from {shown}"
 
 
 def _resolve_executable(name: str) -> str:
@@ -1143,7 +1158,13 @@ def _is_mimry_hook(entry: object) -> bool:
     return ("hook-check" in text or "hook-refresh" in text) and "mimry" in text
 
 
-def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
+def _remove_hooks(
+    root: Path, cfg: MimryPlatform, created: frozenset[Path] = frozenset()
+) -> Path | None:
+    """Take MIMRY's hook entries out of the hooks file.
+
+    The file goes only when MIMRY created it and nothing else is left.
+    """
     if cfg.hook_path is None:
         return None
     dst = (root / cfg.hook_path).resolve()
@@ -1171,7 +1192,10 @@ def _remove_hooks(root: Path, cfg: MimryPlatform) -> Path | None:
         return None
     if not hooks:
         existing.pop("hooks")
-    _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
+    if not existing and dst in created:
+        dst.unlink()
+    else:
+        _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
     return dst
 
 
@@ -1380,10 +1404,13 @@ def install_status_with_code(
         always_on_stale = result["always_on"] and not _always_on_current(root, cfg)
     if project and cfg.hook_path:
         result["hooks"] = _has_hook(root, cfg)
-    if not _mcp_disabled(False):
-        mcp_check = mcp_registered(cfg)
-        if mcp_check is not None:
-            result["mcp"] = mcp_check
+    # After `install --no-mcp` a missing registration is the choice, not
+    # a fault: the row says so and it does not count against health.
+    no_mcp = _read_state(dst).get("no_mcp") is True
+    mcp_check = None if _mcp_disabled(False) else mcp_registered(cfg)
+    mcp_off = no_mcp and not mcp_check
+    if mcp_check is not None and not mcp_off:
+        result["mcp"] = mcp_check
     # Health is what `mimry install --platform <key>` (plus --project)
     # produces: skill, references, version and MCP registration. Opt-in
     # extras count only when partly installed: for hooks, some MIMRY
@@ -1446,6 +1473,8 @@ def install_status_with_code(
         )
     if "mcp" in result:
         rows.append(_status_row(result["mcp"], "MCP server", "registered", "not registered"))
+    elif mcp_off:
+        rows.append(_status_row(None, "MCP server", "", "not registered (--no-mcp)"))
     ui.table(rows)
     if not healthy:
         flags = " --project" if project else ""
@@ -1461,6 +1490,94 @@ def _write_skill_files(dst: Path, key: str) -> None:
     _install_references(dst.parent)
     _atomic_write(dst, skill_body(key))
     _atomic_write(dst.parent / ".mimry_version", __version__ + "\n")
+
+
+# What one install remembers beside its version marker. "no_mcp" is set
+# when it was installed with --no-mcp. "created" lists the files and
+# folders MIMRY made, as POSIX paths relative to the install's base (see
+# _state_base), so uninstall removes only what MIMRY made and the record
+# still works after the project folder is moved. It is machine-readable
+# and written for every install, so a project's record can be committed.
+_STATE_FILE = ".mimry_state.json"
+
+
+def _state_base(dst: Path, root: Path, project: bool) -> Path:
+    """The folder recorded paths are relative to.
+
+    That is the project root, or for an all-projects install the
+    platform's config folder.
+    """
+    return root if project else dst.parents[2]
+
+
+def _is_absolute_text(text: str) -> bool:
+    return (
+        PurePosixPath(text).is_absolute()
+        or PureWindowsPath(text).is_absolute()
+        or bool(PureWindowsPath(text).drive)
+    )
+
+
+def _read_state(dst: Path) -> dict:
+    """The install's remembered state; {} when none or unreadable."""
+    text = _read_text_or_none(dst.parent / _STATE_FILE)
+    try:
+        state = json.loads(text) if text else {}
+    except ValueError:
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def _read_created(state: dict, base: Path) -> set[Path]:
+    """The recorded created paths, resolved against base.
+
+    An absolute entry, or one that resolves outside base, is ignored.
+    The record is not trusted to name anything beyond the install.
+    """
+    value = state.get("created")
+    if not isinstance(value, list):
+        return set()
+    found: set[Path] = set()
+    for text in value:
+        if not isinstance(text, str) or _is_absolute_text(text):
+            continue
+        candidate = (base / text).resolve()
+        if candidate.is_relative_to(base):
+            found.add(candidate)
+    return found
+
+
+def _missing_paths(targets: list[Path]) -> list[Path]:
+    """What writing these files creates.
+
+    That is each target and each folder above it not yet on disk.
+    """
+    missing: dict[Path, None] = {}
+    for target in targets:
+        path = target
+        while not path.exists() and path.parent != path:
+            missing[path] = None
+            path = path.parent
+    return list(missing)
+
+
+def _record_install(dst: Path, *, created: list[Path], base: Path, mcp: bool) -> None:
+    """Merge what this install created into the record.
+
+    Entries that are absolute or outside base are dropped, not carried
+    forward. Also note whether MCP was turned off: a plain install (mcp)
+    clears the --no-mcp choice.
+    """
+    state = _read_state(dst)
+    known = _read_created(state, base) | set(created)
+    state["created"] = sorted(
+        path.relative_to(base).as_posix() for path in known if path.is_relative_to(base)
+    )
+    if mcp:
+        state.pop("no_mcp", None)
+    else:
+        state["no_mcp"] = True
+    _atomic_write(dst.parent / _STATE_FILE, json.dumps(state, indent=2) + "\n")
 
 
 def install_skill(
@@ -1516,8 +1633,24 @@ def install_skill(
         if hooks_problem:
             raise SystemExit(1)
         return dst
+    targets = [dst]
+    if always_on and cfg.always_on_file:
+        targets.append((root / cfg.always_on_file).resolve())
+    if hook_target:
+        targets.append(hook_target)
+    # Uninstall always removes the skill's own files and folder, so only
+    # what is created above or beside them needs recording.
+    skill_paths = {dst, dst.parent}
+    created = [path for path in _missing_paths(targets) if path not in skill_paths]
     _write_skill_files(dst, key)
-    git_paths = [dst, dst.parent / ".mimry_version", dst.parent / "references"]
+    base = _state_base(dst, root, project)
+    _record_install(dst, created=created, base=base, mcp=mcp)
+    git_paths = [
+        dst,
+        dst.parent / ".mimry_version",
+        dst.parent / _STATE_FILE,
+        dst.parent / "references",
+    ]
     if always_on:
         ao = _install_always_on(root, cfg, dry_run=False)
         if ao:
@@ -1565,26 +1698,34 @@ def uninstall_skill(
     cfg = platforms()[key]
     root = root.resolve()
     dst = (root / cfg.project_path if project else cfg.global_path).resolve()
+    created = frozenset(_read_created(_read_state(dst), _state_base(dst, root, project)))
     removed: list[Path] = []
     for path in (dst, dst.parent / ".mimry_version"):
         if path.exists():
             path.unlink()
             removed.append(path)
+    # Gone before the folders are checked, or the folder is never empty.
+    (dst.parent / _STATE_FILE).unlink(missing_ok=True)
     refs = dst.parent / "references"
     if refs.exists():
         _remove_tree(refs)
         removed.append(refs)
-    if always_on and project and (path := _remove_always_on(root, cfg)):
-        removed.append(path)
-    if hooks and project and (path := _remove_hooks(root, cfg)):
-        removed.append(path)
+    settings: list[str] = []
+    if always_on and project and (path := _remove_always_on(root, cfg, created)):
+        settings.append(_settings_line(path, root, project, "always-on block"))
+    if hooks and project and (path := _remove_hooks(root, cfg, created)):
+        settings.append(_settings_line(path, root, project, "hooks"))
     mcp_removed = not project and not _mcp_disabled(not mcp) and unregister_mcp(cfg)
-    for d in (dst.parent, dst.parent.parent, dst.parent.parent.parent):
+    # The skill's own folder is MIMRY's and goes when empty. A folder
+    # above it goes only when this install created it, never a user's.
+    for index, folder in enumerate((dst.parent, dst.parent.parent, dst.parent.parent.parent)):
+        if index and folder not in created:
+            break
         try:
-            d.rmdir()
+            folder.rmdir()
         except OSError:
             break
-    if not removed and not mcp_removed:
+    if not removed and not settings and not mcp_removed:
         print(
             f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label}"
             f" ({_scope(project)})."
@@ -1593,6 +1734,8 @@ def uninstall_skill(
     ui.ok(f"Removed MIMRY for {cfg.label} ({_scope(project)})")
     for path in removed:
         ui.detail(ui.faint(_shown(path, root, project)))
+    for line in settings:
+        ui.detail(line)
     if mcp_removed:
         ui.detail(f"Removed the MIMRY MCP server from {cfg.label}")
     kept = []
@@ -1639,6 +1782,7 @@ def _plugin_installed() -> bool:
 # Git's global excludes file gets these once per machine, so a repo's
 # tracked .gitignore needs no MIMRY lines.
 _GLOBAL_IGNORE_PATTERNS = (".mimry/", "mimry-out/")
+_GLOBAL_IGNORE_MARKER = "# MIMRY"
 
 
 def _global_ignore_path() -> Path | None:
@@ -1690,12 +1834,65 @@ def _add_global_ignore(*, dry_run: bool) -> None:
         return
     lead = "" if not existing or existing.endswith("\n") else "\n"
     try:
-        _atomic_write(path, existing + lead + "\n".join(["# MIMRY", *missing]) + "\n")
+        _atomic_write(path, existing + lead + "\n".join([_GLOBAL_IGNORE_MARKER, *missing]) + "\n")
     except OSError as exc:
         ui.warn(f"Could not write {shown}: {exc.strerror or exc}")
         ui.detail(f"Add these lines to it by hand: {', '.join(missing)}")
         return
     ui.ok(f"Added MIMRY to the global git ignore: {shown}")
+
+
+def _without_mimry_block(lines: list[str]) -> list[str]:
+    """The lines with MIMRY's block taken out: its marker line and the
+    pattern lines that directly follow it. Everything else is kept."""
+    kept: list[str] = []
+    in_block = False
+    for line in lines:
+        text = line.strip()
+        if text == _GLOBAL_IGNORE_MARKER:
+            in_block = True
+            continue
+        if in_block and text in _GLOBAL_IGNORE_PATTERNS:
+            continue
+        in_block = False
+        kept.append(line)
+    return kept
+
+
+def _uninstall_global_ignore(*, remove: bool) -> None:
+    """Take MIMRY's block out of Git's global ignore file.
+
+    Only when `remove` is set; otherwise say how to, if it is there.
+    """
+    path = _global_ignore_path()
+    if path is None:
+        return
+    shown = ui.display_path(path)
+    try:
+        raw = path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+    # Line endings are kept as they are, so only MIMRY's lines change.
+    lines = raw.splitlines(keepends=True)
+    kept = _without_mimry_block(lines)
+    if kept == lines:
+        return
+    if not remove:
+        ui.detail(
+            f"Left MIMRY's lines in the global git ignore ({shown}); add"
+            " --git-ignore to remove them"
+        )
+        return
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_bytes("".join(kept).encode("utf-8"))
+        replace_path(tmp, path)
+    except OSError as exc:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        ui.warn(f"Could not update {shown}: {exc.strerror or exc}")
+        return
+    ui.ok(f"Removed MIMRY from the global git ignore: {shown}")
 
 
 def _skill_current(dst: Path, key: str) -> bool:
@@ -1887,4 +2084,7 @@ def cmd_uninstall(a) -> int:
         hooks=a.hooks,
         mcp=not a.no_mcp,
     )
+    # Git's global ignore is per machine and shared by every install, so
+    # it is only touched when asked for.
+    _uninstall_global_ignore(remove=getattr(a, "git_ignore", False))
     return 0

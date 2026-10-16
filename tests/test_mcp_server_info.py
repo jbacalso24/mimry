@@ -28,6 +28,7 @@ CORE_TOOL_NAMES = [
     "mimry_related",
     "mimry_symbol",
     "mimry_path",
+    "mimry_impact",
     "mimry_why",
     "mimry_feedback",
 ]
@@ -328,8 +329,10 @@ def test_mimry_mcp_tools_core_is_case_insensitive(keyword):
     assert _tools_listed(replies) == CORE_TOOL_NAMES
 
 
-def test_the_default_tool_listing_is_under_half_the_size_of_the_full_one():
+def test_the_default_tool_listing_is_well_under_the_size_of_the_full_one():
     # Pins the cut without tiktoken: characters stand in for tokens.
+    # The default listing grew past half when mimry_impact joined it
+    # (#283), so the bound is 60%: still a clear cut from the full one.
     def listing(tools: str | None) -> str:
         replies = _exchange(
             [_init("2025-06-18"), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}],
@@ -337,7 +340,7 @@ def test_the_default_tool_listing_is_under_half_the_size_of_the_full_one():
         )
         return json.dumps(replies[1]["result"])
 
-    assert len(listing(None)) < len(listing("all")) / 2
+    assert len(listing(None)) < len(listing("all")) * 0.6
 
 
 def test_importing_the_server_keeps_the_heavy_stack_out():

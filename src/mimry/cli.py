@@ -513,6 +513,11 @@ def build_parser():
         action="store_true",
         help="Leave the MCP server registration in place",
     )
+    u.add_argument(
+        "--git-ignore",
+        action="store_true",
+        help="Also remove MIMRY's block from Git's global ignore file",
+    )
     u.set_defaults(func=cmd_uninstall)
     sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(
         func=cmd_hook_check
