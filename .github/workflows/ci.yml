@@ -47,7 +47,8 @@ jobs:
         run: uv run ruff check .
 
       - name: Test
-        run: uv run pytest -q
+        # The slowest tests, to keep Windows run time in view (#344).
+        run: uv run pytest -q --durations=40
 
       # Fast portable check on fixed in-memory input, then the real gate: the
       # whole pipeline (scanner, parsers, graph, SQLite/FTS, semantic, context
