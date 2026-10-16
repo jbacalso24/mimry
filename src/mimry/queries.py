@@ -23,7 +23,6 @@ from .core.artifacts import (
     empty_call_payload,
     graph_health,
     importing_files,
-    lift_call_edges,
     line_missed_message,
     load_graph,
     node_source_file,
@@ -33,6 +32,7 @@ from .core.artifacts import (
     surface_evidence,
 )
 from .core.languages import EXTENSION_LANGUAGE
+from .core.resolve import BODY_KINDS
 from .freshness import index_freshness
 from .history import history_mentions
 from .indexer import write_index
@@ -1277,10 +1277,6 @@ def _impact_error(payload: dict, code: str, message: str, **extra) -> dict:
     return payload
 
 
-# Kinds whose body holds locals; a symbol nested in one is not a target.
-_BODY_KINDS = frozenset({"function", "method", "component"})
-
-
 def _file_component(sym: dict) -> bool:
     """A Vue or Svelte component spans its whole file, so it holds the
     script's functions only by position. They are not its locals.
@@ -1295,7 +1291,7 @@ def _outer_bodies(syms: list[dict]) -> list[tuple[dict, dict | None]]:
     bodies = [
         (start, end, sym)
         for sym, start, end in _symbol_spans(syms)
-        if sym.get("kind") in _BODY_KINDS and not _file_component(sym)
+        if sym.get("kind") in BODY_KINDS and not _file_component(sym)
     ]
     pairs = []
     for sym in syms:
@@ -1316,23 +1312,6 @@ def _targetable(syms: list[dict]) -> list[dict]:
     other commands; only impact drops them.
     """
     return [sym for sym, holder in _outer_bodies(syms) if holder is None]
-
-
-def _lifted_graph(graph: dict, symbols_by_path: dict[str, list[dict]], ids: dict) -> dict:
-    """The graph with each call made from a local moved to the body that
-    holds it. The index records ``const x = f()`` as a call from ``x``,
-    so without this a local would be listed as a caller.
-    """
-    lift: dict[str, str] = {}
-    for rel, syms in symbols_by_path.items():
-        for sym, holder in _outer_bodies(syms):
-            if holder is None:
-                continue
-            local = ids.get((rel, sym["name"], sym.get("line_start")))
-            body = ids.get((rel, holder["name"], holder.get("line_start")))
-            if local and body:
-                lift[local] = body
-    return lift_call_edges(graph, lift) if lift else graph
 
 
 def _file_picks(symbols_by_path: dict[str, list[dict]], rel: str) -> list[tuple[str, dict]]:
@@ -1423,7 +1402,6 @@ def impact_payload(
     indexed = set(files_by_id.values())
     symbols_by_path = _symbols_by_path(fresh)
     ids = _graph_symbol_ids(graph)
-    graph = _lifted_graph(graph, symbols_by_path, ids)
 
     # Each pick is (path, symbol record) for one target symbol.
     picks: list[tuple[str, dict]] = []

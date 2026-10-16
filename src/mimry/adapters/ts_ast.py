@@ -5,7 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from ..constants import EXPORT_RE, IMPORT_RE, REQUIRE_RE
-from ..core.languages import GRAMMAR_UNAVAILABLE, GrammarUnavailableError, load_parser
+from ..core.languages import (
+    GRAMMAR_UNAVAILABLE,
+    GrammarUnavailableError,
+    js_declarator_kind,
+    load_parser,
+)
 from ..paths import stable_id
 from ..security import is_text
 
@@ -113,7 +118,7 @@ def _fallback_symbols_regex(
         (r"^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)", "class"),
         (
             r"^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>",
-            "variable",
+            "function",
         ),
     ]
 
@@ -257,8 +262,10 @@ def parse_ts_like(
             add_symbol(_first_identifier(node, source), "method", node)
         elif kind == "variable_declarator":
             name = _first_identifier(node, source)
-            text = _text(source, node)
-            symbol_kind = "component" if "=>" in text and "<" in text else "variable"
+            value = node.child_by_field_name("value")
+            symbol_kind = js_declarator_kind(
+                value, source, lambda n: n.kind(), _children, _text, _walk
+            )
             add_symbol(name, symbol_kind, node, exported, 0.85)
         elif kind in {"jsx_opening_element", "jsx_self_closing_element"}:
             name = _first_identifier(node, source)

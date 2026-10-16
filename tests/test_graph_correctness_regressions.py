@@ -295,3 +295,25 @@ def test_swift_call_with_two_owners_of_the_name_stays_unresolved(
     stats = write_index(root, pointer)
 
     assert not any(edge.startswith("A.swift:") for edge in _call_edges(Path(stats["index"])))
+
+
+def test_call_in_a_nested_class_body_is_credited_to_the_enclosing_function(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, pointer = _init_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "box.py": (
+                "def insert(path):\n    return len(path)\n\n"
+                "def add(path):\n    class Box:\n        size = insert(path)\n"
+                "    return Box\n"
+            ),
+        },
+    )
+
+    stats = write_index(root, pointer)
+    edges = _call_edges(Path(stats["index"]))
+
+    assert "box.py:add:4 -> box.py:insert:1" in edges
+    assert not any(edge.startswith("box.py:Box:") for edge in edges)

@@ -566,8 +566,9 @@ class TestJsTsRegex:
 
         assert len(symbols) > 0
         symbol = symbols[0]
-        # Arrow function is variable, not function or component
-        assert symbol["kind"] == "variable"
+        # An arrow const is a function, as tree-sitter records a
+        # JSX-free one; the fallback cannot see JSX.
+        assert symbol["kind"] == "function"
         # Language should match tree-sitter language
         assert symbol["language"] == "tsx"
 

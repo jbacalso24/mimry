@@ -306,21 +306,28 @@ class TestSymbolResolutionTies:
     def test_same_file_symbol_tie_follows_the_documented_total_key(self):
         """Kind priority breaks line_start ties.
 
-        class beats interface beats function.
+        A body (function, method, component) is the caller over a class
+        or interface at the same span. Among bodies, function beats
+        method. With no body, class beats interface beats function.
         """
-        from mimry.core.resolve import symbol_selection_key
+        from mimry.core.resolve import BODY_KINDS, symbol_selection_key
 
-        expected = min(self._TIED_CALLERS, key=symbol_selection_key)
-        assert expected["name"] == "OuterClass", "the fixture must actually exercise kind priority"
+        bodies = [s for s in self._TIED_CALLERS if s["kind"] in BODY_KINDS]
+        expected = min(bodies, key=symbol_selection_key)
+        assert expected["name"] == "outer_fn", "the fixture must actually exercise kind priority"
 
         result = self._resolve_with(self._TIED_CALLERS)
         assert result, "the call must resolve; an empty result proves nothing about tie-breaking"
         assert result[0]["caller_symbol"] == expected["name"]
         assert result[0]["caller_symbol_id"] == expected["symbol_id"]
 
+        no_bodies = [s for s in self._TIED_CALLERS if s["kind"] not in BODY_KINDS]
+        result = self._resolve_with(no_bodies)
+        assert result[0]["caller_symbol"] == "OuterClass"
+
     def test_same_file_symbol_tie_is_stable_under_reversal_and_shuffle(self):
         forward = self._resolve_with(self._TIED_CALLERS)
-        assert forward[0]["caller_symbol"] == "OuterClass"
+        assert forward[0]["caller_symbol"] == "outer_fn"
 
         assert self._resolve_with(list(reversed(self._TIED_CALLERS))) == forward
         for seed in (0, 1, 7, 42, 1234, 99991):

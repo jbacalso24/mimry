@@ -982,6 +982,10 @@ def _strip_extension(path: str) -> str:
 _CONTAINER_KINDS = ("class", "interface")
 _FUNCTION_KINDS = ("function", "method")
 _CALLABLE_KINDS = ("function", "method", "class")
+# Kinds whose body holds calls and locals. A call is credited to the
+# innermost one around it, so a call in a local's initializer goes to
+# the function that holds the local.
+BODY_KINDS = frozenset({"function", "method", "component"})
 # Languages where same-module files call each other without imports.
 _IMPLICIT_SCOPE_LANGUAGES = frozenset(("swift", "kotlin", "csharp"))
 
@@ -1309,6 +1313,15 @@ def _unique_owner(name: str, caller_file: str, owners_by_name: dict) -> dict | N
 
 
 def _enclosing_symbol(file_symbols: list[dict], line: int) -> dict | None:
+    """The caller of a call on ``line``: the innermost body (see
+    BODY_KINDS) spanning it. When no body does, the innermost symbol of
+    any kind, so a module-level ``const x = f()`` still credits ``x``.
+    """
+    bodies = [symbol for symbol in file_symbols if symbol.get("kind") in BODY_KINDS]
+    return _innermost_spanning(bodies, line) or _innermost_spanning(file_symbols, line)
+
+
+def _innermost_spanning(file_symbols: list[dict], line: int) -> dict | None:
     """The innermost symbol spanning ``line`` (largest line_start), with
     total tie-break.
 

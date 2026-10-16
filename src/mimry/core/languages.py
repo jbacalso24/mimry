@@ -692,6 +692,53 @@ def _definition_span(language: str, node: Any) -> Any:
     return node
 
 
+JS_FUNCTION_VALUE_KINDS = frozenset(("arrow_function", "function_expression", "function"))
+JS_JSX_KINDS = frozenset(("jsx_element", "jsx_self_closing_element"))
+
+
+# Expressions that hand a function through unchanged.
+_JS_PASS_THROUGH = frozenset(
+    ("parenthesized_expression", "as_expression", "satisfies_expression", "non_null_expression")
+)
+# Calls that wrap a function and still return one: `memo(() => ...)`.
+_JS_FUNCTION_WRAPPERS = frozenset(("memo", "forwardRef", "useCallback", "observer"))
+
+
+def js_declarator_kind(value: Any, source: bytes, kind_of, children, text, walk) -> str:
+    """Kind of a JS/TS declarator from its initializer ``value``.
+
+    A function value is a component when JSX sits inside it, else a
+    function, also when it is wrapped in parentheses, a type assertion
+    or a wrapper call such as ``React.memo``. Any other value is a
+    variable. ts_ast and _definition_kind both call this with their own
+    node helpers, so the two TypeScript paths agree.
+    """
+    while value is not None and kind_of(value) not in JS_FUNCTION_VALUE_KINDS:
+        kind = kind_of(value)
+        if kind == "call_expression":
+            callee = value.child_by_field_name("function")
+            name = text(source, callee).rsplit(".", 1)[-1] if callee is not None else ""
+            arguments = value.child_by_field_name("arguments")
+            if name not in _JS_FUNCTION_WRAPPERS or arguments is None:
+                return "variable"
+            value = arguments
+        elif kind not in _JS_PASS_THROUGH and kind != "arguments":
+            return "variable"
+        value = next(
+            (
+                child
+                for child in children(value)
+                if kind_of(child) in JS_FUNCTION_VALUE_KINDS
+                or kind_of(child) in _JS_PASS_THROUGH
+                or kind_of(child) == "call_expression"
+            ),
+            None,
+        )
+    if value is None:
+        return "variable"
+    return "component" if any(kind_of(n) in JS_JSX_KINDS for n in walk(value)) else "function"
+
+
 def _definition_kind(language: str, node: Any, source: bytes) -> str:
     """Kind of a definition node. A Zig container's kind depends on
     its enum keyword, and an Elixir form on its keyword: the node kind
@@ -699,6 +746,9 @@ def _definition_kind(language: str, node: Any, source: bytes) -> str:
     """
     if language == "zig" and node.type == "ContainerDecl":
         return _zig_container_kind(node, source)
+    if language in ("javascript", "typescript", "tsx") and node.type == "variable_declarator":
+        value = node.child_by_field_name("value")
+        return js_declarator_kind(value, source, lambda n: n.type, _children, _text, _walk)
     if language == "elixir":
         return _ELIXIR_KINDS.get(_elixir_head(node, source), "function")
     if language == "r" and node.type == "call":

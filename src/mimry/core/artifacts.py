@@ -543,26 +543,6 @@ def call_rows(hits: list[dict]) -> list[dict]:
     ]
 
 
-def lift_call_edges(graph: dict, lift: dict[str, str]) -> dict:
-    """A copy of ``graph`` with each calls edge that starts or ends at a
-    key of ``lift`` moved to that key's value. An edge that becomes a
-    loop is dropped. Other edges and the graph itself are not changed.
-    """
-    key = "links" if graph.get("links") else "edges"
-    edges = []
-    for edge in graph.get(key) or []:
-        source, target = _edge_endpoints(edge)
-        if _edge_relation(edge) != "calls" or not (source in lift or target in lift):
-            edges.append(edge)
-            continue
-        source, target = lift.get(source, source), lift.get(target, target)
-        if source == target:
-            continue
-        ends = ("source", "target") if "source" in edge else ("from", "to")
-        edges.append({**edge, ends[0]: source, ends[1]: target})
-    return {**graph, key: edges}
-
-
 def importing_files(graph: dict, target_files: set[str]) -> list[str]:
     """Files with an ``imports`` edge into one of ``target_files``.
 
