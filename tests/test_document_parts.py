@@ -362,10 +362,30 @@ def test_best_ranges_join_neighbouring_pages_and_name_the_unit():
         (-1.0, 40, 40, "page 40"),
     ]
 
+    # Page 40 matches a fifth as well as page 12, so it is not named.
     assert best_ranges(matches, "page") == [
         {"start": 12, "end": 14, "name": "page 12", "unit": "page"},
-        {"start": 40, "end": 40, "name": "page 40", "unit": "page"},
     ]
+
+
+def test_weak_neighbouring_pages_do_not_swallow_the_best_page():
+    matches = [(-1.0, page, page, f"page {page}") for page in range(1, 41)]
+    matches[36] = (-9.0, 37, 37, "page 37")
+
+    assert best_ranges(matches, "page") == [
+        {"start": 37, "end": 37, "name": "page 37", "unit": "page"},
+    ]
+
+
+def test_a_word_on_every_page_does_not_hide_the_page_with_both(tmp_path):
+    repo = _repo(tmp_path)
+    pages = ["notes about the records"] * 40
+    pages[36] = "notes about the zephyr migration"
+    _pdf(repo / "docs" / "report.pdf", pages)
+
+    row = _row(_index(repo), "zephyr about", "docs/report.pdf")
+
+    assert _ranges_text(row["ranges"]) == "page 37"
 
 
 def test_markdown_body_past_its_hint_is_searchable(tmp_path):

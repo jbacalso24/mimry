@@ -29,6 +29,9 @@ PIECES_FTS_CREATE = (
 # Ranges listed per result: enough to point at the code, few enough to
 # keep the context pack short.
 RANGES_PER_FILE = 2
+# A document part joins or follows the best match only when its BM25
+# rank is at least this share of the best one.
+MATCH_SHARE = 0.5
 # Longest part title kept as a piece name; a first line can be long.
 TITLE_CHARS = 80
 # The most lines above a symbol that a piece takes in as its comments,
@@ -146,14 +149,17 @@ def best_ranges(pieces: list[tuple[float, int, int, str]], unit: str | None = No
     """The best non-overlapping pieces of one file, in file order.
 
     For a document, ``unit`` names what its parts are and each range
-    carries it. Adjacent matching pages are joined first, so a run of
-    matches reads as one range such as pages 12-14.
+    carries it. Neighbouring pages that match about as well as the best
+    one join it, so a run reads as one range such as pages 12-14, and a
+    part far weaker than the best is not named at all.
     """
     if unit == "page":
         pieces = _join_adjacent(pieces)
     chosen: list[tuple[float, int, int, str]] = []
     for piece in pieces:
-        _rank, start, end, _name = piece
+        rank, start, end, _name = piece
+        if unit and chosen and not _close(rank, chosen[0][0]):
+            break
         if any(start <= c_end and c_start <= end for _r, c_start, c_end, _n in chosen):
             continue
         chosen.append(piece)
@@ -169,17 +175,28 @@ def best_ranges(pieces: list[tuple[float, int, int, str]], unit: str | None = No
     return ranges
 
 
+def _close(rank: float, best: float) -> bool:
+    """Whether a BM25 rank (lower is better) is at least half as good as
+    the best one."""
+    return rank <= best * MATCH_SHARE
+
+
 def _join_adjacent(pieces: list[tuple[float, int, int, str]]) -> list[tuple[float, int, int, str]]:
-    """Join pieces whose line or page ranges touch, keeping the best
-    rank and name of each joined run. Returned best first.
+    """Grow each page, best first, into the neighbouring pages that
+    match about as well as it does. A run of weak matches never swallows
+    a strong one. Returned best first.
     """
-    joined: list[tuple[float, int, int, str]] = []
-    for rank, start, end, name in sorted(pieces, key=lambda p: p[1]):
-        if joined and start <= joined[-1][2] + 1:
-            last_rank, last_start, last_end, last_name = joined[-1]
-            if rank < last_rank:
-                last_rank, last_name = rank, name
-            joined[-1] = (last_rank, last_start, max(last_end, end), last_name)
-        else:
-            joined.append((rank, start, end, name))
-    return sorted(joined, key=lambda p: p[0])
+    by_page = {start: rank for rank, start, _end, _name in pieces}
+    used: set[int] = set()
+    runs: list[tuple[float, int, int, str]] = []
+    for rank, start, end, name in sorted(pieces, key=lambda p: (p[0], p[1])):
+        if start in used:
+            continue
+        first, last = start, end
+        while first - 1 in by_page and first - 1 not in used and _close(by_page[first - 1], rank):
+            first -= 1
+        while last + 1 in by_page and last + 1 not in used and _close(by_page[last + 1], rank):
+            last += 1
+        used.update(range(first, last + 1))
+        runs.append((rank, first, last, name))
+    return runs
