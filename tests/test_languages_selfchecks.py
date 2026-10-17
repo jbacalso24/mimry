@@ -1617,6 +1617,101 @@ def test_haskell_class_signatures_and_defaults_are_symbols(tmp_path):
     }
 
 
+HASKELL_ISSUE_CLASS_SOURCE = """\
+module Data.Store where
+
+class Storable a where
+  encode :: a -> String
+  decode :: String -> a
+  encode _ = "default"
+"""
+
+HASKELL_INSTANCE_SPLIT_SOURCE = """\
+module Pretty where
+
+instance Show Shape where
+  show Circle = "circle"
+  describe _ = "shape"
+  show Square = "square"
+"""
+
+HASKELL_TOP_LEVEL_SPLIT_SOURCE = """\
+module Split where
+
+pick :: Int -> Int
+pick 0 = 0
+
+other :: Int
+other = 1
+
+pick n = n
+"""
+
+
+def test_haskell_class_default_merges_with_non_adjacent_signature(tmp_path):
+    """A class method's default merges into its signature even with
+    another method between them: one `encode` from the signature to the
+    default, and one `decode`.
+    """
+    result = _extract(tmp_path, "store.hs", HASKELL_ISSUE_CLASS_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("Data.Store", "module", 1, 1),
+        ("Storable", "interface", 3, 6),
+        ("encode", "function", 4, 6),
+        ("decode", "function", 5, 5),
+    }
+
+
+def test_haskell_instance_methods_stay_one_row_each(tmp_path):
+    """Clauses of an instance method merge even when another method
+    sits between them, and two methods still give two rows.
+    """
+    result = _extract(tmp_path, "pretty.hs", HASKELL_INSTANCE_SPLIT_SOURCE)
+    methods = [
+        (d["name"], d["line_start"], d["line_end"])
+        for d in result["definitions"]
+        if d["kind"] == "function"
+    ]
+    assert methods == [("show", 4, 6), ("describe", 5, 5)]
+
+
+def test_haskell_top_level_same_name_split_by_other_code_stays_apart(tmp_path):
+    """Top-level functions merge only adjacent clauses, so `pick` at the
+    top and `pick` after `other` are two symbols.
+    """
+    result = _extract(tmp_path, "split.hs", HASKELL_TOP_LEVEL_SPLIT_SOURCE)
+    picks = [
+        (d["line_start"], d["line_end"]) for d in result["definitions"] if d["name"] == "pick"
+    ]
+    assert picks == [(4, 4), (9, 9)]
+
+
+HASKELL_CLASS_BETWEEN_SOURCE = """module Between where
+
+pick :: Int -> Int
+pick 0 = 0
+
+instance Show Box where
+  show _ = "box"
+
+pick n = n
+"""
+
+
+def test_haskell_instance_between_same_named_functions_keeps_them_apart(tmp_path):
+    """An instance between two same-named top-level functions does not
+    let the second one merge into the instance method.
+    """
+    result = _extract(tmp_path, "between.hs", HASKELL_CLASS_BETWEEN_SOURCE)
+    spans = {
+        (d["name"], d["line_start"], d["line_end"])
+        for d in result["definitions"]
+        if d["name"] in ("pick", "show")
+    }
+    assert spans == {("pick", 4, 4), ("show", 7, 7), ("pick", 9, 9)}
+
+
 def test_ocaml_extracts_modules_values_types_imports_and_calls(tmp_path):
     """OCaml: let bindings are functions when they take parameters or
     a fun body, variables otherwise; modules, signatures and types are

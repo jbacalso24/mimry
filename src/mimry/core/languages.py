@@ -1602,17 +1602,46 @@ def _field_text(node: Any, field: str, source: bytes) -> str | None:
     return _text(source, child).strip() or None
 
 
-def _merge_equations(definitions: list[dict], owners: list[int | None]) -> list[dict]:
+def _haskell_member_blocks(lang: str, root: Any) -> frozenset[int]:
+    """Start bytes of the Haskell class and instance bodies in a file.
+    A method's parent block is one of these, so a name is unique in it.
+    """
+    if lang != "haskell":
+        return frozenset()
+    return frozenset(
+        node.start_byte
+        for node in _walk(root)
+        if node.type in ("class_declarations", "instance_declarations")
+    )
+
+
+def _merge_equations(
+    definitions: list[dict],
+    owners: list[int | None],
+    unique_blocks: frozenset[int] = frozenset(),
+) -> list[dict]:
     """One symbol per run of clauses with the same name, kind and
     declaring block. A Haskell function's equations, or an Elixir
     function's clauses, are one symbol from the first line to the last.
     Two instances that both define `show` stay apart, and so do
     same-named functions with other code between them.
+    A name in a `unique_blocks` block (a Haskell class or instance)
+    is one method, so all its clauses merge, adjacent or not.
     """
     merged: list[dict] = []
     last_key = None
+    first_in_block: dict[tuple, dict] = {}
     for definition, owner in zip(definitions, owners, strict=True):
         key = (definition["name"], definition["kind"], owner)
+        if owner in unique_blocks:
+            kept = first_in_block.get(key)
+            if kept is None:
+                first_in_block[key] = definition
+                merged.append(definition)
+            else:
+                kept["line_end"] = max(kept["line_end"] or 0, definition["line_end"] or 0)
+            last_key = key
+            continue
         if key == last_key:
             kept = merged[-1]
             kept["line_end"] = max(kept["line_end"] or 0, definition["line_end"] or 0)
@@ -3568,7 +3597,9 @@ def extract(path: str | Path, source: str, language: str | None = None) -> dict:
                 calls.append(call)
 
     if lang in ("haskell", "elixir"):
-        definitions = _merge_equations(definitions, owners)
+        definitions = _merge_equations(
+            definitions, owners, _haskell_member_blocks(lang, root_node)
+        )
     if lang in _STYLE_LANGUAGES:
         definitions = _merge_style_rules(definitions)
 
