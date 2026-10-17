@@ -347,6 +347,6 @@ def test_unknown_language_is_rejected_with_the_valid_names(tmp_path, monkeypatch
 
 
 def test_tsx_files_count_as_typescript():
-    assert search._file_languages("web/App.tsx") == {"tsx", "typescript"}
-    assert search._file_languages("web/app.ts") == {"typescript"}
-    assert search._file_languages("README") == set()
+    assert search._file_languages({"rel_path": "web/App.tsx"}) == {"tsx", "typescript"}
+    assert search._file_languages({"rel_path": "web/app.ts"}) == {"typescript"}
+    assert search._file_languages({"rel_path": "README"}) == set()
