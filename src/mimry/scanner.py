@@ -821,6 +821,7 @@ def _document_record(path, root, document: DocumentText, snapshot, references):
     )
     if document.truncated:
         f["metadata_text"] += " truncated: part of this document is not indexed"
+        f["cut_at"] = document.cut
     table_refs = sql_table_references(safe_text) if safe_text else []
     if table_refs:
         references["table_refs"] = table_refs

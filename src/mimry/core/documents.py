@@ -63,11 +63,15 @@ class DocumentPart(NamedTuple):
 
 
 class DocumentText(NamedTuple):
-    """A document's parts, its status and whether its text was cut."""
+    """A document's parts, its status and whether its text was cut.
+
+    ``cut`` names where the cut fell, such as "page 2,000", or is empty.
+    """
 
     parts: list[DocumentPart]
     status: str
     truncated: bool
+    cut: str = ""
 
 
 class DocumentResourceLimitError(ValueError):
@@ -148,14 +152,15 @@ def extract_document_parts(
             with zipfile.ZipFile(source, "r") as zf:
                 pairs = _OFFICE_READERS[ext](zf)
 
-        parts, truncated = _capped(PART_KINDS[ext], pairs, limit)
+        parts, cap = _capped(PART_KINDS[ext], pairs, limit)
         if any(part.text.strip() for part in parts):
             status = "ok"
         elif ext == ".pdf":
             status = "parse_error:NoTextLayer"
         else:
             status = "parse_error:empty"
-        return DocumentText(parts, status, truncated)
+        cut = _cut_phrase(PART_KINDS[ext], cap, limit)
+        return DocumentText(parts, status, bool(cut), cut)
 
     except DocumentResourceLimitError:
         return DocumentText([], "parse_error:ResourceLimit", False)
@@ -189,6 +194,53 @@ def extract_document_text(
     return (document_text(document.parts, limit), "ok")
 
 
+# Why a document is searchable by name only, in plain words. Any other
+# parse error reads as damaged.
+UNREADABLE_REASONS = {
+    "parse_error:Encrypted": "encrypted",
+    "parse_error:NoTextLayer": "no text layer",
+    "parse_error:empty": "empty",
+    "parse_error:ResourceLimit": "over a size limit",
+    "parse_error:UnsafeXML": "unsafe XML",
+}
+DOCUMENT_ADAPTER_NAMES = frozenset(DOCUMENT_ADAPTERS.values())
+
+
+def name_only_reason(record: dict) -> str | None:
+    """Why a document record is searchable by name only, or None.
+
+    A missing reader library has its own warning, so it is not named
+    here. A zero-byte file reads as empty whatever its parser said.
+    """
+    status = str(record.get("parse_status", ""))
+    if not status.startswith("parse_error:") or status == "parse_error:MissingDependency":
+        return None
+    if not record.get("size"):
+        return "empty"
+    return UNREADABLE_REASONS.get(status, "damaged")
+
+
+def document_reports(
+    records: Iterable[dict],
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Documents searchable by name only and documents cut at a cap.
+
+    Returns (path, reason) pairs for the first and (path, where the cut
+    fell) pairs for the second, each sorted by path.
+    """
+    name_only: list[tuple[str, str]] = []
+    cut: list[tuple[str, str]] = []
+    for record in records:
+        if record.get("adapter") not in DOCUMENT_ADAPTER_NAMES:
+            continue
+        reason = name_only_reason(record)
+        if reason:
+            name_only.append((record["rel_path"], reason))
+        elif record.get("cut_at"):
+            cut.append((record["rel_path"], record["cut_at"]))
+    return sorted(name_only), sorted(cut)
+
+
 def document_text(parts: Iterable[DocumentPart], limit: int = MAX_DOCUMENT_CHARS) -> str:
     """The parts' text as one collapsed line, cut at `limit`."""
     text = " ".join(part.text for part in parts if part.text)
@@ -197,23 +249,37 @@ def document_text(parts: Iterable[DocumentPart], limit: int = MAX_DOCUMENT_CHARS
 
 def _capped(
     kind: str, pairs: Iterable[tuple[str, str]], limit: int
-) -> tuple[list[DocumentPart], bool]:
+) -> tuple[list[DocumentPart], str]:
     """Number (title, text) pairs as parts, stopping at the caps.
 
-    Returns the parts and whether anything was cut. The pairs iterator
-    is not consumed past the cap, so a PDF stops extracting pages there.
+    Returns the parts and the cap that cut them: "parts", "characters",
+    or "" when nothing was cut. The pairs iterator is not consumed past
+    the cap, so a PDF stops extracting pages there.
     """
     parts: list[DocumentPart] = []
     left = limit
     for number, (title, text) in enumerate(pairs, 1):
-        if number > MAX_DOCUMENT_PARTS or left <= 0:
-            return parts, True
+        if number > MAX_DOCUMENT_PARTS:
+            return parts, "parts"
+        if left <= 0:
+            return parts, "characters"
         if len(text) > left:
             parts.append(DocumentPart(kind, number, title, text[:left]))
-            return parts, True
+            return parts, "characters"
         parts.append(DocumentPart(kind, number, title, text))
         left -= len(text)
-    return parts, False
+    return parts, ""
+
+
+def _cut_phrase(kind: str, cap: str, limit: int) -> str:
+    """Where a cut fell, such as "page 2,000" or "2,000,000 characters";
+    "" when nothing was cut.
+    """
+    if cap == "parts":
+        return f"{kind} {MAX_DOCUMENT_PARTS:,}"
+    if cap == "characters":
+        return f"{limit:,} characters"
+    return ""
 
 
 def _read_member(zf: zipfile.ZipFile, member_name: str) -> bytes | None:

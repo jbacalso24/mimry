@@ -52,6 +52,7 @@ from .lifecycle import (
     STALE_INDEX_HINT,
     change_summary,
     command_root,
+    print_document_warnings,
     print_grammar_warning,
     print_parse_error_warning,
     require,
@@ -699,6 +700,13 @@ def run_preflight(a):
         else parse_error_summary(ptr)
     )
     print_parse_error_warning(parse_errors, parse_error_files)
+    if stats is not None:
+        print_document_warnings(
+            stats.get("document_name_only", 0),
+            stats.get("document_name_only_files", []),
+            stats.get("document_cut", 0),
+            stats.get("document_cut_files", []),
+        )
     ui.detail(f"Context pack: {ui.display_path(pack_path, root)}")
     for line in history:
         ui.detail(line)
@@ -725,6 +733,13 @@ def _ranges_text(ranges: list[dict], name=str) -> str:
 
 
 def _document_ranges_text(ranges: list[dict]) -> str:
+    text = _document_part_text(ranges)
+    if ranges[0].get("cut_at"):
+        return f"{text} (cut at {ranges[0]['cut_at']})"
+    return text
+
+
+def _document_part_text(ranges: list[dict]) -> str:
     unit = ranges[0]["unit"]
     if unit == "page":
         spans = [

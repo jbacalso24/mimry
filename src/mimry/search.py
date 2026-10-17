@@ -206,17 +206,28 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
     return scores
 
 
-def _with_ranges(idx, q, rows, id_by_path):
-    """Name the lines to read first in each result: its best pieces."""
+def _with_ranges(idx, q, rows, id_by_path, cut_at):
+    """Name the lines to read first in each result: its best pieces.
+
+    ``cut_at`` maps a document cut at a cap to where the cut fell, so
+    its ranges say so and do not read as the whole document.
+    """
     pieces = piece_matches(
         idx, q, [id_by_path[row["path"]] for row in rows if row["path"] in id_by_path]
     )
     out = []
     for row in rows:
         matches = pieces.get(id_by_path.get(row["path"], ""))
+        if not matches:
+            out.append(row)
+            continue
         # A document's ranges name its parts (pages, sections, ...).
         unit = DOCUMENT_UNITS.get(Path(row["path"]).suffix.lower())
-        out.append({**row, "ranges": best_ranges(matches, unit)} if matches else row)
+        ranges = best_ranges(matches, unit)
+        if row["path"] in cut_at:
+            for item in ranges:
+                item["cut_at"] = cut_at[row["path"]]
+        out.append({**row, "ranges": ranges})
     return out
 
 
@@ -370,6 +381,7 @@ def find_rows(
         raise ValueError(f"unknown language {', '.join(unknown)}; use one of: " + ", ".join(shown))
     fts_scores = _fts_scores(idx, q)
     id_by_path = {f["rel_path"]: f["file_id"] for f in files}
+    cut_at = {f["rel_path"]: f["cut_at"] for f in files if f.get("cut_at")}
     known_paths = set(id_by_path)
     candidate_limit = max(len(files), limit + scope["offset"]) if scoped_or_paginated else limit
 
@@ -479,7 +491,7 @@ def find_rows(
                 excluded_paths,
             )
             rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
-            return _with_ranges(idx, q, rows, id_by_path)
+            return _with_ranges(idx, q, rows, id_by_path, cut_at)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     ranked = _with_semantic(
         ranked,
@@ -492,4 +504,4 @@ def find_rows(
         excluded_paths,
     )
     rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
-    return _with_ranges(idx, q, rows, id_by_path)
+    return _with_ranges(idx, q, rows, id_by_path, cut_at)

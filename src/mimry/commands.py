@@ -25,6 +25,7 @@ from .core.artifacts import (
     load_graph,
     report_path,
 )
+from .core.documents import document_reports
 from .core.export import export_cypher, export_graphml, export_html, export_obsidian
 from .core.languages import language_counts
 from .digest import canonical_digest, canonical_state
@@ -301,6 +302,12 @@ def _print_status(
         print_rows_capped([("secret", path) for path in fresh["secret_skipped_paths"]])
     if verbose and fresh["oversized_files"]:
         print_rows_capped([("too large", path) for path in sorted(fresh["oversized_files"])])
+    if verbose:
+        name_only, cut = document_reports(fresh["files"])
+        if name_only:
+            print_rows_capped([(reason, path) for path, reason in name_only])
+        if cut:
+            print_rows_capped([(f"cut at {where}", path) for path, where in cut])
     print_grammar_warning(grammar_unavailable_count(ptr), grammar_error_of(ptr))
     print_parse_error_warning(*parse_error_summary(ptr))
     fixes = print_problems(fresh, graph, semantic)

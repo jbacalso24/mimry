@@ -18,7 +18,7 @@ from .cache_safety import validated_cache_home
 from .constants import SCHEMA_VERSION
 from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
 from .core.cluster import assign_communities
-from .core.documents import DOCUMENT_UNITS, extract_document_parts
+from .core.documents import DOCUMENT_UNITS, document_reports, extract_document_parts
 from .core.languages import GRAMMAR_UNAVAILABLE, grammar_failure_reason, language_for
 from .core.report import build_manifest, render_report
 from .core.resolve import (
@@ -181,8 +181,6 @@ def _symbol_order(symbol: dict) -> tuple:
 SKIPPED = "skipped"
 UNINDEXABLE = "unindexable"
 MISSING_DEPENDENCY = "parse_error:MissingDependency"
-# A PDF whose pages have no text layer (a scan): nothing to search.
-NO_TEXT_LAYER = "parse_error:NoTextLayer"
 # How many paths the status, doctor and index output name for files the
 # parser rejected.
 PARSE_ERROR_FILES_SHOWN = 5
@@ -228,6 +226,18 @@ def _parse_error_paths(files: list[dict]) -> list[str]:
         for f in files
         if is_code_parse_failure(str(f.get("parse_status", "")), str(f.get("adapter", "")))
     )
+
+
+# Documents searchable by name only, and documents cut at a cap, named
+# the way the parse-error files are: a count and the first few.
+def _document_stats(files: list[dict]) -> dict:
+    name_only, cut = document_reports(files)
+    return {
+        "document_name_only": len(name_only),
+        "document_name_only_files": name_only[:PARSE_ERROR_FILES_SHOWN],
+        "document_cut": len(cut),
+        "document_cut_files": cut[:PARSE_ERROR_FILES_SHOWN],
+    }
 
 
 def _adapt_file(
@@ -1076,11 +1086,11 @@ def write_index(root, ptr, *, full: bool = False):
             grammar_error = record["grammar_error"]
             # Recorded, but without text: the reader library is missing.
             unread = sum(f.get("parse_status") == MISSING_DEPENDENCY for f in files)
-            scanned = sum(f.get("parse_status") == NO_TEXT_LAYER for f in files)
             # Symbols missing: their grammar could not be downloaded.
             no_grammar = sum(f.get("parse_status") == GRAMMAR_UNAVAILABLE for f in files)
             # Files the parser rejected; grammar gaps are counted above.
             parse_errors = _parse_error_paths(files)
+            documents = _document_stats(files)
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
                 # Nothing to publish, but HEAD may have moved, so the
@@ -1103,7 +1113,7 @@ def write_index(root, ptr, *, full: bool = False):
                     "unindexable": skipped,
                     **skip_reasons,
                     "missing_dependency": unread,
-                    "no_text_layer": scanned,
+                    **documents,
                     "grammar_unavailable": no_grammar,
                     "grammar_error": grammar_error,
                     "parse_errors": len(parse_errors),
@@ -1308,7 +1318,7 @@ def write_index(root, ptr, *, full: bool = False):
         "unindexable": skipped,
         **skip_reasons,
         "missing_dependency": unread,
-        "no_text_layer": scanned,
+        **documents,
         "grammar_unavailable": no_grammar,
         "grammar_error": grammar_error,
         "parse_errors": len(parse_errors),

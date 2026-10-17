@@ -442,6 +442,29 @@ def print_parse_error_warning(count: int, names: list[str]) -> None:
         )
 
 
+def _document_line(count: int, names: list[tuple[str, str]], label: str) -> str:
+    more = f" and {count - len(names)} more" if count > len(names) else ""
+    shown = ", ".join(f"{path} ({detail})" for path, detail in names)
+    return f"{ui.count(count, 'document')} {label}: {shown}{more}"
+
+
+def print_document_warnings(
+    name_only: int,
+    name_only_files: list[tuple[str, str]],
+    cut: int,
+    cut_files: list[tuple[str, str]],
+) -> None:
+    """Name the documents whose text is missing, and the ones cut short.
+
+    Each is one line: the count, then the first few paths with the
+    reason or the cap.
+    """
+    if name_only:
+        ui.warn(_document_line(name_only, name_only_files, "searchable by name only"))
+    if cut:
+        ui.warn(_document_line(cut, cut_files, "cut at a cap"))
+
+
 def print_index_result(
     root: Path, stats: dict, seconds: float, *, full: bool, verbose: bool = False
 ) -> None:
@@ -489,13 +512,12 @@ def print_index_result(
             f"{ui.count(stats['missing_dependency'], 'PDF')} indexed without text: pypdf is"
             f" missing. Run `{repair_command()}` to add it."
         )
-    if stats.get("no_text_layer"):
-        count = stats["no_text_layer"]
-        verb = "has" if count == 1 else "have"
-        ui.warn(
-            f"{ui.count(count, 'PDF')} {verb} no text layer (scanned pages): they are indexed"
-            " by name only, not searchable."
-        )
+    print_document_warnings(
+        stats.get("document_name_only", 0),
+        stats.get("document_name_only_files", []),
+        stats.get("document_cut", 0),
+        stats.get("document_cut_files", []),
+    )
     print_grammar_warning(stats.get("grammar_unavailable", 0), stats.get("grammar_error"))
     print_parse_error_warning(stats.get("parse_errors", 0), stats.get("parse_error_files", []))
     if verbose:
