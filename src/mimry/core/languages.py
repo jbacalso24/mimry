@@ -3180,6 +3180,14 @@ def _extract_data(path: Path, lang: str, source: str) -> dict:
     """YAML, JSON, TOML, XML and HCL, through their own extractors."""
     from tree_sitter import Parser
 
+    if _too_deeply_nested(lang, source):
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": TOO_DEEPLY_NESTED,
+        }
     raw = source.encode("utf-8")
     try:
         root = Parser(load_language(lang)).parse(raw).root_node
@@ -3204,6 +3212,40 @@ def _extract_data(path: Path, lang: str, source: str) -> dict:
     else:
         result = _DATA_EXTRACTORS[lang](root, raw)
     return {**result, "status": "ok"}
+
+
+# Grammars whose external scanner keeps a fixed-size stack of nesting.
+# Past the limit tree-sitter aborts the process (a failed assertion in
+# its parser.c), so the file is refused before any parse. YAML aborts
+# at 253 mapping levels whatever the indent width.
+NESTING_LEVEL_LIMIT = {"yaml": 200}
+# Ends in "Error" so the indexer counts it as a parse failure.
+TOO_DEEPLY_NESTED = "parse_error:TooDeeplyNestedError"
+
+
+def _too_deeply_nested(lang: str, source: str) -> bool:
+    """True when ``source`` nests past the limit of ``lang``.
+
+    Levels are counted like the scanner's own indent stack: a deeper
+    line opens a level, a shallower one closes every level above it.
+    One pass over the lines, reading only their leading whitespace.
+    """
+    limit = NESTING_LEVEL_LIMIT.get(lang)
+    if limit is None:
+        return False
+    stack = [0]
+    for line in source.split("\n"):
+        body = line.lstrip(" \t")
+        if not body.strip():
+            continue
+        column = len(line) - len(body)
+        while stack[-1] > column:
+            stack.pop()
+        if column > stack[-1]:
+            stack.append(column)
+            if len(stack) - 1 > limit:
+                return True
+    return False
 
 
 def extract(path: str | Path, source: str, language: str | None = None) -> dict:
