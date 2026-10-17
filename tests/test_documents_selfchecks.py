@@ -148,7 +148,7 @@ def test_xlsx_rejects_high_compression_ratio_member(tmp_path):
     text, status = extract_document_text(path)
 
     assert text == ""
-    assert status == "parse_error:ResourceLimit"
+    assert status == "parse_error:CompressionRatio"
 
 
 def test_xlsx_rejects_dtd_and_internal_entity_before_xml_parse(tmp_path):

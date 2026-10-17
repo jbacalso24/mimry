@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -3421,7 +3422,11 @@ def _extract_data(path: Path, lang: str, source: str) -> dict:
         result = extract_xml(root, raw, path.name)
     else:
         result = _DATA_EXTRACTORS[lang](root, raw)
-    return {**result, "status": "ok"}
+    # The grammar recovers from a syntax error, so the tree still has
+    # symbols; the file is still a broken file, and says so.
+    broken = root.has_error and not (lang == "json" and _jsonc_valid(source))
+    status = MALFORMED_DATA if broken else "ok"
+    return {**result, "status": status}
 
 
 # Grammars whose external scanner keeps a fixed-size stack of nesting.
@@ -3429,8 +3434,34 @@ def _extract_data(path: Path, lang: str, source: str) -> dict:
 # its parser.c), so the file is refused before any parse. YAML aborts
 # at 253 mapping levels whatever the indent width.
 NESTING_LEVEL_LIMIT = {"yaml": 200}
-# Ends in "Error" so the indexer counts it as a parse failure.
-TOO_DEEPLY_NESTED = "parse_error:TooDeeplyNestedError"
+# Not a syntax error, so the indexer names it on its own line. The file
+# is valid, MIMRY just will not hand it to the scanner.
+TOO_DEEPLY_NESTED = "parse_error:TooDeeplyNested"
+# A data file the grammar could not read. "Error" in the name makes the
+# indexer count it with the other syntax errors.
+MALFORMED_DATA = "parse_error:SyntaxError"
+# Strings, so a comment or comma inside one is kept.
+_JSON_COMMENT = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
+_JSON_TRAILING_COMMA = re.compile(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])')
+
+
+def _strings_only(found: re.Match) -> str:
+    text = found.group()
+    return text if text.startswith('"') else ""
+
+
+def _jsonc_valid(source: str) -> bool:
+    """Whether ``source`` is JSON once comments and trailing commas are
+    dropped. tsconfig.json and editor settings allow both, and the JSON
+    grammar reads them as errors.
+    """
+    text = _JSON_COMMENT.sub(_strings_only, source)
+    text = _JSON_TRAILING_COMMA.sub(_strings_only, text)
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
 
 
 def _too_deeply_nested(lang: str, source: str) -> bool:

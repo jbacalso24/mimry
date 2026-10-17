@@ -55,6 +55,7 @@ from .lifecycle import (
     command_root,
     print_document_warnings,
     print_grammar_warning,
+    print_nested_too_deep_warning,
     print_parse_error_warning,
     require,
     root_name,
@@ -77,6 +78,7 @@ from .state import (
     atomic_write_text,
     grammar_error_of,
     grammar_unavailable_count,
+    nested_too_deep_summary,
     parse_error_summary,
 )
 from .storage import active_index_pointer, load_jsonl, load_pointer
@@ -701,6 +703,12 @@ def run_preflight(a):
         else parse_error_summary(ptr)
     )
     print_parse_error_warning(parse_errors, parse_error_files)
+    nested, nested_files = (
+        (stats.get("nested_too_deep", 0), stats.get("nested_too_deep_files", []))
+        if stats is not None
+        else nested_too_deep_summary(ptr)
+    )
+    print_nested_too_deep_warning(nested, nested_files)
     if stats is not None:
         print_document_warnings(
             stats.get("document_name_only", 0),

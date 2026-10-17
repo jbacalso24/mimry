@@ -38,9 +38,10 @@ from .feedback import (
     show_feedback,
 )
 from .history import history_payload, path_text, plain
-from .indexer import write_index
+from .indexer import nested_too_deep_paths, write_index
 from .install_info import repair_command
 from .lifecycle import (
+    NESTED_TOO_DEEP_REASON,
     build_graph_first,
     change_summary,
     command_root,
@@ -49,6 +50,7 @@ from .lifecycle import (
     not_set_up,
     print_grammar_warning,
     print_index_result,
+    print_nested_too_deep_warning,
     print_parse_error_warning,
     print_problems,
     print_rows_capped,
@@ -100,6 +102,7 @@ from .state import (
     StateLockTimeoutError,
     grammar_error_of,
     grammar_unavailable_count,
+    nested_too_deep_summary,
     parse_error_summary,
 )
 from .storage import (
@@ -308,8 +311,12 @@ def _print_status(
             print_rows_capped([(reason, path) for path, reason in name_only])
         if cut:
             print_rows_capped([(f"cut at {where}", path) for path, where in cut])
+        too_deep = nested_too_deep_paths(fresh["files"])
+        if too_deep:
+            print_rows_capped([(NESTED_TOO_DEEP_REASON, path) for path in too_deep])
     print_grammar_warning(grammar_unavailable_count(ptr), grammar_error_of(ptr))
     print_parse_error_warning(*parse_error_summary(ptr))
+    print_nested_too_deep_warning(*nested_too_deep_summary(ptr))
     fixes = print_problems(fresh, graph, semantic)
     if verbose:
         ui.table(

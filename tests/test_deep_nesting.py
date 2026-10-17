@@ -88,7 +88,7 @@ def test_yaml_at_the_limit_keeps_its_symbols():
     assert {"a", "a.k1"} <= names
 
 
-def test_deep_yaml_is_reported_unparsed_and_the_index_still_works(tmp_path: Path):
+def test_deep_yaml_is_reported_on_its_own_line_and_the_index_still_works(tmp_path: Path):
     work = tmp_path / "repo"
     work.mkdir()
     (work / "deep.yaml").write_text(_yaml(300, width=2), encoding="utf-8")
@@ -100,7 +100,8 @@ def test_deep_yaml_is_reported_unparsed_and_the_index_still_works(tmp_path: Path
 
     index = _run_cli(work, cache, "index")
     assert index.returncode == 0, index.stderr
-    assert "could not be parsed: deep.yaml" in index.stdout
+    assert "1 file nested too deeply to read: deep.yaml" in index.stdout
+    assert "could not be parsed" not in index.stdout
 
     find_symbol = _run_cli(work, cache, "find", "hello")
     assert find_symbol.returncode == 0, find_symbol.stderr
@@ -115,8 +116,25 @@ def test_deep_yaml_is_reported_unparsed_and_the_index_still_works(tmp_path: Path
     assert "deep.yaml" in preflight.stdout
 
 
-def test_refused_status_counts_as_a_parse_failure():
-    assert is_code_parse_failure(TOO_DEEPLY_NESTED, "tree-sitter-yaml")
+def test_refused_status_is_not_a_parse_failure():
+    assert not is_code_parse_failure(TOO_DEEPLY_NESTED, "tree-sitter-yaml")
+
+
+def test_status_verbose_lists_the_nested_file_with_its_reason(tmp_path: Path):
+    work = tmp_path / "repo"
+    work.mkdir()
+    (work / "deep.yaml").write_text(_yaml(300, width=2), encoding="utf-8")
+    cache = tmp_path / "cache"
+
+    init = _run_cli(work, cache, "init", "--skip-graph")
+    assert init.returncode == 0, init.stderr
+    index = _run_cli(work, cache, "index")
+    assert index.returncode == 0, index.stderr
+
+    status = _run_cli(work, cache, "status", "-v")
+    assert status.returncode == 0, status.stderr
+    rows = [" ".join(line.split()) for line in status.stdout.splitlines()]
+    assert "nested too deeply to read deep.yaml" in rows
 
 
 def test_wide_indentation_counts_levels_not_columns():

@@ -78,6 +78,10 @@ class DocumentResourceLimitError(ValueError):
     pass
 
 
+class DocumentCompressionError(ValueError):
+    """A member expands far past its compressed size (zip bomb)."""
+
+
 class UnsafeDocumentXMLError(ValueError):
     pass
 
@@ -164,6 +168,8 @@ def extract_document_parts(
 
     except DocumentResourceLimitError:
         return DocumentText([], "parse_error:ResourceLimit", False)
+    except DocumentCompressionError:
+        return DocumentText([], "parse_error:CompressionRatio", False)
     except DocumentEncryptedError:
         return DocumentText([], "parse_error:Encrypted", False)
     except DocumentDependencyError:
@@ -201,6 +207,7 @@ UNREADABLE_REASONS = {
     "parse_error:NoTextLayer": "no text layer",
     "parse_error:empty": "empty",
     "parse_error:ResourceLimit": "over a size limit",
+    "parse_error:CompressionRatio": "compressed too much to read safely",
     "parse_error:UnsafeXML": "unsafe XML",
 }
 DOCUMENT_ADAPTER_NAMES = frozenset(DOCUMENT_ADAPTERS.values())
@@ -408,7 +415,7 @@ def _check_member_budget(infos: list[zipfile.ZipInfo]) -> None:
     if any(
         info.file_size / max(1, info.compress_size) > MAX_XLSX_COMPRESSION_RATIO for info in infos
     ):
-        raise DocumentResourceLimitError("Office XML compression ratio exceeds limit")
+        raise DocumentCompressionError("Office XML compression ratio exceeds limit")
 
 
 def _docx_pairs(zf: zipfile.ZipFile) -> list[tuple[str, str]]:

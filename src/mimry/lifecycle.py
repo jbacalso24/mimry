@@ -11,7 +11,7 @@ from . import ui
 from .cache_safety import validated_cache_home
 from .constants import SCHEMA_VERSION
 from .core.artifacts import graph_health, graph_path, manifest_path, report_path
-from .core.languages import is_network_failure
+from .core.languages import NESTING_LEVEL_LIMIT, is_network_failure
 from .freshness import index_freshness
 from .indexer import write_index
 from .install_info import repair_command
@@ -442,6 +442,24 @@ def print_parse_error_warning(count: int, names: list[str]) -> None:
         )
 
 
+# The reason a file refused for nesting is listed under, in status -v.
+NESTED_TOO_DEEP_REASON = "nested too deeply to read"
+
+
+def print_nested_too_deep_warning(count: int, names: list[str]) -> None:
+    """Name the files refused for nesting past the parser's limit.
+
+    They are valid files, so they get their own line and not the parse
+    error one.
+    """
+    if count:
+        more = f" and {count - len(names)} more" if count > len(names) else ""
+        ui.warn(f"{ui.count(count, 'file')} {NESTED_TOO_DEEP_REASON}: {', '.join(names)}{more}")
+        # The deepest limit of any language; YAML is the only one.
+        limit = max(NESTING_LEVEL_LIMIT.values())
+        ui.detail(f"Files nested deeper than {limit} levels are skipped.")
+
+
 def _document_line(count: int, names: list[tuple[str, str]], label: str) -> str:
     more = f" and {count - len(names)} more" if count > len(names) else ""
     shown = ", ".join(f"{path} ({detail})" for path, detail in names)
@@ -520,6 +538,9 @@ def print_index_result(
     )
     print_grammar_warning(stats.get("grammar_unavailable", 0), stats.get("grammar_error"))
     print_parse_error_warning(stats.get("parse_errors", 0), stats.get("parse_error_files", []))
+    print_nested_too_deep_warning(
+        stats.get("nested_too_deep", 0), stats.get("nested_too_deep_files", [])
+    )
     if verbose:
         ui.table(
             [

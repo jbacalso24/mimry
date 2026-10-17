@@ -4,6 +4,7 @@ named by index and status, and a cut result's ranges say so.
 
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -80,6 +81,25 @@ def test_status_verbose_lists_the_same_documents_with_reasons(tmp_path, capsys):
         "docs/truncated.pdf": "damaged",
         "plan.xlsx": "empty",
     }
+
+
+def test_a_document_compressed_too_much_says_so_not_over_a_size_limit(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    xml = (
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        "<w:body><w:p><w:r><w:t>" + "word " * 100_000 + "</w:t></w:r></w:p>"
+        "</w:body></w:document>"
+    )
+    with zipfile.ZipFile(repo / "docs" / "repeated.docx", "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", xml)
+
+    out = _index(repo, capsys)
+
+    assert (
+        "1 document searchable by name only: docs/repeated.docx "
+        "(compressed too much to read safely)"
+    ) in out
+    assert "over a size limit" not in out
 
 
 def test_a_document_cut_at_a_cap_is_reported_and_its_ranges_say_so(tmp_path, monkeypatch, capsys):

@@ -534,6 +534,7 @@ def test_a_code_parser_exception_counts_as_a_parse_failure(status, adapter):
         # Documents: their reasons are exception names, but not code.
         ("parse_error:Encrypted", "pdf-document"),
         ("parse_error:ResourceLimit", "office-document"),
+        ("parse_error:CompressionRatio", "office-document"),
         ("parse_error:UnsafeXML", "office-document"),
         ("parse_error:BadZipFile", "office-document"),
         ("parse_error:MissingDependency", "pdf-document"),

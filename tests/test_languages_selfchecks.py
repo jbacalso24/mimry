@@ -17,6 +17,7 @@ from mimry.core.languages import (
     is_pascal_source,
     language_for,
 )
+from mimry.indexer import is_code_parse_failure
 from mimry.intent import TEST_NAME_RE
 from mimry.scanner import adapt
 from mimry.settings import IndexSettings
@@ -2841,6 +2842,21 @@ class TestDataFilesThroughScanner:
 
         assert record["adapter"] == "tree-sitter-json"
         assert {s["name"] for s in symbols} == {"retries", "db", "db.host"}
+
+    def test_truncated_json_is_counted_as_a_parse_failure(self, tmp_path):
+        record, _ = self._adapt(tmp_path, "config/broken.json", '{"a": 1,\n')
+
+        assert record["parse_status"] == "parse_error:SyntaxError"
+        assert is_code_parse_failure(record["parse_status"], record["adapter"])
+
+    def test_json_with_comments_and_trailing_commas_keeps_its_keys(self, tmp_path):
+        source = (
+            '{\n  // strict mode\n  "compilerOptions": {\n    "strict": true, /* on */\n  },\n}\n'
+        )
+        record, symbols = self._adapt(tmp_path, "config/settings.json", source)
+
+        assert record["parse_status"] == "ok"
+        assert {s["name"] for s in symbols} == {"compilerOptions", "compilerOptions.strict"}
 
     def test_lock_file_gets_no_symbols(self, tmp_path):
         record, symbols = self._adapt(

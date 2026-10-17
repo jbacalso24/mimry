@@ -19,7 +19,12 @@ from .constants import SCHEMA_VERSION
 from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
 from .core.cluster import assign_communities
 from .core.documents import DOCUMENT_UNITS, document_reports, extract_document_parts
-from .core.languages import GRAMMAR_UNAVAILABLE, grammar_failure_reason, language_for
+from .core.languages import (
+    GRAMMAR_UNAVAILABLE,
+    TOO_DEEPLY_NESTED,
+    grammar_failure_reason,
+    language_for,
+)
 from .core.report import build_manifest, render_report
 from .core.resolve import (
     resolve_calls,
@@ -226,6 +231,14 @@ def _parse_error_paths(files: list[dict]) -> list[str]:
         for f in files
         if is_code_parse_failure(str(f.get("parse_status", "")), str(f.get("adapter", "")))
     )
+
+
+def nested_too_deep_paths(files: list[dict]) -> list[str]:
+    """Sorted paths of files refused for nesting past the limit.
+
+    These are valid files, so they are not parse failures.
+    """
+    return sorted(f["rel_path"] for f in files if f.get("parse_status") == TOO_DEEPLY_NESTED)
 
 
 # Documents searchable by name only, and documents cut at a cap, named
@@ -1095,6 +1108,7 @@ def write_index(root, ptr, *, full: bool = False):
             no_grammar = sum(f.get("parse_status") == GRAMMAR_UNAVAILABLE for f in files)
             # Files the parser rejected; grammar gaps are counted above.
             parse_errors = _parse_error_paths(files)
+            too_deep = nested_too_deep_paths(files)
             documents = _document_stats(files)
             kept = _unchanged_generation(root, ptr, previous, record, files, symbols, unindexable)
             if kept is not None:
@@ -1123,6 +1137,8 @@ def write_index(root, ptr, *, full: bool = False):
                     "grammar_error": grammar_error,
                     "parse_errors": len(parse_errors),
                     "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
+                    "nested_too_deep": len(too_deep),
+                    "nested_too_deep_files": too_deep[:PARSE_ERROR_FILES_SHOWN],
                 }
             progress("MIMRY: building graph", force=True)
             graph = _build_core_graph(
@@ -1271,6 +1287,8 @@ def write_index(root, ptr, *, full: bool = False):
                 "grammar_error": grammar_error,
                 "parse_errors": len(parse_errors),
                 "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
+                "nested_too_deep": len(too_deep),
+                "nested_too_deep_files": too_deep[:PARSE_ERROR_FILES_SHOWN],
             }
             atomic_write_json(staging / GENERATION_MANIFEST, manifest)
             fsync_tree(staging)
@@ -1328,5 +1346,7 @@ def write_index(root, ptr, *, full: bool = False):
         "grammar_error": grammar_error,
         "parse_errors": len(parse_errors),
         "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
+        "nested_too_deep": len(too_deep),
+        "nested_too_deep_files": too_deep[:PARSE_ERROR_FILES_SHOWN],
         "parser_reparsed": record["parser_reparsed"],
     }

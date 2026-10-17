@@ -448,13 +448,26 @@ def parse_error_summary(pointer: dict[str, Any]) -> tuple[int, list[str]]:
     ``(0, [])`` when the manifest or the keys are missing (indexes built
     before they were recorded) or unreadable.
     """
+    return _manifest_file_summary(pointer, "parse_errors", "parse_error_files")
+
+
+def nested_too_deep_summary(pointer: dict[str, Any]) -> tuple[int, list[str]]:
+    """Files in the active generation refused for nesting too deep, and
+    the first few of their paths. Read like parse_error_summary.
+    """
+    return _manifest_file_summary(pointer, "nested_too_deep", "nested_too_deep_files")
+
+
+def _manifest_file_summary(
+    pointer: dict[str, Any], count_key: str, names_key: str
+) -> tuple[int, list[str]]:
     try:
         manifest, _ = load_json_state(Path(pointer["indexPath"]) / GENERATION_MANIFEST)
     except (StateCorruptionError, OSError, KeyError):
         return 0, []
     stats = manifest.get("stats") if isinstance(manifest, dict) else None
-    count = stats.get("parse_errors") if isinstance(stats, dict) else None
-    names = stats.get("parse_error_files") if isinstance(stats, dict) else None
+    count = stats.get(count_key) if isinstance(stats, dict) else None
+    names = stats.get(names_key) if isinstance(stats, dict) else None
     if not isinstance(count, int) or count <= 0 or not isinstance(names, list):
         return 0, []
     return count, [name for name in names if isinstance(name, str)]
