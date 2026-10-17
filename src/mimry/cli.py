@@ -698,7 +698,7 @@ def main(argv=None):
         return cmd_hook_check(SimpleNamespace(root=hook_root))
     from pathlib import Path
 
-    from .cache_safety import IndexOutsideCacheError
+    from .cache_safety import IndexOutsideCacheError, UnsafeCachePathError
     from .lifecycle import INDEX_REBUILT_NOTE, rebuild_outdated_index
     from .plan import PlanError
     from .security import UnsafeRootError
@@ -739,6 +739,8 @@ def main(argv=None):
         ui.fail(*copied_folder_lines(exc.recorded_root, exc.current_root))
     except IndexOutsideCacheError as exc:
         ui.fail("This repo's index is in another MIMRY cache", str(exc))
+    except UnsafeCachePathError as exc:
+        ui.fail(str(exc))
     except PlanError as exc:
         ui.fail("Plan error", str(exc))
     except IndexSettingsError as exc:

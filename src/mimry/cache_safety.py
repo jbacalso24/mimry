@@ -25,6 +25,10 @@ class IndexOutsideCacheError(UnsafeCachePathError):
         )
 
 
+def _is_empty_dir(path: Path) -> bool:
+    return path.is_dir() and next(path.iterdir(), None) is None
+
+
 def _is_relative_to(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
@@ -49,23 +53,31 @@ def validated_cache_home(current_root: Path | None = None) -> Path:
     root = current_root.resolve() if current_root is not None else None
 
     if resolved.parent == resolved:
-        raise UnsafeCachePathError("Refusing to wipe filesystem root as MIMRY cache")
+        raise UnsafeCachePathError("Refusing to use the filesystem root as MIMRY cache")
     if resolved == home:
-        raise UnsafeCachePathError("Refusing to wipe home directory as MIMRY cache")
+        raise UnsafeCachePathError("Refusing to use the home directory as MIMRY cache")
     if resolved in {cwd, project_root}:
         raise UnsafeCachePathError(
-            "Refusing to wipe current working directory or MIMRY repo as cache"
+            "Refusing to use the current working directory or MIMRY repo as cache"
         )
     if root is not None and resolved == root:
-        raise UnsafeCachePathError("Refusing to wipe current root as MIMRY cache")
+        raise UnsafeCachePathError("Refusing to use the current root as MIMRY cache")
 
+    # An empty folder holds nothing to lose, like a fresh Docker volume.
+    # roots.json.lock comes first when a first run registers its root,
+    # so a concurrent run must not take it for someone else's files.
     mimry_looking = (
         resolved.name == "mimry"
         or (resolved / "roots.json").exists()
+        or (resolved / "roots.json.lock").exists()
         or (resolved / "indexes").exists()
+        or _is_empty_dir(resolved)
     )
     if resolved.exists() and not mimry_looking:
-        raise UnsafeCachePathError(f"Refusing to wipe non-MIMRY-looking cache path: {resolved}")
+        raise UnsafeCachePathError(
+            f"MIMRY_CACHE_HOME is {resolved}, which holds files that are not a MIMRY cache. "
+            "Point MIMRY_CACHE_HOME at an empty folder or one named mimry."
+        )
     return resolved
 
 
@@ -77,7 +89,7 @@ def validated_current_index_path(index_path: Path, current_root: Path | None = N
         raise UnsafeCachePathError(f"MIMRY index path must be absolute: {idx}")
     resolved_idx = idx.resolve(strict=False)
     if resolved_idx == indexes_base:
-        raise UnsafeCachePathError(f"Refusing to wipe the whole MIMRY indexes cache: {idx}")
+        raise UnsafeCachePathError(f"Refusing to use the whole MIMRY indexes cache: {idx}")
     if not _is_relative_to(resolved_idx, indexes_base):
         raise IndexOutsideCacheError(resolved_idx, cache)
     return resolved_idx
@@ -98,7 +110,7 @@ def validated_current_root_cache_path(
     expected = base if generation_id is None else base / "generations" / generation_id
     if pointed != expected.resolve(strict=False):
         raise UnsafeCachePathError(
-            f"Refusing to wipe cache: pointer index path {pointed} does not match current root"
+            f"Refusing to use cache: pointer index path {pointed} does not match current root"
             f" scope {expected}"
         )
     return base

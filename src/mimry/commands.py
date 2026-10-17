@@ -1087,6 +1087,7 @@ def cmd_adapters(a):
 
 
 def cmd_roots(a):
+    validated_cache_home()
     if getattr(a, "prune", False):
         removed = prune_root_registry()
         if removed:

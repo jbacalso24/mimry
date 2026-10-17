@@ -14,6 +14,7 @@ from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 from .adapters.config_manifest import is_config_manifest
+from .cache_safety import validated_cache_home
 from .constants import SCHEMA_VERSION
 from .core.build import GraphEngine, canonicalize_edges, validate_edge_identity
 from .core.cluster import assign_communities
@@ -980,6 +981,9 @@ def write_index(root, ptr, *, full: bool = False):
     artifacts are identical when the tree is.
     """
     root = Path(root)
+    # Validate before creating anything: mkdir below would make a
+    # refused folder look like a MIMRY cache.
+    validated_cache_home(root)
     progress = _Progress(_stderr_is_tty())
     base = idx_path(ptr["rootId"])
     generations = base / "generations"

@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import ui
+from .cache_safety import validated_cache_home
 from .constants import SCHEMA_VERSION
 from .core.artifacts import graph_health, graph_path, manifest_path, report_path
 from .core.languages import is_network_failure
@@ -128,6 +129,7 @@ def drop_legacy_output_line(root: Path) -> bool:
 def run_init(a):
     root = Path(a.root).resolve()
     safe_root(root)
+    validated_cache_home(root)
     root.mkdir(parents=True, exist_ok=True)
     existing = load_pointer(root, validate_active_generation=False, validate_root_identity=False)
     if existing:

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any, Literal
 
 from mimry.adapters import list_adapters
-from mimry.cache_safety import IndexOutsideCacheError
+from mimry.cache_safety import IndexOutsideCacheError, UnsafeCachePathError
 from mimry.core.artifacts import CALL_DIRECTIONS, graph_health
 from mimry.core.languages import language_counts
 from mimry.digest import canonical_digest
@@ -200,6 +200,13 @@ def _state_guard(func):
                     "returncode": 2,
                     "error": {"code": "index_outside_cache", "message": str(exc)},
                     "recommended": "Run `mimry_preflight` or `mimry index` to rebuild it.",
+                }
+            )
+        except UnsafeCachePathError as exc:
+            return sanitize_data(
+                {
+                    "returncode": 2,
+                    "error": {"code": "unsafe_cache_path", "message": str(exc)},
                 }
             )
         except RootIdentityError as exc:
