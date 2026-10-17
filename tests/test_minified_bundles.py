@@ -5,7 +5,12 @@ from types import SimpleNamespace
 
 from mimry.commands import cmd_init
 from mimry.indexer import write_index
-from mimry.intent import apply_intent_adjustment, is_repo_noise
+from mimry.intent import (
+    apply_intent_adjustment,
+    is_edit_surface_row,
+    is_repo_noise,
+    start_order,
+)
 from mimry.scanner import is_minified
 from mimry.search import find_rows
 from mimry.storage import load_pointer
@@ -64,12 +69,20 @@ def _repo_with_bundle(tmp_path):
     return Path(load_pointer(tmp_path)["indexPath"])
 
 
-def test_find_ranks_the_source_file_above_a_bundle_and_names_no_lines_for_it(tmp_path):
+def test_find_ranks_the_source_file_above_a_bundle_that_is_no_edit_surface(tmp_path):
     idx = _repo_with_bundle(tmp_path)
-    rows = find_rows(idx, "fix broken links", limit=10)
+    rows = start_order(find_rows(idx, "fix broken links", limit=10), "fix broken links")
     paths = [row["path"] for row in rows]
     assert paths.index("src/links.js") < paths.index("public/scripts/main.js")
     bundle = next(row for row in rows if row["path"] == "public/scripts/main.js")
-    assert "ranges" not in bundle
-    source = next(row for row in rows if row["path"] == "src/links.js")
-    assert source.get("ranges")
+    assert bundle["minified"] is True
+    assert not is_edit_surface_row(bundle)
+    assert is_edit_surface_row(next(row for row in rows if row["path"] == "src/links.js"))
+
+
+def test_a_bundle_takes_no_source_boost_on_an_edit_task():
+    plain = apply_intent_adjustment(100, "public/scripts/main.js", ["fix", "links"])[0]
+    bundle = apply_intent_adjustment(
+        100, "public/scripts/main.js", ["fix", "links"], minified=True
+    )[0]
+    assert bundle < 100 < plain

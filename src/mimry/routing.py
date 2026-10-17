@@ -7,7 +7,7 @@ from typing import Any
 
 from .adapters.config_manifest import DOC_NAMES, check_source_rank
 from .freshness import index_freshness
-from .intent import is_likely_edit_surface, start_order
+from .intent import is_edit_surface_row, start_order
 from .paths import output_dir
 from .search import find_rows
 from .security import redact_sensitive_text, sanitize_data, sanitize_query
@@ -206,7 +206,7 @@ def _score_roles(
     test_intent = re.search(r"\b(tests?|qa|regression|repro|verify)\b", q) is not None
     # Supporting test files are selected for most tasks in a repo with
     # tests, so QA counts only edit surfaces unless the query asks QA.
-    edit_rows = [row for row in rows if is_likely_edit_surface(row["path"])]
+    edit_rows = [row for row in rows if is_edit_surface_row(row)]
     edit_evidence = _record_text(fresh, edit_rows)
     implementing = re.search(r"\b(fix|implement|add|update|debug|refactor|build)\b", q)
     scores = {role: 0 for role in ROLES}

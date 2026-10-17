@@ -215,22 +215,20 @@ def _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths=frozenset()):
     """Name the lines to read first in each result: its best pieces.
 
     ``cut_at`` maps a document cut at a cap to where the cut fell, so
-    its ranges say so and do not read as the whole document. A minified
-    file has no lines worth reading, so it never gets ranges.
+    its ranges say so and do not read as the whole document. A row for
+    a minified file is marked, so it is never taken for an edit surface.
     """
     pieces = piece_matches(
         idx,
         q,
-        [
-            id_by_path[row["path"]]
-            for row in rows
-            if row["path"] in id_by_path and row["path"] not in minified_paths
-        ],
+        [id_by_path[row["path"]] for row in rows if row["path"] in id_by_path],
     )
     out = []
     for row in rows:
+        if row["path"] in minified_paths:
+            row = {**row, "minified": True}
         matches = pieces.get(id_by_path.get(row["path"], ""))
-        if not matches or row["path"] in minified_paths:
+        if not matches:
             out.append(row)
             continue
         # A document's ranges name its parts (pages, sections, ...).

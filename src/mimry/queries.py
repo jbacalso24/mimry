@@ -40,6 +40,7 @@ from .intent import (
     TEST_TERMS,
     intent_terms,
     is_doc_or_plan,
+    is_edit_surface_row,
     is_likely_edit_surface,
     is_test_file,
     location_terms,
@@ -251,7 +252,7 @@ def _reading_order_lines(rows: list[dict]) -> list[str]:
 
 def _surface_paths(rows: list[dict], *, edit: bool) -> list[str]:
     """Filter rows by whether they are edit surfaces."""
-    return [r["path"] for r in rows if is_likely_edit_surface(r["path"]) is edit]
+    return [r["path"] for r in rows if is_edit_surface_row(r) is edit]
 
 
 FRAMEWORK_FACT_MARKERS = (

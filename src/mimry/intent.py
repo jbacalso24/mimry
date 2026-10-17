@@ -611,7 +611,9 @@ def apply_intent_adjustment(
         reasons.append("repository template/vendored downrank")
 
     if is_edit_intent(terms):
-        if is_source_file(rel_path):
+        # A bundle is built, not written: it never takes the source
+        # boost, or the boost would undo the downrank above.
+        if is_source_file(rel_path) and not is_bundle(rel_path, minified=minified):
             score += 100
             reasons.append("intent source boost")
         if is_doc_or_plan(rel_path):
@@ -653,13 +655,24 @@ def apply_intent_adjustment(
     return max(score, 1), reasons
 
 
-def is_likely_edit_surface(rel_path: str) -> bool:
+def is_bundle(rel_path: str, *, minified: bool = False) -> bool:
+    """A minified or bundled build output, by name or by content."""
+    return minified or PurePosixPath(rel_path).name.lower().endswith(MINIFIED_SUFFIXES)
+
+
+def is_likely_edit_surface(rel_path: str, *, minified: bool = False) -> bool:
     lower = rel_path.lower()
     if lower.startswith(".mimry/") or is_doc_or_plan(rel_path) or is_test_file(rel_path):
+        return False
+    if is_bundle(rel_path, minified=minified):
         return False
     if lower in {"package.json", "pyproject.toml", "readme.md", "agents.md", "claude.md"}:
         return False
     return is_source_file(rel_path) or lower.endswith((".sql", ".toml", ".json", ".yaml", ".yml"))
+
+
+def is_edit_surface_row(row: dict) -> bool:
+    return is_likely_edit_surface(row["path"], minified=bool(row.get("minified")))
 
 
 def start_order(rows: list[dict], query: str) -> list[dict]:
@@ -677,6 +690,6 @@ def start_order(rows: list[dict], query: str) -> list[dict]:
     rest = [r for r in rows if EXACT_NAME_REASON not in r.get("reason", "")]
     return (
         named
-        + [r for r in rest if is_likely_edit_surface(r["path"])]
-        + [r for r in rest if not is_likely_edit_surface(r["path"])]
+        + [r for r in rest if is_edit_surface_row(r)]
+        + [r for r in rest if not is_edit_surface_row(r)]
     )
