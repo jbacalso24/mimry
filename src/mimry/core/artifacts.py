@@ -313,6 +313,7 @@ def surface_matches(root: Path, query: str, limit: int = 5) -> list[dict]:
                     "id": str(node.get("id")),
                     "label": str(node.get("label") or node.get("id")),
                     "path": node_source_file(node) or "?",
+                    "line": node.get("line"),
                     "score": score,
                     "node": node,
                 }
@@ -366,7 +367,13 @@ def surface_evidence(root: Path, surface: str, max_items: int = 6) -> dict[str, 
     }
 
 
-def shortest_path(root: Path, source_query: str, target_query: str, max_hops: int = 6) -> dict:
+# How many relationships a path may use. Past this the search gives up.
+MAX_PATH_HOPS = 6
+
+
+def shortest_path(
+    root: Path, source_query: str, target_query: str, max_hops: int = MAX_PATH_HOPS
+) -> dict:
     """Find a shortest relationship path in graph artifacts.
 
     Missing edges are never inferred.
@@ -701,19 +708,25 @@ def call_lookup(
 
 
 def _exact_surface_matches(nodes: list[dict], query: str) -> list[dict]:
-    """Nodes whose id or label is ``query``.
+    """Nodes whose id or label is ``query``, exact case first.
 
-    Otherwise, the nodes defined in that file.
+    A name that differs only in case (``run`` for the class ``Run``)
+    ranks below one that matches exactly. Otherwise, the nodes defined
+    in that file.
     """
-    wanted = query.strip().replace("\\", "/").lower()
+    raw = query.strip().replace("\\", "/")
+    wanted = raw.lower()
     ranked = []
     for node in nodes:
         label = str(node.get("label") or node.get("id"))
+        node_id = str(node.get("id", ""))
         src = node_source_file(node) or ""
-        if wanted in (str(node.get("id", "")).lower(), label.lower()):
+        if raw in (node_id, label):
             rank = 0
-        elif wanted == src.lower():
+        elif wanted in (node_id.lower(), label.lower()):
             rank = 1
+        elif wanted == src.lower():
+            rank = 2
         else:
             continue
         ranked.append(
@@ -724,6 +737,7 @@ def _exact_surface_matches(nodes: list[dict], query: str) -> list[dict]:
                     "id": str(node.get("id")),
                     "label": label,
                     "path": src or "?",
+                    "line": node.get("line"),
                     "score": 100 - rank,
                     "node": node,
                 },

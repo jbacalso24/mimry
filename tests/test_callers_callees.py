@@ -738,25 +738,126 @@ def test_path_says_when_a_name_matches_several_symbols(tmp_path):
     lines = res.stdout.splitlines()
     ok = lines.index("OK helper connects to leaf in 1 step")
     assert lines[ok + 1] == (
-        '  Several symbols are named "helper": app/one.py, app/three.py. Using app/one.py;'
-        " give a file path to pick another."
+        '  Several symbols are named "helper": helper (app/one.py:1), helper (app/three.py:1).'
+        " Using helper (app/one.py:1); give a file path to start from another file."
     )
     assert payload["found"] is True
-    assert payload["ambiguous"] == {"source": ["app/three.py"], "target": []}
+    assert payload["ambiguous"] == {
+        "source": [{"label": "helper", "path": "app/three.py", "line": 1}],
+        "target": [],
+    }
     assert "Several symbols" not in picked.stdout
     assert "ambiguous" not in picked_payload
 
 
-def test_several_names_list_at_most_five_paths(tmp_path):
+def _add_four(repo: Path, body: str) -> None:
+    (repo / "app" / "four.py").write_text(body, encoding="utf-8")
+
+
+# A class and a function both named run, in one file.
+SAME_FILE_RUN = """class Box:
+    def run(self):
+        return tail()
+
+
+def run():
+    return tail()
+
+
+def tail():
+    return 4
+"""
+
+# A class and a function whose names differ only in case.
+CASE_RUN = """class Run:
+    def go(self):
+        return tail()
+
+
+def run():
+    return tail()
+
+
+def tail():
+    return 4
+"""
+
+
+def test_path_exact_case_name_beats_a_name_that_differs_only_in_case(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+    _add_four(repo, CASE_RUN)
+    assert _mimry(repo, cache, "index").returncode == 0
+
+    lower = json.loads(_mimry(repo, cache, "path", "run", "tail", "--json").stdout)
+    upper = json.loads(_mimry(repo, cache, "path", "Run", "tail", "--json").stdout)
+
+    assert lower["source_matches"] == [{"label": "run", "path": "app/four.py"}]
+    assert "ambiguous" not in lower
+    assert upper["source_matches"] == [{"label": "Run", "path": "app/four.py"}]
+    assert "ambiguous" not in upper
+
+
+def test_path_names_same_file_candidates_without_advice_a_file_cannot_pick(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+    _add_four(repo, SAME_FILE_RUN)
+    assert _mimry(repo, cache, "index").returncode == 0
+
+    res = _mimry(repo, cache, "path", "run", "tail")
+    payload = json.loads(_mimry(repo, cache, "path", "run", "tail", "--json").stdout)
+
+    assert res.returncode == 0, res.stderr
+    notice = next(line for line in res.stdout.splitlines() if "Several symbols" in line)
+    assert notice.startswith('  Several symbols are named "run": run (app/four.py:')
+    assert "run (app/four.py:2)" in notice and "run (app/four.py:6)" in notice
+    assert "Using run (app/four.py:" in notice
+    assert "give a file path" not in notice
+    # JSON lists the one candidate the path did not use.
+    assert payload["ambiguous"]["source"] in (
+        [{"label": "run", "path": "app/four.py", "line": 2}],
+        [{"label": "run", "path": "app/four.py", "line": 6}],
+    )
+
+
+def _add_chain(repo: Path) -> None:
+    (repo / "chain").mkdir()
+    (repo / "chain" / "__init__.py").write_text("", encoding="utf-8")
+    for i in range(9):
+        (repo / "chain" / f"m{i}.py").write_text(
+            f"from chain.m{i + 1} import f{i + 1}\n\n\ndef f{i}():\n    f{i + 1}()\n",
+            encoding="utf-8",
+        )
+    (repo / "chain" / "m9.py").write_text("def f9():\n    pass\n", encoding="utf-8")
+
+
+def test_path_stops_at_six_steps_and_its_warning_says_so(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+    _add_chain(repo)
+    assert _mimry(repo, cache, "index").returncode == 0
+
+    found = _mimry(repo, cache, "path", "f0", "f6")
+    missed = _mimry(repo, cache, "path", "f0", "f8")
+
+    assert found.returncode == 0, found.stderr
+    assert "OK f0 connects to f6 in 6 steps" in found.stdout
+    assert missed.returncode == 0, missed.stderr
+    assert 'No connection found between "f0" and "f8" within 6 steps' in missed.stdout
+
+
+def test_several_names_list_each_candidate_once_and_at_most_five(tmp_path):
     candidates = [
-        {"id": f"s{i}", "label": "x", "path": f"pkg/m{i}.py", "score": 1, "node": {}}
+        {"id": f"s{i}", "label": "x", "path": f"pkg/m{i}.py", "line": 1, "score": 1, "node": {}}
         for i in range(7)
     ]
+    candidates.insert(1, dict(candidates[0], id="dup"))
     text = _several_text("x", {"candidates": candidates, "used": "s3"})
 
     assert text == (
-        'Several symbols are named "x": pkg/m0.py, pkg/m1.py, pkg/m2.py, pkg/m3.py,'
-        " pkg/m4.py, and 2 more. Using pkg/m3.py; give a file path to pick another."
+        'Several symbols are named "x": x (pkg/m0.py:1), x (pkg/m1.py:1), x (pkg/m2.py:1),'
+        " x (pkg/m3.py:1), x (pkg/m4.py:1), and 2 more. Using x (pkg/m3.py:1);"
+        " give a file path to start from another file."
     )
 
 

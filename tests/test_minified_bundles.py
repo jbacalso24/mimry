@@ -122,6 +122,19 @@ def test_a_plain_map_file_is_not_minified():
     assert not is_minified("docs/notes.map", notes)
 
 
+def test_a_small_map_file_with_a_mappings_key_is_not_minified():
+    head = '{"mappings": {"a": "b"}, "x": "'
+    data = (head + "y" * (133 - len(head) - 2) + '"}').encode()
+    assert len(data) == 133 and b'"mappings"' in data
+    assert not is_minified("public/strings.map", data)
+
+
+def test_a_source_map_at_25_kb_is_still_minified():
+    data = _source_map("x" * 25_000)
+    assert len(data) >= 25_000
+    assert is_minified("public/app.js.map", data)
+
+
 def test_a_minified_bundle_is_repo_noise_under_any_name():
     path = "website/public/scripts/main.js"
     assert not is_repo_noise(path)

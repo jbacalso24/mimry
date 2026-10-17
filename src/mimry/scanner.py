@@ -787,7 +787,8 @@ MINIFIABLE_EXTENSIONS = (".js", ".mjs", ".cjs", ".css")
 # A bundle of at least 20 KB whose lines average over 300 bytes is
 # minified. So is one with a line over 5,000 bytes and under one
 # newline per 1,000 bytes. Both rules need the 20 KB floor, so a short
-# file with one long literal (a base64 image) is not a bundle.
+# file with one long literal (a base64 image) is not a bundle. A source
+# map under the same floor is not one either.
 MINIFIED_MIN_SIZE = 20_000
 MINIFIED_MEAN_LINE = 300
 MINIFIED_LONG_LINE = 5_000
@@ -825,11 +826,12 @@ def is_minified(rel_path, data):
     """True when a file is a minified bundle or a source map.
 
     A JS or CSS file is judged from its bytes, so the name does not
-    matter. A ``.map`` file is a bundle only when it is a source map.
+    matter. A ``.map`` file is a bundle only when it is a source map of
+    at least ``MINIFIED_MIN_SIZE`` bytes.
     """
     name = rel_path.lower()
     if name.endswith(".map"):
-        return is_source_map(data)
+        return len(data) >= MINIFIED_MIN_SIZE and is_source_map(data)
     if not name.endswith(MINIFIABLE_EXTENSIONS) or len(data) < MINIFIED_MIN_SIZE:
         return False
     lines = data.split(b"\n")

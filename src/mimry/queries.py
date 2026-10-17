@@ -14,6 +14,7 @@ from .cache_safety import IndexOutsideCacheError
 from .constants import NON_CODE_KINDS
 from .core.artifacts import (
     INFERRED_NOTE,
+    MAX_PATH_HOPS,
     ambiguity_message,
     call_lookup,
     call_relations,
@@ -1100,7 +1101,10 @@ def run_path(a, found: list | None = None):
         if any(step["confidence"] == "INFERRED" for step in steps):
             ui.detail(INFERRED_NOTE)
         return 0
-    ui.warn(f"No connection found between {ui.quote(source)} and {ui.quote(target)}")
+    ui.warn(
+        f"No connection found between {ui.quote(source)} and {ui.quote(target)}"
+        f" within {ui.count(MAX_PATH_HOPS, 'step')}"
+    )
     for query, matches in ((source, result["source_matches"]), (target, result["target_matches"])):
         found = _matched_text(matches) if matches else "nothing in the graph"
         ui.detail(f"{ui.quote(query)} matched {found}")
@@ -1155,11 +1159,15 @@ def path_payload(result: dict) -> dict:
     }
     picks = _ambiguous_sides(result)
     if picks:
-        # Only the candidates the path did not use.
+        # Only the candidates the path did not use, each once.
         payload["ambiguous"] = {"source": [], "target": []}
         for side, pick in picks.items():
-            others = [m["path"] for m in pick["candidates"] if m["id"] != pick["used"]]
-            payload["ambiguous"][side] = others
+            chosen = _chosen_candidate(pick)
+            payload["ambiguous"][side] = [
+                {"label": m["label"], "path": m["path"], "line": m.get("line")}
+                for m in _unique_candidates(pick["candidates"])
+                if chosen is None or _candidate_key(m) != _candidate_key(chosen)
+            ]
     return payload
 
 
@@ -1182,17 +1190,52 @@ def _ambiguous_sides(result: dict) -> dict[str, dict]:
     }
 
 
+def _candidate_key(match: dict) -> tuple:
+    return (match["label"], match["path"], match.get("line"))
+
+
+def _unique_candidates(candidates: list[dict]) -> list[dict]:
+    """Each label, path and line once, sorted by path and line."""
+    seen: set[tuple] = set()
+    unique = []
+    for match in candidates:
+        key = _candidate_key(match)
+        if key not in seen:
+            seen.add(key)
+            unique.append(match)
+    return sorted(unique, key=lambda m: (m["path"], m.get("line") or 0, m["label"]))
+
+
+def _candidate_text(match: dict) -> str:
+    line = match.get("line")
+    where = f"{match['path']}:{line}" if line is not None else match["path"]
+    return f"{match['label']} ({where})"
+
+
+def _chosen_candidate(pick: dict) -> dict | None:
+    return next((m for m in pick["candidates"] if m["id"] == pick["used"]), None)
+
+
 def _several_text(query: str, pick: dict) -> str:
-    """The notice for a name with several symbols, and the one used."""
-    paths = sorted({m["path"] for m in pick["candidates"]})
-    shown = ", ".join(paths[:5])
-    if len(paths) > 5:
-        shown += f", and {len(paths) - 5} more"
+    """The notice for a name with several symbols, and the one used.
+
+    A file path starts the path from that file, not from a symbol in it,
+    so the advice is given only when another candidate sits in a
+    different file. No source form picks a candidate that shares the
+    chosen one's file.
+    """
+    unique = _unique_candidates(pick["candidates"])
+    shown = ", ".join(_candidate_text(m) for m in unique[:5])
+    if len(unique) > 5:
+        shown += f", and {len(unique) - 5} more"
     text = f"Several symbols are named {ui.quote(query)}: {shown}."
-    chosen = next((m["path"] for m in pick["candidates"] if m["id"] == pick["used"]), None)
+    chosen = _chosen_candidate(pick)
     if chosen is None:
         return text
-    return f"{text} Using {chosen}; give a file path to pick another."
+    text += f" Using {_candidate_text(chosen)}"
+    if any(m["path"] != chosen["path"] for m in unique):
+        return f"{text}; give a file path to start from another file."
+    return f"{text}."
 
 
 def calls_payload(
