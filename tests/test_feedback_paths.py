@@ -234,3 +234,23 @@ def test_no_feedback_returns_the_rows_unchanged(tmp_path):
     rows = _rows(("src/a.py", 30), ("src/b.py", 20))
 
     assert apply_feedback_to_rows(rows, tmp_path / "missing", "root", FEEDBACK_QUERY) == rows
+
+
+def test_a_pack_that_suggested_nothing_records_changed_files_as_missed(tmp_path: Path):
+    (tmp_path / "pack.md").write_text("# Context pack\n\n## Relevant Files\n\n", encoding="utf-8")
+
+    payload = feedback_payload(
+        tmp_path,
+        {"query": FEEDBACK_QUERY, "context_path": "pack.md", "changed": ["README.md"]},
+    )
+
+    assert payload["suggested_paths"] == []
+    assert payload["missed_paths"] == ["README.md"]
+
+
+def test_no_pack_and_no_suggestions_records_no_misses(tmp_path: Path):
+    changed = {"query": FEEDBACK_QUERY, "changed": ["README.md"]}
+
+    assert feedback_payload(tmp_path, changed)["missed_paths"] == []
+    absent = {**changed, "context_path": "missing.md"}
+    assert feedback_payload(tmp_path, absent)["missed_paths"] == []

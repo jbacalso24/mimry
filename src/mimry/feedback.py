@@ -224,11 +224,15 @@ def feedback_payload_from_args(root: Path, args: Any) -> dict[str, Any]:
 def feedback_payload(root: Path, data: dict[str, Any]) -> dict[str, Any]:
     context_path = data.get("context_path") or data.get("context")
     suggested = data.get("suggested") or data.get("suggested_paths")
-    if not suggested and context_path:
+    pack = None
+    if context_path:
         candidate = Path(context_path)
         if not candidate.is_absolute():
             candidate = root / candidate
-        suggested = parse_context_suggested_paths(candidate)
+        if candidate.exists():
+            pack = candidate
+    if not suggested and pack is not None:
+        suggested = parse_context_suggested_paths(pack)
 
     outcome = str(data.get("outcome") or "unknown").lower()
     if outcome not in VALID_OUTCOMES:
@@ -253,9 +257,10 @@ def feedback_payload(root: Path, data: dict[str, Any]) -> dict[str, Any]:
     suggested_paths = normalize_paths(root, suggested)
     changed_paths = normalize_paths(root, data.get("changed") or data.get("changed_paths"))
     missed_paths = normalize_paths(root, data.get("missed") or data.get("missed_paths"))
-    if suggested_paths:
+    if suggested_paths or pack is not None:
         # A changed file the suggestions did not list is a miss, whether
-        # or not the agent said so.
+        # or not the agent said so. A pack that suggested nothing counts
+        # too: the agent used it, and the changes show what it missed.
         listed = set(suggested_paths) | set(missed_paths)
         missed_paths += [
             path

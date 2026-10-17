@@ -295,14 +295,16 @@ def test_commit_touching_only_unsuggested_files_records_every_file_as_missed(
     assert sorted(row["missed_paths"]) == ["unrelated_a.txt", "unrelated_b.txt"]
 
 
-SHARE_QUERY = "remove share_extension.py leftovers from the auth session"
+SHARE_QUERY = "remove share_extension.py leftovers"
+# Same task, worded so the pack gets suggestions.
+SHARE_QUERY_WITH_SUGGESTIONS = "remove share_extension.py leftovers from the auth session"
 
 
-def _share_pack_repo(tmp_path, monkeypatch):
+def _share_pack_repo(tmp_path, monkeypatch, query=SHARE_QUERY):
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
     repo = _repo(tmp_path, cache)
-    assert run_cli(repo, cache, "preflight", SHARE_QUERY).returncode == 0
+    assert run_cli(repo, cache, "preflight", query).returncode == 0
     return repo, cache
 
 
@@ -359,7 +361,7 @@ def test_commit_with_a_file_named_after_the_task_is_related(tmp_path, monkeypatc
 
 @requires_git
 def test_commit_touching_a_suggested_file_records_whatever_its_message(tmp_path, monkeypatch):
-    repo, cache = _share_pack_repo(tmp_path, monkeypatch)
+    repo, cache = _share_pack_repo(tmp_path, monkeypatch, SHARE_QUERY_WITH_SUGGESTIONS)
     picked = parse_context_suggested_paths(_only_pack(repo))[0]
 
     (repo / picked).write_text((repo / picked).read_text() + "\n# touched\n")
