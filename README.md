@@ -44,7 +44,8 @@ uv tool install mimry
 ```
 
 Requires Python 3.11 or newer on Windows, Linux or macOS.
-`pipx install mimry` and `pip install mimry` also work.
+`pipx install mimry` also works.
+On distros that block system pip, see [Without uv](#without-uv).
 
 The first index downloads the tree-sitter grammars it needs, once per user, and keeps them in a cache.
 
@@ -55,10 +56,13 @@ The first index downloads the tree-sitter grammars it needs, once per user, and 
 ### Without uv
 
 uv is the recommended way to install MIMRY, but it is not required.
-MIMRY needs Python 3.11 or newer in an environment of its own, and these options all provide one.
+MIMRY needs Python 3.11 or newer in an environment of its own.
+pipx and a venv use the Python 3 on your PATH, which must be 3.11 or newer.
 
 - **pipx:** install pipx with `sudo pacman -S python-pipx` on Arch or `sudo apt install pipx` on Debian and Ubuntu, then run `pipx install mimry`.
-- **A plain virtual environment:** run `python -m venv ~/.local/share/mimry-venv` and then `~/.local/share/mimry-venv/bin/pip install mimry`, then put the command on your PATH with `ln -s ~/.local/share/mimry-venv/bin/mimry ~/.local/bin/mimry`.
+- **A plain virtual environment:** on Debian and Ubuntu, install `python3-venv` first with `sudo apt install python3-venv`.
+  Run `python3 -m venv ~/.local/share/mimry-venv`, then `~/.local/share/mimry-venv/bin/pip install mimry`.
+  Put the command on your PATH with `mkdir -p ~/.local/bin` and then `ln -s ~/.local/share/mimry-venv/bin/mimry ~/.local/bin/mimry`.
 
 On distros that block system pip, a plain `pip install mimry` fails with `externally-managed-environment`.
 These include Arch, CachyOS, Debian 12 and later, and Ubuntu 23.04 and later, so one of the options above is needed there.

@@ -910,11 +910,12 @@ def _document_record(path, root, document: DocumentText, snapshot, references):
 
 def _source_text(data: bytes) -> str:
     """Source text for a parser. A UTF-16 file is decoded from its BOM,
-    which is dropped; anything else is read as UTF-8.
+    which is dropped; anything else is read as UTF-8, and a UTF-8 BOM
+    is dropped too.
     """
     if data.startswith((b"\xff\xfe", b"\xfe\xff")):
         return data.decode("utf-16", errors="ignore")
-    return data.decode("utf-8", errors="ignore")
+    return data.decode("utf-8-sig", errors="ignore")
 
 
 def _content_checked(path, ext, language, data, settings):
@@ -980,8 +981,7 @@ def adapt(
     elif ext == ".py":
         f = file_record(path, root, "python-ast", "ok", hint, snapshot)
         try:
-            # utf-8-sig: a Windows-editor BOM is not part of the source.
-            source = data.decode("utf-8-sig", errors="ignore")
+            source = _source_text(data)
             tree = ast.parse(source)
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -1120,9 +1120,7 @@ def adapt(
             except (OSError, UnicodeError):
                 pass
     if ext in {".md", ".mdx"}:
-        symbols, edges = markdown_heading_symbols(
-            f["file_id"], data.decode("utf-8", errors="ignore")
-        )
+        symbols, edges = markdown_heading_symbols(f["file_id"], _source_text(data))
     rel_path = canonical_rel_path(path, root)
     _populate_references(ext, data, references, inherits, path, root, rel_path)
     if is_config_manifest(path) and ext == ".py":

@@ -435,16 +435,21 @@ def _resolve_groovy_wildcard(
     classes: dict[str, list[str]],
     packages: dict[str, list[str]],
 ) -> list:
-    """`import static a.b.C.*` is the class file of `a.b.C` when a
-    single file declares it. A plain `import a.b.C.*` is always the
-    package `a.b.C`, and so is a static one with no single class file.
+    """`import static a.b.C.*` is the class file of `a.b.C` when one
+    file declares it. A plain `import a.b.C.*` is the package `a.b.C`.
+    When that package is missing and one other file declares class
+    `a.b.C`, its nested types live there, so that file is linked.
     """
     static = module.startswith("static ")
     prefix = module.removeprefix("static ")[:-2]
     files = classes.get(prefix, [])
     if static and len(files) == 1 and files[0] != importer:
         return [{"path": files[0], "confidence": "EXTRACTED"}]
-    return _resolve_groovy_package(importer, prefix, packages)
+    targets = _resolve_groovy_package(importer, prefix, packages)
+    others = [path for path in files if path != importer]
+    if not targets and len(others) == 1:
+        return [{"path": others[0], "confidence": "EXTRACTED"}]
+    return targets
 
 
 def _resolve_groovy_package(importer: str, package: str, packages: dict[str, list[str]]) -> list:

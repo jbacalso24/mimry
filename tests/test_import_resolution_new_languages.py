@@ -2198,6 +2198,15 @@ class TestGroovyImports:
             ("a/b/C/Helper.groovy", "EXTRACTED")
         ]
 
+    def test_plain_wildcard_of_a_nested_type_class_links_its_file(self):
+        imports = {"app/Main.groovy": ["a.b.C.*"]}
+        rel_paths = {"app/Main.groovy", "a/b/C.groovy"}
+        classes = {"a.b.C": ["a/b/C.groovy"]}
+
+        results = resolve_imports(imports, rel_paths, groovy_classes=classes)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("a/b/C.groovy", "EXTRACTED")]
+
     def test_static_wildcard_of_a_class_name_links_the_class_file(self):
         imports = {"app/Main.groovy": ["static a.b.C.*"]}
         rel_paths = {"app/Main.groovy", "a/b/C.groovy", "a/b/C/Helper.groovy"}

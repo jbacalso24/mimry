@@ -19,6 +19,7 @@ from mimry.adapters.ts_ast import parse_ts_like
 from mimry.commands import cmd_init
 from mimry.core.languages import extract
 from mimry.indexer import write_index
+from mimry.scanner import adapt
 from mimry.storage import load_pointer
 
 BOM = "﻿"
@@ -145,3 +146,32 @@ def test_python_file_saved_with_a_bom_keeps_its_symbols(tmp_path: Path, monkeypa
     index = Path(load_pointer(root)["indexPath"])
     symbols = (index / "symbols.jsonl").read_text(encoding="utf-8")
     assert '"bommed"' in symbols and '"helper_bom"' in symbols
+
+
+@pytest.mark.parametrize(
+    ("bom", "codec"), [(b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be")]
+)
+def test_utf16_python_and_markdown_keep_their_symbols(tmp_path, bom, codec):
+    """PowerShell 5 writes UTF-16 with a BOM. The Python and Markdown
+    branches used to decode UTF-8, so the file lost its symbols."""
+    py = tmp_path / "a.py"
+    py.write_bytes(bom + "def alpha_fn():\n    return 1\n".encode(codec))
+    md = tmp_path / "h.md"
+    md.write_bytes(bom + "# ThetaHeading\n\nbody\n".encode(codec))
+
+    py_record, py_symbols, *_ = adapt(py, tmp_path)
+    md_record, md_symbols, *_ = adapt(md, tmp_path)
+
+    assert py_record["parse_status"] == "ok"
+    assert [(s["name"], s["line_start"]) for s in py_symbols] == [("alpha_fn", 1)]
+    assert [(s["name"], s["line_start"]) for s in md_symbols] == [("ThetaHeading", 1)]
+
+
+def test_markdown_heading_on_line_one_after_a_utf8_bom_is_a_symbol(tmp_path):
+    """The UTF-8 BOM used to stay in the text, hiding the `#`."""
+    md = tmp_path / "f.md"
+    md.write_bytes(b"\xef\xbb\xbf# BomHeading\n\nbody\n")
+
+    _record, symbols, *_ = adapt(md, tmp_path)
+
+    assert [(s["name"], s["line_start"]) for s in symbols] == [("BomHeading", 1)]
