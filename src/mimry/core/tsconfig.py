@@ -35,9 +35,10 @@ def is_config_name(name: str) -> bool:
 def parse_tsconfig(text: str) -> dict | None:
     """The alias settings one config declares.
 
-    Returns {"extends", "baseUrl", "paths"}; each is None when the file
-    does not declare it. ``paths`` maps each pattern to its targets.
-    None when the file does not parse.
+    Returns {"extends", "baseUrl", "paths"}. ``extends`` is a list of
+    strings (a string or an array in the file); ``baseUrl`` and
+    ``paths`` are None when the file does not declare them. ``paths``
+    maps each pattern to its targets. None when the file does not parse.
     """
     try:
         data = loads_jsonc(text)
@@ -49,6 +50,11 @@ def parse_tsconfig(text: str) -> dict | None:
     if not isinstance(options, dict):
         options = {}
     extends = data.get("extends")
+    if isinstance(extends, str):
+        extends = [extends]
+    elif not isinstance(extends, list):
+        extends = []
+    extends = [e for e in extends if isinstance(e, str)]
     base_url = options.get("baseUrl")
     paths = options.get("paths")
     if isinstance(paths, dict):
@@ -60,7 +66,7 @@ def parse_tsconfig(text: str) -> dict | None:
     else:
         paths = None
     return {
-        "extends": extends if isinstance(extends, str) else None,
+        "extends": extends,
         "baseUrl": base_url if isinstance(base_url, str) else None,
         "paths": paths,
     }
@@ -81,22 +87,34 @@ def _load(
 ) -> tuple[str | None, dict | None, str]:
     """(baseUrl folder, paths map, paths' folder), after extends.
 
-    A child's setting replaces its parent's. A relative ``extends`` that
-    names a config in the index is followed; a cycle stops the chain.
+    Each relative ``extends`` that names a config in the index is
+    followed, in order, so a later base replaces an earlier one's
+    setting. A child's setting replaces its bases'. A cycle stops the
+    chain.
     """
     parsed = configs[path]
     folder = posixpath.dirname(path)
     base: str | None = None
     paths: dict | None = None
     paths_folder = folder
-    extends = parsed["extends"]
-    if extends and extends.startswith(("./", "../")):
+    # An index from before 0.6.3 stored a string or None.
+    chain = parsed["extends"]
+    for extends in [chain] if isinstance(chain, str) else chain or []:
+        if not extends.startswith(("./", "../")):
+            continue
         target = _normalise(posixpath.join(folder, extends))
-        if target is not None:
-            for candidate in (target, target + ".json"):
-                if candidate in configs and candidate not in stack:
-                    base, paths, paths_folder = _load(candidate, configs, stack | {path})
-                    break
+        if target is None:
+            continue
+        for candidate in (target, target + ".json"):
+            if candidate in configs and candidate not in stack:
+                parent_base, parent_paths, parent_folder = _load(
+                    candidate, configs, stack | {path}
+                )
+                if parent_base is not None:
+                    base = parent_base
+                if parent_paths is not None:
+                    paths, paths_folder = parent_paths, parent_folder
+                break
     if parsed["baseUrl"] is not None:
         base = _normalise(posixpath.join(folder, parsed["baseUrl"]))
     if parsed["paths"] is not None:

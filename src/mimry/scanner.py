@@ -747,7 +747,11 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
         package = groovy_files.package_of(data_decoded)
         if package:
             references["groovy_package"] = package
-    if is_config_name(posixpath.basename(rel_path)):
+    # A base named any other way (`./base.json`) counts when it holds
+    # compilerOptions. The substring test skips parsing the other JSON.
+    if is_config_name(posixpath.basename(rel_path)) or (
+        ext == ".json" and '"compilerOptions"' in data_decoded
+    ):
         # Path aliases, for resolving `@/x` style imports. A config that
         # does not parse is skipped, as if absent.
         ts_config = parse_tsconfig(data_decoded)

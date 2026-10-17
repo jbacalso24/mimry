@@ -1081,6 +1081,70 @@ def test_base_config_gets_no_alias_table_of_its_own():
     assert build_ts_paths(configs, {"libs/a.ts"}) == {}
 
 
+def test_array_extends_resolves_the_alias_from_a_base(tmp_path):
+    """An extends array is followed in order, as TypeScript does."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "tsconfig.json": '{"extends": ["./configs/tsconfig.base.json", "./x.json"]}\n',
+            "configs/tsconfig.base.json": NAMED_BASE,
+            "x.json": '{"compilerOptions": {"strict": true}}\n',
+            "src/app/page.ts": 'import { u } from "@/lib/util";\n',
+            "src/lib/util.ts": "export const u = 1;\n",
+        },
+    )
+
+    page = _mimry(repo, cache, "path", "src/app/page.ts", "src/lib/util.ts")
+
+    assert page.returncode == 0, page.stderr
+    assert "OK src/app/page.ts connects to src/lib/util.ts" in page.stdout
+
+
+def test_a_later_base_overrides_an_earlier_bases_paths(tmp_path):
+    """Only the later base's paths apply, not the earlier one's."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "tsconfig.json": '{"extends": ["./tsconfig.old.json", "./tsconfig.new.json"]}\n',
+            "tsconfig.old.json": '{"compilerOptions": {"baseUrl": ".", "paths": '
+            '{"@/*": ["old/*"]}}}\n',
+            "tsconfig.new.json": '{"compilerOptions": {"paths": {"@/*": ["src/*"]}}}\n',
+            "src/app.ts": 'import { u } from "@/util";\n',
+            "src/util.ts": "export const u = 1;\n",
+            "old/util.ts": "export const u = 2;\n",
+        },
+    )
+
+    res = _mimry(repo, cache, "path", "src/app.ts", "src/util.ts")
+
+    assert res.returncode == 0, res.stderr
+    assert "OK src/app.ts connects to src/util.ts" in res.stdout
+
+
+def test_extends_to_a_base_with_any_json_name_reaches_its_paths(tmp_path):
+    """A base named base.json is followed if it has compilerOptions."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "tsconfig.json": '{"extends": "./base.json"}\n',
+            "base.json": '{"compilerOptions": {"baseUrl": ".", "paths": {"@/*": ["src/*"]}}}\n',
+            "src/app.ts": 'import { u } from "@/util";\n',
+            "src/util.ts": "export const u = 1;\n",
+        },
+    )
+
+    res = _mimry(repo, cache, "path", "src/app.ts", "src/util.ts")
+
+    assert res.returncode == 0, res.stderr
+    assert "OK src/app.ts connects to src/util.ts" in res.stdout
+
+
 def test_jsonc_keeps_comment_markers_inside_strings():
     from mimry.core.data_files import loads_jsonc
 
