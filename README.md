@@ -52,6 +52,23 @@ The first index downloads the tree-sitter grammars it needs, once per user, and 
 > To upgrade, run `mimry upgrade`.
 > On Windows, `mimry upgrade` refuses while MIMRY servers run, and `mimry upgrade --stop-servers` stops them first.
 
+### Without uv
+
+uv is the recommended way to install MIMRY, but it is not required.
+MIMRY needs Python 3.11 or newer in an environment of its own, and these options all provide one.
+
+- **pipx:** install pipx with `sudo pacman -S python-pipx` on Arch or `sudo apt install pipx` on Debian and Ubuntu, then run `pipx install mimry`.
+- **A plain virtual environment:** run `python -m venv ~/.local/share/mimry-venv` and then `~/.local/share/mimry-venv/bin/pip install mimry`, then put the command on your PATH with `ln -s ~/.local/share/mimry-venv/bin/mimry ~/.local/bin/mimry`.
+
+On distros that block system pip, a plain `pip install mimry` fails with `externally-managed-environment`.
+These include Arch, CachyOS, Debian 12 and later, and Ubuntu 23.04 and later, so one of the options above is needed there.
+Do not use `--break-system-packages`.
+
+On Arch, `sudo pacman -S uv` also works.
+An AUR package is coming, see [#64](https://github.com/jbacalso24/mimry/issues/64).
+
+`mimry upgrade` uses the same tool that installed MIMRY, so run it the same way.
+
 ### Docker
 
 The image `ghcr.io/jbacalso24/mimry` has every tree-sitter grammar built in, so indexing needs no network.
@@ -360,6 +377,9 @@ max_file_bytes = 2_000_000                 # size limit per file (default 1 MB)
 ".inc" = "php"                             # parse .inc files as PHP
 ".h" = "cpp"                               # parse .h headers as C++ instead of C
 ```
+
+MIMRY always skips folders named `build`, `bin`, `obj`, `dist`, `target`, `node_modules` and `vendor`, at any depth, along with caches and virtual environments.
+`include` does not bring them back, so MSBuild project and props files in `build/`, such as `build/Common.props`, get no symbols.
 
 ## Benchmarks
 

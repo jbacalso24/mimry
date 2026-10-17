@@ -424,3 +424,22 @@ If the index is out of date, the results can be out of date too.
 Open the file at the line that MIMRY shows and read the call yourself.
 MIMRY's results are a guide to where to look, not proof.
 To narrow a search, add `--path-glob` or `--exclude-glob` to `mimry find`.
+
+## Install fails with externally-managed-environment
+
+**What you see**
+
+```text
+$ pip install mimry
+error: externally-managed-environment
+```
+
+**Check**
+
+This message means the system Python belongs to your distro, and pip will not install into it.
+It appears on Arch, CachyOS, Debian 12 and later, and Ubuntu 23.04 and later.
+
+**Fix**
+
+Install MIMRY with pipx or into a virtual environment of its own, as described in [Without uv](../README.md#without-uv).
+Do not use `--break-system-packages`, because it can break the tools your system depends on.
