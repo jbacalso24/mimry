@@ -2464,6 +2464,42 @@ class TestDataLanguageFor:
         assert record["parse_status"] == "ok"
         assert symbols == []
 
+    @pytest.mark.parametrize(
+        ("name", "text", "key", "line"),
+        [
+            (
+                "Info.plist",
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<plist version="1.0">\n<dict>\n'
+                "  <key>CFBundleName</key>\n"
+                "  <string>Demo</string>\n</dict>\n</plist>\n",
+                "CFBundleName",
+                4,
+            ),
+            (
+                "App.csproj",
+                "<Project>\n  <PropertyGroup>\n"
+                "    <AssemblyName>Demo</AssemblyName>\n"
+                "  </PropertyGroup>\n</Project>\n",
+                "AssemblyName",
+                3,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("bom", "codec"), [(b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be")]
+    )
+    def test_utf16_xml_with_bom_parses_and_keeps_key_lines(
+        self, tmp_path, name, text, key, line, bom, codec
+    ):
+        """A UTF-16 plist or csproj parses; its key keeps its line."""
+        target = tmp_path / name
+        target.write_bytes(bom + text.encode(codec))
+        record, symbols, *_ = adapt(target, tmp_path)
+
+        assert record["parse_status"] == "ok"
+        assert {s["name"]: s["line_start"] for s in symbols} == {key: line}
+
     @staticmethod
     def _write(tmp_path, name):
         target = tmp_path / name

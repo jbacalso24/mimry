@@ -908,6 +908,15 @@ def _document_record(path, root, document: DocumentText, snapshot, references):
     return f
 
 
+def _source_text(data: bytes) -> str:
+    """Source text for a parser. A UTF-16 file is decoded from its BOM,
+    which is dropped; anything else is read as UTF-8.
+    """
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16", errors="ignore")
+    return data.decode("utf-8", errors="ignore")
+
+
 def _content_checked(path, ext, language, data, settings):
     """Drop the `.pp` or `.m` language that the content does not show.
 
@@ -1057,7 +1066,7 @@ def adapt(
             )
     elif ext in TS_EXTENSIONS:
         f = file_record(path, root, "typescript-ast", "ok", hint, snapshot)
-        source = data.decode("utf-8", errors="ignore")
+        source = _source_text(data)
         symbols, edges, imports, exports, status, adapter = parse_ts_like(
             path, root, f, source=source, extension=ext
         )
@@ -1089,7 +1098,7 @@ def adapt(
             language = None
         if language and ext != ".py" and ext not in TS_EXTENSIONS:
             try:
-                source = data.decode("utf-8", errors="ignore")
+                source = _source_text(data)
                 result = extract_language(path, source, language=language)
                 if result.get("status") == "ok":
                     f = file_record(path, root, f"tree-sitter-{language}", "ok", hint, snapshot)

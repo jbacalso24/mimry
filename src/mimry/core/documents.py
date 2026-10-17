@@ -113,7 +113,7 @@ def extract_document_parts(
     status is "ok" or "parse_error:<Reason>", mirroring
     core/languages.py. A PDF with no text on any page reports
     parse_error:NoTextLayer; other documents with no text report
-    parse_error:empty.
+    parse_error:empty, but an SVG of shapes only is ok.
 
     Parts:
     - .pdf: one per page, titled "page N"
@@ -157,7 +157,8 @@ def extract_document_parts(
                 pairs = _OFFICE_READERS[ext](zf)
 
         parts, cap = _capped(PART_KINDS[ext], pairs, limit)
-        if any(part.text.strip() for part in parts):
+        # A parsed SVG is a normal file even when it has no text.
+        if ext == ".svg" or any(part.text.strip() for part in parts):
             status = "ok"
         elif ext == ".pdf":
             status = "parse_error:NoTextLayer"

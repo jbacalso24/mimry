@@ -11,7 +11,13 @@ import zipfile
 
 import pytest
 
-from mimry.core.documents import MAX_XLSX_WORKSHEETS, extract_document_text, is_document
+from mimry.core.documents import (
+    MAX_XLSX_WORKSHEETS,
+    document_text,
+    extract_document_parts,
+    extract_document_text,
+    is_document,
+)
 
 
 def _docx(path, document_xml):
@@ -320,6 +326,16 @@ def test_svg_title_desc_and_text_extraction(tmp_path):
     assert "A test SVG" in text
     assert "Hello SVG" in text
     assert "Multi-line text" in text
+
+
+def test_svg_of_shapes_only_is_ok_with_no_text(tmp_path):
+    """A parsed SVG with no text is a normal file, not an empty one."""
+    path = tmp_path / "icon.svg"
+    path.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h16v16H0z"/></svg>')
+
+    document = extract_document_parts(path)
+    assert document.status == "ok"
+    assert document_text(document.parts) == ""
 
 
 def test_svg_rejects_dtd_and_entity(tmp_path):

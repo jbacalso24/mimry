@@ -62,6 +62,18 @@ def test_index_names_each_document_searchable_by_name_only(tmp_path, capsys):
     ) in out
 
 
+def test_a_shapes_only_svg_is_not_warned_but_a_zero_byte_svg_is(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    shapes = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h16v16H0z"/></svg>'
+    (repo / "docs" / "icon.svg").write_text(shapes)
+    (repo / "docs" / "blank.svg").write_bytes(b"")
+
+    out = _index(repo, capsys)
+
+    assert "1 document searchable by name only: docs/blank.svg (empty)" in out
+    assert "icon.svg" not in out
+
+
 def test_status_verbose_lists_the_same_documents_with_reasons(tmp_path, capsys):
     repo = _repo(tmp_path)
     _unreadable_documents(repo)
