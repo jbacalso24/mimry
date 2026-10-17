@@ -243,6 +243,7 @@ Groovy and Gradle files name each class, interface, trait, enum, method and top-
 A Spock feature method keeps its string, such as `adds two numbers`, as its name.
 A Gradle `task name` or `tasks.register("name")` gives a `task`, and `plugins {}` and `dependencies {}` entries are not symbols.
 An `import` of a Groovy class links exactly to the file that declares it, and a wildcard import such as `a.b.*` links to every file of package `a.b`.
+A static wildcard such as `import static a.b.C.*` links to the file of class `C`.
 Calls inside a method body, and the `extends` and `implements` clauses of a type, give call and inheritance edges, and a paren-less `name arg` call counts only for a method of the same file.
 A piece of a file the parser cannot read costs only itself, so an annotated type such as `@Service(Book)` keeps its methods.
 Closure-assigned fields and operator methods such as `<<` are not symbols.

@@ -3361,6 +3361,53 @@ class TestGroovySymbols:
             ("after", "method", 4, 4),
         ]
 
+    def test_wildcard_import_before_a_class_keeps_the_class_and_its_method(self):
+        result = extract(
+            "groovy/src/demo/Money.groovy",
+            "import groovy.transform.*\n\nclass Money {\n    def total() { 1 }\n}\n",
+        )
+
+        assert _groovy_spans(result) == [
+            ("Money", "class", 3, 5),
+            ("total", "method", 4, 4),
+        ]
+
+    def test_wildcard_import_before_two_classes_keeps_both(self):
+        result = extract(
+            "groovy/src/demo/Coins.groovy",
+            "import groovy.transform.*\n\n"
+            "class Money {\n    def total() { 1 }\n}\n\n"
+            "class Coin {\n    def value() { 2 }\n}\n",
+        )
+
+        assert _groovy_spans(result) == [
+            ("Money", "class", 3, 5),
+            ("total", "method", 4, 4),
+            ("Coin", "class", 7, 9),
+            ("value", "method", 8, 8),
+        ]
+
+    def test_nested_generic_bounds_at_depth_two_and_three_keep_their_methods(self):
+        result = extract(
+            "groovy/src/demo/Sorter.groovy",
+            "class Sorter {\n"
+            "    static <T extends Comparable<T>> List<T> build(int n) {\n"
+            "        1\n"
+            "    }\n"
+            "    static <K, V extends Map<K, List<V>>> Map<K, V> pack(int n) {\n"
+            "        2\n"
+            "    }\n"
+            "    def after() { 3 }\n"
+            "}\n",
+        )
+
+        assert _groovy_spans(result) == [
+            ("Sorter", "class", 1, 9),
+            ("build", "method", 2, 4),
+            ("pack", "method", 5, 7),
+            ("after", "method", 8, 8),
+        ]
+
     def test_everyday_syntax_keeps_the_class_and_its_methods(self):
         result = extract("groovy/src/demo/Account.groovy", GROOVY_EVERYDAY)
 

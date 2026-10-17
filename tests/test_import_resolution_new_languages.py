@@ -2172,6 +2172,17 @@ class TestGroovyImports:
             ("lib/Shelf.groovy", "EXTRACTED"),
         ]
 
+    def test_static_wildcard_import_resolves_to_the_class_file(self):
+        imports = {"app/Main.groovy": ["demo.Book.*"]}
+        rel_paths = {"app/Main.groovy", "lib/Book.groovy"}
+        classes = {"demo.Book": ["lib/Book.groovy"]}
+
+        results = resolve_imports(imports, rel_paths, groovy_classes=classes)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("lib/Book.groovy", "EXTRACTED")
+        ]
+
     def test_wildcard_of_an_unknown_package_is_no_edge(self):
         imports = {"app/Main.groovy": ["demo.*"]}
         rel_paths = {"app/Main.groovy", "lib/Book.groovy"}

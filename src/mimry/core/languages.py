@@ -3475,9 +3475,9 @@ def _extract_groovy(source: str, *, gradle: bool = False) -> dict:
             "inherits": [],
             "status": f"parse_error:{exc.__class__.__name__}",
         }
-    # The grammar cannot read slashy strings, so it parses a copy with
-    # them blanked. The copy keeps every byte offset.
-    code = groovy_files.mask_slashy(raw)
+    # The grammar cannot read slashy strings or wildcard imports, so it
+    # parses a copy with them blanked. The copy keeps every byte offset.
+    code = groovy_files.mask_wildcards(groovy_files.mask_slashy(raw))
     whole = parser.parse(code).root_node
     clean = sorted(_groovy_facts(whole, code, 0), key=lambda fact: fact[0])
     clean_at = [fact[0] for fact in clean]

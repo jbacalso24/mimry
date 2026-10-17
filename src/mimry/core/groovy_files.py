@@ -24,9 +24,15 @@ _TYPE_HEAD = re.compile(
     r"|@[\w.]+(?:\([^)]*\))?)\s+)*"
     r"(?P<tag>class|interface|trait|enum)\s+(?P<name>[A-Za-z_$][\w$]*)"
 )
+# A generic parameter list, nested to depth 3 such as
+# `<K, V extends Map<K, List<V>>>`. A regex cannot count, so the depth
+# is fixed here.
+_NESTED_ARGS = r"<(?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*>"
 # A word before a method name: a modifier, a type, `def`, an annotation
 # or a generic parameter list.
-_PREFIX_WORD = r"(?:@[\w.]+(?:\([^)]*\))?|<[^<>]*>|[A-Za-z_$][\w$.]*(?:<[^{}()=]*>)?(?:\[\])*)"
+_PREFIX_WORD = (
+    r"(?:@[\w.]+(?:\([^)]*\))?|" + _NESTED_ARGS + r"|[A-Za-z_$][\w$.]*(?:<[^{}()=]*>)?(?:\[\])*)"
+)
 # A method or function header up to the '(' of its parameter list. Spock
 # names, which are strings, keep their quotes here and lose them in
 # head_at. The list is matched by bracket counting in head_at, because
@@ -239,6 +245,21 @@ def mask_slashy(raw: bytes) -> bytes:
             else:
                 masked[i:after] = b'"' + b" " * (after - i - 2) + b'"'
                 i = after
+    return bytes(masked)
+
+
+def mask_wildcards(code: bytes) -> bytes:
+    """``code`` with the ``.*`` of each wildcard import blanked.
+
+    The grammar cannot read ``import a.b.*``, and its error recovery
+    takes the class after it into the error. Blanked, the line is a
+    plain import. The copy has the same length, so offsets still hold.
+    """
+    masked = bytearray(code)
+    for match in _IMPORT.finditer(code):
+        if match.group("wild"):
+            start, end = match.span("wild")
+            masked[start:end] = b"  "
     return bytes(masked)
 
 
