@@ -254,3 +254,13 @@ def test_no_pack_and_no_suggestions_records_no_misses(tmp_path: Path):
     assert feedback_payload(tmp_path, changed)["missed_paths"] == []
     absent = {**changed, "context_path": "missing.md"}
     assert feedback_payload(tmp_path, absent)["missed_paths"] == []
+
+
+def test_a_directory_context_is_not_a_pack(tmp_path: Path):
+    (tmp_path / "packs").mkdir()
+
+    payload = feedback_payload(
+        tmp_path, {"query": FEEDBACK_QUERY, "context_path": "packs", "changed": ["README.md"]}
+    )
+
+    assert payload["missed_paths"] == []

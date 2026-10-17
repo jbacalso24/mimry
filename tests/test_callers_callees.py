@@ -852,13 +852,15 @@ def test_several_names_list_each_candidate_once_and_at_most_five(tmp_path):
         for i in range(7)
     ]
     candidates.insert(1, dict(candidates[0], id="dup"))
-    text = _several_text("x", {"candidates": candidates, "used": "s3"})
+    pick = {"candidates": candidates, "used": "s3"}
+    text = _several_text("x", pick, "source")
 
     assert text == (
         'Several symbols are named "x": x (pkg/m0.py:1), x (pkg/m1.py:1), x (pkg/m2.py:1),'
         " x (pkg/m3.py:1), x (pkg/m4.py:1), and 2 more. Using x (pkg/m3.py:1);"
         " give a file path to start from another file."
     )
+    assert _several_text("x", pick, "target").endswith("give a file path to end at another file.")
 
 
 def test_mcp_symbol_and_path_carry_confidence(tmp_path, monkeypatch):

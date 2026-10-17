@@ -229,7 +229,7 @@ def feedback_payload(root: Path, data: dict[str, Any]) -> dict[str, Any]:
         candidate = Path(context_path)
         if not candidate.is_absolute():
             candidate = root / candidate
-        if candidate.exists():
+        if candidate.is_file():
             pack = candidate
     if not suggested and pack is not None:
         suggested = parse_context_suggested_paths(pack)

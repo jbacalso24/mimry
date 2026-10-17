@@ -1090,7 +1090,7 @@ def run_path(a, found: list | None = None):
         picks = _ambiguous_sides(result)
         for side, query in (("source", source), ("target", target)):
             if side in picks:
-                ui.detail(_several_text(query, picks[side]))
+                ui.detail(_several_text(query, picks[side], side))
         print()
         # Each relation sits between the two nodes it joins.
         ui.detail(_node_text(steps[0]["from"]))
@@ -1216,13 +1216,13 @@ def _chosen_candidate(pick: dict) -> dict | None:
     return next((m for m in pick["candidates"] if m["id"] == pick["used"]), None)
 
 
-def _several_text(query: str, pick: dict) -> str:
+def _several_text(query: str, pick: dict, side: str) -> str:
     """The notice for a name with several symbols, and the one used.
 
     A file path starts the path from that file, not from a symbol in it,
     so the advice is given only when another candidate sits in a
     different file. No source form picks a candidate that shares the
-    chosen one's file.
+    chosen one's file. The side names the advice: source or target.
     """
     unique = _unique_candidates(pick["candidates"])
     shown = ", ".join(_candidate_text(m) for m in unique[:5])
@@ -1234,7 +1234,8 @@ def _several_text(query: str, pick: dict) -> str:
         return text
     text += f" Using {_candidate_text(chosen)}"
     if any(m["path"] != chosen["path"] for m in unique):
-        return f"{text}; give a file path to start from another file."
+        end = "start from" if side == "source" else "end at"
+        return f"{text}; give a file path to {end} another file."
     return f"{text}."
 
 

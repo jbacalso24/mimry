@@ -510,7 +510,7 @@ def print_index_result(
                 )
             )
             print_rows_capped(rows)
-        else:
+        elif not stats.get("parser_reparsed"):
             ui.detail("No file contents changed since the last index")
     if stats.get("parser_reparsed"):
         ui.detail(

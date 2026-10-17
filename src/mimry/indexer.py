@@ -428,7 +428,10 @@ def _collect(
                 stat_entries[rel_path] = stat_cache.entries[rel_path]
                 continue
         if parser_changed and not is_config_manifest(path):
-            if stat_cache.trusts(rel_path, live, INDEXED):
+            # Matched on identity, not trust: a file written just before
+            # the last index is racy, so never trusted, yet still read.
+            entry = stat_cache.entries.get(rel_path)
+            if entry is not None and entry[4] == INDEXED and entry[:4] == identity(live):
                 parser_reparsed += 1
         todo.append((rel_path, path))
     adapted = dict(

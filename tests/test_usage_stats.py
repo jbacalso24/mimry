@@ -179,6 +179,18 @@ def test_log_is_trimmed_to_ninety_days_once_it_passes_a_megabyte(tmp_path):
 
 
 @requires_git
+@requires_git
+def test_feedback_stats_says_no_commits_yet_in_a_repo_without_commits(tmp_path, monkeypatch):
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    repo = _init_repo(tmp_path / "repo")
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    stats = run_cli(repo, cache, "feedback", "stats")
+    assert stats.returncode == 0, stats.stderr
+    assert "No commits yet." in stats.stdout
+    assert "Not a git repository." not in stats.stdout
+
+
 def test_feedback_stats_prints_usage_through_the_cli(tmp_path, monkeypatch):
     cache = tmp_path / "cache"
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))

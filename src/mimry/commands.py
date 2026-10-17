@@ -90,6 +90,7 @@ from .queries import (
     write_context_pack,
 )
 from .routing import route_payload, write_brief
+from .scanner import _git_output
 from .search import find_rows, language_display_names, missing_file_names
 from .security import (
     redact_sensitive_text,
@@ -488,7 +489,11 @@ def _print_usage(root: Path) -> None:
     rows = [("Preflights", f"{usage['preflights']:,}")]
     reasons = []
     if matched is None:
-        reasons.append("Not a git repository.")
+        inside = _git_output(root, "rev-parse", "--is-inside-work-tree")
+        if inside and inside.strip() == b"true":
+            reasons.append("No commits yet.")
+        else:
+            reasons.append("Not a git repository.")
     elif not commits:
         reasons.append(f"No commits in the last {USAGE_DAYS} days.")
     else:

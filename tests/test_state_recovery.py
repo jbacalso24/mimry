@@ -872,6 +872,28 @@ def test_upgrade_reparse_of_unchanged_files_is_reported(
     assert "for the new MIMRY version" in out
 
 
+def test_upgrade_reparse_of_just_written_files_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    import mimry.reuse as reuse
+    from mimry.lifecycle import print_index_result
+
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    # Files written just before the first index are racy: never
+    # trusted, yet the new parser still reads them, so say so.
+    write_index(repo, load_pointer(repo))
+    monkeypatch.setattr(reuse, "_FINGERPRINT", "a-newer-mimry")
+
+    stats = write_index(repo, load_pointer(repo))
+    print_index_result(repo, stats, 0.1, full=False)
+
+    assert stats["parser_reparsed"] > 0
+    out = capsys.readouterr().out
+    assert "No file contents changed" not in out
+    assert f"Reparsed {stats['parser_reparsed']} file" in out
+
+
 def test_semantic_generation_swap_is_detected_as_corrupt(tmp_path: Path, monkeypatch):
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
