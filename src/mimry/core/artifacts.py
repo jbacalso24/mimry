@@ -839,7 +839,12 @@ def _term_weights(
     return {term: 1.0 + math.log((total_files + 1) / (df[term] + 1)) for term in terms}
 
 
-def graph_rows(root: Path, query: str, limit: int | None = 10) -> list[dict]:
+def graph_rows(
+    root: Path,
+    query: str,
+    limit: int | None = 10,
+    minified_paths: frozenset[str] = frozenset(),
+) -> list[dict]:
     g = load_graph(root)
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
@@ -936,7 +941,11 @@ def graph_rows(root: Path, query: str, limit: int | None = 10) -> list[dict]:
     rows = []
     for row in by_file.values():
         row["score"], intent_reasons = apply_intent_adjustment(
-            row["score"], row["path"], intent, graph=True
+            row["score"],
+            row["path"],
+            intent,
+            graph=True,
+            minified=row["path"] in minified_paths,
         )
 
         if row["score"] <= 0:

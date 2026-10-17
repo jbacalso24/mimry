@@ -211,19 +211,26 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
     return scores
 
 
-def _with_ranges(idx, q, rows, id_by_path, cut_at):
+def _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths=frozenset()):
     """Name the lines to read first in each result: its best pieces.
 
     ``cut_at`` maps a document cut at a cap to where the cut fell, so
-    its ranges say so and do not read as the whole document.
+    its ranges say so and do not read as the whole document. A minified
+    file has no lines worth reading, so it never gets ranges.
     """
     pieces = piece_matches(
-        idx, q, [id_by_path[row["path"]] for row in rows if row["path"] in id_by_path]
+        idx,
+        q,
+        [
+            id_by_path[row["path"]]
+            for row in rows
+            if row["path"] in id_by_path and row["path"] not in minified_paths
+        ],
     )
     out = []
     for row in rows:
         matches = pieces.get(id_by_path.get(row["path"], ""))
-        if not matches:
+        if not matches or row["path"] in minified_paths:
             out.append(row)
             continue
         # A document's ranges name its parts (pages, sections, ...).
@@ -285,7 +292,9 @@ def score(
         s += 8
         reasons.append(f["adapter"] + " adapter")
 
-    s, intent_reasons = apply_intent_adjustment(s, f["rel_path"], intent)
+    s, intent_reasons = apply_intent_adjustment(
+        s, f["rel_path"], intent, minified=bool(f.get("minified"))
+    )
     reasons.extend(intent_reasons)
 
     return s, reasons
@@ -410,6 +419,7 @@ def find_rows(
     fts_scores = _fts_scores(idx, q)
     id_by_path = {f["rel_path"]: f["file_id"] for f in files}
     cut_at = {f["rel_path"]: f["cut_at"] for f in files if f.get("cut_at")}
+    minified_paths = frozenset(f["rel_path"] for f in files if f.get("minified"))
     known_paths = set(id_by_path)
     candidate_limit = max(len(files), limit + scope["offset"]) if scoped_or_paginated else limit
 
@@ -465,7 +475,7 @@ def find_rows(
         # Every graph match, not just the top `limit`: a file the graph
         # ranks lower can lead once its content match is added below,
         # and the cut to `limit` comes after that merge.
-        rows = graph_rows(root, q, None)
+        rows = graph_rows(root, q, None, minified_paths=minified_paths)
         if rows:
             rows = _without_excluded(
                 [
@@ -524,7 +534,7 @@ def find_rows(
             )
             ranked = _exact_names_first(ranked, exact_paths)
             rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
-            return _with_ranges(idx, q, rows, id_by_path, cut_at)
+            return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     ranked = _with_semantic(
         ranked,
@@ -538,4 +548,4 @@ def find_rows(
     )
     ranked = _exact_names_first(ranked, exact_paths)
     rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
-    return _with_ranges(idx, q, rows, id_by_path, cut_at)
+    return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)

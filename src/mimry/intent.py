@@ -537,16 +537,19 @@ def is_supporting_code(rel_path: str) -> bool:
     return bool({part.lower() for part in path_parts(rel_path)[:-1]} & NON_PRIMARY_SEGMENTS)
 
 
-def is_repo_noise(rel_path: str) -> bool:
+def is_repo_noise(rel_path: str, *, minified: bool = False) -> bool:
     """Templates, vendored code, minified bundles and repo meta files.
 
     Shipped with the repository, but almost never what a task changes.
+    ``minified`` is the scanner's content check: a bundle with a normal
+    name counts the same as a ``.min.js``.
     """
     p = PurePosixPath(rel_path)
     dirs = {part.lower() for part in path_parts(rel_path)[:-1]}
     return (
         bool(dirs & REPO_TEMPLATE_DIRS)
         or bool(dirs & VENDORED_SEGMENTS)
+        or minified
         or p.name.lower().endswith(MINIFIED_SUFFIXES)
         or (p.stem.lower() in REPO_META_STEMS and p.suffix.lower() in REPO_META_SUFFIXES)
     )
@@ -578,7 +581,12 @@ def is_concept_intent(terms: list[str]) -> bool:
 
 
 def apply_intent_adjustment(
-    score: int, rel_path: str, terms: list[str], *, graph: bool = False
+    score: int,
+    rel_path: str,
+    terms: list[str],
+    *,
+    graph: bool = False,
+    minified: bool = False,
 ) -> tuple[int, list[str]]:
     """Apply transparent intent-aware ranking.
 
@@ -598,7 +606,7 @@ def apply_intent_adjustment(
 
     # Same for repository plumbing: a template or vendored file ranks
     # lower on every intent, unless the headline asks for that plumbing.
-    if is_repo_noise(rel_path) and not set(terms) & REPO_NOISE_TERMS:
+    if is_repo_noise(rel_path, minified=minified) and not set(terms) & REPO_NOISE_TERMS:
         score = int(score * REPO_NOISE_FACTOR)
         reasons.append("repository template/vendored downrank")
 

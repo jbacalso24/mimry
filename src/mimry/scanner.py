@@ -770,6 +770,33 @@ def _python_imports(node: ast.AST) -> list[str]:
     return []
 
 
+# A minifier packs a whole JS or CSS file into a few very long lines.
+MINIFIABLE_EXTENSIONS = (".js", ".mjs", ".cjs", ".css")
+# A bundle of at least 20 KB whose lines average over 300 bytes is
+# minified. So is one with a line over 5,000 bytes and under one
+# newline per 1,000 bytes. Hand-written code stays far below both.
+MINIFIED_MIN_SIZE = 20_000
+MINIFIED_MEAN_LINE = 300
+MINIFIED_LONG_LINE = 5_000
+MINIFIED_BYTES_PER_NEWLINE = 1_000
+
+
+def is_minified(rel_path, data):
+    """True when a JS or CSS file is a minified bundle.
+
+    Judged from the bytes the scanner already reads, so no second read
+    is needed and the name does not matter.
+    """
+    if not rel_path.lower().endswith(MINIFIABLE_EXTENSIONS):
+        return False
+    newlines = data.count(b"\n")
+    if len(data) >= MINIFIED_MIN_SIZE and len(data) > MINIFIED_MEAN_LINE * (newlines + 1):
+        return True
+    if newlines * MINIFIED_BYTES_PER_NEWLINE >= len(data):
+        return False
+    return max(len(line) for line in data.split(b"\n")) > MINIFIED_LONG_LINE
+
+
 def file_record(path, root, adapter, status, hint, snapshot=None):
     """Build a file record from one consistent snapshot.
 
@@ -785,7 +812,7 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
     # (NFC-normalized)
     canonical_filename = Path(rel).name
     canonical_extension = Path(rel).suffix.lower()
-    return {
+    record = {
         "file_id": fid,
         # Preserve the lexical absolute path. Resolving here would
         # follow a post-acquisition symlink swap and publish an
@@ -803,6 +830,10 @@ def file_record(path, root, adapter, status, hint, snapshot=None):
         "content_hint": hint,
         "metadata_text": f"{rel} {canonical_filename} {canonical_extension} {hint}",
     }
+    if is_minified(rel, data):
+        # Only minified files get the key; other records stay the same.
+        record["minified"] = True
+    return record
 
 
 def _document_record(path, root, document: DocumentText, snapshot, references):
