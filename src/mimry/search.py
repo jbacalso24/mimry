@@ -25,7 +25,12 @@ from .intent import (
     is_test_file,
     query_terms,
 )
-from .mentions import named_boost, named_paths
+from .mentions import (
+    EXACT_NAME_REASON,
+    exact_name_paths,
+    named_boost,
+    named_paths,
+)
 from .paths import canonical_cached_rel_path
 from .pieces import best_ranges, piece_matches
 from .security import filter_index_records
@@ -286,6 +291,29 @@ def score(
     return s, reasons
 
 
+def _exact_names_first(rows, exact_paths):
+    """Lift the files the query names exactly above every other row.
+
+    Graph and content scores are sums that can reach the hundreds, so no
+    fixed boost is safely above them. The exact files keep their order
+    among themselves and move up together, so each score still matches
+    its rank.
+    """
+    exact = [r for r in rows if r["path"] in exact_paths]
+    if not exact:
+        return rows
+    others = [r for r in rows if r["path"] not in exact_paths]
+    best_other = max((r["score"] for r in others), default=0)
+    lift = max(0, best_other + 1 - min(r["score"] for r in exact))
+    lifted = []
+    for r in exact:
+        reason = r["reason"]
+        if EXACT_NAME_REASON not in reason:
+            reason = ", ".join(filter(None, [reason, EXACT_NAME_REASON]))
+        lifted.append({**r, "score": r["score"] + lift, "reason": reason})
+    return lifted + others
+
+
 def _apply_exclusions(rows, q):
     excluded_terms = excluded_query_terms(q)
     if not excluded_terms:
@@ -394,9 +422,13 @@ def find_rows(
     # A test file named only in the body of a source task (a traceback
     # from the test that failed) is a symptom, not the edit site.
     tests_asked = bool(set(intent) & TEST_TERMS)
+    exact_paths = {
+        path for path in exact_name_paths(q, known_paths) if tests_asked or not is_test_file(path)
+    }
     for f in files:
-        named_reason = named.get(f["rel_path"])
-        if named_reason and not tests_asked and is_test_file(f["rel_path"]):
+        path = f["rel_path"]
+        named_reason = EXACT_NAME_REASON if path in exact_paths else named.get(path)
+        if named_reason and not tests_asked and is_test_file(path):
             named_reason = None
         named_match = (named_boost(named_reason), named_reason) if named_reason else None
         s, rs = score(
@@ -490,6 +522,7 @@ def find_rows(
                 semantic,
                 excluded_paths,
             )
+            ranked = _exact_names_first(ranked, exact_paths)
             rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
             return _with_ranges(idx, q, rows, id_by_path, cut_at)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
@@ -503,5 +536,6 @@ def find_rows(
         semantic,
         excluded_paths,
     )
+    ranked = _exact_names_first(ranked, exact_paths)
     rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
     return _with_ranges(idx, q, rows, id_by_path, cut_at)

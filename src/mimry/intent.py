@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
+from .mentions import EXACT_NAME_REASON
+
 CONCEPT_INTENT_TERMS = {
     "overview",
     "explain",
@@ -655,12 +657,18 @@ def is_likely_edit_surface(rel_path: str) -> bool:
 def start_order(rows: list[dict], query: str) -> list[dict]:
     """The one order every surface shows the selected files in.
 
-    Likely edit surfaces come first, then the rest, each group keeping
-    its ranked order. A task about tests keeps the ranked order, because
-    there the test file is the edit surface.
+    A file the query names exactly comes first, whatever its kind: a
+    template named by its whole name is still the thing to open. Then
+    likely edit surfaces, then the rest, each group keeping its ranked
+    order. A task about tests keeps the ranked order, because there the
+    test file is the edit surface.
     """
     if set(intent_terms(query)) & TEST_TERMS:
         return list(rows)
-    return [r for r in rows if is_likely_edit_surface(r["path"])] + [
-        r for r in rows if not is_likely_edit_surface(r["path"])
-    ]
+    named = [r for r in rows if EXACT_NAME_REASON in r.get("reason", "")]
+    rest = [r for r in rows if EXACT_NAME_REASON not in r.get("reason", "")]
+    return (
+        named
+        + [r for r in rest if is_likely_edit_surface(r["path"])]
+        + [r for r in rest if not is_likely_edit_surface(r["path"])]
+    )

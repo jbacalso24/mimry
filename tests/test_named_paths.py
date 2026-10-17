@@ -8,6 +8,7 @@ from mimry.mentions import (
     MODULE_REASON,
     NAMED_PATH_BOOST,
     PATH_REASON,
+    exact_name_paths,
     named_boost,
     named_paths,
 )
@@ -121,6 +122,44 @@ def test_path_and_module_boost_is_full_and_file_name_boost_is_half():
     assert named_boost(PATH_REASON) == NAMED_PATH_BOOST == 120
     assert named_boost(MODULE_REASON) == NAMED_PATH_BOOST
     assert named_boost(FILE_NAME_REASON) == NAMED_PATH_BOOST // 2
+
+
+def test_a_whole_file_name_names_its_file_whatever_the_case():
+    known = ["web/src/components/OrderList.vue", "x/order.py"]
+
+    assert exact_name_paths("OrderList.vue", known) == ["web/src/components/OrderList.vue"]
+    assert exact_name_paths("orderlist", known) == ["web/src/components/OrderList.vue"]
+
+
+def test_a_name_without_its_extension_names_every_file_with_it():
+    html = "web/src/app/orders/orders.component.html"
+    ts = "web/src/app/orders/orders.component.ts"
+    known = [html, ts, "web/src/components/OrderList.vue"]
+
+    assert exact_name_paths("orders.component", known) == [html, ts]
+
+
+def test_only_the_whole_query_names_a_file():
+    known = ["web/src/components/OrderList.vue", "src/config.py"]
+
+    assert exact_name_paths("order", known) == []
+    assert exact_name_paths("fix the config loader", known) == []
+    assert exact_name_paths("config.py please", known) == []
+
+
+def test_a_path_suffix_names_its_file_and_a_partial_path_does_not():
+    ts = "web/src/app/orders/orders.component.ts"
+    known = [ts, "web/src/app/orders/orders.component.html"]
+
+    assert exact_name_paths("orders/orders.component.ts", known) == [ts]
+    assert exact_name_paths("src/orders/orders.component.ts", known) == []
+
+
+def test_a_name_shared_by_more_than_three_files_is_not_credited():
+    four = ["a/index.ts", "b/index.ts", "c/index.ts", "d/index.ts"]
+
+    assert exact_name_paths("index", four) == []
+    assert exact_name_paths("index", four[:3]) == four[:3]
 
 
 def _fixture_index(tmp_path, paths):

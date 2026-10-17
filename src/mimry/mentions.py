@@ -18,6 +18,7 @@ NAMED_PATH_BOOST = 120
 PATH_REASON = "named in query: path"
 MODULE_REASON = "named in query: module"
 FILE_NAME_REASON = "named in query: file name"
+EXACT_NAME_REASON = "named in query: exact file name"
 # Several files sharing a suffix are no evidence for any one of them.
 MAX_TIED_MATCHES = 3
 MIN_SUFFIX_COMPONENTS = 2
@@ -116,6 +117,36 @@ def _file_name_matches(index: _Index, name: str) -> list[str]:
     found = [path for _entry, path, is_full in index.by_name.get(name, ()) if is_full]
     unique = list(dict.fromkeys(found))
     return unique if len(unique) == 1 else []
+
+
+def _name_forms(path: str) -> tuple[str, str]:
+    """A lower-cased path, and the same path without its extension."""
+    lowered = path.lower()
+    head, slash, name = lowered.rpartition("/")
+    stem = name.rpartition(".")[0] or name
+    return lowered, head + slash + stem
+
+
+def _whole_name_matches(path: str, wanted: str) -> bool:
+    forms = _name_forms(path)
+    if "/" in wanted:
+        return any(form == wanted or form.endswith("/" + wanted) for form in forms)
+    return wanted in {form.rsplit("/", 1)[-1] for form in forms}
+
+
+def exact_name_paths(q: str, known_paths: Iterable[str]) -> list[str]:
+    """Files the whole query names exactly, ignoring case.
+
+    The query must be one name: a file name, a name without its
+    extension, or a path suffix. A word of a longer task never counts,
+    so ``order`` does not name ``OrderList.vue``. Several files with the
+    same name are credited up to MAX_TIED_MATCHES, as paths are.
+    """
+    raw = (q or "").strip().replace("\\", "/").removeprefix("./")
+    wanted = raw.rstrip(".-").lower()
+    if not wanted or _MENTION_RE.fullmatch(wanted) is None:
+        return []
+    return _credit([path for path in known_paths if _whole_name_matches(path, wanted)])
 
 
 def named_paths(q: str, known_paths: Iterable[str]) -> dict[str, str]:

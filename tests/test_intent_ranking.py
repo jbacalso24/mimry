@@ -18,8 +18,10 @@ from mimry.intent import (
     is_test_file,
     location_terms,
     query_terms,
+    start_order,
     term_matches_token,
 )
+from mimry.mentions import EXACT_NAME_REASON
 from mimry.search import find_rows
 from mimry.storage import write_jsonl
 
@@ -850,3 +852,119 @@ def test_components_are_source_but_html_and_stylesheets_are_not():
     assert not is_source_file("website/public/2.x/retrofit/Invocation.html")
     assert not is_source_file("src/styles/main.scss")
     assert not is_source_file("src/site.css")
+
+
+ORDER_LIST = "web/src/components/OrderList.vue"
+ORDERS_HTML = "web/src/app/orders/orders.component.html"
+ORDERS_TS = "web/src/app/orders/orders.component.ts"
+ORDER_PATHS = [
+    ORDERS_HTML,
+    ORDERS_TS,
+    ORDER_LIST,
+    "web/src/app/services/order.service.ts",
+    "web/src/pages/Archive.vue",
+    "web/src/pages/Dashboard.vue",
+    "web/src/pages/Inbox.vue",
+]
+
+
+def _write_order_repo(root: Path) -> Path:
+    """Issue 383's shape: OrderList.vue is a graph hub, the orders
+    component files are not, and the query names the component."""
+    idx = root / "index"
+    idx.mkdir()
+    write_jsonl(
+        idx / "files.jsonl",
+        [
+            {
+                "file_id": path,
+                "filename": Path(path).name,
+                "rel_path": path,
+                "content_hint": "",
+                "metadata_text": "",
+                "adapter": "generic",
+            }
+            for path in ORDER_PATHS
+        ],
+    )
+    graph_dir = root / ".mimry" / "mimry-out" / "graph"
+    graph_dir.mkdir(parents=True)
+    nodes = [
+        {
+            "id": path,
+            "label": "OrderList" if path == ORDER_LIST else path,
+            "source_file": path,
+            "community": 1,
+        }
+        for path in ORDER_PATHS
+    ]
+    links = [
+        {"source": ORDER_LIST, "target": path, "relation": "imports"}
+        for path in ORDER_PATHS
+        if path != ORDER_LIST
+    ]
+    graph = {"nodes": nodes, "links": links}
+    (graph_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
+    return idx
+
+
+def test_a_query_naming_two_files_puts_both_above_a_graph_hub(tmp_path):
+    idx = _write_order_repo(tmp_path)
+
+    rows = find_rows(idx, "orders.component", limit=5, root=tmp_path)
+
+    assert {rows[0]["path"], rows[1]["path"]} == {ORDERS_HTML, ORDERS_TS}
+    assert ORDER_LIST not in [row["path"] for row in rows[:2]]
+
+
+def test_a_file_name_query_puts_that_file_first(tmp_path):
+    idx = _write_order_repo(tmp_path)
+
+    rows = find_rows(idx, "OrderList", limit=5, root=tmp_path)
+
+    assert rows[0]["path"] == ORDER_LIST
+    assert EXACT_NAME_REASON in rows[0]["reason"]
+
+
+def test_a_path_suffix_query_puts_its_file_first(tmp_path):
+    idx = _write_order_repo(tmp_path)
+
+    rows = find_rows(idx, "orders/orders.component.ts", limit=5, root=tmp_path)
+
+    assert rows[0]["path"] == ORDERS_TS
+
+
+def test_a_multi_word_task_naming_a_common_stem_does_not_reorder(tmp_path):
+    paths = ["src/config.py", "src/app/config_loader.py", "docs/notes.md"]
+    idx = tmp_path / "index"
+    idx.mkdir()
+    write_jsonl(
+        idx / "files.jsonl",
+        [
+            {
+                "file_id": path,
+                "filename": Path(path).name,
+                "rel_path": path,
+                "content_hint": "",
+                "metadata_text": "",
+                "adapter": "generic",
+            }
+            for path in paths
+        ],
+    )
+
+    rows = find_rows(idx, "fix the config loader", limit=5, root=tmp_path)
+
+    assert rows[0]["path"] == "src/app/config_loader.py"
+    assert all(EXACT_NAME_REASON not in row["reason"] for row in rows)
+
+
+def test_an_exact_named_template_leads_the_start_order():
+    rows = [
+        {"path": "src/orders/list.py", "score": 900, "reason": "token match: orders"},
+        {"path": ORDERS_HTML, "score": 500, "reason": f"name matches, {EXACT_NAME_REASON}"},
+    ]
+
+    ordered = start_order(rows, "orders.component")
+
+    assert [row["path"] for row in ordered] == [ORDERS_HTML, "src/orders/list.py"]
