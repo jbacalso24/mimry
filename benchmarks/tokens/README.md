@@ -318,6 +318,21 @@ On dev (40 tasks), `mimry preflight --semantic` against the default, both on the
 It locates the same tasks and changes savings by at most 0.2 points, so it stays opt-in and off by default.
 Both runs are Token benchmark workflow runs 38987087355 (default) and 38987093054 (`--semantic`).
 
+A trained embedding model was tried next: a small static model (`potion-base-8M`, model2vec) embedding the same chunks, merged either with today's score bonus or by reciprocal-rank fusion (weight 0.5).
+On dev, with `--semantic`, all three on the same commit:
+
+| Reads | Hashed words (today) | Model, score bonus | Model, rank fusion |
+|---|---|---|---|
+| Whole files | **35 / 40, 33.9%** | 34 / 40, 32.2% | 26 / 40, 20.4% |
+| `grep -n` and `sed` | **31 / 40, 32.4%** | 29 / 40, 28.4% | 22 / 40, 18.6% |
+| Line ranges | **34 / 40**, 67.7% | **34 / 40, 68.0%** | 26 / 40, 58.2% |
+
+Each cell is tasks located, then savings against grep.
+The model locates fewer tasks in every mode, and rank fusion loses a fifth of them, so MIMRY does not ship a model download: `--semantic` keeps its hashed vectors and stays opt-in.
+What gets embedded is short (a path, a content hint, symbol names), and a static model averages a long task into a vague vector.
+Indexing also took about 40% longer with the model.
+The runs are Token benchmark workflow runs 39009934373 (hashed words), 39009932522 (model, score bonus) and 39009930725 (model, rank fusion), on the `exp/semantic-model` branch.
+
 ## Other alternatives
 
 holdout3 was also run with another local code-search tool, which splits files into chunks and ranks them with a local embedding model.
