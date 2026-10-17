@@ -2,14 +2,39 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.6.2 - 2026-10-18
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`.
+  The first command after upgrading reparses every file, so MSBuild, plist and XAML files and the Groovy fixes show up without a full reindex.
+- `mimry path --json` lists each other candidate in `ambiguous` once, as `{label, path, line}`, instead of a list of paths ([#435](https://github.com/jbacalso24/mimry/pull/435)).
+
+### New features
+
+- `.csproj`, `.fsproj`, `.vbproj`, `.props`, `.targets`, `.plist`, `.xaml`, `.resx` and `.nuspec` files are read as XML: MSBuild properties and targets, plist keys and XAML names are symbols, and a `ProjectReference` links to its project ([#436](https://github.com/jbacalso24/mimry/pull/436)).
+- A `tsconfig.json` that extends a base such as `tsconfig.base.json` resolves the base's path aliases, as in Nx and other monorepos ([#446](https://github.com/jbacalso24/mimry/pull/446)).
+
+### Fixes
+
+- A malformed JSON file nested very deeply no longer stops `mimry index`, a JSON file with a byte order mark and comments keeps its keys, and `tsconfig.json` with comments no longer shows a parse error ([#432](https://github.com/jbacalso24/mimry/pull/432)).
+- UTF-16 source files such as plists, project files, Python and Markdown parse, a byte order mark no longer hides a Markdown heading on the first line, and SVG icons without text are no longer listed as empty documents ([#444](https://github.com/jbacalso24/mimry/pull/444), [#451](https://github.com/jbacalso24/mimry/pull/451)).
+- A Groovy class right after a wildcard import is found again, methods with nested generic bounds such as `<T extends Comparable<T>>` are indexed, and `import static a.b.C.*` links to the class file while `import a.b.C.*` links to the package, or to the class file when `a.b.C` is a class ([#433](https://github.com/jbacalso24/mimry/pull/433), [#445](https://github.com/jbacalso24/mimry/pull/445), [#451](https://github.com/jbacalso24/mimry/pull/451)).
+- A Groovy line with many generic types no longer makes indexing hang ([#445](https://github.com/jbacalso24/mimry/pull/445)).
+- Feedback records the files a task changed as missed when its context pack suggested nothing, and a folder passed as `--context` is not taken for a pack ([#434](https://github.com/jbacalso24/mimry/pull/434), [#447](https://github.com/jbacalso24/mimry/pull/447)).
+- `mimry path` prefers a name with the exact case, names the symbol and line it used, and says when no path exists within 6 steps ([#435](https://github.com/jbacalso24/mimry/pull/435), [#447](https://github.com/jbacalso24/mimry/pull/447)).
+- A small `.map` file is no longer treated as a minified bundle ([#435](https://github.com/jbacalso24/mimry/pull/435)).
+- After an upgrade, `index` says which files it reparsed instead of "No file contents changed", and `feedback stats` says "No commits yet." in a new repository ([#447](https://github.com/jbacalso24/mimry/pull/447)).
+- The README gives the data file symbol limit as 256 KiB, the site shows the current `mimry path` output, and the README says how to install without uv and which folders are always skipped ([#436](https://github.com/jbacalso24/mimry/pull/436), [#448](https://github.com/jbacalso24/mimry/pull/448), [#451](https://github.com/jbacalso24/mimry/pull/451)).
+
 ## 0.6.1 - 2026-10-17
 
 ### Upgrade notes
 
 - Upgrade with `mimry upgrade`.
   The first command after upgrading reparses every file, so Groovy files, Haskell class methods and Helm template keys show up without a full reindex.
-- `mimry path` prints the path as a chain, each relation between the two nodes it joins; the `--json` output is unchanged ([#417](https://github.com/jbacalso24/mimry/pull/417)).
-- A data file with a syntax error (`{"a": 1,`) now counts as "could not be parsed" and keeps no keys, like broken code; JSON with comments and trailing commas, as tsconfig.json allows, still reads fine ([#420](https://github.com/jbacalso24/mimry/pull/420)).
+- `mimry path` prints the path as a chain, each relation between the two nodes it joins; and `--json` adds an `ambiguous` field when a name matches several symbols ([#417](https://github.com/jbacalso24/mimry/pull/417)).
+- A data file with a syntax error (`{"a": 1,`) now counts as "could not be parsed" and keeps no keys, like broken code; JSON with comments and trailing commas, as editor settings allow, still reads fine ([#420](https://github.com/jbacalso24/mimry/pull/420)).
 
 ### New features
 
