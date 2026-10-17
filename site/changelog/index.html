@@ -39,11 +39,31 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.6.1">
+<header class="release-meta">
+<h2>0.6.1</h2>
+<p class="release-date"><time datetime="2026-10-17">17 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.6.1">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.6.1/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Upgrade notes</h3>
+<ul><li>Upgrade with <code>mimry upgrade</code>. The first command after upgrading reparses every file, so Groovy files, Haskell class methods and Helm template keys show up without a full reindex.</li><li><code>mimry path</code> prints the path as a chain, each relation between the two nodes it joins; the <code>--json</code> output is unchanged (<a href="https://github.com/jbacalso24/mimry/pull/417">#417</a>).</li><li>A data file with a syntax error (<code>{"a": 1,</code>) now counts as "could not be parsed" and keeps no keys, like broken code; JSON with comments and trailing commas, as tsconfig.json allows, still reads fine (<a href="https://github.com/jbacalso24/mimry/pull/420">#420</a>).</li></ul>
+<h3>New features</h3>
+<ul><li>MIMRY parses 41 languages: Groovy and Gradle join, with classes, methods, Spock feature methods, Gradle tasks, imports that link to the exact file, and call and inheritance edges (<a href="https://github.com/jbacalso24/mimry/pull/406">#406</a>, <a href="https://github.com/jbacalso24/mimry/pull/415">#415</a>, <a href="https://github.com/jbacalso24/mimry/pull/422">#422</a>).</li><li>Haskell class method signatures and defaults are symbols, and Haskell and Fortran module imports link to the exact file (<a href="https://github.com/jbacalso24/mimry/pull/401">#401</a>, <a href="https://github.com/jbacalso24/mimry/pull/403">#403</a>, <a href="https://github.com/jbacalso24/mimry/pull/416">#416</a>).</li><li><code>index</code>, <code>preflight</code> and <code>status -v</code> say which documents are searchable by name only (damaged, encrypted, empty, compressed too much) and which were cut at a cap (<a href="https://github.com/jbacalso24/mimry/pull/400">#400</a>, <a href="https://github.com/jbacalso24/mimry/pull/420">#420</a>).</li><li>A query that is a file's name ranks that file first, and <code>find</code> says when a file named in the query is not indexed (<a href="https://github.com/jbacalso24/mimry/pull/404">#404</a>, <a href="https://github.com/jbacalso24/mimry/pull/418">#418</a>).</li><li><code>mimry path</code> says when a name matched several symbols and which one it used (<a href="https://github.com/jbacalso24/mimry/pull/417">#417</a>).</li></ul>
+<h3>Fixes</h3>
+<ul><li>Minified bundles found by their content no longer crowd out source files, while hand-written files with long lines keep their ranking (<a href="https://github.com/jbacalso24/mimry/pull/405">#405</a>, <a href="https://github.com/jbacalso24/mimry/pull/419">#419</a>).</li><li>A file name's extension alone no longer counts as a name match, so <code>find "session.ts"</code> stops listing every <code>.ts</code> file (<a href="https://github.com/jbacalso24/mimry/pull/418">#418</a>).</li><li>Helm templates keep their keys after the first template action (<a href="https://github.com/jbacalso24/mimry/pull/402">#402</a>).</li><li>YAML nested too deeply to read gets its own warning instead of "Fix the syntax" (<a href="https://github.com/jbacalso24/mimry/pull/420">#420</a>).</li><li>Size limits print as <code>20 MiB</code>, <code>status -v</code> lines its document lists up, <code>--language</code> scope lines show the display name, and <code>find -v</code> no longer repeats config evidence (<a href="https://github.com/jbacalso24/mimry/pull/421">#421</a>).</li></ul>
+<h3>Benchmarks</h3>
+<ul><li>The token benchmark README records a trained embedding model for <code>--semantic</code>: it located fewer tasks in every mode, so <code>--semantic</code> keeps its hashed vectors (<a href="https://github.com/jbacalso24/mimry/pull/423">#423</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.6.0">
 <header class="release-meta">
 <h2>0.6.0</h2>
-<p class="release-date"><time datetime="2026-10-17">17 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-17">17 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.6.0">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.6.0/">PyPI</a></li>

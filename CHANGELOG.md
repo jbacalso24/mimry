@@ -2,6 +2,35 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.6.1 - 2026-10-17
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`.
+  The first command after upgrading reparses every file, so Groovy files, Haskell class methods and Helm template keys show up without a full reindex.
+- `mimry path` prints the path as a chain, each relation between the two nodes it joins; the `--json` output is unchanged ([#417](https://github.com/jbacalso24/mimry/pull/417)).
+- A data file with a syntax error (`{"a": 1,`) now counts as "could not be parsed" and keeps no keys, like broken code; JSON with comments and trailing commas, as tsconfig.json allows, still reads fine ([#420](https://github.com/jbacalso24/mimry/pull/420)).
+
+### New features
+
+- MIMRY parses 41 languages: Groovy and Gradle join, with classes, methods, Spock feature methods, Gradle tasks, imports that link to the exact file, and call and inheritance edges ([#406](https://github.com/jbacalso24/mimry/pull/406), [#415](https://github.com/jbacalso24/mimry/pull/415), [#422](https://github.com/jbacalso24/mimry/pull/422)).
+- Haskell class method signatures and defaults are symbols, and Haskell and Fortran module imports link to the exact file ([#401](https://github.com/jbacalso24/mimry/pull/401), [#403](https://github.com/jbacalso24/mimry/pull/403), [#416](https://github.com/jbacalso24/mimry/pull/416)).
+- `index`, `preflight` and `status -v` say which documents are searchable by name only (damaged, encrypted, empty, compressed too much) and which were cut at a cap ([#400](https://github.com/jbacalso24/mimry/pull/400), [#420](https://github.com/jbacalso24/mimry/pull/420)).
+- A query that is a file's name ranks that file first, and `find` says when a file named in the query is not indexed ([#404](https://github.com/jbacalso24/mimry/pull/404), [#418](https://github.com/jbacalso24/mimry/pull/418)).
+- `mimry path` says when a name matched several symbols and which one it used ([#417](https://github.com/jbacalso24/mimry/pull/417)).
+
+### Fixes
+
+- Minified bundles found by their content no longer crowd out source files, while hand-written files with long lines keep their ranking ([#405](https://github.com/jbacalso24/mimry/pull/405), [#419](https://github.com/jbacalso24/mimry/pull/419)).
+- A file name's extension alone no longer counts as a name match, so `find "session.ts"` stops listing every `.ts` file ([#418](https://github.com/jbacalso24/mimry/pull/418)).
+- Helm templates keep their keys after the first template action ([#402](https://github.com/jbacalso24/mimry/pull/402)).
+- YAML nested too deeply to read gets its own warning instead of "Fix the syntax" ([#420](https://github.com/jbacalso24/mimry/pull/420)).
+- Size limits print as `20 MiB`, `status -v` lines its document lists up, `--language` scope lines show the display name, and `find -v` no longer repeats config evidence ([#421](https://github.com/jbacalso24/mimry/pull/421)).
+
+### Benchmarks
+
+- The token benchmark README records a trained embedding model for `--semantic`: it located fewer tasks in every mode, so `--semantic` keeps its hashed vectors ([#423](https://github.com/jbacalso24/mimry/pull/423)).
+
 ## 0.6.0 - 2026-10-17
 
 ### Upgrade notes
