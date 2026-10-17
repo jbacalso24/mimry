@@ -1036,6 +1036,49 @@ def test_tsconfig_path_alias_reaches_the_imported_file(tmp_path):
     assert "broken/page.ts" in res.stdout
 
 
+NAMED_BASE_EXTENDS = '{"extends": "./configs/tsconfig.base.json"}\n'
+NAMED_BASE = '{"compilerOptions": {"baseUrl": "..", "paths": {"@/*": ["src/*"]}}}\n'
+NX_APP_EXTENDS = '{"extends": "../../tsconfig.base.json"}\n'
+NX_BASE = (
+    '{"compilerOptions": {"baseUrl": ".", "paths": {"@acme/util": ["libs/util/src/index.ts"]}}}\n'
+)
+
+
+def test_extends_to_a_named_base_config_reaches_its_paths(tmp_path):
+    """An extends naming tsconfig.base.json is followed, Nx-style."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "tsconfig.json": NAMED_BASE_EXTENDS,
+            "configs/tsconfig.base.json": NAMED_BASE,
+            "src/app/page.ts": 'import { u } from "@/lib/util";\n',
+            "src/lib/util.ts": "export const u = 1;\n",
+            "apps/web/tsconfig.json": NX_APP_EXTENDS,
+            "tsconfig.base.json": NX_BASE,
+            "apps/web/src/main.ts": 'import { u } from "@acme/util";\n',
+            "libs/util/src/index.ts": "export const u = 1;\n",
+        },
+    )
+
+    page = _mimry(repo, cache, "path", "src/app/page.ts", "src/lib/util.ts")
+    nx = _mimry(repo, cache, "path", "apps/web/src/main.ts", "libs/util/src/index.ts")
+
+    assert page.returncode == 0, page.stderr
+    assert nx.returncode == 0, nx.stderr
+    assert "OK src/app/page.ts connects to src/lib/util.ts" in page.stdout
+    assert "OK apps/web/src/main.ts connects to libs/util/src/index.ts" in nx.stdout
+
+
+def test_base_config_gets_no_alias_table_of_its_own():
+    from mimry.core.tsconfig import build_ts_paths, parse_tsconfig
+
+    configs = {"libs/tsconfig.base.json": parse_tsconfig(NX_BASE)}
+
+    assert build_ts_paths(configs, {"libs/a.ts"}) == {}
+
+
 def test_jsonc_keeps_comment_markers_inside_strings():
     from mimry.core.data_files import loads_jsonc
 

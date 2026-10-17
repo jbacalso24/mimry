@@ -45,7 +45,7 @@ from .core.languages import (
     is_pascal_source,
 )
 from .core.languages import extract as extract_language
-from .core.tsconfig import CONFIG_NAMES, parse_tsconfig
+from .core.tsconfig import is_config_name, parse_tsconfig
 from .intent import CAMEL_BOUNDARY_RE, CJK_RUN_RE, STOPWORDS, TOKEN_RE, cjk_bigrams
 from .paths import canonical_rel_path, stable_id
 from .reuse import code_fingerprint
@@ -747,7 +747,7 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
         package = groovy_files.package_of(data_decoded)
         if package:
             references["groovy_package"] = package
-    if posixpath.basename(rel_path) in CONFIG_NAMES:
+    if is_config_name(posixpath.basename(rel_path)):
         # Path aliases, for resolving `@/x` style imports. A config that
         # does not parse is skipped, as if absent.
         ts_config = parse_tsconfig(data_decoded)

@@ -27,6 +27,11 @@ _JS_EXTENSIONS = (
 CONFIG_NAMES = ("tsconfig.json", "jsconfig.json")
 
 
+def is_config_name(name: str) -> bool:
+    """True for a config that an extends can name."""
+    return name.endswith(".json") and name.startswith(("tsconfig.", "jsconfig."))
+
+
 def parse_tsconfig(text: str) -> dict | None:
     """The alias settings one config declares.
 
