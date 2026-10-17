@@ -3148,7 +3148,104 @@ interface BookService {
 """
 
 
+def _groovy_spans(result: dict) -> list[tuple[str, str, int, int]]:
+    return [(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]]
+
+
 class TestGroovySymbols:
+    def test_annotated_parameters_with_arguments_keep_their_method(self):
+        result = extract(
+            "groovy/src/demo/Routes.groovy",
+            "class Routes {\n"
+            '    def named(@Named("id") String s) { return s }\n'
+            "    def configure(@DelegatesTo(Config) Closure body) {\n"
+            "        body()\n"
+            "    }\n"
+            "    def after() { 1 }\n"
+            "}\n",
+        )
+
+        assert _groovy_spans(result) == [
+            ("Routes", "class", 1, 7),
+            ("named", "method", 2, 2),
+            ("configure", "method", 3, 5),
+            ("after", "method", 6, 6),
+        ]
+
+    def test_default_values_with_a_nested_call_or_a_closure_keep_the_method(self):
+        result = extract(
+            "groovy/src/demo/Sizer.groovy",
+            "class Sizer {\n"
+            "    def scale(int n = max(1, 2)) { n }\n"
+            "    def run(Closure c = { x -> x * 2 }) { c(1) }\n"
+            "    def after() { 1 }\n"
+            "}\n",
+        )
+
+        assert _groovy_spans(result) == [
+            ("Sizer", "class", 1, 5),
+            ("scale", "method", 2, 2),
+            ("run", "method", 3, 3),
+            ("after", "method", 4, 4),
+        ]
+
+    def test_slashy_string_at_a_line_end_does_not_swallow_the_next_method(self):
+        result = extract(
+            "groovy/src/demo/SlashController.groovy",
+            r"""class SlashController {
+    def pattern = ~/^\d{3}-\d{10}$/
+    def greet(String name) { return "Hello ${name}" }
+}
+""",
+        )
+
+        assert _groovy_spans(result) == [
+            ("SlashController", "class", 1, 4),
+            ("greet", "method", 3, 3),
+        ]
+
+    def test_escaped_slash_inside_a_slashy_string_is_not_its_end(self):
+        result = extract(
+            "groovy/src/demo/Paths.groovy",
+            r"""class Paths {
+    def re = /a\/b/
+    def join(String a) { return a }
+}
+""",
+        )
+
+        assert _groovy_spans(result) == [
+            ("Paths", "class", 1, 4),
+            ("join", "method", 3, 3),
+        ]
+
+    def test_dollar_slashy_string_does_not_swallow_the_next_method(self):
+        result = extract(
+            "groovy/src/demo/Dollars.groovy",
+            'class Dollars {\n    def text = $/cost $$5/$\n    def label() { "x" }\n}\n',
+        )
+
+        assert _groovy_spans(result) == [
+            ("Dollars", "class", 1, 4),
+            ("label", "method", 3, 3),
+        ]
+
+    def test_division_is_code_so_the_next_method_is_found(self):
+        result = extract(
+            "groovy/src/demo/Ratio.groovy",
+            "class Ratio {\n"
+            "    def half = total / 2\n"
+            "    def halve(int total) { total / 2 }\n"
+            "    def after() { 1 }\n"
+            "}\n",
+        )
+
+        assert _groovy_spans(result) == [
+            ("Ratio", "class", 1, 5),
+            ("halve", "method", 3, 3),
+            ("after", "method", 4, 4),
+        ]
+
     def test_everyday_syntax_keeps_the_class_and_its_methods(self):
         result = extract("groovy/src/demo/Account.groovy", GROOVY_EVERYDAY)
 

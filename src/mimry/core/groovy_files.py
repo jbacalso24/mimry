@@ -27,12 +27,16 @@ _TYPE_HEAD = re.compile(
 # A word before a method name: a modifier, a type, `def`, an annotation
 # or a generic parameter list.
 _PREFIX_WORD = r"(?:@[\w.]+(?:\([^)]*\))?|<[^<>]*>|[A-Za-z_$][\w$.]*(?:<[^{}()=]*>)?(?:\[\])*)"
-# A method or function header. Spock names, which are strings, keep
-# their quotes here and lose them in head_at.
+# A method or function header up to the '(' of its parameter list. Spock
+# names, which are strings, keep their quotes here and lose them in
+# head_at. The list is matched by bracket counting in head_at, because
+# its annotations and defaults can hold brackets of their own.
 _CALLABLE_HEAD = re.compile(
     r"^(?P<prefix>(?:" + _PREFIX_WORD + r"\s+)+)"
-    r"(?P<name>\"[^\"\n]+\"|'[^'\n]+'|[A-Za-z_$][\w$]*)\s*\([^()]*\)\s*(?:throws\s+[\w.,\s]+)?$"
+    r"(?P<name>\"[^\"\n]+\"|'[^'\n]+'|[A-Za-z_$][\w$]*)\s*\("
 )
+# What may follow a parameter list: a throws clause and nothing else.
+_CALLABLE_TAIL = re.compile(r"^\s*(?:throws\s+[\w.,\s]+)?$")
 # Words that look like a method call but are control flow or a keyword.
 _NOT_NAMES = frozenset(
     ("if", "for", "while", "switch", "catch", "synchronized", "return", "new", "assert", "throw")
@@ -53,6 +57,12 @@ _TYPE_KINDS = {"class": "class", "trait": "class", "interface": "interface", "en
 _CONTINUES_AFTER = frozenset(b",([{.+-*/&|=?:<>")
 _CONTINUES_BEFORE = frozenset(b".?:&|+-*/,=<>{")
 _QUOTES = (b'"', b"'")
+# Bytes after which an operand comes next, so a slash there opens a
+# slashy string. After these words an operand comes too.
+_OPERAND_AFTER = frozenset(b"=(,~[{;:?!&|+-*%<>^")
+_OPERAND_WORD = re.compile(rb"(?<![\w$])(?:return|assert|throw|yield|in|case|else)$")
+# The byte a closed string leaves as the last one: no continuation.
+_STRING_END = 0x22
 
 
 def line_starts(raw: bytes) -> list[int]:
@@ -84,6 +94,117 @@ def _skip_comment(raw: bytes, i: int) -> int | None:
     return None
 
 
+def _operand_expected(raw: bytes, i: int) -> bool:
+    """Whether the code before ``i`` leaves an operand to come."""
+    j = i
+    while j > 0 and raw[j - 1] in b" \t\r\n":
+        j -= 1
+    if j == 0 or raw[j - 1] in _OPERAND_AFTER:
+        return True
+    return _OPERAND_WORD.search(raw[max(0, j - 8) : j]) is not None
+
+
+def _skip_slashy(raw: bytes, i: int) -> int | None:
+    """Offset past the slashy or dollar-slashy string at ``i``, or None.
+
+    A slash starts a string only where an operand is expected. After a
+    name, a number or a closing bracket it is a division. '//' and '/*'
+    are comments, and an unclosed string is not one.
+    """
+    dollar = raw[i : i + 2] == b"$/"
+    if not dollar and raw[i : i + 1] != b"/":
+        return None
+    if _skip_comment(raw, i) is not None or not _operand_expected(raw, i):
+        return None
+    j = i + 2 if dollar else i + 1
+    n = len(raw)
+    while j < n:
+        if dollar:
+            # $$ and $/ are escapes, /$ closes the string.
+            pair = raw[j : j + 2]
+            if pair in (b"$$", b"$/"):
+                j += 2
+                continue
+            if pair == b"/$":
+                return j + 2
+        elif raw[j : j + 1] == b"\\":
+            j += 2
+            continue
+        elif raw[j : j + 1] == b"/":
+            return j + 1
+        j += 1
+    return None
+
+
+def _skip_literal(raw: bytes, i: int) -> int | None:
+    """Offset past the quoted or slashy string at ``i``, or None."""
+    if raw[i : i + 1] in _QUOTES:
+        return _skip_string(raw, i)
+    return _skip_slashy(raw, i)
+
+
+def _close_of(raw: bytes, i: int, opener: int, closer: int) -> int:
+    """Offset just past the bracket that closes the one at ``i``.
+
+    Strings and comments are skipped. Returns len(raw) when nothing
+    closes the bracket.
+    """
+    depth = 0
+    n = len(raw)
+    while i < n:
+        after = _skip_comment(raw, i)
+        if after is None:
+            after = _skip_literal(raw, i)
+        if after is not None:
+            i = after
+            continue
+        c = raw[i]
+        if c == opener:
+            depth += 1
+        elif c == closer:
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return n
+
+
+def _byte_len(text: str) -> int:
+    """How many source bytes ``text`` was decoded from."""
+    return len(text.encode("utf-8", "surrogateescape"))
+
+
+def _plain(text: str) -> str:
+    """``text`` with undecodable bytes replaced, for a symbol name."""
+    return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
+
+def mask_slashy(raw: bytes) -> bytes:
+    """``raw`` with each slashy string blanked to a quoted one.
+
+    The tree-sitter grammar cannot read a slashy string and loses the
+    commands after it, so the parser is given this copy. The copy has
+    the same length, so byte offsets still point into ``raw``.
+    """
+    masked = bytearray(raw)
+    i = 0
+    n = len(raw)
+    while i < n:
+        after = _skip_comment(raw, i)
+        if after is not None:
+            i = after
+        elif raw[i : i + 1] in _QUOTES:
+            i = _skip_string(raw, i)
+        else:
+            after = _skip_slashy(raw, i)
+            if after is None:
+                i += 1
+            else:
+                masked[i:after] = b'"' + b" " * (after - i - 2) + b'"'
+                i = after
+    return bytes(masked)
+
+
 def _next_significant(raw: bytes, i: int) -> int:
     """The first byte at or after ``i`` that is not blank, or 0."""
     n = len(raw)
@@ -109,9 +230,9 @@ def top_level_chunks(raw: bytes) -> list[tuple[int, int]]:
     n = len(raw)
     while i < n:
         c = raw[i]
-        if raw[i : i + 1] in _QUOTES:
-            i = _skip_string(raw, i)
-            last, has_text = c, True
+        literal = _skip_literal(raw, i)
+        if literal is not None:
+            i, last, has_text = literal, _STRING_END, True
             continue
         after_comment = _skip_comment(raw, i)
         if after_comment is not None:
@@ -146,12 +267,12 @@ def _header_end(raw: bytes, start: int) -> tuple[int, bool]:
     n = len(raw)
     while i < n:
         c = raw[i]
-        if raw[i : i + 1] in _QUOTES:
-            i = _skip_string(raw, i)
-            continue
-        after_comment = _skip_comment(raw, i)
-        if after_comment is not None:
+        if _skip_comment(raw, i) is not None:
             return i, False
+        literal = _skip_literal(raw, i)
+        if literal is not None:
+            i = literal
+            continue
         if c in b"([":
             depth += 1
         elif c in b")]":
@@ -166,26 +287,7 @@ def _header_end(raw: bytes, start: int) -> tuple[int, bool]:
 
 def _body_end(raw: bytes, brace: int) -> int:
     """Offset just past the '}' that closes the '{' at ``brace``."""
-    depth = 0
-    i = brace
-    n = len(raw)
-    while i < n:
-        c = raw[i]
-        if raw[i : i + 1] in _QUOTES:
-            i = _skip_string(raw, i)
-            continue
-        after_comment = _skip_comment(raw, i)
-        if after_comment is not None:
-            i = after_comment
-            continue
-        if c == 0x7B:  # {
-            depth += 1
-        elif c == 0x7D:  # }
-            depth -= 1
-            if depth == 0:
-                return i + 1
-        i += 1
-    return n
+    return _close_of(raw, brace, 0x7B, 0x7D)
 
 
 def head_at(raw: bytes, start: int, starts: list[int]) -> dict | None:
@@ -197,7 +299,9 @@ def head_at(raw: bytes, start: int, starts: list[int]) -> dict | None:
     while start < len(raw) and raw[start] in b" \t":
         start += 1
     end, has_body = _header_end(raw, start)
-    head = raw[start:end].decode("utf-8", "replace").strip()
+    # Decoded so that every character maps back to its own bytes.
+    text = raw[start:end].decode("utf-8", "surrogateescape")
+    head = text.strip()
     if not head:
         return None
     span_end = _body_end(raw, end) if has_body else end
@@ -210,9 +314,18 @@ def head_at(raw: bytes, start: int, starts: list[int]) -> dict | None:
     if has_body:
         found = _TASK_HEAD.match(head) or _TASK_REGISTER.match(head)
         if found:
-            return {**base, "kind": "task", "tag": "task", "name": found.group("name")}
+            name = _plain(found.group("name"))
+            return {**base, "kind": "task", "tag": "task", "name": name}
     found = _CALLABLE_HEAD.match(head)
     if found is None:
+        return None
+    # The parameter list opens at the '(' that ends the match. Its close
+    # must fall inside the header, and only a throws clause may follow.
+    lead = _byte_len(text[: len(text) - len(text.lstrip())])
+    open_at = start + lead + _byte_len(head[: found.end() - 1])
+    close = _close_of(raw, open_at, 0x28, 0x29)
+    tail = raw[close:end].decode("utf-8", "surrogateescape")
+    if close > end or _CALLABLE_TAIL.match(tail) is None:
         return None
     prefix = found.group("prefix").split()
     name = found.group("name")
@@ -222,7 +335,7 @@ def head_at(raw: bytes, start: int, starts: list[int]) -> dict | None:
         **base,
         "kind": "callable",
         "tag": "callable",
-        "name": name.strip("\"'"),
+        "name": _plain(name.strip("\"'")),
         "has_body": has_body,
         "abstract": "abstract" in prefix,
     }

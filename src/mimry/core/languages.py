@@ -3330,13 +3330,16 @@ def _extract_groovy(source: str) -> dict:
             "inherits": [],
             "status": f"parse_error:{exc.__class__.__name__}",
         }
-    whole = parser.parse(raw).root_node
+    # The grammar cannot read slashy strings, so it parses a copy with
+    # them blanked. The copy keeps every byte offset.
+    code = groovy_files.mask_slashy(raw)
+    whole = parser.parse(code).root_node
     clean = sorted(_command_offsets(whole, 0))
     errors = _error_spans(whole)
     offsets: list[int] = []
     for start, end in groovy_files.top_level_chunks(raw):
         if any(first < end and last > start for first, last in errors):
-            piece = parser.parse(raw[start:end]).root_node
+            piece = parser.parse(code[start:end]).root_node
             offsets.extend(_command_offsets(piece, start))
         else:
             offsets.extend(clean[bisect_left(clean, start) : bisect_left(clean, end)])
