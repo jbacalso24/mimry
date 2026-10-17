@@ -399,8 +399,10 @@ def _hcl_identifier(raw: bytes, node) -> str | None:
     return _text(raw, child) if child is not None else None
 
 
-def _hcl_block_names(raw: bytes, block) -> list[tuple[str, object]]:
-    """(symbol name, node) pairs one block defines."""
+def _hcl_block_names(raw: bytes, block) -> list[tuple[str, str, object]]:
+    """(symbol name, kind, node) for each symbol one block defines. The
+    kind is the block type: resource, data, module, variable, output,
+    provider, or local for each entry of a locals block."""
     kind = _hcl_identifier(raw, block)
     labels = [_hcl_label(raw, c) for c in block.children if c.type == "string_lit"]
     if any(label is None for label in labels):
@@ -410,15 +412,15 @@ def _hcl_block_names(raw: bytes, block) -> list[tuple[str, object]]:
         if body is None:
             return []
         return [
-            (f"local.{_hcl_identifier(raw, attr)}", attr)
+            (f"local.{_hcl_identifier(raw, attr)}", "local", attr)
             for attr in body.children
             if attr.type == "attribute" and _hcl_identifier(raw, attr)
         ]
     if kind in ("resource", "data") and len(labels) == 2:
         prefix = "data." if kind == "data" else ""
-        return [(f"{prefix}{labels[0]}.{labels[1]}", block)]
+        return [(f"{prefix}{labels[0]}.{labels[1]}", kind, block)]
     if kind in _HCL_SINGLE_LABEL and len(labels) == 1:
-        return [(f"{_HCL_SINGLE_LABEL[kind]}.{labels[0]}", block)]
+        return [(f"{_HCL_SINGLE_LABEL[kind]}.{labels[0]}", kind, block)]
     return []
 
 
@@ -480,7 +482,7 @@ def extract_hcl(root, raw: bytes) -> dict:
         for block in body.children:
             if block.type != "block":
                 continue
-            for name, node in _hcl_block_names(raw, block):
-                _add_unique(definitions, seen, name, "resource", node)
+            for name, kind, node in _hcl_block_names(raw, block):
+                _add_unique(definitions, seen, name, kind, node)
             imports.extend(_hcl_module_source(raw, block))
     return _result(definitions, imports=imports, calls=_hcl_references(root, raw))

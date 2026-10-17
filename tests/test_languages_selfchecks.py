@@ -2448,9 +2448,24 @@ class TestTerraformSymbols:
             "output.arn",
             "provider.aws",
         }
-        assert _symbols(result)["aws_s3_bucket.b"]["kind"] == "resource"
         assert _lines(result, "aws_s3_bucket.b") == (10, 13)
         assert _lines(result, "local.b") == (7, 7)
+
+    def test_each_block_type_is_its_kind(self):
+        kinds = {
+            name: s["kind"] for name, s in _symbols(extract("main.tf", TERRAFORM_MODULE)).items()
+        }
+
+        assert kinds == {
+            "var.region": "variable",
+            "local.name": "local",
+            "local.b": "local",
+            "aws_s3_bucket.b": "resource",
+            "data.aws_iam_policy_document.p": "data",
+            "module.bucket": "module",
+            "output.arn": "output",
+            "provider.aws": "provider",
+        }
 
     def test_references_become_calls_named_as_read(self):
         result = extract("infra/main.tf", TERRAFORM_MODULE)
