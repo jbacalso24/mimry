@@ -1535,3 +1535,17 @@ def test_text_formats_outside_the_text_list_with_credentials_are_not_indexed(tmp
     files, *_ = _collect(repo)
 
     assert [record["rel_path"] for record in files] == ["notes.conf"]
+
+
+def test_long_runs_of_spaces_scan_in_linear_time():
+    import time
+
+    from mimry.security import contains_sensitive_text, redact_sensitive_text
+
+    # Every blank of a run could start an assignment match that fails
+    # at the colon, so 300 lines of 2000 spaces took about a minute.
+    text = "".join(" " * 2000 + f"if ready{i}:\n" for i in range(300))
+    started = time.perf_counter()
+    assert not contains_sensitive_text(text, code=True)
+    assert redact_sensitive_text(text) == text
+    assert time.perf_counter() - started < 5

@@ -119,7 +119,10 @@ SENSITIVE_LABEL_TOKENS = {
 # contain delimiters, and TOML / Python-style triple-quoted values may
 # span lines.
 ASSIGNMENT_RE = re.compile(
-    r"(?ims)(?P<boundary>^|(?<=[{(,;])|(?P<spaced>(?<=[ \t])))"
+    # A spaced boundary is only the last blank before the label: any
+    # earlier blank of the run would rescan the rest of it, which made
+    # long runs of spaces quadratic.
+    r"(?ims)(?P<boundary>^|(?<=[{(,;])|(?P<spaced>(?<=[ \t])(?![ \t])))"
     r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
     r"[ \t]*(?P<operator>(?(spaced)=|[=:]))[ \t]*"
