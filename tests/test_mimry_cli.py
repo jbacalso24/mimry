@@ -2611,6 +2611,32 @@ def test_root_manifest_commands_come_before_nested_ones():
     assert verification_commands(fresh) == ["pnpm build", "pnpm test", "bun run test"]
 
 
+def test_tsconfig_with_comments_and_trailing_commas_reads_like_a_clean_one(tmp_path):
+    _write(
+        tmp_path / "tsconfig.json",
+        '﻿{\n  // app\n  "compilerOptions": {\n    "jsx": "react-jsx", /* x */\n  },\n}\n',
+    )
+
+    assert extract_config_metadata(tmp_path / "tsconfig.json", tmp_path) == (
+        "config-manifest | file tsconfig.json | framework hints typescript"
+        " | typescript jsx react-jsx"
+    )
+
+
+def test_package_json_with_a_bom_keeps_its_scripts(tmp_path):
+    _write(tmp_path / "package.json", "﻿" + json.dumps({"scripts": {"test": "pytest"}}))
+
+    assert "package scripts test" in extract_config_metadata(tmp_path / "package.json", tmp_path)
+
+
+def test_deep_package_json_is_a_parse_error_not_a_crash(tmp_path):
+    _write(tmp_path / "package.json", '{"x": ' + "[" * 120000 + "]" * 120000 + "}")
+
+    assert extract_config_metadata(tmp_path / "package.json", tmp_path).startswith(
+        "config-manifest | file package.json | parse error"
+    )
+
+
 def _check_text(tmp_path: Path, rel: str, body: str) -> str:
     _write(tmp_path / rel, body)
     return extract_config_metadata(tmp_path / rel, tmp_path)

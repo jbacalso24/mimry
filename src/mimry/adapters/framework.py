@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import ast
-import json
 import plistlib
 import re
 from pathlib import Path
 from typing import Any
 
+from ..core.data_files import loads_json
 from ..paths import stable_id
 from .xcode import extract_xcode_targets, parse_pbxproj
 
@@ -269,8 +269,8 @@ def expo_config_facts(path: Path, root: Path, text: str | None = None) -> list[s
     facts = [f"expo config file {rel}", "react native mobile surface"]
     if path.name.endswith(".json"):
         try:
-            data = json.loads(text or "{}")
-        except json.JSONDecodeError:
+            data = loads_json(text or "{}")
+        except ValueError:
             return facts + ["expo config parse error"]
         expo = data.get("expo") if isinstance(data, dict) else {}
         if isinstance(expo, dict):

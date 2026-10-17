@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 DATA_LANGUAGES = frozenset(("yaml", "json", "toml", "xml", "hcl"))
 # Languages whose files over the size limit keep no symbols: the data
@@ -235,6 +236,35 @@ def extract_yaml(root, raw: bytes) -> dict:
         if resource is not None:
             definitions.append(resource)
     return _result(definitions)
+
+
+# JSON read as data: a BOM, nesting past the json module's limit, and
+# (for JSONC) comments and trailing commas. Each failure is a
+# ValueError. Strings come first in each pattern, so a marker inside
+# one is kept.
+_JSON_COMMENT = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
+_JSON_TRAILING_COMMA = re.compile(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])')
+
+
+def _strings_only(found: re.Match) -> str:
+    text = found.group()
+    return text if text.startswith('"') else ""
+
+
+def loads_json(text: str) -> Any:
+    """Parse strict JSON; a leading BOM is ignored."""
+    try:
+        return json.loads(text.removeprefix("\ufeff"))
+    except RecursionError as exc:
+        raise ValueError("JSON nested too deeply") from exc
+
+
+def loads_jsonc(text: str) -> Any:
+    """Parse JSON with comments and trailing commas, as tsconfig.json
+    and editor settings allow. Raises ValueError when it cannot.
+    """
+    text = _JSON_COMMENT.sub(_strings_only, text.removeprefix("\ufeff"))
+    return loads_json(_JSON_TRAILING_COMMA.sub(_strings_only, text))
 
 
 # JSON. Object keys to depth two. A top-level array gives nothing.

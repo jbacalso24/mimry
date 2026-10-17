@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import functools
-import json
 import re
 from pathlib import Path
 from typing import Any
@@ -15,6 +14,7 @@ from .data_files import (
     extract_toml,
     extract_xml,
     extract_yaml,
+    loads_jsonc,
 )
 from .sql_files import extract_statement, new_result, statement_spans, trigger_header
 
@@ -3558,25 +3558,15 @@ TOO_DEEPLY_NESTED = "parse_error:TooDeeplyNested"
 # A data file the grammar could not read. "Error" in the name makes the
 # indexer count it with the other syntax errors.
 MALFORMED_DATA = "parse_error:SyntaxError"
-# Strings, so a comment or comma inside one is kept.
-_JSON_COMMENT = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
-_JSON_TRAILING_COMMA = re.compile(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])')
-
-
-def _strings_only(found: re.Match) -> str:
-    text = found.group()
-    return text if text.startswith('"') else ""
 
 
 def _jsonc_valid(source: str) -> bool:
-    """Whether ``source`` is JSON once comments and trailing commas are
-    dropped. tsconfig.json and editor settings allow both, and the JSON
-    grammar reads them as errors.
+    """Whether ``source`` reads as JSONC. tsconfig.json and editor
+    settings allow comments and trailing commas, which the JSON grammar
+    reads as errors.
     """
-    text = _JSON_COMMENT.sub(_strings_only, source)
-    text = _JSON_TRAILING_COMMA.sub(_strings_only, text)
     try:
-        json.loads(text)
+        loads_jsonc(source)
     except ValueError:
         return False
     return True

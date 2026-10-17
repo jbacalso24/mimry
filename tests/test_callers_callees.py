@@ -935,14 +935,12 @@ def test_tsconfig_path_alias_reaches_the_imported_file(tmp_path):
     assert "broken/page.ts" in res.stdout
 
 
-def test_strip_jsonc_keeps_comment_markers_inside_strings():
-    import json
-
-    from mimry.core.tsconfig import strip_jsonc
+def test_jsonc_keeps_comment_markers_inside_strings():
+    from mimry.core.data_files import loads_jsonc
 
     text = '{"url": "http://x.test//a", /* note */ "list": [1, 2,], // tail\n}'
 
-    assert json.loads(strip_jsonc(text)) == {"url": "http://x.test//a", "list": [1, 2]}
+    assert loads_jsonc(text) == {"url": "http://x.test//a", "list": [1, 2]}
 
 
 def test_extends_cycle_terminates_and_unparsable_config_is_none():

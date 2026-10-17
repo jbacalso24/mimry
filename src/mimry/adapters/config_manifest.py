@@ -9,6 +9,8 @@ import tomllib
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any
 
+from ..core.data_files import loads_json, loads_jsonc
+
 COMMAND_KEYS = ("build", "test", "lint", "typecheck", "dev", "start", "migrate")
 MAKE_FILENAMES = ("Makefile", "GNUmakefile")
 JUST_FILENAMES = ("justfile", "Justfile")
@@ -182,7 +184,7 @@ def _script_command(manager: str, script: str) -> str:
 
 
 def _package_json(text: str, root: Path, rel_dir: str = ".") -> list[str]:
-    data = json.loads(text or "{}")
+    data = loads_json(text or "{}")
     scripts = data.get("scripts") if isinstance(data.get("scripts"), dict) else {}
     deps = {}
     for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
@@ -294,7 +296,7 @@ def _dependency_names(values: list[Any]) -> list[str]:
 
 
 def _tsconfig_json(text: str) -> list[str]:
-    data = json.loads(text or "{}")
+    data = loads_jsonc(text or "{}")
     compiler = data.get("compilerOptions") if isinstance(data.get("compilerOptions"), dict) else {}
     parts = ["framework hints typescript"]
     jsx = compiler.get("jsx") if isinstance(compiler, dict) else None
@@ -320,7 +322,7 @@ def _js_config(text: str, framework: str) -> list[str]:
 def _expo_config(text: str, name: str) -> list[str]:
     parts = ["framework hints expo react-native"]
     if name.endswith(".json"):
-        data = json.loads(text or "{}")
+        data = loads_json(text or "{}")
         expo = data.get("expo") if isinstance(data, dict) else {}
         if isinstance(expo, dict):
             entry = expo.get("entryPoint") or expo.get("scheme")

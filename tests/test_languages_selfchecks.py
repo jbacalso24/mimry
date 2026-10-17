@@ -2858,6 +2858,28 @@ class TestDataFilesThroughScanner:
         assert record["parse_status"] == "ok"
         assert {s["name"] for s in symbols} == {"compilerOptions", "compilerOptions.strict"}
 
+    def test_bom_with_comments_json_keeps_its_keys(self, tmp_path):
+        record, symbols = self._adapt(
+            tmp_path, "config/settings.json", '﻿{\n  // editor\n  "editor.tabSize": 2,\n}\n'
+        )
+
+        assert record["parse_status"] == "ok"
+        assert {s["name"] for s in symbols} == {"editor.tabSize"}
+
+    def test_deep_malformed_json_is_reported_broken_and_does_not_raise(self, tmp_path):
+        # 240 KiB of brackets: past the json module's recursion limit,
+        # and under the size that keeps symbols.
+        source = "[" * 120000 + "]" * 120000 + ","
+        record, _ = self._adapt(tmp_path, "config/deep_err.json", source)
+
+        assert record["parse_status"] == "parse_error:SyntaxError"
+        assert is_code_parse_failure(record["parse_status"], record["adapter"])
+
+    def test_deep_valid_json_does_not_raise(self, tmp_path):
+        record, _ = self._adapt(tmp_path, "config/deep.json", "[" * 30000 + "]" * 30000)
+
+        assert record["parse_status"] == "ok"
+
     def test_lock_file_gets_no_symbols(self, tmp_path):
         record, symbols = self._adapt(
             tmp_path, "package-lock.json", '{"name": "x", "lockfileVersion": 3}\n'

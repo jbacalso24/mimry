@@ -8,8 +8,9 @@ alias table per config folder, following relative ``extends`` chains.
 
 from __future__ import annotations
 
-import json
 import posixpath
+
+from .data_files import loads_jsonc
 
 _JS_EXTENSIONS = (
     ".ts",
@@ -26,78 +27,6 @@ _JS_EXTENSIONS = (
 CONFIG_NAMES = ("tsconfig.json", "jsconfig.json")
 
 
-def strip_jsonc(text: str) -> str:
-    """Remove comments and trailing commas from JSON with comments.
-
-    Characters inside a string literal are kept as they are, so a
-    ``//`` inside a URL survives.
-    """
-    return _drop_trailing_commas(_drop_comments(text))
-
-
-def _drop_comments(text: str) -> str:
-    out: list[str] = []
-    i, n = 0, len(text)
-    in_string = False
-    while i < n:
-        ch = text[i]
-        if in_string:
-            out.append(ch)
-            if ch == "\\" and i + 1 < n:
-                out.append(text[i + 1])
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-            i += 1
-        elif ch == '"':
-            in_string = True
-            out.append(ch)
-            i += 1
-        elif text.startswith("//", i):
-            end = text.find("\n", i)
-            i = n if end < 0 else end
-        elif text.startswith("/*", i):
-            end = text.find("*/", i + 2)
-            i = n if end < 0 else end + 2
-            out.append(" ")
-        else:
-            out.append(ch)
-            i += 1
-    return "".join(out)
-
-
-def _drop_trailing_commas(text: str) -> str:
-    out: list[str] = []
-    i, n = 0, len(text)
-    in_string = False
-    while i < n:
-        ch = text[i]
-        if in_string:
-            out.append(ch)
-            if ch == "\\" and i + 1 < n:
-                out.append(text[i + 1])
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-        elif ch == '"':
-            in_string = True
-            out.append(ch)
-        elif ch == ",":
-            j = i + 1
-            while j < n and text[j] in " \t\r\n":
-                j += 1
-            if j < n and text[j] in "}]":
-                i += 1
-                continue
-            out.append(ch)
-        else:
-            out.append(ch)
-        i += 1
-    return "".join(out)
-
-
 def parse_tsconfig(text: str) -> dict | None:
     """The alias settings one config declares.
 
@@ -106,8 +35,8 @@ def parse_tsconfig(text: str) -> dict | None:
     None when the file does not parse.
     """
     try:
-        data = json.loads(strip_jsonc(text))
-    except (ValueError, RecursionError):
+        data = loads_jsonc(text)
+    except ValueError:
         return None
     if not isinstance(data, dict):
         return None
