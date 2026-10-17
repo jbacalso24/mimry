@@ -167,9 +167,9 @@ def _symbol_lines(fresh: dict, rows: list[dict], limit: int = 12) -> list[str]:
     ]
 
 
-def _file_role(path: str) -> str:
+def _file_role(path: str, *, minified: bool = False) -> str:
     lower = path.lower()
-    if is_likely_edit_surface(path):
+    if is_likely_edit_surface(path, minified=minified):
         return "likely edit surface"
     if is_test_file(path):
         return "test/verification support"
@@ -306,7 +306,7 @@ def _detected_supporting_paths(fresh: dict, rows: list[dict], limit: int = 8) ->
         rel_path = f.get("rel_path", "")
         if rel_path in already:
             continue
-        role = _file_role(rel_path)
+        role = _file_role(rel_path, minified=bool(f.get("minified")))
         if role in {"test/verification support", "docs/rules support", "config/manifest support"}:
             candidates.append(rel_path)
         if len(candidates) >= limit:
@@ -475,7 +475,7 @@ def write_context_pack(
         "",
     ]
     for i, r in enumerate(rows, 1):
-        role = _file_role(r["path"])
+        role = _file_role(r["path"], minified=bool(r.get("minified")))
         phrases = ui.reason_phrases(r["reason"])
         why_line = f"Why: {', '.join(phrases) or 'matches your query'}"
 
@@ -880,6 +880,7 @@ def _symbol_rows(
     match the task are not cut off by an alphabetical slice.
     """
     file_rank = {row["path"]: rank for rank, row in enumerate(rows)}
+    minified = {row["path"] for row in rows if row.get("minified")}
     files_by_id = {f["file_id"]: f for f in fresh["files"]}
     found = []
     for sym in fresh["symbols"]:
@@ -893,7 +894,9 @@ def _symbol_rows(
 
         def key(item):
             sym, rel_path = item
-            support = not tests_asked and not is_likely_edit_surface(rel_path)
+            support = not tests_asked and not is_likely_edit_surface(
+                rel_path, minified=rel_path in minified
+            )
             return _symbol_sort_key(sym, support, file_rank[rel_path], terms)
 
         found.sort(key=key)

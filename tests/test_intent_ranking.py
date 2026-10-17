@@ -623,7 +623,6 @@ def test_repo_noise_table_matches_each_category_and_leaves_look_alikes_alone():
         "static/app.min.mjs",
         "static/jquery-3.1.1-min.js",
         "static/app.bundle.js",
-        "static/app.js.map",
         "CONTRIBUTING.md",
         "CODE_OF_CONDUCT.md",
         "sub/dir/SECURITY.md",
@@ -644,6 +643,8 @@ def test_repo_noise_table_matches_each_category_and_leaves_look_alikes_alone():
         "docs/contributing_guide_notes.md",
         "app.min.ts",
         "src/app.js",
+        "static/app.js.map",
+        "docs/world.map",
     ]
 
     assert [path for path in noise if not is_repo_noise(path)] == []

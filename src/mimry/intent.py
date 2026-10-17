@@ -134,7 +134,8 @@ VENDORED_SEGMENTS = {
     "thirdparty",
     "third-party",
 }
-MINIFIED_SUFFIXES = (".min.js", ".min.css", ".min.mjs", "-min.js", ".bundle.js", ".map")
+# Source maps are matched by content in the scanner, not by name.
+MINIFIED_SUFFIXES = (".min.js", ".min.css", ".min.mjs", "-min.js", ".bundle.js")
 REPO_META_STEMS = {
     "contributing",
     "code_of_conduct",
@@ -608,7 +609,11 @@ def apply_intent_adjustment(
     # lower on every intent, unless the headline asks for that plumbing.
     if is_repo_noise(rel_path, minified=minified) and not set(terms) & REPO_NOISE_TERMS:
         score = int(score * REPO_NOISE_FACTOR)
-        reasons.append("repository template/vendored downrank")
+        # A bundle found by its bytes gets its own reason, not the
+        # template/vendored one, so the reader sees why it was demoted.
+        reasons.append(
+            "minified bundle downrank" if minified else "repository template/vendored downrank"
+        )
 
     if is_edit_intent(terms):
         # A bundle is built, not written: it never takes the source

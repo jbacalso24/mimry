@@ -774,27 +774,62 @@ def _python_imports(node: ast.AST) -> list[str]:
 MINIFIABLE_EXTENSIONS = (".js", ".mjs", ".cjs", ".css")
 # A bundle of at least 20 KB whose lines average over 300 bytes is
 # minified. So is one with a line over 5,000 bytes and under one
-# newline per 1,000 bytes. Hand-written code stays far below both.
+# newline per 1,000 bytes. Both rules need the 20 KB floor, so a short
+# file with one long literal (a base64 image) is not a bundle.
 MINIFIED_MIN_SIZE = 20_000
 MINIFIED_MEAN_LINE = 300
 MINIFIED_LONG_LINE = 5_000
 MINIFIED_BYTES_PER_NEWLINE = 1_000
+# A minifier removes the spaces that people write. Real bundles keep
+# 0.9 to 2.8 percent of the bytes in their long lines as spaces or
+# tabs. English prose and spaced numbers keep 16 to 20 percent. The
+# line between them is 10 percent.
+MINIFIED_MAX_SPACE_SHARE = 0.10
+SOURCE_MAP_HEAD = 4096
+_SOURCE_MAP_KEY = re.compile(rb'"mappings"\s*:')
+
+
+def is_source_map(data):
+    """True when the bytes are a source map: JSON with a mappings key.
+
+    The object opens within the first 4 KB. The "mappings" key is
+    searched in all of the bytes already read for the hash, because
+    bundlers write "sourcesContent" first. In bootstrap's map the key
+    sits at byte 235,527.
+    """
+    if data[:SOURCE_MAP_HEAD].lstrip()[:1] != b"{":
+        return False
+    return _SOURCE_MAP_KEY.search(data) is not None
+
+
+def _space_share(lines):
+    """Share of bytes that are spaces or tabs, over the given lines."""
+    total = sum(len(line) for line in lines)
+    spaces = sum(line.count(b" ") + line.count(b"\t") for line in lines)
+    return spaces / total
 
 
 def is_minified(rel_path, data):
-    """True when a JS or CSS file is a minified bundle.
+    """True when a file is a minified bundle or a source map.
 
-    Judged from the bytes the scanner already reads, so no second read
-    is needed and the name does not matter.
+    A JS or CSS file is judged from its bytes, so the name does not
+    matter. A ``.map`` file is a bundle only when it is a source map.
     """
-    if not rel_path.lower().endswith(MINIFIABLE_EXTENSIONS):
+    name = rel_path.lower()
+    if name.endswith(".map"):
+        return is_source_map(data)
+    if not name.endswith(MINIFIABLE_EXTENSIONS) or len(data) < MINIFIED_MIN_SIZE:
         return False
-    newlines = data.count(b"\n")
-    if len(data) >= MINIFIED_MIN_SIZE and len(data) > MINIFIED_MEAN_LINE * (newlines + 1):
+    lines = data.split(b"\n")
+    newlines = len(lines) - 1
+    long_lines = [line for line in lines if len(line) > MINIFIED_MEAN_LINE]
+    if not long_lines or _space_share(long_lines) > MINIFIED_MAX_SPACE_SHARE:
+        return False
+    if len(data) > MINIFIED_MEAN_LINE * (newlines + 1):
         return True
     if newlines * MINIFIED_BYTES_PER_NEWLINE >= len(data):
         return False
-    return max(len(line) for line in data.split(b"\n")) > MINIFIED_LONG_LINE
+    return max(len(line) for line in lines) > MINIFIED_LONG_LINE
 
 
 def file_record(path, root, adapter, status, hint, snapshot=None):
