@@ -7,6 +7,7 @@ from typing import Any
 
 from .data_files import (
     DATA_LANGUAGES,
+    blank_template_actions,
     extract_hcl,
     extract_json,
     extract_toml,
@@ -3257,8 +3258,11 @@ def _extract_data(path: Path, lang: str, source: str) -> dict:
             "status": TOO_DEEPLY_NESTED,
         }
     raw = source.encode("utf-8")
+    # A YAML template's actions are blanked for the parse only; the
+    # extractors still read names from the source bytes.
+    parsed = blank_template_actions(raw) if lang == "yaml" else raw
     try:
-        root = Parser(load_language(lang)).parse(raw).root_node
+        root = Parser(load_language(lang)).parse(parsed).root_node
     except GrammarUnavailableError:
         return {
             "definitions": [],

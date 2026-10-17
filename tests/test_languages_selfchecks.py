@@ -8,6 +8,7 @@ pointers work correctly.
 import pytest
 
 from mimry.constants import TEXT_EXTS
+from mimry.core.data_files import blank_template_actions
 from mimry.core.languages import (
     EXTENSION_LANGUAGE,
     extract,
@@ -2377,6 +2378,87 @@ class TestYamlSymbols:
 
         assert result["status"] == "ok"
         assert {"apiVersion", "kind", "metadata", "metadata.name"} <= set(_symbols(result))
+
+    def test_deployment_template_keeps_every_key_after_its_actions(self):
+        source = (
+            "apiVersion: apps/v1\n"
+            "kind: Deployment\n"
+            "metadata:\n"
+            '  name: {{ include "web.fullname" . }}\n'
+            "  labels:\n"
+            '    {{- include "web.labels" . | nindent 4 }}\n'
+            "spec:\n"
+            "  replicas: {{ .Values.replicaCount }}\n"
+            "  {{- if .Values.autoscaling.enabled }}\n"
+            "  {{- end }}\n"
+            "  {{/* comment */}}\n"
+            "  selector:\n"
+            "    matchLabels:\n"
+            "      app: web\n"
+            "  template:\n"
+            "    spec:\n"
+            "      containers:\n"
+            "        - name: web\n"
+            '          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"\n'
+            "          env:\n"
+            "          {{- range .Values.env }}\n"
+            "            - name: {{ .name }}\n"
+            "          {{- end }}\n"
+        )
+        result = extract("charts/web/templates/deployment.yaml", source)
+
+        assert result["status"] == "ok"
+        assert _lines(result, "apiVersion") == (1, 1)
+        assert _lines(result, "kind") == (2, 2)
+        assert _lines(result, "metadata") == (3, 5)
+        assert _lines(result, "metadata.name") == (4, 4)
+        assert _lines(result, "metadata.labels") == (5, 5)
+        assert _lines(result, "spec") == (7, 23)
+        assert _lines(result, "spec.replicas") == (8, 8)
+        assert _lines(result, "spec.selector") == (12, 14)
+        assert _lines(result, "spec.template") == (15, 23)
+        assert "spec.template.spec" not in _symbols(result)
+
+    def test_quoted_template_text_stays_in_key_names_and_values_are_not_symbols(self):
+        source = 'msg: "{{ not a template }}"\n"{{ app }}": 1\nafter: 2\n'
+        result = extract("values.yaml", source)
+
+        assert set(_symbols(result)) == {"msg", "{{ app }}", "after"}
+        assert _lines(result, "after") == (3, 3)
+
+    def test_template_used_as_a_key_keeps_the_keys_after_it(self):
+        source = (
+            "metadata:\n"
+            "  name: cm\n"
+            "data:\n"
+            "  {{- range $k, $v := .Values.config }}\n"
+            "  {{ $k }}: {{ $v | quote }}\n"
+            "  {{- end }}\n"
+            "  mode: fast\n"
+        )
+        result = extract("templates/cm.yaml", source)
+
+        assert set(_symbols(result)) == {"metadata", "metadata.name", "data", "data.mode"}
+        assert _lines(result, "data") == (3, 7)
+        assert _lines(result, "data.mode") == (7, 7)
+
+    def test_plain_yaml_is_not_touched_by_the_blanking(self):
+        plain = b"a: 1\nb:\n  c: {x: 2}\n"
+
+        assert blank_template_actions(plain) is plain
+
+    def test_blanking_keeps_length_and_newlines_and_ends_comments_at_star_slash(self):
+        comment = b"{{/* c }} */}}"
+        source = b"a: {{ x\n  y }}\nb: " + comment + b"\nc: 1\n"
+
+        assert blank_template_actions(source) == (
+            b"a: " + b" " * 4 + b"\n" + b" " * 6 + b"\nb: " + b" " * len(comment) + b"\nc: 1\n"
+        )
+
+    def test_action_that_never_closes_is_left_alone(self):
+        source = b"a: {{ x\nb: 1\n"
+
+        assert blank_template_actions(source) == source
 
 
 class TestJsonSymbols:

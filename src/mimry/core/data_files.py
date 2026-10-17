@@ -11,6 +11,7 @@ was parsed from, and returns the shape core.languages.extract() returns.
 from __future__ import annotations
 
 import json
+import re
 
 DATA_LANGUAGES = frozenset(("yaml", "json", "toml", "xml", "hcl"))
 # Languages whose files over the size limit keep no symbols: the data
@@ -171,7 +172,57 @@ def _yaml_resource(raw: bytes, document):
     return _symbol(f"{kind}/{name}", "resource", document)
 
 
+# Helm and other template actions. Blanking them lets the YAML around
+# them parse, so the keys after the first action survive.
+_TEMPLATE_COMMENT_OPEN = re.compile(rb"-?\s*/\*")
+_TEMPLATE_KEY_NEXT = re.compile(rb"[ \t]*:(?:[ \t\r\n]|$)")
+_NOT_LINE_BREAK = re.compile(rb"[^\r\n]")
+
+
+def _action_end(raw: bytes, body: int) -> int:
+    """Offset just past the template action whose body starts at
+    ``body``, or -1 when it never closes. A comment action closes at
+    its ``*/``, so a ``}}`` inside the comment does not end it.
+    """
+    comment = _TEMPLATE_COMMENT_OPEN.match(raw, body)
+    if comment is not None:
+        star = raw.find(b"*/", comment.end())
+        if star < 0:
+            return -1
+        body = star + 2
+    # ponytail: a "}}" inside a string literal ends the action early.
+    # Rare in charts; skip string literals if it ever bites.
+    close = raw.find(b"}}", body)
+    return -1 if close < 0 else close + 2
+
+
+def blank_template_actions(raw: bytes) -> bytes:
+    """``raw`` with every ``{{ ... }}`` action turned into spaces.
+
+    Newlines stay and every byte keeps its place, so byte offsets and
+    line numbers hold. An action used as a key (followed by ``:``) is
+    filled with ``x`` instead, so its line still has a key and the
+    keys after it still parse. An action that never closes is left as
+    it is, and so is the rest of the text: no later action can close.
+    """
+    if b"{{" not in raw:
+        return raw
+    out = bytearray(raw)
+    pos = 0
+    while (start := raw.find(b"{{", pos)) >= 0:
+        end = _action_end(raw, start + 2)
+        if end < 0:
+            break
+        filler = b"x" if _TEMPLATE_KEY_NEXT.match(raw, end) else b" "
+        out[start:end] = _NOT_LINE_BREAK.sub(filler, raw[start:end])
+        pos = end
+    return bytes(out)
+
+
 def extract_yaml(root, raw: bytes) -> dict:
+    """``root`` parses the blanked text, ``raw`` is the source. Names
+    are read from ``raw``, so a quoted key keeps its template text.
+    """
     definitions: list[dict] = []
     # A stream holds one child per document. After a parse error the
     # root can be the error node itself, standing for the one document.
