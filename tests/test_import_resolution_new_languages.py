@@ -1144,7 +1144,9 @@ class TestElixirImports:
 
 
 class TestHaskellImports:
-    """Haskell `X.Y` is `X/Y.hs` under any source root."""
+    """`import X.Y` is the file whose `module X.Y` header declares it.
+    With no header for it, the file at `X/Y.hs` under any folder.
+    """
 
     def test_module_under_src_resolves(self):
         imports = {"app/Main.hs": ["Data.Shapes.Area"]}
@@ -1153,8 +1155,47 @@ class TestHaskellImports:
         results = resolve_imports(imports, rel_paths)
 
         assert [(r["target"], r["confidence"]) for r in results] == [
-            ("src/Data/Shapes/Area.hs", "INFERRED")
+            ("src/Data/Shapes/Area.hs", "EXTRACTED")
         ]
+
+    def test_header_declared_module_is_an_exact_edge(self):
+        imports = {"app/Main.hs": ["Shapes.Area"]}
+        rel_paths = {"app/Main.hs", "src/Shapes/Area.hs"}
+        modules = {"Shapes.Area": ["src/Shapes/Area.hs"]}
+
+        results = resolve_imports(imports, rel_paths, haskell_modules=modules)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/Shapes/Area.hs", "EXTRACTED")
+        ]
+
+    def test_longer_module_is_not_matched(self):
+        """`Shapes.Area` must not reach `Shapes/Area/Internal.hs`, by
+        header or by path.
+        """
+        imports = {"app/Main.hs": ["Shapes.Area"]}
+        rel_paths = {"app/Main.hs", "src/Shapes/Area/Internal.hs"}
+        modules = {"Shapes.Area.Internal": ["src/Shapes/Area/Internal.hs"]}
+
+        assert resolve_imports(imports, rel_paths, haskell_modules=modules) == []
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_external_import_is_no_edge(self):
+        imports = {"app/Main.hs": ["Data.Map"]}
+        rel_paths = {"app/Main.hs", "src/Shapes/Area.hs"}
+        modules = {"Shapes.Area": ["src/Shapes/Area.hs"]}
+
+        assert resolve_imports(imports, rel_paths, haskell_modules=modules) == []
+
+    def test_ambiguous_header_keeps_the_path_rule(self):
+        """Two files declaring one module: no header edge, and the path
+        rule finds two files too, so still no edge.
+        """
+        imports = {"app/Main.hs": ["Shapes.Area"]}
+        rel_paths = {"app/Main.hs", "a/Shapes/Area.hs", "b/Shapes/Area.hs"}
+        modules = {"Shapes.Area": ["a/Shapes/Area.hs", "b/Shapes/Area.hs"]}
+
+        assert resolve_imports(imports, rel_paths, haskell_modules=modules) == []
 
     def test_module_at_the_repo_root_resolves(self):
         imports = {"app/Main.hs": ["Geometry.Point"]}
@@ -1444,13 +1485,35 @@ class TestFortranImports:
         results = resolve_imports(imports, rel_paths, fortran_modules=modules)
 
         assert [(r["target"], r["confidence"]) for r in results] == [
-            ("src/shapes.f90", "INFERRED")
+            ("src/shapes.f90", "EXTRACTED")
+        ]
+
+    def test_use_matches_the_module_name_without_case(self):
+        imports = {"app/main.f90": ["SOLVER_MOD"]}
+        rel_paths = {"app/main.f90", "src/solver.f90"}
+        modules = {"solver_mod": ["src/solver.f90"]}
+
+        results = resolve_imports(imports, rel_paths, fortran_modules=modules)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/solver.f90", "EXTRACTED")
         ]
 
     def test_intrinsic_module_never_resolves(self):
-        imports = {"app/main.f90": ["iso_fortran_env", "ieee_arithmetic"]}
+        imports = {
+            "app/main.f90": [
+                "iso_fortran_env",
+                "iso_c_binding",
+                "omp_lib",
+                "ieee_arithmetic",
+            ]
+        }
         rel_paths = {"app/main.f90", "src/env.f90"}
-        modules = {"iso_fortran_env": ["src/env.f90"]}
+        modules = {
+            "iso_fortran_env": ["src/env.f90"],
+            "iso_c_binding": ["src/env.f90"],
+            "omp_lib": ["src/env.f90"],
+        }
 
         assert resolve_imports(imports, rel_paths, fortran_modules=modules) == []
 
@@ -1614,6 +1677,46 @@ def test_fortran_and_pascal_names_match_without_case(tmp_path):
     assert ("go", "report") in _graph_pairs(root, "calls")
     assert ("Run", "draw") in _graph_pairs(root, "calls")
     assert ("TCircle", "TShape") in _graph_pairs(root, "inherits")
+
+
+def _import_confidences(root):
+    graph = json.loads(
+        (root / ".mimry" / "mimry-out" / "graph" / "graph.json").read_text(encoding="utf-8")
+    )
+    labels = {n["id"]: n.get("label") for n in graph["nodes"]}
+    return {
+        (labels.get(e["source"]), labels.get(e["target"])): e.get("confidence")
+        for e in graph["edges"]
+        if e["relation"] == "imports"
+    }
+
+
+def test_haskell_and_fortran_imports_index_as_exact_edges(tmp_path):
+    """The indexer hands each module map to the resolver, so a unique
+    module links with EXTRACTED and a longer module or an intrinsic
+    links to nothing.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "src/Shapes/Area.hs": "module Shapes.Area where\n\narea r = r * r\n",
+            "src/Shapes/Area/Internal.hs": "module Shapes.Area.Internal where\n\nsecret = 42\n",
+            "app/Main.hs": "module Main where\n\nimport Shapes.Area\n\nmain = print (area 2)\n",
+            "src/solver.f90": (
+                "module solver_mod\ncontains\n  subroutine solve(x)\n"
+                "  end subroutine solve\nend module solver_mod\n"
+            ),
+            "src/main.f90": (
+                "program main\n  use iso_fortran_env\n  use solver_mod\nend program main\n"
+            ),
+        },
+    )
+
+    assert _import_confidences(root) == {
+        ("app/Main.hs", "src/Shapes/Area.hs"): "EXTRACTED",
+        ("src/main.f90", "src/solver.f90"): "EXTRACTED",
+    }
 
 
 class TestStyleImports:

@@ -598,14 +598,18 @@ def _respelled(record: dict, field: str, spellings: dict) -> dict:
     return {**record, field: name}
 
 
-def _fortran_module_files(files, symbols) -> dict:
-    """lower(module name) -> [rel_path, ...] for each Fortran module."""
+def _declared_modules(files, symbols, language: str, *, fold_case: bool = False) -> dict:
+    """module name -> [rel_path, ...] for each module a file of
+    ``language`` declares. ``fold_case`` lower-cases the names, for
+    Fortran, whose module names ignore case.
+    """
     rel_path_of = {f["file_id"]: f["rel_path"] for f in files}
     modules: dict[str, list] = {}
     for sym in symbols:
         rel_path = rel_path_of.get(sym["file_id"])
-        if sym.get("language") == "fortran" and sym["kind"] == "module" and rel_path:
-            modules.setdefault(sym["name"].lower(), []).append(rel_path)
+        if sym.get("language") == language and sym["kind"] == "module" and rel_path:
+            name = sym["name"].lower() if fold_case else sym["name"]
+            modules.setdefault(name, []).append(rel_path)
     return modules
 
 
@@ -810,7 +814,8 @@ def _build_core_graph(
         dart_packages,
         go_modules,
         ts_paths=ts_paths,
-        fortran_modules=_fortran_module_files(files, symbols),
+        fortran_modules=_declared_modules(files, symbols, "fortran", fold_case=True),
+        haskell_modules=_declared_modules(files, symbols, "haskell"),
     )
 
     graph["edges"] += _import_graph_edges(import_edges, file_id_of)

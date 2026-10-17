@@ -82,6 +82,7 @@ def resolve_imports(
     go_modules: dict[str, list[str]] | None = None,
     ts_paths: dict[str, dict] | None = None,
     fortran_modules: dict[str, list[str]] | None = None,
+    haskell_modules: dict[str, list[str]] | None = None,
 ) -> list[dict]:
     """Resolve import strings to repo-relative target files.
 
@@ -100,12 +101,15 @@ def resolve_imports(
             folder, from tsconfig.build_ts_paths.
         fortran_modules: Lower-cased Fortran module name to the files
             that define a module of that name, for `use` statements.
+        haskell_modules: Haskell module name to the files whose
+            `module` header declares it, for `import` statements.
 
     Returns:
         Sorted list of {"importer": str, "target": str,
-        "confidence": str}. Confidence is "EXTRACTED" (rule 1/2) or
-        "INFERRED" (rule 3/4). Unresolvable imports are dropped; no
-        result for ambiguous rule-4 matches.
+        "confidence": str}. Confidence is "EXTRACTED" (rule 1/2, and
+        a unique Fortran or Haskell module) or "INFERRED" (rule 3/4).
+        Unresolvable imports are dropped; no result for ambiguous
+        rule-4 matches.
     """
     results = []
     go_package_files = _build_go_package_files(rel_paths) if go_modules else {}
@@ -144,6 +148,7 @@ def resolve_imports(
                     dart_packages,
                     ts_paths=ts_paths,
                     fortran_modules=fortran_modules,
+                    haskell_modules=haskell_modules,
                     pascal_units=pascal_units,
                 )
                 targets = [target] if target else []
@@ -173,6 +178,7 @@ def _resolve_import(
     ts_paths: dict[str, dict] | None = None,
     fortran_modules: dict[str, list[str]] | None = None,
     pascal_units: dict[str, list[str]] | None = None,
+    haskell_modules: dict[str, list[str]] | None = None,
 ) -> dict | None:
     """Try to resolve a single import against available paths.
 
@@ -198,6 +204,8 @@ def _resolve_import(
         module += "/"
     if language == "fortran":
         return _resolve_fortran(importer, module, rel_paths, fortran_modules or {})
+    if language == "haskell":
+        return _resolve_haskell(importer, module, rel_paths, exact_lookup, haskell_modules or {})
     if language == "pascal":
         return _resolve_pascal(importer, module, rel_paths, pascal_units or {})
     if language in _SCRIPT_RESOLVERS:
@@ -394,12 +402,24 @@ def _resolve_elixir(
 
 
 def _resolve_haskell(
-    importer: str, module: str, rel_paths: set[str], exact_lookup: dict
+    importer: str,
+    module: str,
+    rel_paths: set[str],
+    exact_lookup: dict,
+    declared: dict[str, list[str]],
 ) -> dict | None:
-    """Haskell `X.Y` is `X/Y.hs` under any source root, as a unique
-    path suffix.
+    """`import X.Y` is the one file whose `module X.Y` header declares
+    it. Otherwise the one file at `X/Y.hs` or `X/Y.lhs` under any
+    folder. Several matches name nothing.
     """
-    return _unique_path_suffix(exact_lookup, module.replace(".", "/") + ".hs")
+    files = declared.get(module, [])
+    if len(files) == 1:
+        return {"path": files[0], "confidence": "EXTRACTED"}
+    base = module.replace(".", "/")
+    files = exact_lookup.get(base + ".hs", []) + exact_lookup.get(base + ".lhs", [])
+    if len(files) == 1:
+        return {"path": files[0], "confidence": "EXTRACTED"}
+    return None
 
 
 def _resolve_ocaml(
@@ -468,7 +488,7 @@ def _resolve_fortran(
         return None
     matches = modules.get(name, [])
     if len(matches) == 1:
-        return {"path": matches[0], "confidence": "INFERRED"}
+        return {"path": matches[0], "confidence": "EXTRACTED"}
     return None
 
 
@@ -751,7 +771,6 @@ _SCRIPT_RESOLVERS = {
     "perl": _resolve_perl,
     "zig": _resolve_zig,
     "elixir": _resolve_elixir,
-    "haskell": _resolve_haskell,
     "ocaml": _resolve_ocaml,
     "ocaml_interface": _resolve_ocaml,
     "r": _resolve_r,
