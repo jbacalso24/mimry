@@ -1880,7 +1880,7 @@ def test_fortran_extracts_units_types_interfaces_imports_and_calls(tmp_path):
         ("area", "interface", 7, 9),
         ("circle_area", "function", 11, 15),
         ("report", "function", 16, 20),
-        ("main", "module", 22, 25),
+        ("main", "program", 22, 25),
     }
     imports = [(i["module"], i["line"]) for i in result["imports"]]
     assert imports == [("iso_fortran_env", 2), ("geometry", 23)]
@@ -1961,6 +1961,7 @@ def test_pascal_uses_in_names_the_path_and_class_lists_each_ancestor(tmp_path):
     result = _extract(tmp_path, "Main.dpr", source)
     # The in clause is a grammar error, yet the file is still read.
     assert result["status"] == "ok", result["status"]
+    assert ("Main", "program") in {(d["name"], d["kind"]) for d in result["definitions"]}
     assert [(i["module"], i["line"]) for i in result["imports"]] == [
         ("lib/Foo.pas", 2),
         ("Bar", 2),

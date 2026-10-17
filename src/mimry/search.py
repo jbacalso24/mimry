@@ -7,7 +7,12 @@ from pathlib import Path
 
 from .core.artifacts import graph_available, graph_rows
 from .core.documents import DOCUMENT_UNITS
-from .core.languages import EXTENSION_LANGUAGE, file_language
+from .core.languages import (
+    EXTENSION_LANGUAGE,
+    LANGUAGE_LABELS,
+    file_language,
+    grammars_named,
+)
 from .feedback import apply_feedback_to_rows
 from .intent import (
     CJK_RUN_RE,
@@ -99,7 +104,8 @@ def _search_scope(*, languages=None, path_globs=None, exclude_globs=None, offset
             raise ValueError("language must not be empty")
         if value not in EXTENSION_LANGUAGE.values():
             value = LANGUAGE_ALIASES.get(value, value)
-        normalized_languages.append(value)
+        named = () if value in EXTENSION_LANGUAGE.values() else grammars_named(value)
+        normalized_languages.extend(named or (value,))
     return {
         "languages": tuple(dict.fromkeys(normalized_languages)),
         "path_globs": _validated_globs(path_globs, "path glob"),
@@ -360,10 +366,8 @@ def find_rows(
     known_languages = set(EXTENSION_LANGUAGE.values()).union(*languages_by_path.values())
     unknown = [language for language in scope["languages"] if language not in known_languages]
     if unknown:
-        raise ValueError(
-            f"unknown language {', '.join(unknown)}; use one of: "
-            + ", ".join(sorted(known_languages))
-        )
+        shown = sorted({LANGUAGE_LABELS.get(g, g) for g in known_languages}, key=str.casefold)
+        raise ValueError(f"unknown language {', '.join(unknown)}; use one of: " + ", ".join(shown))
     fts_scores = _fts_scores(idx, q)
     id_by_path = {f["rel_path"]: f["file_id"] for f in files}
     known_paths = set(id_by_path)

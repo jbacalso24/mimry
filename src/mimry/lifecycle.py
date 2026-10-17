@@ -471,6 +471,10 @@ def print_index_result(
             print_rows_capped(rows)
         else:
             ui.detail("No file contents changed since the last index")
+    if stats.get("parser_reparsed"):
+        ui.detail(
+            f"Reparsed {ui.count(stats['parser_reparsed'], 'file')} for the new MIMRY version"
+        )
     ui.detail(totals(stats["files"], stats["symbols"], stats["edges"]))
     if (stats.get("history") or {}).get("shallow"):
         ui.detail("shallow history: only the commits this clone has are indexed")

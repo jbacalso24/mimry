@@ -46,7 +46,7 @@ Use `mimry --root /path/to/repo <command>` to target another repo.
 ## Filtering and paging `find`
 
 `find` applies every filter before pagination.
-`--language` matches a file by its extension and by the languages of the symbols indexed in it, accepts extensions as names (`py`, `ts`, `rs`), counts `.tsx` files as TypeScript, and rejects names it does not know.
+`--language` matches a file by its extension and by the languages of the symbols indexed in it, accepts extensions and display names as names (`py`, `ts`, `rs`, `Terraform`), counts `.tsx` files as TypeScript, and rejects names it does not know.
 Path globs are case-sensitive and repository-relative.
 `*` matches within one path segment, and `**` matches zero or more whole segments, so `*.py` matches only files at the root and `**/*.py` matches Python files at any depth.
 The active scope is shown in CLI output, in the MCP `scope` field and in verbose ranking reasons.

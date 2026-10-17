@@ -388,6 +388,9 @@ def _collect(
     fts_body_by_file_id: dict[str, str] = {}
     pieces_by_file_id: dict[str, list] = {}
     todo: list[tuple[str, Path]] = []
+    # Built by other MIMRY code: unchanged files are re-parsed anyway.
+    parser_changed = stat_cache is not None and stat_cache.fingerprint != code_fingerprint()
+    parser_reparsed = 0
     for rel_path, path, live in candidates:
         # Config manifests read sibling lockfiles, so their output is
         # not a function of their own bytes alone; always re-adapt them.
@@ -400,6 +403,9 @@ def _collect(
                 reused[rel_path] = None
                 stat_entries[rel_path] = stat_cache.entries[rel_path]
                 continue
+        if parser_changed and not is_config_manifest(path):
+            if stat_cache.trusts(rel_path, live, INDEXED):
+                parser_reparsed += 1
         todo.append((rel_path, path))
     adapted = dict(
         zip(
@@ -504,6 +510,7 @@ def _collect(
     if record is not None:
         record["oversized"] = oversized
         record["grammar_error"] = grammar_error
+        record["parser_reparsed"] = parser_reparsed
         record["stat_entries"] = stat_entries
         record["adapt_lines"] = adapt_lines
         record["chunks"] = chunks_by_file_id
@@ -1306,4 +1313,5 @@ def write_index(root, ptr, *, full: bool = False):
         "grammar_error": grammar_error,
         "parse_errors": len(parse_errors),
         "parse_error_files": parse_errors[:PARSE_ERROR_FILES_SHOWN],
+        "parser_reparsed": record["parser_reparsed"],
     }

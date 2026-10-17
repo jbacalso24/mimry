@@ -846,6 +846,32 @@ def test_upgrade_rebuild_leaves_no_text_from_the_previous_build(
     assert leaked == []
 
 
+def test_upgrade_reparse_of_unchanged_files_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    import mimry.reuse as reuse
+    from mimry.lifecycle import print_index_result
+
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    # Old enough that the stat identities are not racy.
+    old = time.time() - 3600
+    for path in repo.rglob("*"):
+        if path.is_file() and ".git" not in path.parts:
+            os.utime(path, (old, old))
+    write_index(repo, load_pointer(repo))
+    monkeypatch.setattr(reuse, "_FINGERPRINT", "a-newer-mimry")
+
+    stats = write_index(repo, load_pointer(repo))
+    print_index_result(repo, stats, 0.1, full=False)
+
+    assert stats["changes"]["changed"] == []
+    assert stats["parser_reparsed"] > 0
+    out = capsys.readouterr().out
+    assert f"Reparsed {stats['parser_reparsed']} file" in out
+    assert "for the new MIMRY version" in out
+
+
 def test_semantic_generation_swap_is_detected_as_corrupt(tmp_path: Path, monkeypatch):
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))

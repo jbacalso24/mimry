@@ -632,6 +632,34 @@ def supported_languages() -> list[tuple[str, list[str]]]:
     return [(label, sorted(exts)) for label, exts in groups.items()]
 
 
+@functools.cache
+def _language_name_index() -> dict[str, tuple[str, ...]]:
+    """Casefolded name -> grammar names, for --language."""
+    index: dict[str, list[str]] = {}
+
+    def add(name: str, grammar: str) -> None:
+        grammars = index.setdefault(name.casefold(), [])
+        if grammar not in grammars:
+            grammars.append(grammar)
+
+    for grammar in sorted(set(EXTENSION_LANGUAGE.values()) | set(LANGUAGE_LABELS)):
+        add(grammar, grammar)
+    for grammar, label in LANGUAGE_LABELS.items():
+        add(label, grammar)
+        # "Terraform (HCL)" is also typed as Terraform or as HCL.
+        add(re.sub(r"\s*\(.*\)$", "", label), grammar)
+        for inner in re.findall(r"\(([^)]*)\)", label):
+            add(inner, grammar)
+    return {name: tuple(grammars) for name, grammars in index.items()}
+
+
+def grammars_named(name: str) -> tuple[str, ...]:
+    """Grammars a --language name selects, in any case: a grammar name
+    or a display name such as Terraform or Objective-C. Empty if none.
+    """
+    return _language_name_index().get(name.strip().casefold(), ())
+
+
 def language_counts(files: list[dict], symbols: list[dict]) -> dict[str, int]:
     """Indexed files per display language, as `find --lang` sees them.
 
@@ -653,7 +681,7 @@ def language_counts(files: list[dict], symbols: list[dict]) -> dict[str, int]:
 
 # Kinds that the generic rules below get wrong for these languages: a
 # Solidity enum or struct is a type, and a Fortran module or Pascal unit
-# is a module.
+# is a module. A Fortran or Pascal program is a program, not a module.
 _LANGUAGE_KINDS = {
     ("solidity", "contract_declaration"): "class",
     ("solidity", "library_declaration"): "class",
@@ -666,11 +694,11 @@ _LANGUAGE_KINDS = {
     ("solidity", "error_declaration"): "type",
     ("fortran", "module"): "module",
     ("fortran", "submodule"): "module",
-    ("fortran", "program"): "module",
+    ("fortran", "program"): "program",
     ("fortran", "interface"): "interface",
     ("fortran", "derived_type_definition"): "type",
     ("pascal", "unit"): "module",
-    ("pascal", "program"): "module",
+    ("pascal", "program"): "program",
     ("pascal", "library"): "module",
     # A selector is named with its dot, hash or percent sign. A
     # keyframes name is type-like, and a custom property or SCSS

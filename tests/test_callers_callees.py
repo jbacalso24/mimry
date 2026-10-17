@@ -305,8 +305,9 @@ def test_callers_lists_each_caller_with_its_file_and_line(tmp_path):
 
     assert res.returncode == 0, res.stderr
     assert "2 callers of helper (app/one.py:1)" in res.stdout
-    assert "app/one.py" in res.stdout and "main" in res.stdout and ":9" in res.stdout
-    assert "app/two.py" in res.stdout and "helper2 (inferred)" in res.stdout and ":4" in res.stdout
+    assert "app/one.py" in res.stdout and "main" in res.stdout and "line 9" in res.stdout
+    assert "app/two.py" in res.stdout and "helper2 (inferred)" in res.stdout
+    assert "line 4" in res.stdout
     assert "main (inferred)" not in res.stdout
     assert res.stdout.rstrip().endswith(f"{NOTE} {INFERRED}")
 
@@ -319,7 +320,7 @@ def test_callees_lists_what_the_function_calls(tmp_path):
 
     assert res.returncode == 0, res.stderr
     assert "1 callee of helper (app/one.py:1)" in res.stdout
-    assert "leaf" in res.stdout and ":5" in res.stdout
+    assert "leaf" in res.stdout and "line 5" in res.stdout
 
 
 def test_depth_two_from_leaf_reaches_main(tmp_path):

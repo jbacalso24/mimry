@@ -295,14 +295,26 @@ def test_git_ignore_flag_removes_only_mimry_block(ignore_file, capsys):
     assert "Removed MIMRY from the global git ignore" in capsys.readouterr().out
 
 
-def test_without_the_flag_the_block_stays_and_a_line_says_how(ignore_file, capsys):
+def test_without_the_flag_the_block_stays_and_a_line_says_how(ignore_file, user, capsys):
+    installer.install_skill("claude-code", project=False, root=user)
     text = "node_modules/\n" + GLOBAL_LINES + "build/\n"
     ignore_file.write_text(text, encoding="utf-8")
+    capsys.readouterr()
 
     assert main(["uninstall", "--platform", "claude-code"]) == 0
 
     assert ignore_file.read_text(encoding="utf-8") == text
     assert "--git-ignore" in capsys.readouterr().out
+
+
+def test_nothing_installed_prints_only_nothing_to_remove(ignore_file, capsys):
+    ignore_file.write_text(GLOBAL_LINES, encoding="utf-8")
+
+    assert main(["uninstall", "--platform", "claude-code"]) == 0
+
+    out = capsys.readouterr().out
+    assert "Nothing to remove" in out
+    assert "global git ignore" not in out
 
 
 def test_git_ignore_flag_keeps_a_user_mimry_out_line(ignore_file):

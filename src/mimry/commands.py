@@ -972,7 +972,7 @@ def _print_calls(a, relation: str) -> int:
 
 def _call_row(result: dict, depth: int) -> tuple:
     name = result["name"] + inferred_mark(result["confidence"])
-    cells = [name, result["kind"], f":{result['line']}" if result["line"] else ""]
+    cells = [name, result["kind"], f"line {result['line']}" if result["line"] else ""]
     if depth > 1:
         cells.append("direct" if result["depth"] == 1 else f"{result['depth']} calls away")
     return tuple(cells)

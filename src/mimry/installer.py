@@ -2268,7 +2268,7 @@ def cmd_install(a) -> int:
 def cmd_uninstall(a) -> int:
     if not a.platform:
         raise SystemExit(ui.error_text("Choose a platform with --platform <name>"))
-    uninstall_skill(
+    removed = uninstall_skill(
         a.platform,
         project=a.project,
         root=Path(a.root),
@@ -2277,6 +2277,9 @@ def cmd_uninstall(a) -> int:
         mcp=not a.no_mcp,
     )
     # Git's global ignore is per machine and shared by every install, so
-    # it is only touched when asked for.
-    _uninstall_global_ignore(remove=getattr(a, "git_ignore", False))
+    # it is only touched when asked for. Its "left in place" note only
+    # follows an uninstall that removed something.
+    remove_ignore = getattr(a, "git_ignore", False)
+    if removed or remove_ignore:
+        _uninstall_global_ignore(remove=remove_ignore)
     return 0

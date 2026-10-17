@@ -340,9 +340,14 @@ def test_language_filter_keeps_files_without_symbols_and_accepts_extensions(tmp_
     assert by_extension == by_name
 
 
+def test_display_names_select_their_grammar_in_any_case():
+    scope = search._search_scope(languages=["Terraform", "TypeScript", "ObjC", "py"])
+    assert scope["languages"] == ("hcl", "typescript", "objc", "python")
+
+
 def test_unknown_language_is_rejected_with_the_valid_names(tmp_path, monkeypatch):
     _repo, ptr = _indexed(tmp_path, monkeypatch)
-    with pytest.raises(ValueError, match=r"unknown language cobol; use one of: .*python"):
+    with pytest.raises(ValueError, match=r"unknown language cobol; use one of: .*Python"):
         find_rows(Path(ptr["indexPath"]), "auth session", languages=["cobol"])
 
 
