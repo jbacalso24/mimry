@@ -23,6 +23,8 @@ MIMRY should understand a repo through small, inspectable adapter plugins before
 | `swift-ios` | Xcode project, entitlements and plist parsers | `.pbxproj`, `.entitlements`, `.plist` | xcode targets, entitlements, app groups, bundle IDs, reference edges | Maps iOS targets, entitlements, app extensions and App Groups for native mobile work |
 | `generic-text` | Safe text hints | fallback | files, metadata, content hints | Docs/config fallback while keeping sensitive files skipped |
 
+`.pp` and `.m` are checked first: a file keeps its Pascal or Objective-C language only when its content shows it, and otherwise it is indexed as text.
+
 Documents up to 20 MB are read, whole: up to 2,000 pages, sections, sheets or slides and 2,000,000 characters per file. Results name the page, section, sheet or slide they match. Other files stop at 1 MB.
 Note: Raster images (PNG, JPG) require OCR or vision models and are not supported.
 

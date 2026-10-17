@@ -568,6 +568,28 @@ def is_objc_header(data: bytes) -> bool:
     return _OBJC_HEADER_MARKER.search(data) is not None
 
 
+# `.pp` is mostly Puppet and `.m` is mostly MATLAB, so each is claimed
+# for its language only when its opening lines say so. Only the first
+# 64 KB is searched.
+_SNIFF_BYTES = 64 * 1024
+_PASCAL_UNIT_MARKER = re.compile(
+    rb"^[ \t]*(?:unit|program|library)[ \t]+[\w.]+[ \t]*;", re.M | re.I
+)
+_OBJC_SOURCE_MARKER = re.compile(
+    rb"^[ \t]*(?:@interface|@protocol|@implementation|#import)\b", re.M
+)
+
+
+def is_pascal_source(data: bytes) -> bool:
+    """Whether a `.pp` file holds a Pascal unit or program."""
+    return _PASCAL_UNIT_MARKER.search(data[:_SNIFF_BYTES]) is not None
+
+
+def is_objc_source(data: bytes) -> bool:
+    """Whether a `.m` file holds Objective-C rather than MATLAB."""
+    return _OBJC_SOURCE_MARKER.search(data[:_SNIFF_BYTES]) is not None
+
+
 def language_for(path: str | Path, overrides: dict[str, str] | None = None) -> str | None:
     """Grammar name for a path's extension, or None if unsupported.
 
@@ -580,6 +602,26 @@ def language_for(path: str | Path, overrides: dict[str, str] | None = None) -> s
     if overrides and ext in overrides:
         return overrides[ext]
     return EXTENSION_LANGUAGE.get(ext)
+
+
+# Extensions the scanner checks against the content (see
+# scanner._content_checked). A file that fails the check is indexed as
+# text, so it has no language.
+CONTENT_CHECKED_EXTENSIONS = frozenset({".pp", ".m"})
+
+
+def file_language(record: dict) -> str | None:
+    """The language of an indexed file record, by its path.
+
+    The scanner's decision wins: a content-checked file the scanner left
+    as text (adapter "generic") has none.
+    """
+    rel_path = record.get("rel_path") or ""
+    if record.get("adapter") == "generic" and Path(rel_path).suffix.lower() in (
+        CONTENT_CHECKED_EXTENSIONS
+    ):
+        return None
+    return language_for(rel_path)
 
 
 def supported_languages() -> list[tuple[str, list[str]]]:
@@ -603,9 +645,7 @@ def language_counts(files: list[dict], symbols: list[dict]) -> dict[str, int]:
             symbol_language.setdefault(symbol.get("file_id"), symbol["language"])
     counts: dict[str, int] = {}
     for record in files:
-        language = language_for(record.get("rel_path") or "") or symbol_language.get(
-            record.get("file_id")
-        )
+        language = file_language(record) or symbol_language.get(record.get("file_id"))
         name = LANGUAGE_LABELS.get(language, language.title()) if language else "other"
         counts[name] = counts.get(name, 0) + 1
     return counts

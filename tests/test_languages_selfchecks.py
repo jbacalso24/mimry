@@ -8,8 +8,17 @@ pointers work correctly.
 import pytest
 
 from mimry.constants import TEXT_EXTS
-from mimry.core.languages import EXTENSION_LANGUAGE, extract, is_objc_header, language_for
+from mimry.core.languages import (
+    EXTENSION_LANGUAGE,
+    extract,
+    is_objc_header,
+    is_objc_source,
+    is_pascal_source,
+    language_for,
+)
 from mimry.intent import TEST_NAME_RE
+from mimry.scanner import adapt
+from mimry.settings import IndexSettings
 
 
 class TestLanguageFor:
@@ -1184,6 +1193,98 @@ def test_objc_header_extracts_its_classes_and_functions(tmp_path):
         ("B", "class"),
         ("helper", "function"),
     }
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        (b"unit Geometry;\ninterface\n", True),
+        (b"  PROGRAM Hello;\nbegin end.\n", True),
+        (b"library Plugin;\n", True),
+        (b"unit Geometry.Shapes;\n", True),
+        (b"class nginx {\n  include web\n}\n", False),
+        (b"node 'web01' {\n  include nginx\n}\n", False),
+        (b"unit => 'metric',\n", False),
+        (b"{ unit Geometry; }\n", False),
+    ],
+)
+def test_pascal_source_is_recognised_by_its_unit_line(source, expected):
+    """A `.pp` file is Pascal when a line starts with `unit`, `program`
+    or `library` and a name. Puppet manifests have no such line.
+    """
+    assert is_pascal_source(source) is expected
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        (b"@interface B : NSObject\n@end\n", True),
+        (b"  @implementation A\n", True),
+        (b"@protocol P\n@end\n", True),
+        (b'#import "Widget.h"\n', True),
+        (b"function m = mymean(x)\n  m = sum(x) / numel(x);\nend\n", False),
+        (b"#include <stdio.h>\n#importer_t x;\n", False),
+    ],
+)
+def test_objc_source_is_recognised_by_its_markers(source, expected):
+    """A `.m` file is Objective-C when a line starts with an
+    Objective-C marker. MATLAB functions have none.
+    """
+    assert is_objc_source(source) is expected
+
+
+_PUPPET_MANIFEST = (
+    "class nginx {\n  package { 'nginx': ensure => installed }\n}\n\n"
+    "node 'web01' {\n  include nginx\n}\n"
+)
+_PASCAL_UNIT = (
+    "unit Geometry;\n\ninterface\n\nfunction Area(w, h: Integer): Integer;\n\n"
+    "implementation\n\nfunction Area(w, h: Integer): Integer;\nbegin\n"
+    "  Result := w * h;\nend;\n\nend.\n"
+)
+_MATLAB_FUNCTION = "function m = mymean(x)\n  m = sum(x) / numel(x);\nend\n"
+_OBJC_IMPLEMENTATION = '#import "Widget.h"\n@implementation Widget\n- (void)draw {}\n@end\n'
+
+
+@pytest.mark.parametrize(
+    "name,text,adapter,names",
+    [
+        ("site.pp", _PUPPET_MANIFEST, "generic", set()),
+        ("geometry.pp", _PASCAL_UNIT, "tree-sitter-pascal", {"Area", "Geometry"}),
+        ("stats.m", _MATLAB_FUNCTION, "generic", set()),
+        ("Widget.m", _OBJC_IMPLEMENTATION, "tree-sitter-objc", {"Widget", "draw"}),
+    ],
+)
+def test_pp_and_m_are_parsed_only_when_the_content_says_so(tmp_path, name, text, adapter, names):
+    """A Puppet `.pp` or MATLAB `.m` is indexed as text, with no
+    symbols. A Pascal unit or Objective-C class keeps its language.
+    """
+    target = tmp_path / name
+    target.write_text(text, encoding="utf-8")
+    record, symbols, *_ = adapt(target, tmp_path)
+    assert record["adapter"] == adapter
+    assert record["parse_status"] == "ok"
+    assert {s["name"] for s in symbols} == names
+
+
+@pytest.mark.parametrize(
+    "name,text,languages,adapter",
+    [
+        ("site.pp", _PUPPET_MANIFEST, ((".pp", "pascal"),), "tree-sitter-pascal"),
+        ("stats.m", _MATLAB_FUNCTION, ((".m", "objc"),), "tree-sitter-objc"),
+        ("plain.h", "int add(int a, int b);\n", ((".h", "objc"),), "tree-sitter-objc"),
+    ],
+)
+def test_mimry_toml_language_override_wins_over_the_content_check(
+    tmp_path, name, text, languages, adapter
+):
+    """An override of the file's own suffix in mimry.toml parses the
+    file as the named language, whatever its content looks like.
+    """
+    target = tmp_path / name
+    target.write_text(text, encoding="utf-8")
+    record, *_ = adapt(target, tmp_path, settings=IndexSettings(languages=languages))
+    assert record["adapter"] == adapter
 
 
 # Functional and scientific languages: Elixir, Haskell, OCaml, R, Julia

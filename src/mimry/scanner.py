@@ -37,7 +37,12 @@ from .core.documents import (
     extract_document_parts,
     is_document,
 )
-from .core.languages import EXTENSION_LANGUAGE, is_objc_header
+from .core.languages import (
+    EXTENSION_LANGUAGE,
+    is_objc_header,
+    is_objc_source,
+    is_pascal_source,
+)
 from .core.languages import extract as extract_language
 from .core.tsconfig import CONFIG_NAMES, parse_tsconfig
 from .intent import CAMEL_BOUNDARY_RE, CJK_RUN_RE, STOPWORDS, TOKEN_RE, cjk_bigrams
@@ -822,6 +827,23 @@ def _document_record(path, root, document: DocumentText, snapshot, references):
     return f
 
 
+def _content_checked(path, ext, language, data, settings):
+    """Drop the `.pp` or `.m` language that the content does not show.
+
+    `.pp` is mostly Puppet and `.m` mostly MATLAB, so each keeps its
+    language only when the bytes say so. A mimry.toml override of the
+    file's own suffix wins, and `ext` is then the override's canonical
+    extension, so the suffix is checked as well.
+    """
+    if settings is not None and path.suffix.lower() in settings.language_overrides():
+        return language
+    if ext == ".pp" and not is_pascal_source(data):
+        return None
+    if ext == ".m" and not is_objc_source(data):
+        return None
+    return language
+
+
 def adapt(
     path,
     root,
@@ -976,6 +998,7 @@ def adapt(
         # so an override of `.h` keeps its language.
         if ext == ".h" and is_objc_header(data):
             language = "objc"
+        language = _content_checked(path, ext, language, data, settings)
         # Data files keep no symbols when they are lock files or large.
         # SQL does too: a dump is text to search, not objects to name.
         if language in SIZE_LIMITED_LANGUAGES and not symbols_allowed(path.name, len(data)):

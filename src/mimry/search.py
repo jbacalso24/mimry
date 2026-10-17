@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .core.artifacts import graph_available, graph_rows
 from .core.documents import DOCUMENT_UNITS
-from .core.languages import EXTENSION_LANGUAGE, language_for
+from .core.languages import EXTENSION_LANGUAGE, file_language
 from .feedback import apply_feedback_to_rows
 from .intent import (
     CJK_RUN_RE,
@@ -31,9 +31,9 @@ from .storage import connect, load_jsonl, load_pointer
 LANGUAGE_ALIASES = {ext.lstrip("."): language for ext, language in EXTENSION_LANGUAGE.items()}
 
 
-def _file_languages(path: str) -> set[str]:
+def _file_languages(record: dict) -> set[str]:
     """A file's languages by extension; TSX counts as TypeScript."""
-    language = language_for(path)
+    language = file_language(record)
     if language is None:
         return set()
     return {language, "typescript"} if language == "tsx" else {language}
@@ -351,9 +351,7 @@ def find_rows(
     files = _without_excluded(files, excluded_paths)
     _unused, symbols = filter_index_records(files, load_jsonl(idx / "symbols.jsonl"))
     file_paths = {f["file_id"]: f["rel_path"] for f in files}
-    languages_by_path: dict[str, set[str]] = {
-        f["rel_path"]: _file_languages(f["rel_path"]) for f in files
-    }
+    languages_by_path: dict[str, set[str]] = {f["rel_path"]: _file_languages(f) for f in files}
     for symbol in symbols:
         language = str(symbol.get("language") or "").strip().casefold()
         path = file_paths.get(symbol.get("file_id"))

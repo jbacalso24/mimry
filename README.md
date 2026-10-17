@@ -204,6 +204,10 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 
 Fortran is read in free form only. Fixed-form `.f` and `.for` files do not parse with the grammar MIMRY uses, so they get no symbols or edges.
 
+`.pp` and `.m` are checked first, because most `.pp` files are Puppet and most `.m` files are MATLAB.
+A `.pp` file is Pascal only when it has a `unit`, `program` or `library` line, and a `.m` file is Objective-C only when it has an `@interface`, `@implementation`, `@protocol` or `#import` line.
+Any other `.pp` or `.m` file is indexed as searchable text with no symbols.
+
 The markup and style languages get what an agent searches them by.
 CSS and SCSS give their class and id selectors, custom properties, keyframes, Sass mixins, functions, placeholders and variables, with `@import`, `@use` and `@forward` as imports.
 HTML gives each element id and the local stylesheets and scripts it loads.
