@@ -119,6 +119,18 @@ def test_find_language_php_finds_the_overridden_inc_file(tmp_path):
     assert "lib/helpers.inc" in _result_paths(found.stdout)
 
 
+def test_find_scope_line_shows_the_language_display_name(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo_with_inc(tmp_path, '[index.languages]\n".inc" = "php"\n')
+    _index(repo, cache)
+
+    found = run_cli(repo, cache, "find", "render_card", "--language", "php")
+    assert found.returncode == 0, found.stderr
+    shown = found.stdout + found.stderr
+    assert "Scope: language=PHP" in shown
+    assert "language=php" not in shown
+
+
 def test_resolve_imports_uses_the_override_for_the_importer_language():
     rel_paths = {"src/page.inc", "src/util.js"}
     imports = {"src/page.inc": ["./util"]}

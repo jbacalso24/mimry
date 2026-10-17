@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from ..paths import stable_id
-from .config_manifest import extract_config_metadata, is_config_manifest
 from .xcode import extract_xcode_targets, parse_pbxproj
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
@@ -89,8 +88,6 @@ def enrich_framework_facts(
         if expo_facts:
             adapters.append("react-native-expo")
             facts.extend(expo_facts)
-            if is_config_manifest(path):
-                facts.insert(0, extract_config_metadata(path, root, data=source_data))
 
     if ext == ".sql":
         sql_facts = sql_schema_facts_from_text(
@@ -122,8 +119,6 @@ def enrich_framework_facts(
         if doc_facts:
             adapters.append("markdown-docs")
             facts.extend(doc_facts)
-            if is_config_manifest(path):
-                facts.insert(0, extract_config_metadata(path, root, data=source_data))
 
     if not facts:
         return file_record

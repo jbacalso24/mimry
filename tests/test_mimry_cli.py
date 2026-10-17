@@ -18,9 +18,10 @@ from mimry.adapters.config_manifest import extract_config_metadata
 from mimry.commands import _languages_text
 from mimry.core.languages import language_counts
 from mimry.feedback import parse_context_suggested_paths
-from mimry.queries import _display_commands
+from mimry.queries import _display_commands, extract_symbol_nodes
 from mimry.routing import _is_setup_command, project_test_command, verification_commands
 from mimry.scanner import adapt
+from mimry.search import _with_reason
 
 
 def _posix(text: str) -> str:
@@ -2704,6 +2705,25 @@ def test_noxfile_keeps_its_python_symbols_and_adds_its_sessions(tmp_path):
     assert f["adapter"] == "python-ast+config-manifest"
     assert "test command nox -s tests" in f["metadata_text"]
     assert "tests" in {symbol["name"] for symbol in symbols}
+
+
+def test_config_evidence_is_recorded_once(tmp_path):
+    _write(tmp_path / "README.md", "# Demo\n\n## Setup\n\nRun it.\n")
+    _write(
+        tmp_path / "app.json",
+        '{"expo": {"name": "demo", "slug": "demo", "scheme": "demo"}}\n',
+    )
+    for rel in ("README.md", "app.json"):
+        f, *_rest = adapt(tmp_path / rel, tmp_path)
+        evidence = f"config-manifest | file {rel}"
+        assert f["metadata_text"].count(evidence) == 1
+        assert f["content_hint"].count(evidence) == 1
+
+
+def test_graph_reason_extras_stay_out_of_the_node_list():
+    reason = _with_reason("graph node label match; nodes: README.md, Demo", "content matches")
+    assert reason == "graph node label match, content matches; nodes: README.md, Demo"
+    assert extract_symbol_nodes(reason, "README.md") == ["Demo"]
 
 
 def test_check_source_hint_stays_the_file_text(tmp_path):

@@ -268,7 +268,9 @@ Other extensions can be mapped to a supported language in `mimry.toml`, see [Con
 | Kimi | `kimi` | ✅ | ✅ |
 | Kilo Code | `kilo` | ✅ | [manual](#manual-mcp-setup) |
 | Antigravity, CodeBuddy, Hermes, OpenClaw, Trae | see `mimry install --list-platforms` | ✅ | [manual](#manual-mcp-setup) |
+| Trae CN | `trae-cn` | ✅ | [manual](#manual-mcp-setup) |
 | Aider, Pi Agent | see `mimry install --list-platforms` | ✅ | none |
+| Agent Skills | `agents` | ✅ | none |
 | Windsurf | `windsurf` | ✅ | [manual](#manual-mcp-setup) |
 | Cline | `cline` | ✅ | [manual](#manual-mcp-setup) |
 | Roo Code | `roo` | ✅ | [manual](#manual-mcp-setup) |

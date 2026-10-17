@@ -267,7 +267,7 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         ),
         notes=(
             "Handles empty user passwords on encrypted PDFs; reads up to 2,000 pages per file and"
-            " 20 MB file size, one part per page. Scanned PDFs with no text layer are not"
+            " 20 MiB file size, one part per page. Scanned PDFs with no text layer are not"
             " searchable."
         ),
     ),

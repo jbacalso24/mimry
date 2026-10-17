@@ -299,7 +299,7 @@
     "table_references"
    ],
    "agent_use": "Extracts text from PDF files for indexing and secret scanning without OCR or vision models.",
-   "notes": "Handles empty user passwords on encrypted PDFs; reads up to 2,000 pages per file and 20 MB file size, one part per page. Scanned PDFs with no text layer are not searchable."
+   "notes": "Handles empty user passwords on encrypted PDFs; reads up to 2,000 pages per file and 20 MiB file size, one part per page. Scanned PDFs with no text layer are not searchable."
   },
   {
    "name": "svg-document",

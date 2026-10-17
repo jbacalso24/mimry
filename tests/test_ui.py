@@ -52,10 +52,12 @@ def test_local_time_shows_this_machines_clock_with_its_offset():
     [
         (1_000, "1,000 bytes"),
         (9_999, "9,999 bytes"),
-        (512_000, "512 KB"),
+        (512_500, "512.5 KB"),
         (1_000_000, "1 MB"),
         (1_500_000, "1.5 MB"),
+        (512 * 1024, "512 KiB"),
+        (20 * 1024 * 1024, "20 MiB"),
     ],
 )
-def test_size_limits_read_in_bytes_kb_or_mb(limit, text):
+def test_size_limits_read_in_bytes_kb_mib_or_mb(limit, text):
     assert size_limit_text(limit) == text

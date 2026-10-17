@@ -102,6 +102,26 @@ def test_a_document_compressed_too_much_says_so_not_over_a_size_limit(tmp_path, 
     assert "over a size limit" not in out
 
 
+def test_status_verbose_prints_name_only_and_cut_documents_in_one_table(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(documents, "MAX_DOCUMENT_PARTS", 2)
+    repo = _repo(tmp_path)
+    (repo / "docs" / "corrupt.docx").write_bytes(b"not a zip archive" * 20)
+    _pdf(repo / "docs" / "long.pdf", ["one", "two", "three", "four"])
+    _index(repo, capsys)
+
+    assert cmd_status(SimpleNamespace(root=str(repo), verify=False, verbose=True)) == 0
+
+    rows = [
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.endswith(("docs/corrupt.docx", "docs/long.pdf"))
+    ]
+    assert [line.split()[-1] for line in rows] == ["docs/corrupt.docx", "docs/long.pdf"]
+    assert rows[0].index("docs/corrupt.docx") == rows[1].index("docs/long.pdf")
+
+
 def test_a_document_cut_at_a_cap_is_reported_and_its_ranges_say_so(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(documents, "MAX_DOCUMENT_PARTS", 2)
     repo = _repo(tmp_path)

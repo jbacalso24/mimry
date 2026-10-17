@@ -50,6 +50,13 @@ def _file_languages(record: dict) -> set[str]:
     return {language, "typescript"} if language == "tsx" else {language}
 
 
+def _with_reason(reason: str, extra: str) -> str:
+    """Add a reason before a graph row's ``; nodes:`` list, which must
+    hold node names only."""
+    head, separator, nodes = reason.partition("; nodes:")
+    return f"{head}, {extra}{separator}{nodes}"
+
+
 def _validated_globs(values, label):
     if values is not None and not isinstance(values, (list, tuple)):
         raise ValueError(f"{label}s must be a list of strings")
@@ -92,16 +99,10 @@ def _path_glob_matches(path: str, pattern: str) -> bool:
     return match(0, 0)
 
 
-def _search_scope(*, languages=None, path_globs=None, exclude_globs=None, offset=None, limit=10):
-    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
-        raise ValueError("limit must be a positive integer")
-    if offset is not None and (
-        isinstance(offset, bool) or not isinstance(offset, int) or offset < 0
-    ):
-        raise ValueError("offset must be a non-negative integer")
-    if languages is not None and not isinstance(languages, (list, tuple)):
-        raise ValueError("languages must be a list of strings")
-    normalized_languages = []
+def _grammars_for(languages) -> tuple[str, ...]:
+    """Grammar names for --language values: py, Groovy, Terraform and
+    the like, de-duplicated in order."""
+    grammars = []
     for raw in languages or ():
         if not isinstance(raw, str):
             raise ValueError("language must be a string")
@@ -111,9 +112,27 @@ def _search_scope(*, languages=None, path_globs=None, exclude_globs=None, offset
         if value not in EXTENSION_LANGUAGE.values():
             value = LANGUAGE_ALIASES.get(value, value)
         named = () if value in EXTENSION_LANGUAGE.values() else grammars_named(value)
-        normalized_languages.extend(named or (value,))
+        grammars.extend(named or (value,))
+    return tuple(dict.fromkeys(grammars))
+
+
+def language_display_names(languages) -> list[str]:
+    """The display name of each --language value, as find's scope line
+    shows it: groovy is Groovy, py is Python."""
+    return list(dict.fromkeys(LANGUAGE_LABELS.get(g, g) for g in _grammars_for(languages)))
+
+
+def _search_scope(*, languages=None, path_globs=None, exclude_globs=None, offset=None, limit=10):
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit must be a positive integer")
+    if offset is not None and (
+        isinstance(offset, bool) or not isinstance(offset, int) or offset < 0
+    ):
+        raise ValueError("offset must be a non-negative integer")
+    if languages is not None and not isinstance(languages, (list, tuple)):
+        raise ValueError("languages must be a list of strings")
     return {
-        "languages": tuple(dict.fromkeys(normalized_languages)),
+        "languages": _grammars_for(languages),
         "path_globs": _validated_globs(path_globs, "path glob"),
         "exclude_globs": _validated_globs(exclude_globs, "exclude glob"),
         "offset": 0 if offset is None else offset,
@@ -486,12 +505,11 @@ def find_rows(
                 [
                     {
                         **r,
-                        "reason": r["reason"]
-                        + (
-                            ", MIMRY config-manifest operating context"
-                            if r["path"] in fallback_by_path
-                            else ""
-                        ),
+                        "reason": _with_reason(
+                            r["reason"], "MIMRY config-manifest operating context"
+                        )
+                        if r["path"] in fallback_by_path
+                        else r["reason"],
                         **(
                             {"details": fallback_by_path[r["path"]].get("details", "")}
                             if r["path"] in fallback_by_path
@@ -513,16 +531,20 @@ def find_rows(
                 content_row = content_by_path.get(path)
                 if content_row:
                     graph_row["score"] += content_row["score"]
-                    graph_row["reason"] += ", corroborated by MIMRY content index"
+                    graph_row["reason"] = _with_reason(
+                        graph_row["reason"], "corroborated by MIMRY content index"
+                    )
             seen = set(by_path)
             for r in fallback_rows:
                 if r["path"] in seen:
                     continue
                 extra = {**r}
                 if "config-manifest" in r["reason"]:
-                    extra["reason"] = r["reason"] + ", MIMRY config-manifest operating context"
+                    extra["reason"] = _with_reason(
+                        r["reason"], "MIMRY config-manifest operating context"
+                    )
                 else:
-                    extra["reason"] = r["reason"] + ", MIMRY fallback index signal"
+                    extra["reason"] = _with_reason(r["reason"], "MIMRY fallback index signal")
                 merged.append(extra)
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))

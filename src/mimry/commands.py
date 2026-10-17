@@ -90,7 +90,7 @@ from .queries import (
     write_context_pack,
 )
 from .routing import route_payload, write_brief
-from .search import find_rows, missing_file_names
+from .search import find_rows, language_display_names, missing_file_names
 from .security import (
     redact_sensitive_text,
     safe_root,
@@ -307,13 +307,12 @@ def _print_status(
         print_rows_capped([("too large", path) for path in sorted(fresh["oversized_files"])])
     if verbose:
         name_only, cut = document_reports(fresh["files"])
-        if name_only:
-            print_rows_capped([(reason, path) for path, reason in name_only])
-        if cut:
-            print_rows_capped([(f"cut at {where}", path) for path, where in cut])
-        too_deep = nested_too_deep_paths(fresh["files"])
-        if too_deep:
-            print_rows_capped([(NESTED_TOO_DEEP_REASON, path) for path in too_deep])
+        # One table, so the path column lines up across every list.
+        rows = [(reason, path) for path, reason in name_only]
+        rows += [(f"cut at {where}", path) for path, where in cut]
+        rows += [(NESTED_TOO_DEEP_REASON, path) for path in nested_too_deep_paths(fresh["files"])]
+        if rows:
+            print_rows_capped(rows, limit=16)
     print_grammar_warning(grammar_unavailable_count(ptr), grammar_error_of(ptr))
     print_parse_error_warning(*parse_error_summary(ptr))
     print_nested_too_deep_warning(*nested_too_deep_summary(ptr))
@@ -732,7 +731,7 @@ def _find_in_directory(a, root, start):
         return 2
     scope = []
     if languages:
-        scope.append("language=" + ",".join(languages))
+        scope.append("language=" + ",".join(language_display_names(languages)))
     if path_globs:
         scope.append("path=" + ",".join(path_globs))
     if exclude_globs:

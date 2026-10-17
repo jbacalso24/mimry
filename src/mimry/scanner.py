@@ -528,10 +528,16 @@ def is_linked_worktree(folder: Path) -> bool:
 
 
 def size_limit_text(limit: int) -> str:
-    """A byte limit as the user reads it: ``1,000 bytes``, ``512 KB``
-    or ``1 MB``."""
+    """A byte limit as the user reads it. A binary multiple reads as
+    ``512 KiB`` or ``20 MiB``; a decimal one as ``512 KB`` or ``1 MB``.
+    Under 10,000 bytes it is ``1,000 bytes``.
+    """
     if limit < 10_000:
         return f"{limit:,} bytes"
+    if limit % (1024 * 1024) == 0:
+        return f"{limit // (1024 * 1024):,} MiB"
+    if limit % 1024 == 0:
+        return f"{limit // 1024:,} KiB"
     if limit < 1_000_000:
         return f"{limit / 1_000:g} KB"
     return f"{limit / 1_000_000:g} MB"

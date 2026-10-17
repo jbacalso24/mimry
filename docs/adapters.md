@@ -25,7 +25,7 @@ MIMRY should understand a repo through small, inspectable adapter plugins before
 
 `.pp` and `.m` are checked first: a file keeps its Pascal or Objective-C language only when its content shows it, and otherwise it is indexed as text.
 
-Documents up to 20 MB are read, whole: up to 2,000 pages, sections, sheets or slides and 2,000,000 characters per file. Results name the page, section, sheet or slide they match. Other files stop at 1 MB.
+Documents up to 20 MiB are read, whole: up to 2,000 pages, sections, sheets or slides and 2,000,000 characters per file. Results name the page, section, sheet or slide they match. Other files stop at 1 MB.
 Note: Raster images (PNG, JPG) require OCR or vision models and are not supported.
 
 ## Adapter status

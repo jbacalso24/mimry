@@ -131,9 +131,9 @@ def extract_document_parts(
     open and read the path.
 
     Hard safety limits:
-    - Zip members capped to 5 MB, archive to 20 MB for Office
-    - PDF files capped to 20 MB
-    - SVG members capped to 5 MB
+    - Zip members capped to 5 MiB, archive to 20 MiB for Office
+    - PDF files capped to 20 MiB
+    - SVG members capped to 5 MiB
     - Guards against decompression bombs via archive/compression
     - Parts capped to MAX_DOCUMENT_PARTS, text to `limit` characters
     """
@@ -314,13 +314,13 @@ def _read_member(zf: zipfile.ZipFile, member_name: str) -> bytes | None:
 def _pdf_pages(data: bytes) -> Iterator[tuple[str, str]]:
     """(title, text) for each page of a PDF, extracted lazily.
 
-    Raises DocumentResourceLimitError for files over 20 MB. Raises
+    Raises DocumentResourceLimitError for files over 20 MiB. Raises
     DocumentEncryptedError if PDF is encrypted and decrypt("") fails.
     Raises DocumentParseError for malformed PDFs, and
     DocumentDependencyError when pypdf is not installed.
     """
     if len(data) > MAX_DOCUMENT_FILE_BYTES:
-        raise DocumentResourceLimitError("PDF exceeds 20 MB")
+        raise DocumentResourceLimitError("PDF exceeds 20 MiB")
     try:
         from pypdf import PdfReader
     except ImportError as e:
@@ -355,11 +355,11 @@ def _pdf_pages(data: bytes) -> Iterator[tuple[str, str]]:
 def _extract_svg_text(data: bytes) -> str:
     """Extract human-readable text from SVG: title, desc, text.
 
-    Raises DocumentResourceLimitError if SVG exceeds 5 MB.
+    Raises DocumentResourceLimitError if SVG exceeds 5 MiB.
     Lets ElementTree.ParseError propagate for malformed SVG.
     """
     if len(data) > MAX_MEMBER_BYTES:
-        raise DocumentResourceLimitError("SVG exceeds 5 MB")
+        raise DocumentResourceLimitError("SVG exceeds 5 MiB")
 
     root = ElementTree.fromstring(_safe_xml(data))
 
