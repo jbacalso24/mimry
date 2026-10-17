@@ -295,7 +295,7 @@ def test_commit_touching_only_unsuggested_files_records_every_file_as_missed(
     assert sorted(row["missed_paths"]) == ["unrelated_a.txt", "unrelated_b.txt"]
 
 
-SHARE_QUERY = "remove share_extension.py leftovers"
+SHARE_QUERY = "remove share_extension.py leftovers from the auth session"
 
 
 def _share_pack_repo(tmp_path, monkeypatch):
