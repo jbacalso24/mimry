@@ -77,6 +77,7 @@ from .queries import (
     calls_payload,
     index_and_graph_health,
     inferred_mark,
+    mark_uncommitted,
     oversized_message,
     print_results,
     print_results_section,
@@ -786,6 +787,7 @@ def cmd_route(a):
     root = Path(a.root).resolve()
     ptr = require(root)
     payload = route_payload(root, ptr, a.query, limit=getattr(a, "limit", 8))
+    mark_uncommitted(root, payload["likely_files"])
     if getattr(a, "json", False):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0

@@ -1964,6 +1964,50 @@ def test_preflight_marks_uncommitted_files_when_root_is_a_git_subfolder(tmp_path
     assert UNCOMMITTED_LINE not in _pack_block(pack, "clean_session.py")
 
 
+@requires_git
+def test_route_and_explain_mark_modified_files_but_not_clean_ones(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True)
+    (repo / "clean_session.py").write_text("def session_token_clean():\n    return 1\n")
+    (repo / "dirty_session.py").write_text("def session_token_dirty():\n    return 1\n")
+    _commit_everything(repo)
+    (repo / "dirty_session.py").write_text("def session_token_dirty():\n    return 2\n")
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    route = run_cli(repo, cache, "route", "session token")
+    explain = run_cli(repo, cache, "explain", "session token")
+
+    assert route.returncode == 0, route.stderr
+    assert explain.returncode == 0, explain.stderr
+    for res in (route, explain):
+        assert "dirty_session.py (uncommitted)" in res.stdout
+        assert "clean_session.py" in res.stdout
+        assert "clean_session.py (uncommitted)" not in res.stdout
+
+
+@requires_git
+def test_preflight_marks_files_inside_an_untracked_nested_repo(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True)
+    (repo / "clean_session.py").write_text("def session_token_clean():\n    return 1\n")
+    _commit_everything(repo)
+    nested = repo / "nest"
+    nested.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=nested, check=True, capture_output=True)
+    (nested / "nested_session.py").write_text("def session_token_nested():\n    return 1\n")
+
+    res = run_cli(repo, tmp_path / "cache", "preflight", "session token")
+
+    assert res.returncode == 0, res.stderr
+    pack = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    assert UNCOMMITTED_LINE in _pack_block(pack, "nest/nested_session.py")
+    assert UNCOMMITTED_LINE not in _pack_block(pack, "clean_session.py")
+
+
 def test_status_reports_graph_artifact_health(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

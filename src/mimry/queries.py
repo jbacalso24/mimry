@@ -403,6 +403,16 @@ def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]
     return lines
 
 
+def mark_uncommitted(root: Path, rows: list[dict]) -> None:
+    """Tag rows whose file or parent folder has uncommitted work."""
+    dirty = uncommitted_paths(root)
+    for row in rows:
+        path = row["path"]
+        folders = [str(p) for p in PurePosixPath(path).parents if str(p) != "."]
+        if path in dirty or any(folder in dirty for folder in folders):
+            row["uncommitted"] = True
+
+
 def write_context_pack(
     root: Path,
     ptr: dict,
@@ -477,7 +487,7 @@ def write_context_pack(
         "Where a file lists lines to read first, read those lines before the rest of the file.",
         "",
     ]
-    dirty = uncommitted_paths(root)
+    mark_uncommitted(root, rows)
     for i, r in enumerate(rows, 1):
         role = _file_role(r["path"], minified=bool(r.get("minified")))
         phrases = ui.reason_phrases(r["reason"])
@@ -497,8 +507,7 @@ def write_context_pack(
             why_line,
             f"Role: {role}",
         ]
-        if r["path"] in dirty:
-            r["uncommitted"] = True
+        if r.get("uncommitted"):
             lines += [
                 "Uncommitted changes: yes - this file differs from the last commit;"
                 " do not assume the work is shipped."
@@ -980,6 +989,7 @@ def run_explain(a):
     query = sanitize_query(a.query)
     answer = _explain_answer(root, query, getattr(a, "limit", 5))
     rows = answer["rows"]
+    mark_uncommitted(root, rows)
     ui.title(f"How {ui.quote(query)} maps to {root_name(root)}")
     _print_index_note(answer["fresh"], answer["graph"])
     print_results_section("Most relevant files", rows, verbose=getattr(a, "verbose", False))
@@ -997,7 +1007,8 @@ def run_explain(a):
     source = rows[0] if rows else None
     if source:
         print()
-        print(f"Start with {source['path']} - read it and its tests before editing.")
+        tag = " (uncommitted)" if source.get("uncommitted") else ""
+        print(f"Start with {source['path']}{tag} - read it and its tests before editing.")
     print_verification(answer["verify"])
     return 0
 

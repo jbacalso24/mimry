@@ -457,7 +457,9 @@ def _status_paths(status: bytes) -> list[bytes]:
 def uncommitted_paths(root: Path) -> set[str]:
     """Paths under root that differ from the last commit, untracked too.
 
-    Paths are relative to root. Empty when git cannot answer.
+    Paths are relative to root. An entry may be a folder: a nested repo
+    (git adds a trailing slash, dropped here) or a submodule. Empty when
+    git cannot answer.
     """
     root = Path(root)
     prefix = _git_output(root, "rev-parse", "--show-prefix")
@@ -468,7 +470,7 @@ def uncommitted_paths(root: Path) -> set[str]:
     # prefix that places root inside it and skip paths outside root.
     base = os.fsdecode(prefix).rstrip("\n")
     return {
-        path[len(base) :]
+        path[len(base) :].rstrip("/")
         for path in map(os.fsdecode, _status_paths(status))
         if path.startswith(base)
     }
