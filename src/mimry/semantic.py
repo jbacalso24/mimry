@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -18,6 +19,17 @@ SEMANTIC_BACKEND = "local-hash-v1"
 SEMANTIC_SCHEMA_VERSION = "0.1.0"
 VECTOR_DIMS = 256
 MAX_PREVIEW = 500
+
+# Measurement switches. Both are off when unset, so the default backend
+# and ranking stay exactly as shipped.
+MODEL_ENV = "MIMRY_SEMANTIC_MODEL"
+FUSION_ENV = "MIMRY_SEMANTIC_FUSION"
+WEIGHT_ENV = "MIMRY_SEMANTIC_WEIGHT"
+MODEL_FLOOR = 0.2
+MODEL_CHUNKS_PER_FILE = 3
+RRF_K = 60
+_EMBED_BATCH = 256
+_STATIC_MODELS: dict[str, Any] = {}
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 
@@ -106,6 +118,59 @@ def cosine_sparse(left: dict[str, float], right: dict[str, float]) -> float:
     return sum(value * right.get(key, 0.0) for key, value in left.items())
 
 
+def configured_model() -> str | None:
+    """Model name from MIMRY_SEMANTIC_MODEL, or None when unset."""
+    return os.environ.get(MODEL_ENV, "").strip() or None
+
+
+def active_backend() -> str:
+    name = configured_model()
+    return f"model2vec:{name}" if name else SEMANTIC_BACKEND
+
+
+def fusion_mode() -> str:
+    raw = os.environ.get(FUSION_ENV, "").strip().lower()
+    if raw in ("", "bonus"):
+        return "bonus"
+    if raw == "rrf":
+        return "rrf"
+    raise ValueError(f"{FUSION_ENV} must be 'bonus' or 'rrf', not {raw!r}")
+
+
+def _load_static_model(name: str) -> Any:
+    cached = _STATIC_MODELS.get(name)
+    if cached is None:
+        try:
+            from model2vec import StaticModel
+        except ImportError as exc:
+            raise RuntimeError(
+                f"{MODEL_ENV}={name} needs the model2vec package, which is not"
+                " installed. Install it, or unset the variable."
+            ) from exc
+        cached = StaticModel.from_pretrained(name)
+        _STATIC_MODELS[name] = cached
+    return cached
+
+
+def _unit(row: Any) -> list[float]:
+    values = [float(value) for value in row]
+    norm = math.sqrt(sum(value * value for value in values)) or 1.0
+    return [round(value / norm, 5) for value in values]
+
+
+def _embed(texts: list[str], name: str) -> list[list[float]]:
+    model = _load_static_model(name)
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), _EMBED_BATCH):
+        for row in model.encode(texts[start : start + _EMBED_BATCH]):
+            vectors.append(_unit(row))
+    return vectors
+
+
+def _dot(left: list[float], right: list[float]) -> float:
+    return sum(a * b for a, b in zip(left, right, strict=False))
+
+
 def _bounded_preview(text: str) -> str:
     return " ".join(text.split())[:MAX_PREVIEW]
 
@@ -121,10 +186,18 @@ def _chunk(
         return None
     text = redact_sensitive_text(text)
     preview = _bounded_preview(text)
-    vector = vectorize(text)
-    if not preview or not vector:
-        return None
-    return {
+    backend = active_backend()
+    if backend == SEMANTIC_BACKEND:
+        vector = vectorize(text)
+        if not preview or not vector:
+            return None
+    else:
+        # The model embeds every chunk in one batch in
+        # build_semantic_index, which then drops the full text.
+        if not preview:
+            return None
+        vector = None
+    chunk = {
         # Canonical semantic identity, so it must not carry root_id:
         # that is a uuid4 minted by `mimry init`, and two identical
         # checkouts would then disagree on every chunk id. Same rule as
@@ -137,11 +210,21 @@ def _chunk(
         "chunk_text_hash": _chunk_text_hash(text),
         "chunk_text_preview": preview,
         "vector": vector,
-        "model_name": SEMANTIC_BACKEND,
-        "backend_name": SEMANTIC_BACKEND,
+        "model_name": backend,
+        "backend_name": backend,
         "created_at": created_at,
         "schema_version": SEMANTIC_SCHEMA_VERSION,
     }
+    if vector is None:
+        chunk["text"] = text
+    return chunk
+
+
+def _embed_chunks(chunks: list[dict[str, Any]], name: str) -> None:
+    """Embed model chunks in one batch and drop their full text."""
+    vectors = _embed([chunk.pop("text") for chunk in chunks], name)
+    for chunk, vector in zip(chunks, vectors, strict=True):
+        chunk["vector"] = vector
 
 
 def _semantic_chunks_for_file(
@@ -236,6 +319,10 @@ def build_semantic_index(
             continue
         file_symbols = symbols_by_file.get(file_rec["file_id"], [])
         chunks.extend(_semantic_chunks_for_file(root_id, file_rec, file_symbols, created_at))
+    backend = active_backend()
+    model_name = configured_model()
+    if model_name:
+        _embed_chunks(chunks, model_name)
 
     con = sqlite3.connect(idx / "mimry.sqlite")
     try:
@@ -287,7 +374,7 @@ def build_semantic_index(
                    ) values(?,?,?,?,?,?,?)""",
                 (
                     root_id,
-                    SEMANTIC_BACKEND,
+                    backend,
                     created_at,
                     len(chunks),
                     SEMANTIC_SCHEMA_VERSION,
@@ -303,7 +390,7 @@ def build_semantic_index(
     finally:
         con.close()
     return {
-        "backend": SEMANTIC_BACKEND,
+        "backend": backend,
         "chunks": len(chunks),
         "indexed_at": created_at,
         "generation": generation_id,
@@ -314,8 +401,9 @@ def build_semantic_index(
 def semantic_health(
     idx: Path, root_id: str | None, expected_files: int | None = None
 ) -> dict[str, Any]:
+    backend = active_backend()
     if not root_id or not (idx / "mimry.sqlite").exists():
-        return {"status": "missing", "backend": SEMANTIC_BACKEND, "chunks": 0, "indexed_at": None}
+        return {"status": "missing", "backend": backend, "chunks": 0, "indexed_at": None}
     con = sqlite3.connect(idx / "mimry.sqlite")
     con.row_factory = sqlite3.Row
     try:
@@ -326,7 +414,7 @@ def semantic_health(
         if not row:
             return {
                 "status": "missing",
-                "backend": SEMANTIC_BACKEND,
+                "backend": backend,
                 "chunks": 0,
                 "indexed_at": None,
             }
@@ -339,6 +427,10 @@ def semantic_health(
             if path_has_ignored_part(chunk["rel_path"])
         )
         status = "current" if chunks > 0 else "missing"
+        # Another backend ranks in a different vector space, so an index
+        # built with it is not current.
+        if row["backend_name"] != backend:
+            status = "stale"
         if policy_excluded_chunks or (
             expected_files is not None and expected_files > 0 and chunks < expected_files
         ):
@@ -360,10 +452,14 @@ def semantic_rows(
     health = semantic_health(idx, root_id)
     if health["status"] != "current" or not root_id:
         return [], health
-    qvec = vectorize(query)
+    model_name = configured_model()
+    if model_name:
+        qvec: Any = _embed([query], model_name)[0]
+    else:
+        qvec = vectorize(query)
+        if not qvec:
+            return [], health
     qterms = set(query_terms(query))
-    if not qvec:
-        return [], health
     con = sqlite3.connect(idx / "mimry.sqlite")
     con.row_factory = sqlite3.Row
     try:
@@ -376,7 +472,7 @@ def semantic_rows(
     finally:
         con.close()
 
-    by_file: dict[str, dict[str, Any]] = {}
+    hits: list[tuple[str, str, int, str]] = []
     for row in rows:
         if path_has_ignored_part(row["rel_path"]):
             continue
@@ -384,20 +480,31 @@ def semantic_rows(
             vec = json.loads(row["vector_json"] or "{}")
         except json.JSONDecodeError:
             continue
-        sim = cosine_sparse(qvec, vec)
         preview = row["chunk_text_preview"] or ""
-        if sim <= 0:
-            # Deterministic hash vectors can collide; require at least
-            # weak lexical fallback for explainability.
-            overlap = qterms & set(_tokens(preview))
-            if not overlap:
+        if model_name:
+            # Dense vectors are almost never 0, so a floor replaces the
+            # lexical fallback below.
+            sim = _dot(qvec, vec)
+            if sim < MODEL_FLOOR:
                 continue
-            sim = min(0.12, 0.03 * len(overlap))
+        else:
+            sim = cosine_sparse(qvec, vec)
+            if sim <= 0:
+                # Hash vectors can collide; require weak lexical overlap
+                # so every hit can be explained.
+                overlap = qterms & set(_tokens(preview))
+                if not overlap:
+                    continue
+                sim = min(0.12, 0.03 * len(overlap))
         score = int(round(sim * 100))
         if score <= 0:
             continue
-        path = row["rel_path"]
-        kind = row["chunk_kind"]
+        hits.append((row["rel_path"], row["chunk_kind"], score, preview))
+    if model_name:
+        hits = _cap_per_file(hits, MODEL_CHUNKS_PER_FILE)
+
+    by_file: dict[str, dict[str, Any]] = {}
+    for path, kind, score, preview in hits:
         label = {
             "path": "semantic path/symbol match",
             "symbol": "semantic path/symbol match",
@@ -427,9 +534,81 @@ def semantic_rows(
     return sorted(results, key=lambda r: (-r["score"], r["path"]))[:limit], health
 
 
+def _cap_per_file(
+    hits: list[tuple[str, str, int, str]], cap: int
+) -> list[tuple[str, str, int, str]]:
+    """Keep each file's best ``cap`` chunks, so many weak chunks cannot
+    outvote one strong one."""
+    order = sorted(range(len(hits)), key=lambda i: (-hits[i][2], hits[i][0], hits[i][1], i))
+    taken: dict[str, int] = {}
+    keep: set[int] = set()
+    for i in order:
+        path = hits[i][0]
+        if taken.get(path, 0) < cap:
+            taken[path] = taken.get(path, 0) + 1
+            keep.add(i)
+    return [hit for i, hit in enumerate(hits) if i in keep]
+
+
+def _merge_rrf(
+    base_rows: list[dict[str, Any]], semantic: list[dict[str, Any]], *, limit: int
+) -> list[dict[str, Any]]:
+    weight = float(os.environ.get(WEIGHT_ENV, "").strip() or 0.5)
+    base_by_path: dict[str, dict[str, Any]] = {}
+    base_rank: dict[str, int] = {}
+    for rank, row in enumerate(base_rows, start=1):
+        base_by_path.setdefault(row["path"], {**row})
+        base_rank.setdefault(row["path"], rank)
+    sem_by_path: dict[str, dict[str, Any]] = {}
+    sem_rank: dict[str, int] = {}
+    for rank, row in enumerate(semantic, start=1):
+        sem_by_path.setdefault(row["path"], row)
+        sem_rank.setdefault(row["path"], rank)
+
+    fused: dict[str, float] = {}
+    for path in base_rank.keys() | sem_rank.keys():
+        value = 0.0
+        if path in base_rank:
+            value += 1 / (RRF_K + base_rank[path])
+        if path in sem_rank:
+            value += weight / (RRF_K + sem_rank[path])
+        fused[path] = value
+    order = sorted(fused, key=lambda path: (-fused[path], path))
+
+    # Downstream code reads score, so keep the base scale: the i-th
+    # fused row takes the i-th largest base score. Rows past the base
+    # list step down one point each from its smallest score.
+    base_scores = sorted((row["score"] for row in base_rows), reverse=True)
+    floor_score = base_scores[-1] if base_scores else 1
+    results: list[dict[str, Any]] = []
+    for position, path in enumerate(order[:limit]):
+        if position < len(base_scores):
+            score = base_scores[position]
+        else:
+            score = max(1, floor_score - (position - len(base_scores) + 1))
+        if path in base_by_path:
+            row = base_by_path[path]
+            if path in sem_by_path:
+                sem = sem_by_path[path]
+                row["reason"] = (
+                    f"{row.get('reason', '')}, {sem['reason']}"
+                    if row.get("reason")
+                    else sem["reason"]
+                )
+                if sem.get("details") and not row.get("details"):
+                    row["details"] = sem["details"]
+        else:
+            row = {**sem_by_path[path]}
+        row["score"] = score
+        results.append(row)
+    return results
+
+
 def merge_semantic_rows(
     base_rows: list[dict[str, Any]], semantic: list[dict[str, Any]], *, limit: int = 10
 ) -> list[dict[str, Any]]:
+    if fusion_mode() == "rrf":
+        return _merge_rrf(base_rows, semantic, limit=limit)
     by_path = {row["path"]: {**row} for row in base_rows}
     for row in semantic:
         if row["path"] in by_path:

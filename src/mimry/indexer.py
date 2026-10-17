@@ -65,7 +65,7 @@ from .scanner import (
     worktree_fingerprint,
 )
 from .security import is_text, sanitize_data
-from .semantic import build_semantic_index, file_semantic_chunks
+from .semantic import active_backend, build_semantic_index, file_semantic_chunks
 from .settings import IndexSettings, index_settings
 from .state import (
     GENERATION_MANIFEST,
@@ -964,6 +964,10 @@ def _unchanged_generation(root, ptr, previous, record, files, symbols, unindexab
         return None
     stats = manifest.get("stats") if isinstance(manifest, dict) else None
     if not isinstance(stats, dict) or previous_unindexable != unindexable:
+        return None
+    # Switching MIMRY_SEMANTIC_MODEL changes the vectors, not the files,
+    # so the unchanged generation must not be kept.
+    if stats.get("semantic_backend") != active_backend():
         return None
     return {
         "files": len(files),

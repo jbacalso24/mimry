@@ -18,6 +18,17 @@ on:
         description: "Run MIMRY with --semantic (results get a .semantic part)"
         type: boolean
         default: false
+      semantic_model:
+        description: "model2vec model for the semantic index (empty = hash backend)"
+        type: string
+        default: ""
+      fusion:
+        description: "How semantic rows merge into the ranking"
+        type: choice
+        options:
+          - bonus
+          - rrf
+        default: bonus
 
 permissions:
   contents: read
@@ -48,8 +59,12 @@ jobs:
         run: uv sync --locked --python "3.14"
 
       - name: Run benchmark
+        env:
+          MIMRY_SEMANTIC_MODEL: ${{ inputs.semantic_model }}
+          MIMRY_SEMANTIC_FUSION: ${{ inputs.fusion }}
         run: >-
-          uv run --with tiktoken python benchmarks/tokens/run.py --work /tmp/tokens
+          uv run --with tiktoken ${{ inputs.semantic_model && '--with model2vec' || '' }}
+          python benchmarks/tokens/run.py --work /tmp/tokens
           --set ${{ inputs.set }} --reads ${{ matrix.reads }}
           ${{ inputs.semantic && '--semantic' || '' }}
 
@@ -63,10 +78,21 @@ jobs:
           mkdir -p /tmp/out
           cp "benchmarks/tokens/results.${{ inputs.set }}${suffix}${semantic}.json" "/tmp/out/results.${{ inputs.set }}${suffix}${semantic}.${version}.json"
 
+      # Artifact names cannot hold a slash, so the model name is cleaned
+      # here; the model and fusion then tell the runs apart.
+      - name: Artifact tag
+        id: tag
+        env:
+          SEMANTIC_MODEL: ${{ inputs.semantic_model }}
+          FUSION: ${{ inputs.fusion }}
+        run: |
+          model=$(printf '%s' "$SEMANTIC_MODEL" | tr '/' '-')
+          echo "tag=${model:+-$model}-$FUSION" >> "$GITHUB_OUTPUT"
+
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: tokens-${{ inputs.set }}-${{ matrix.reads }}${{ inputs.semantic && '-semantic' || '' }}
+          name: tokens-${{ inputs.set }}-${{ matrix.reads }}${{ inputs.semantic && '-semantic' || '' }}${{ steps.tag.outputs.tag }}
           path: /tmp/out/
           if-no-files-found: error
 

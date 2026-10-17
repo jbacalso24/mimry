@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .constants import SCHEMA_VERSION
+from .semantic import configured_model
 from .state import GENERATION_MANIFEST, sha256_file
 
 if TYPE_CHECKING:
@@ -129,11 +130,17 @@ def adapt_cache_header(root: Path, settings: IndexSettings) -> dict[str, str]:
     # Records embed the absolute path, so a moved checkout must not
     # reuse them. The settings digest covers mimry.toml, whose language
     # overrides change how files parse.
-    return {
+    header = {
         "fingerprint": code_fingerprint(),
         "root": str(root),
         "settings": settings.digest or "",
     }
+    # Model chunks carry full text and no vectors, so a cache written
+    # under one semantic backend must not be replayed under another.
+    model_name = configured_model()
+    if model_name:
+        header["semantic"] = f"model2vec:{model_name}"
+    return header
 
 
 _FINGERPRINT: str | None = None
