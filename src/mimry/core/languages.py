@@ -442,10 +442,20 @@ NODE_TYPES = {
     "haskell": {
         # One symbol per top-level name: a function with several
         # equations is merged after the walk. `instance` is not a
-        # symbol, but its methods are. The grammar spells it
-        # type_synomym.
+        # symbol, but its methods are. A class's method signatures
+        # are symbols too, and a default merges into its signature.
+        # The grammar spells it type_synomym.
         "definitions": frozenset(
-            ["header", "data_type", "newtype", "type_synomym", "class", "function", "bind"]
+            [
+                "header",
+                "data_type",
+                "newtype",
+                "type_synomym",
+                "class",
+                "function",
+                "bind",
+                "signature",
+            ]
         ),
         "imports": frozenset(["import"]),
         "calls": frozenset(["apply"]),
@@ -1783,13 +1793,19 @@ def _haskell_module_name(module: Any, source: bytes) -> str | None:
 
 def _haskell_definition_name(node: Any, source: bytes) -> str | None:
     """A module header names its module. A function is a symbol only at
-    top level or in an instance, never in a where or let.
+    top level, in an instance or in a class, never in a where or let.
+    A signature is a symbol only in a class, where it declares a method.
     """
     if node.type == "header":
         return _haskell_module_name(node.child_by_field_name("module"), source)
-    if node.type in ("function", "bind"):
+    if node.type in ("function", "bind", "signature"):
         parent = node.parent
-        if parent is None or parent.type not in ("declarations", "instance_declarations"):
+        if parent is None:
+            return None
+        if node.type == "signature":
+            if parent.type != "class_declarations":
+                return None
+        elif parent.type not in ("declarations", "instance_declarations", "class_declarations"):
             return None
     return _field_text(node, "name", source)
 

@@ -1331,6 +1331,37 @@ def test_each_functional_language_indexes_symbols_and_edges(tmp_path):
     assert ("jl/src/Geometry.jl", "jl/src/shapes.jl") in imports, sorted(imports)
 
 
+def test_haskell_class_method_is_found_beside_its_instance(tmp_path):
+    """`symbol area` finds the class signature and the instance method,
+    and the class's default method is found by its own name.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "hs/src/Shapes.hs": (
+                "module Shapes where\n\n"
+                "class HasArea a where\n"
+                "  area :: a -> Double\n"
+                "  perimeter :: a -> Double\n"
+                "  perimeter _ = 0\n\n"
+                "data Square = Square Double\n\n"
+                "instance HasArea Square where\n"
+                "  area (Square s) = s * s\n"
+            ),
+        },
+    )
+    pointer = load_pointer(root)
+    assert pointer is not None
+
+    matches = symbol_matches(pointer, "area")
+    area = {(m["kind"], m["line_start"]) for m in matches if m["name"] == "area"}
+    assert area == {("function", 4), ("function", 11)}, matches
+    matches = symbol_matches(pointer, "perimeter")
+    perimeter = [(m["kind"], m["line_start"]) for m in matches if m["name"] == "perimeter"]
+    assert perimeter == [("function", 5)], matches
+
+
 class TestSolidityImports:
     """`./x.sol` is relative to the importing file. Another path is
     tried from the repo root, then node_modules/, lib/, and a Foundry

@@ -1563,6 +1563,7 @@ def test_haskell_extracts_types_classes_functions_imports_and_calls(tmp_path):
         ("Wrapper", "type", 10, 10),
         ("Name", "type", 12, 12),
         ("Describable", "interface", 14, 15),
+        ("describe", "function", 15, 15),
         ("describe", "function", 18, 19),
         ("area", "function", 22, 25),
         ("largest", "function", 28, 29),
@@ -1575,6 +1576,44 @@ def test_haskell_extracts_types_classes_functions_imports_and_calls(tmp_path):
     assert {"show", "area", "foldr", "fromList", "map", "mapM_", "sortBy"} <= names
     assert "pick" not in {d["name"] for d in result["definitions"]}
     assert not names & {"Just", "Circle"}
+
+
+HASKELL_CLASS_SOURCE = """\
+module Shapes where
+
+f :: Int -> Int
+f x = g x
+  where
+    g :: Int -> Int
+    g y = y + 1
+
+class HasArea a where
+  area :: a -> Double
+  perimeter :: a -> Double
+  perimeter _ = 0
+  label :: a -> String
+  scale :: a -> Double
+  scale _ = 1
+  scale _ = 2
+"""
+
+
+def test_haskell_class_signatures_and_defaults_are_symbols(tmp_path):
+    """Haskell: a class method signature is a function symbol, and an
+    adjacent default merges into it as one symbol. Top-level and
+    where-bound signatures stay out.
+    """
+    result = _extract(tmp_path, "shapes.hs", HASKELL_CLASS_SOURCE)
+    defs = {(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]}
+    assert defs == {
+        ("Shapes", "module", 1, 1),
+        ("f", "function", 4, 7),
+        ("HasArea", "interface", 9, 16),
+        ("area", "function", 10, 10),
+        ("perimeter", "function", 11, 12),
+        ("label", "function", 13, 13),
+        ("scale", "function", 14, 16),
+    }
 
 
 def test_ocaml_extracts_modules_values_types_imports_and_calls(tmp_path):
