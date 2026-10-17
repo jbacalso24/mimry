@@ -14,6 +14,10 @@ on:
           - dev
           - holdout3
         default: holdout2
+      semantic:
+        description: "Run MIMRY with --semantic (results get a .semantic part)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -47,6 +51,7 @@ jobs:
         run: >-
           uv run --with tiktoken python benchmarks/tokens/run.py --work /tmp/tokens
           --set ${{ inputs.set }} --reads ${{ matrix.reads }}
+          ${{ inputs.semantic && '--semantic' || '' }}
 
       # Name the results for the version under test, as published:
       # results.<set>[.<reads>].<version>.json.
@@ -54,13 +59,14 @@ jobs:
         run: |
           version=$(uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
           suffix=${{ matrix.reads != 'full' && format('.{0}', matrix.reads) || '' }}
+          semantic=${{ inputs.semantic && '.semantic' || '' }}
           mkdir -p /tmp/out
-          cp "benchmarks/tokens/results.${{ inputs.set }}${suffix}.json" "/tmp/out/results.${{ inputs.set }}${suffix}.${version}.json"
+          cp "benchmarks/tokens/results.${{ inputs.set }}${suffix}${semantic}.json" "/tmp/out/results.${{ inputs.set }}${suffix}${semantic}.${version}.json"
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: tokens-${{ inputs.set }}-${{ matrix.reads }}
+          name: tokens-${{ inputs.set }}-${{ matrix.reads }}${{ inputs.semantic && '-semantic' || '' }}
           path: /tmp/out/
           if-no-files-found: error
 
@@ -71,6 +77,6 @@ jobs:
     steps:
       - uses: actions/upload-artifact/merge@v4
         with:
-          name: tokens-results-${{ inputs.set }}
+          name: tokens-results-${{ inputs.set }}${{ inputs.semantic && '-semantic' || '' }}
           pattern: tokens-${{ inputs.set }}-*
           delete-merged: true

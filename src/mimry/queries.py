@@ -635,10 +635,19 @@ def run_preflight(a):
         fresh = {"state": "missing"}
 
     stats = None
+    semantic = getattr(a, "semantic", False)
     # Index when there is none, when files changed since the last
     # index, or when asked: a stale index points confidently at the
-    # wrong files.
-    if getattr(a, "force_refresh", False) or fresh["state"] in ("missing", "stale"):
+    # wrong files. Semantic chunks are built by the same index write,
+    # so a missing or stale set rebuilds here too.
+    if (
+        getattr(a, "force_refresh", False)
+        or fresh["state"] in ("missing", "stale")
+        or (
+            semantic
+            and semantic_health(Path(ptr["indexPath"]), ptr.get("rootId"))["status"] != "current"
+        )
+    ):
         started = time.perf_counter()
         stats = write_index(root, ptr)
         elapsed = time.perf_counter() - started
@@ -653,7 +662,13 @@ def run_preflight(a):
                 Path(ptr["indexPath"]), sanitize_query(a.task), fresh["files"]
             )
             rows, pack_path = write_context_pack(
-                root, ptr, a.task, fresh=fresh, graph=graph, history=history
+                root,
+                ptr,
+                a.task,
+                semantic=semantic,
+                fresh=fresh,
+                graph=graph,
+                history=history,
             )
 
     total = ui.took(time.perf_counter() - started_all)

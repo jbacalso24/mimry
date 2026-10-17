@@ -5,7 +5,7 @@ When MCP tools are available, prefer them over shell commands for lookup, prefli
 Primary workflow tools:
 
 - `mimry_status(root?)`
-- `mimry_preflight(query, root?, force_refresh?)`
+- `mimry_preflight(query, root?, force_refresh?, semantic?)`
 
 Navigation and explanation tools:
 

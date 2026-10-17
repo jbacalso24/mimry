@@ -36,12 +36,18 @@ gold file, the agent reads the whole file next, which costs a second
 read from the budget. A file with no ranges is read whole. Results go
 to results.<set>.ranges.json.
 
+With --semantic, the MIMRY agent runs `mimry preflight --semantic`;
+`mimry index` already builds the semantic chunks. Results go to
+results.<set>[.<reads>].semantic.json, so a default run is never
+overwritten.
+
 Tokens are counted with tiktoken's o200k_base encoding. Run from the
 repo root:
 
     uv run --with tiktoken python benchmarks/tokens/run.py \\
         --work C:/tmp/mimry-tokens \\
-        [--set dev|holdout|holdout2|holdout3] [--reads full|sed|ranges]
+        [--set dev|holdout|holdout2|holdout3] \\
+        [--reads full|sed|ranges] [--semantic]
 """
 
 from __future__ import annotations
@@ -351,12 +357,20 @@ def range_read(
     return tokens(text), shown, spans
 
 
+def results_name(set_name: str, reads: str, semantic: bool) -> str:
+    """The results file for a run; the workflow names its copy."""
+    suffix = "" if reads == "full" else f".{reads}"
+    return f"results.{set_name}{suffix}{'.semantic' if semantic else ''}.json"
+
+
 def mimry_agent(
     repo: Path,
     task: dict,
     env: dict[str, str],
     sed: dict | None = None,
     changed: dict[str, set[int]] | None = None,
+    *,
+    semantic: bool = False,
 ) -> dict[str, object]:
     cli = [sys.executable, "-m", "mimry.cli", "--root", str(repo)]
     if not (repo / ".mimry" / "config.toml").exists():
@@ -364,8 +378,9 @@ def mimry_agent(
     started = time.perf_counter_ns()
     run([*cli, "index"], repo, env)
     index_ms = (time.perf_counter_ns() - started) / 1_000_000
+    flags = ["--semantic"] if semantic else []
     started = time.perf_counter_ns()
-    printed = run([*cli, "preflight", task["task"]], repo, env)
+    printed = run([*cli, "preflight", *flags, task["task"]], repo, env)
     preflight_ms = (time.perf_counter_ns() - started) / 1_000_000
     pack = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
     order = re.findall(r"^### \d+\. `([^`]+)`", pack, flags=re.M)
@@ -392,11 +407,12 @@ def mimry_agent(
         read=read,
         then_whole=changed is not None,
     )
+    command = " ".join(["mimry", "preflight", *flags])
     return result | {
         "index_ms": round(index_ms),
         "preflight_ms": round(preflight_ms),
         "ranking": rank_metrics(order, task["gold"]),
-        "search": {"commands": [f'mimry preflight "{task["task"]}"'], "tokens": search_cost},
+        "search": {"commands": [f'{command} "{task["task"]}"'], "tokens": search_cost},
     }
 
 
@@ -473,6 +489,11 @@ def main() -> int:
     parser.add_argument(
         "--window", type=int, default=100, help="sed mode: lines read on each side of an anchor"
     )
+    parser.add_argument(
+        "--semantic",
+        action="store_true",
+        help="MIMRY agent: run mimry preflight --semantic",
+    )
     args = parser.parse_args()
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -516,6 +537,7 @@ def main() -> int:
                 env,
                 sed,
                 changed_lines(repo, task) if args.reads == "ranges" else None,
+                semantic=args.semantic,
             ),
         }
         results.append(row)
@@ -535,10 +557,11 @@ def main() -> int:
             "reads": "ranges",
             "range_misses": sum(r["mimry"]["gold_missed"] for r in results),
         }
+    if args.semantic:
+        summary |= {"semantic": True}
     report = {"summary": summary, "tasks": results}
     if not args.only:
-        suffix = "" if args.reads == "full" else f".{args.reads}"
-        (HERE / f"results.{args.set}{suffix}.json").write_text(
+        (HERE / results_name(args.set, args.reads, args.semantic)).write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8"
         )
     print(json.dumps(report["summary"], indent=2))

@@ -128,6 +128,11 @@ def build_parser():
         action="store_true",
         help="Run the full refresh (graph build + MIMRY index) before context generation",
     )
+    s.add_argument(
+        "--semantic",
+        action="store_true",
+        help="Blend local-only semantic chunks into context file selection",
+    )
     s.set_defaults(func=cmd_preflight)
     s = sub.add_parser(
         "status",

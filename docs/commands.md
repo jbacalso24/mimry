@@ -8,7 +8,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 
 | Command | Use it to |
 |---|---|
-| `mimry preflight "<task>"` | Start a task: context pack plus the files to read first |
+| `mimry preflight "<task>"` | Start a task: context pack plus the files to read first (`--semantic` blends in local semantic chunks, building them when missing or stale; `--force-refresh` runs the full refresh first) |
 | `mimry find "<query>"` | Rank files in the current indexed directory and its descendants; `--everywhere` searches the whole repository and explicit `--path-glob` overrides the default scope. Repeat `--language`, `--path-glob`, or `--exclude-glob`, and page with `--offset`/`--limit` (`--semantic` blends fuzzy matches; `--snippets` adds bounded, live-source excerpts) |
 | `mimry related "<query>"` | Find files connected through the graph |
 | `mimry semantic "<query>"` | Fuzzy recall for "I remember something like..." |

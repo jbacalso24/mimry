@@ -1734,6 +1734,21 @@ def test_preflight_force_refreshes_even_when_current(tmp_path):
     assert "Reindexed first" in res.stdout
 
 
+def test_preflight_semantic_writes_a_context_pack(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "preflight", "--semantic", "create session repository save")
+
+    assert res.returncode == 0, res.stderr
+    assert "OK Context ready for" in res.stdout
+    text = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    assert "src/auth/session.py" in text
+    assert "semantic" in text
+
+
 def test_preflight_reindexes_a_stale_index_first(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

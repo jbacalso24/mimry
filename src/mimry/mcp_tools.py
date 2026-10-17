@@ -458,14 +458,19 @@ def mimry_refresh(root: str | None = None) -> dict[str, Any]:
 @_state_guard
 @_requires_text("query", "task", '"fix the login timeout"')
 def mimry_preflight(
-    query: str, root: str | None = None, force_refresh: bool = False
+    query: str, root: str | None = None, force_refresh: bool = False, semantic: bool = False
 ) -> dict[str, Any]:
     """Fast readiness check and task context, matching CLI preflight."""
     root_path = _root(root)
     query = sanitize_query(query)
     payload = _capture_command(
         run_preflight,
-        SimpleNamespace(root=str(root_path), task=query, force_refresh=force_refresh),
+        SimpleNamespace(
+            root=str(root_path),
+            task=query,
+            force_refresh=force_refresh,
+            semantic=semantic,
+        ),
     )
     status = _status_payload(root_path)
     payload.update(

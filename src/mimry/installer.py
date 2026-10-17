@@ -158,7 +158,7 @@ _REFERENCES: dict[str, str] = {
         """Primary workflow tools:\n"""
         """\n"""
         """- `mimry_status(root?)`\n"""
-        """- `mimry_preflight(query, root?, force_refresh?)`\n"""
+        """- `mimry_preflight(query, root?, force_refresh?, semantic?)`\n"""
         """\n"""
         """Navigation and explanation tools:\n"""
         """\n"""

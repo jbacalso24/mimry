@@ -327,5 +327,7 @@ The runner clones each repository into the scratch directory, checks out each ta
 `--set` takes dev, holdout, holdout2 or holdout3.
 `--reads sed` charges `grep -n` and `sed -n` windows instead of whole-file reads and writes `results.<set>.sed.json`; `--window` sets the lines read on each side of a match (default 100).
 `--reads ranges` has the MIMRY agent read the line ranges its pack lists first and writes `results.<set>.ranges.json`.
+`--semantic` runs the MIMRY agent with `mimry preflight --semantic`; `mimry index` already builds the semantic chunks.
+Results go to `results.<set>[.<reads>].semantic.json`, so the default results are never overwritten.
 The [Token benchmark](../../.github/workflows/tokens.yml) workflow runs a set in all three read modes on GitHub Actions (Ubuntu, Python 3.14) and uploads the results named for the version under test; releases use it for holdout2.
 Selecting new tasks needs an authenticated `gh` CLI: `python benchmarks/tokens/select_tasks.py dev`.
