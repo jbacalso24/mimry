@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from . import groovy_files
 from .data_files import (
     DATA_LANGUAGES,
     blank_template_actions,
@@ -44,6 +45,9 @@ EXTENSION_LANGUAGE = {
     ".kts": "kotlin",
     ".scala": "scala",
     ".sc": "scala",
+    ".groovy": "groovy",
+    ".gradle": "groovy",
+    ".gvy": "groovy",
     ".swift": "swift",
     ".sh": "bash",
     ".bash": "bash",
@@ -108,6 +112,7 @@ LANGUAGE_LABELS: dict[str, str] = {
     "ruby": "Ruby",
     "kotlin": "Kotlin",
     "scala": "Scala",
+    "groovy": "Groovy",
     "swift": "Swift",
     "bash": "Bash",
     "powershell": "PowerShell",
@@ -3209,15 +3214,17 @@ _DATA_EXTRACTORS = {
 
 
 # Languages that parse the whole file at once, not as a node walk.
-_WHOLE_FILE_LANGUAGES = _EMBEDDED_LANGUAGES | DATA_LANGUAGES | {"sql"}
+_WHOLE_FILE_LANGUAGES = _EMBEDDED_LANGUAGES | DATA_LANGUAGES | {"sql", "groovy"}
 
 
 def _extract_whole_file(path: Path, lang: str, source: str) -> dict:
-    """HTML, Vue and Svelte, the data languages, and SQL."""
+    """HTML, Vue and Svelte, the data languages, SQL and Groovy."""
     if lang in _EMBEDDED_LANGUAGES:
         return _extract_embedded(path, lang, source)
     if lang == "sql":
         return _extract_sql(source)
+    if lang == "groovy":
+        return _extract_groovy(source)
     return _extract_data(path, lang, source)
 
 
@@ -3259,6 +3266,89 @@ def _extract_sql(source: str) -> dict:
         if not extract_statement(root, chunk, row, result, seen):
             trigger_header(chunk, row, result, seen)
     return {**result, "status": "ok"}
+
+
+def _command_offsets(root: Any, base: int) -> list[int]:
+    """Start offsets of the commands that sit outside every ERROR node.
+
+    A Groovy declaration is a command in this grammar. ``base`` is the
+    offset of the parsed bytes in the file.
+    """
+    offsets = []
+    stack = [(root, False)]
+    while stack:
+        node, under_error = stack.pop()
+        if node.type in ("command", "end_command") and not under_error:
+            offsets.append(base + node.start_byte)
+        error = under_error or node.type == "ERROR"
+        stack.extend((child, error) for child in node.children)
+    return offsets
+
+
+def _error_spans(root: Any) -> list[tuple[int, int]]:
+    """Byte spans of the outermost ERROR nodes."""
+    spans = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if node.type == "ERROR":
+            spans.append((node.start_byte, node.end_byte))
+        elif node.has_error:
+            stack.extend(node.children)
+    return spans
+
+
+def _extract_groovy(source: str) -> dict:
+    """Groovy and Gradle symbols and imports.
+
+    The whole file is parsed first. A top-level piece the parse left
+    with an error is parsed alone, as SQL statements are, so a construct
+    the grammar cannot read costs only its own piece. A piece that
+    parses cleanly keeps the whole-file tree. A file where nothing
+    parses keeps no symbols and gets the parse_error status.
+    """
+    from bisect import bisect_left
+
+    from tree_sitter import Parser
+
+    raw = source.encode("utf-8")
+    try:
+        parser = Parser(load_language("groovy"))
+    except GrammarUnavailableError:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": GRAMMAR_UNAVAILABLE,
+        }
+    except Exception as exc:
+        return {
+            "definitions": [],
+            "imports": [],
+            "calls": [],
+            "inherits": [],
+            "status": f"parse_error:{exc.__class__.__name__}",
+        }
+    whole = parser.parse(raw).root_node
+    clean = sorted(_command_offsets(whole, 0))
+    errors = _error_spans(whole)
+    offsets: list[int] = []
+    for start, end in groovy_files.top_level_chunks(raw):
+        if any(first < end and last > start for first, last in errors):
+            piece = parser.parse(raw[start:end]).root_node
+            offsets.extend(_command_offsets(piece, start))
+        else:
+            offsets.extend(clean[bisect_left(clean, start) : bisect_left(clean, end)])
+    definitions = groovy_files.symbols(raw, offsets)
+    status = "parse_error:tree_sitter_has_error" if whole.has_error and not definitions else "ok"
+    return {
+        "definitions": definitions,
+        "imports": groovy_files.imports(raw),
+        "calls": [],
+        "inherits": [],
+        "status": status,
+    }
 
 
 def _extract_data(path: Path, lang: str, source: str) -> dict:

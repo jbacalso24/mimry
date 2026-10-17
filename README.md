@@ -147,7 +147,7 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 40 languages with tree-sitter |
+| Code graph | Maps imports, calls and inheritance across 41 languages with tree-sitter |
 | Deterministic | The same code gives the same symbols, graph, rankings and context pack on every machine; CI checks every change against committed golden values ([how](docs/determinism.md)) |
 | Documents | Indexes Markdown, text, PDF, Word, Excel and PowerPoint files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
@@ -174,6 +174,7 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 | Ruby | `.rb` |
 | Kotlin | `.kt`, `.kts` |
 | Scala | `.sc`, `.scala` |
+| Groovy | `.gradle`, `.groovy`, `.gvy` |
 | Swift | `.swift` |
 | Bash | `.bash`, `.sh` |
 | PowerShell | `.ps1`, `.psm1` |
@@ -218,6 +219,7 @@ MIMRY also indexes Markdown (headings, links, frontmatter), plain text, PDF, Wor
 Some files get more structure than their text:
 
 - SQL: `.sql` files give their schema objects and the tables they touch, see below. Python string literals keep their `CREATE TABLE` names, and Alembic migrations keep their revision lineage.
+- Groovy and Gradle: `.groovy`, `.gradle` and `.gvy` files give their classes, interfaces, traits, enums, methods and functions, and the `task` entries of a Gradle build, see below.
 - Manifests: `package.json`, `pyproject.toml`, `tsconfig.json`, `vite.config.*`, `next.config.*`, `app.json`, `app.config.*`, `.env.example`, `CLAUDE.md`, `AGENTS.md` and `README.md` give their commands, frameworks, entry points and env variable names, never values.
 
 The data formats get the names an agent looks them up by.
@@ -237,13 +239,14 @@ A statement the parser does not know costs only itself, and the objects around i
 A trigger written with a `BEGIN ... END` body gives its name and table, but its body is not read.
 Files over 256 KB get no symbols, so a large dump stays text-searchable.
 
+Groovy and Gradle files name each class, interface, trait, enum, method and top-level `def` function as the source writes it.
+A Spock feature method keeps its string, such as `adds two numbers`, as its name.
+A Gradle `task name` or `tasks.register("name")` gives a `task`, and `plugins {}` and `dependencies {}` entries are not symbols.
+An `import` names the Groovy or Java file it points at, the same way a Java import does, and a wildcard import gives no edge.
+A piece of a file the parser cannot read costs only itself, so an annotated type such as `@Service(Book)` keeps its methods.
+Closure-assigned fields and operator methods such as `<<` are not symbols.
+
 Other extensions can be mapped to a supported language in `mimry.toml`, see [Configuration](#configuration).
-
-### Planned
-
-We're adding these next; progress is tracked in [#374](https://github.com/jbacalso24/mimry/issues/374), and you can ask for yours in a new issue.
-
-- [ ] Apps and systems: Groovy and Gradle
 
 ## Supported agents
 

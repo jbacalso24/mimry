@@ -47,7 +47,9 @@ def _names(text: str) -> list[str]:
 def _planned_names() -> list[str]:
     text = README.read_text(encoding="utf-8")
     section = re.search(r"^### Planned\n(.*?)(?=^#{1,3} |\Z)", text, re.DOTALL | re.MULTILINE)
-    assert section, "README.md has no '### Planned' subsection under '## Supported languages'"
+    if section is None:
+        # All planned languages have landed, so there is no section.
+        return []
     names = []
     for line in section.group(1).splitlines():
         match = re.match(r"- \[[ xX]\] [^:]*: (.+)$", line)

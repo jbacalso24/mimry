@@ -105,7 +105,7 @@ RETIRED_SEGMENTS = {"archive", "archived", "legacy", "deprecated", "old", "attic
 # code should not reach it first (#364).
 SOURCE_EXTS = {
     *(".py", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"),
-    *(".go", ".rs", ".java", ".kt", ".cs", ".php", ".swift", ".rb", ".scala"),
+    *(".go", ".rs", ".java", ".kt", ".cs", ".php", ".swift", ".rb", ".scala", ".groovy", ".gvy"),
     *(".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"),
     *(".sh", ".bash", ".ps1", ".psm1", ".lua", ".pl", ".pm"),
     *(".dart", ".m", ".zig"),

@@ -2069,3 +2069,44 @@ class TestXmlImports:
         assert [(r["target"], r["confidence"]) for r in results] == [
             ("config/other.xml", "EXTRACTED")
         ]
+
+
+class TestGroovyImports:
+    """Groovy imports resolve like Java: a dotted path is a suffix."""
+
+    def test_groovy_import_resolves_to_a_groovy_file(self):
+        importer = "grails/grails-app/controllers/demo/BookController.groovy"
+        imports = {importer: ["demo.Book"]}
+        rel_paths = {importer, "grails/grails-app/domain/demo/Book.groovy"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("grails/grails-app/domain/demo/Book.groovy", "INFERRED")
+        ]
+
+    def test_groovy_import_resolves_to_a_java_file(self):
+        imports = {"src/main/groovy/app/Main.groovy": ["com.acme.Util"]}
+        rel_paths = {"src/main/groovy/app/Main.groovy", "src/main/java/com/acme/Util.java"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/main/java/com/acme/Util.java", "INFERRED")
+        ]
+
+    def test_java_import_resolves_to_a_groovy_file(self):
+        imports = {"src/main/java/app/Main.java": ["demo.Book"]}
+        rel_paths = {"src/main/java/app/Main.java", "src/main/groovy/demo/Book.groovy"}
+
+        results = resolve_imports(imports, rel_paths)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("src/main/groovy/demo/Book.groovy", "INFERRED")
+        ]
+
+    def test_ambiguous_groovy_import_is_no_edge(self):
+        imports = {"app/Main.groovy": ["demo.Book"]}
+        rel_paths = {"app/Main.groovy", "a/demo/Book.groovy", "b/demo/Book.groovy"}
+
+        assert resolve_imports(imports, rel_paths) == []

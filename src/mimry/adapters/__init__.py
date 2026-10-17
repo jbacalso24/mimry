@@ -90,13 +90,13 @@ BUILTIN_ADAPTERS: tuple[AdapterInfo, ...] = (
         ),
         agent_use=(
             "Backend, systems and web agents find Python, JavaScript, TypeScript, Go, Rust, C#,"
-            " Java, PHP, C, C++, Ruby, Kotlin, Scala, Swift, Bash, PowerShell, Lua, Perl, Dart,"
-            " Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, and Pascal"
-            " functions, classes, methods, interfaces, modules, imports, calls, and inheritance"
-            " relationships, CSS, SCSS, HTML, Vue, and Svelte selectors, element ids,"
-            " components, and imports, SQL tables, views, functions, triggers and indexes,"
-            " and JSON, YAML, TOML, XML and Terraform keys, ids and resources without reading"
-            " every file."
+            " Java, PHP, C, C++, Ruby, Kotlin, Scala, Groovy, Swift, Bash, PowerShell, Lua,"
+            " Perl, Dart, Objective-C, Zig, Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran,"
+            " and Pascal functions, classes, methods, interfaces, modules, imports, calls,"
+            " and inheritance relationships, CSS, SCSS, HTML, Vue, and Svelte selectors,"
+            " element ids, components, and imports, SQL tables, views, functions, triggers and"
+            " indexes, Groovy and Gradle classes, methods and tasks, and JSON, YAML, TOML, XML"
+            " and Terraform keys, ids and resources without reading every file."
         ),
         notes=(
             "Extracts definitions (functions, classes, structs, interfaces, traits, enums),"

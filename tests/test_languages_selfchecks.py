@@ -3043,3 +3043,203 @@ class TestSqlSizeAndTextSearch:
             "sessions",
             "users",
         ]
+
+
+GROOVY_EVERYDAY = """\
+package demo
+
+import groovy.transform.ToString
+
+@ToString
+class Account {
+    String owner
+    Closure<String> describe = { Account a -> "${a.owner}" }
+
+    String nickname() {
+        return owner?.toUpperCase() ?: "anon"
+    }
+
+    String tierName() {
+        tier == Tier.PRO ? "pro" : "other"
+    }
+
+    def ratio(int a, int b) {
+        a / b
+    }
+
+    def <<(BigDecimal amount) {
+        post(amount)
+    }
+
+    List<String> owners(List<Account> all) {
+        all*.owner
+    }
+}
+
+def greet(String who) {
+    "hello ${who}"
+}
+"""
+
+GROOVY_TYPES = """\
+enum Tier {
+    FREE, PRO
+
+    String label() { name().toLowerCase() }
+}
+
+interface Ledger {
+    BigDecimal balance()
+}
+
+trait Auditable {
+    void audit(String event) {
+        trail << event
+    }
+}
+"""
+
+SPOCK_SPEC = """\
+class BookSpec extends Specification {
+
+    def "adds two numbers"() {
+        expect:
+        2 + 2 == 4
+    }
+
+    def "division keeps the remainder" () {
+        expect:
+        7 / 2 == 3.5
+    }
+}
+"""
+
+GRADLE_BUILD = """\
+plugins {
+    id 'java'
+    id "org.springframework.boot" version "3.2.0"
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+}
+
+tasks.register("docs") {
+    doLast {
+        println "docs"
+    }
+}
+
+task hello {
+    doLast {
+        println 'Hello'
+    }
+}
+"""
+
+ANNOTATED_INTERFACE = """\
+import grails.gorm.services.Service
+
+@Service(Book)
+interface BookService {
+    Book get(Serializable id)
+    List<Book> list(Map args)
+}
+"""
+
+
+class TestGroovySymbols:
+    def test_everyday_syntax_keeps_the_class_and_its_methods(self):
+        result = extract("groovy/src/demo/Account.groovy", GROOVY_EVERYDAY)
+
+        assert result["status"] == "ok"
+        kinds = {d["name"]: d["kind"] for d in result["definitions"]}
+        assert kinds == {
+            "Account": "class",
+            "nickname": "method",
+            "tierName": "method",
+            "ratio": "method",
+            "owners": "method",
+            "greet": "function",
+        }
+        assert _lines(result, "Account") == (6, 29)
+        assert _lines(result, "ratio") == (18, 20)
+        assert _lines(result, "greet") == (31, 33)
+
+    def test_class_interface_trait_and_enum_kinds(self):
+        result = extract("groovy/src/demo/Types.groovy", GROOVY_TYPES)
+
+        assert {d["name"]: d["kind"] for d in result["definitions"]} == {
+            "Tier": "enum",
+            "label": "method",
+            "Ledger": "interface",
+            "balance": "method",
+            "Auditable": "class",
+            "audit": "method",
+        }
+        assert _lines(result, "Auditable") == (11, 15)
+
+    def test_spock_string_method_names_keep_their_string(self):
+        result = extract("grails/src/test/groovy/demo/BookSpec.groovy", SPOCK_SPEC)
+
+        names = [(d["name"], d["kind"]) for d in result["definitions"]]
+        assert names == [
+            ("BookSpec", "class"),
+            ("adds two numbers", "method"),
+            ("division keeps the remainder", "method"),
+        ]
+        assert _lines(result, "division keeps the remainder") == (8, 11)
+
+    def test_gradle_tasks_are_symbols_and_plugins_and_dependencies_are_not(self):
+        result = extract("groovy/build.gradle", GRADLE_BUILD)
+
+        assert [(d["name"], d["kind"]) for d in result["definitions"]] == [
+            ("docs", "task"),
+            ("hello", "task"),
+        ]
+        assert _lines(result, "docs") == (10, 14)
+        assert _lines(result, "hello") == (16, 20)
+
+    def test_annotated_interface_keeps_its_methods_as_methods(self):
+        result = extract("grails/services/BookService.groovy", ANNOTATED_INTERFACE)
+
+        assert {d["name"]: d["kind"] for d in result["definitions"]} == {
+            "BookService": "interface",
+            "get": "method",
+            "list": "method",
+        }
+        assert _lines(result, "BookService") == (4, 7)
+
+    def test_imports_are_modules_and_a_wildcard_is_no_edge(self):
+        source = (
+            "import a.b.C\nimport static x.y.Z.run\nimport r.s.T as U\nimport p.q.*\nclass K {}\n"
+        )
+        result = extract("src/K.groovy", source)
+
+        assert [(i["module"], i["line"]) for i in result["imports"]] == [
+            ("a.b.C", 1),
+            ("x.y.Z.run", 2),
+            ("r.s.T", 3),
+        ]
+
+    def test_file_where_nothing_parses_has_no_symbols_and_a_parse_error(self):
+        source = "%%% this is not groovy at all {{{ ((( ]]] ###\nclass Lost\n"
+        result = extract("groovy/src/demo/Garbage.groovy", source)
+
+        assert result["definitions"] == []
+        assert result["status"] == "parse_error:tree_sitter_has_error"
+
+    def test_gradle_and_groovy_extensions_map_to_groovy(self):
+        from mimry.constants import TEXT_EXTS
+
+        for name in ("App.groovy", "build.gradle", "Pipe.gvy"):
+            assert language_for(name) == "groovy"
+        assert {".groovy", ".gradle", ".gvy"} <= TEXT_EXTS
+
+    def test_build_gradle_is_indexed_with_the_groovy_adapter(self, tmp_path):
+        record, symbols = TestDataFilesThroughScanner._adapt(
+            tmp_path, "build.gradle", 'tasks.register("x") {\n}\n'
+        )
+
+        assert record["adapter"].endswith("tree-sitter-groovy")
+        assert [(s["name"], s["kind"]) for s in symbols] == [("x", "task")]
