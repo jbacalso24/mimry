@@ -123,6 +123,7 @@ Five versions are compared, each developed against the dev set only.
 | holdout2, 44 tasks | 0.4.1 | 30.9% | 28 / 32 | 45.2% | 29.8% (24 tasks) |
 | holdout2, 44 tasks | 0.5.0 | 30.6% | 28 / 32 | 45.2% | 28.7% (24 tasks) |
 | holdout2, 44 tasks | 0.6.0 | 31.7% | 28 / 33 | 45.9% | 36.5% (25 tasks) |
+| holdout2, 44 tasks | 0.6.1 | 53.2% | 28 / 33 | 45.8% | 36.4% (25 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 57.8% | 21 / 32 | 69.6% | 69.4% (19 tasks) |
 
 At the baseline MIMRY read more tokens than grep and fully located fewer tasks.
@@ -204,6 +205,12 @@ hono#5446 reaches its first gold file on the seventh read instead of the tenth, 
 With sed reads savings drop from 27.0% to 21.4% because of one task MIMRY misses in both versions: retrofit#4704 reads a minified 435,000-token bundle under `website/public/`, now with five generated stylesheets ([#398](https://github.com/jbacalso24/mimry/issues/398)).
 Per-task numbers are in [results.holdout2.0.6.0.json](results.holdout2.0.6.0.json), [results.holdout2.sed.0.6.0.json](results.holdout2.sed.0.6.0.json) and [results.holdout2.ranges.0.6.0.json](results.holdout2.ranges.0.6.0.json).
 
+0.6.1 was run once in each read mode at release, on commit 671b0ca, by the Token benchmark workflow on Linux.
+Every task is located or missed as with 0.6.0 in all three read modes, and savings on the tasks both agents locate are unchanged.
+The higher totals come from two retrofit tasks MIMRY misses in both versions: minified bundles now count as repository noise ([#398](https://github.com/jbacalso24/mimry/issues/398)), so retrofit#4704 reads 53,235 tokens instead of 308,767 and retrofit#4764 17,896 instead of 268,954 with full reads.
+That fix was found by reading this set's 0.6.0 results, so these two tasks no longer measure it blind; on dev it changed nothing.
+Per-task numbers are in [results.holdout2.0.6.1.json](results.holdout2.0.6.1.json), [results.holdout2.sed.0.6.1.json](results.holdout2.sed.0.6.1.json) and [results.holdout2.ranges.0.6.1.json](results.holdout2.ranges.0.6.1.json).
+
 **Rank before the cut** fixes a bug in how graph and content matches combine.
 The graph's matches were cut to the result limit (8 for a context pack) before each file's content score was added, so a file the graph ranked ninth could never lead, however well its content matched.
 Now every graph match gets its content score first, and the cut comes after.
@@ -239,6 +246,7 @@ With `--reads sed`:
 | holdout2, 44 tasks | 0.4.1 | 27.5% | 27 / 30 | 45.4% | 37.8% (23 tasks) |
 | holdout2, 44 tasks | 0.5.0 | 27.0% | 27 / 30 | 45.3% | 36.4% (23 tasks) |
 | holdout2, 44 tasks | 0.6.0 | 21.4% | 27 / 31 | 45.9% | 43.6% (24 tasks) |
+| holdout2, 44 tasks | 0.6.1 | 49.5% | 27 / 31 | 49.3% | 43.5% (24 tasks) |
 | holdout3, 48 tasks | 0.3.1 | 54.1% | 19 / 30 | 62.4% | 71.7% (17 tasks) |
 
 On holdout2, 0.3.0 still reads 37% fewer tokens than grep, against 40% with whole-file reads, and its per-task median barely moves.
@@ -284,6 +292,7 @@ For the rebase-merged tasks above, a gold file the last commit does not touch co
 | holdout2, 44 tasks | 0.4.1 | 65.2% | 28 / 32 | 75.3% | 57.2% (24 tasks) |
 | holdout2, 44 tasks | 0.5.0 | 64.7% | 28 / 32 | 77.1% | 55.4% (24 tasks) |
 | holdout2, 44 tasks | 0.6.0 | 65.5% | 28 / 32 | 77.1% | 60.7% (24 tasks) |
+| holdout2, 44 tasks | 0.6.1 | 70.8% | 28 / 32 | 76.8% | 60.6% (24 tasks) |
 
 On dev, reading the listed ranges halves what MIMRY reads: 677,799 tokens against 0.3.0's 1,285,495 with whole-file reads, while grep reads 1,894,477.
 It locates one task fewer than with whole-file reads (32 against 33): in ripgrep#3472 the ranges missed the change in several of the four gold files, and the second reads used up the budget.
