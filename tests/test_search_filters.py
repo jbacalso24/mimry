@@ -176,7 +176,7 @@ def test_default_graph_search_ranks_every_graph_match_before_the_cut(tmp_path, m
 
     monkeypatch.setattr(search, "graph_available", lambda _root: True)
 
-    def graph_rows(_root, _query, limit):
+    def graph_rows(_root, _query, limit, **_kwargs):
         requested_limits.append(limit)
         rows = [
             {"path": row["rel_path"], "score": 100, "reason": "graph baseline"} for row in files
@@ -229,7 +229,7 @@ def test_filtered_or_paginated_search_expands_candidates_before_slicing(tmp_path
     requested_limits = []
     monkeypatch.setattr(search, "graph_available", lambda _root: True)
 
-    def graph_rows(_root, _query, limit):
+    def graph_rows(_root, _query, limit, **_kwargs):
         requested_limits.append(limit)
         return [
             {"path": row["rel_path"], "score": 100, "reason": "graph baseline"}
@@ -248,7 +248,7 @@ def test_explicit_graph_pagination_uses_one_expanded_ranking_from_page_one(tmp_p
     _patch_ranking_dependencies(monkeypatch)
     monkeypatch.setattr(search, "graph_available", lambda _root: True)
 
-    def graph_rows(_root, _query, limit):
+    def graph_rows(_root, _query, limit, **_kwargs):
         rows = [
             {
                 "path": row["rel_path"],
