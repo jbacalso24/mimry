@@ -27,6 +27,7 @@ from .adapters.framework import (
 from .adapters.ts_ast import TS_EXTENSIONS, parse_ts_like
 from .adapters.xcode import extract_xcode_targets, parse_pbxproj
 from .constants import SCHEMA_VERSION, SETTINGS_FILE
+from .core import groovy_files
 from .core.data_files import SIZE_LIMITED_LANGUAGES, symbols_allowed
 from .core.documents import (
     DOCUMENT_ADAPTERS,
@@ -735,6 +736,11 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
         module = re.search(r"^module\s+[\"'`]?([^\s\"'`]+)", data_decoded, re.MULTILINE)
         if module:
             references["go_module"] = module.group(1)
+    if ext in {".groovy", ".gvy"}:
+        # A Groovy file's package, for resolving its imports to classes.
+        package = groovy_files.package_of(data_decoded)
+        if package:
+            references["groovy_package"] = package
     if posixpath.basename(rel_path) in CONFIG_NAMES:
         # Path aliases, for resolving `@/x` style imports. A config that
         # does not parse is skipped, as if absent.

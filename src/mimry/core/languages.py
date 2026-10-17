@@ -3254,7 +3254,7 @@ def _extract_whole_file(path: Path, lang: str, source: str) -> dict:
     if lang == "sql":
         return _extract_sql(source)
     if lang == "groovy":
-        return _extract_groovy(source)
+        return _extract_groovy(source, gradle=path.suffix.lower() == ".gradle")
     return _extract_data(path, lang, source)
 
 
@@ -3298,21 +3298,135 @@ def _extract_sql(source: str) -> dict:
     return {**result, "status": "ok"}
 
 
-def _command_offsets(root: Any, base: int) -> list[int]:
-    """Start offsets of the commands that sit outside every ERROR node.
+def _groovy_text(data: bytes, node: Any) -> str:
+    return data[node.start_byte : node.end_byte].decode("utf-8", "replace")
 
-    A Groovy declaration is a command in this grammar. ``base`` is the
-    offset of the parsed bytes in the file.
+
+def _groovy_func_call(node: Any, data: bytes) -> tuple[int, str, str | None] | None:
+    """(offset, name, receiver) of a `name(...)` call, or None.
+
+    The call's name is the identifier that starts the node. ``this`` is
+    the receiver of `this.name(...)`, and any other receiver gives none.
+    `it.name()` is a closure parameter, and `new Name()` a constructor,
+    so neither is a call.
     """
-    offsets = []
+    children = node.children
+    if not children or children[0].type != "identifier":
+        return None
+    if not any(child.type == "arg_block" for child in children):
+        return None
+    name = _groovy_text(data, children[0])
+    if name in groovy_files.CALL_KEYWORDS:
+        return None
+    receiver = None
+    parent = node.parent
+    if parent is not None and parent.type == "unit":
+        siblings = parent.children
+        index = next(
+            i for i, sibling in enumerate(siblings) if sibling.start_byte == node.start_byte
+        )
+        if index == 2 and siblings[0].type == "identifier" and siblings[1].type == ".":
+            owner = _groovy_text(data, siblings[0])
+            if owner == "it":
+                return None
+            if owner == "this":
+                receiver = "this"
+        previous = parent.prev_sibling
+        if index == 0 and previous is not None and _groovy_text(data, previous) == "new":
+            return None
+    return children[0].start_byte, name, receiver
+
+
+def _groovy_word_call(node: Any, data: bytes) -> tuple[int, str] | None:
+    """(offset, name) of a `name arg` command call, or None.
+
+    The first word of the command must be a bare name followed by an
+    argument, not by an operator such as `=`. Whether the name is a
+    callable of the file is decided later.
+    """
+    named = node.named_children
+    if len(named) < 2:
+        return None
+    first, second = named[0], named[1]
+    if first.type != "unit" or len(first.children) != 1:
+        return None
+    word = first.children[0]
+    if word.type != "identifier" or second.type == "operators":
+        return None
+    name = _groovy_text(data, word)
+    if name in groovy_files.CALL_KEYWORDS:
+        return None
+    return word.start_byte, name
+
+
+def _groovy_facts(root: Any, data: bytes, base: int) -> list[tuple]:
+    """Facts of the nodes outside every ERROR node, as tuples of
+    (offset, kind, name, receiver).
+
+    A "command" fact marks where a command starts, which is where a
+    Groovy declaration starts in this grammar. A "word" fact is a
+    command call of a bare name, and a "func" fact a `name(...)` call.
+    ``data`` holds the bytes that were parsed. ``base`` is the offset
+    of those bytes in the file.
+    """
+    facts: list[tuple] = []
     stack = [(root, False)]
     while stack:
         node, under_error = stack.pop()
-        if node.type in ("command", "end_command") and not under_error:
-            offsets.append(base + node.start_byte)
         error = under_error or node.type == "ERROR"
+        if not error:
+            if node.type in ("command", "end_command"):
+                facts.append((base + node.start_byte, "command", None, None))
+            if node.type == "command":
+                word = _groovy_word_call(node, data)
+                if word is not None:
+                    facts.append((base + word[0], "word", word[1], None))
+            elif node.type == "func":
+                call = _groovy_func_call(node, data)
+                if call is not None:
+                    facts.append((base + call[0], "func", call[1], call[2]))
         stack.extend((child, error) for child in node.children)
-    return offsets
+    return facts
+
+
+def _groovy_calls(raw: bytes, facts: list[tuple], found: dict) -> list[dict]:
+    """Call records for the calls inside a function or method body.
+
+    A `name arg` command counts only when ``name`` is a function or
+    method of the file. A callable's own header is not a call of
+    itself, and a call in an annotation is not one either.
+    """
+    from bisect import bisect_right
+
+    merged: list[list[int]] = []
+    for start, end in sorted((start, end) for _, start, end in found["bodies"]):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    merged_starts = [start for start, _ in merged]
+    header_starts = {name_start for name_start, _, _ in found["bodies"]}
+    lines = groovy_files.line_starts(raw)
+    calls: list[dict] = []
+    for offset, kind, name, receiver in sorted(facts, key=lambda fact: fact[0]):
+        if kind == "word":
+            if name not in found["callable_names"]:
+                continue
+        elif kind != "func" or offset in header_starts:
+            continue
+        index = bisect_right(merged_starts, offset) - 1
+        if index < 0 or offset >= merged[index][1]:
+            continue
+        before = offset - 1
+        while before >= 0 and raw[before] in b" \t":
+            before -= 1
+        if before >= 0 and raw[before] == 0x40:  # @, an annotation
+            continue
+        call = {"name": name, "line": bisect_right(lines, offset)}
+        if receiver:
+            call["receiver"] = receiver
+        calls.append(call)
+    return calls
 
 
 def _error_spans(root: Any) -> list[tuple[int, int]]:
@@ -3328,14 +3442,15 @@ def _error_spans(root: Any) -> list[tuple[int, int]]:
     return spans
 
 
-def _extract_groovy(source: str) -> dict:
-    """Groovy and Gradle symbols and imports.
+def _extract_groovy(source: str, *, gradle: bool = False) -> dict:
+    """Groovy and Gradle symbols, imports, calls and inheritance.
 
     The whole file is parsed first. A top-level piece the parse left
     with an error is parsed alone, as SQL statements are, so a construct
     the grammar cannot read costs only its own piece. A piece that
     parses cleanly keeps the whole-file tree. A file where nothing
-    parses keeps no symbols and gets the parse_error status.
+    parses keeps no symbols and gets the parse_error status. A Gradle
+    build script keeps no calls, since its blocks are DSL, not code.
     """
     from bisect import bisect_left
 
@@ -3364,22 +3479,25 @@ def _extract_groovy(source: str) -> dict:
     # them blanked. The copy keeps every byte offset.
     code = groovy_files.mask_slashy(raw)
     whole = parser.parse(code).root_node
-    clean = sorted(_command_offsets(whole, 0))
+    clean = sorted(_groovy_facts(whole, code, 0), key=lambda fact: fact[0])
+    clean_at = [fact[0] for fact in clean]
     errors = _error_spans(whole)
-    offsets: list[int] = []
+    facts: list[tuple] = []
     for start, end in groovy_files.top_level_chunks(raw):
         if any(first < end and last > start for first, last in errors):
-            piece = parser.parse(code[start:end]).root_node
-            offsets.extend(_command_offsets(piece, start))
+            piece = code[start:end]
+            facts.extend(_groovy_facts(parser.parse(piece).root_node, piece, start))
         else:
-            offsets.extend(clean[bisect_left(clean, start) : bisect_left(clean, end)])
-    definitions = groovy_files.symbols(raw, offsets)
+            facts.extend(clean[bisect_left(clean_at, start) : bisect_left(clean_at, end)])
+    offsets = [offset for offset, kind, _, _ in facts if kind == "command"]
+    found = groovy_files.definitions(raw, offsets)
+    definitions = found["symbols"]
     status = "parse_error:tree_sitter_has_error" if whole.has_error and not definitions else "ok"
     return {
         "definitions": definitions,
         "imports": groovy_files.imports(raw),
-        "calls": [],
-        "inherits": [],
+        "calls": [] if gradle else _groovy_calls(raw, facts, found),
+        "inherits": found["inherits"],
         "status": status,
     }
 

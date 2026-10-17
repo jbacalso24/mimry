@@ -83,6 +83,8 @@ def resolve_imports(
     ts_paths: dict[str, dict] | None = None,
     fortran_modules: dict[str, list[str]] | None = None,
     haskell_modules: dict[str, list[str]] | None = None,
+    groovy_classes: dict[str, list[str]] | None = None,
+    groovy_packages: dict[str, list[str]] | None = None,
 ) -> list[dict]:
     """Resolve import strings to repo-relative target files.
 
@@ -103,6 +105,10 @@ def resolve_imports(
             that define a module of that name, for `use` statements.
         haskell_modules: Haskell module name to the files whose
             `module` header declares it, for `import` statements.
+        groovy_classes: Qualified Groovy class name to the files that
+            declare it in their package, for `import` statements.
+        groovy_packages: Groovy package name to the files of that
+            package, for wildcard imports such as `a.b.*`.
 
     Returns:
         Sorted list of {"importer": str, "target": str,
@@ -133,24 +139,29 @@ def resolve_imports(
 
     for importer, module_list in imports.items():
         is_go = language_for(importer, overrides) == "go"
+        is_groovy = language_for(importer, overrides) == "groovy"
         for module in module_list:
             if is_go:
                 targets = _resolve_go(module, go_modules or {}, go_package_files)
+            elif is_groovy and module.endswith(".*"):
+                targets = _resolve_groovy_package(importer, module[:-2], groovy_packages or {})
             else:
-                target = _resolve_import(
-                    importer,
-                    module,
-                    rel_paths,
-                    suffix_lookup,
-                    exact_lookup,
-                    overrides,
-                    package_roots,
-                    dart_packages,
-                    ts_paths=ts_paths,
-                    fortran_modules=fortran_modules,
-                    haskell_modules=haskell_modules,
-                    pascal_units=pascal_units,
-                )
+                target = _resolve_groovy_class(module, groovy_classes or {}) if is_groovy else None
+                if target is None:
+                    target = _resolve_import(
+                        importer,
+                        module,
+                        rel_paths,
+                        suffix_lookup,
+                        exact_lookup,
+                        overrides,
+                        package_roots,
+                        dart_packages,
+                        ts_paths=ts_paths,
+                        fortran_modules=fortran_modules,
+                        haskell_modules=haskell_modules,
+                        pascal_units=pascal_units,
+                    )
                 targets = [target] if target else []
             for target in targets:
                 results.append(
@@ -399,6 +410,32 @@ def _resolve_elixir(
     """Elixir `Foo.BarBaz` is `foo/bar_baz.ex`, a unique path suffix."""
     path = "/".join(_snake_case(part) for part in module.split(".")) + ".ex"
     return _unique_path_suffix(exact_lookup, path)
+
+
+def _resolve_groovy_class(module: str, classes: dict[str, list[str]]) -> dict | None:
+    """`import a.b.C` is the one file that declares class `a.b.C`.
+
+    Failing that, the parent name is tried, for a static import such as
+    `a.b.C.m` and for a nested class. Several declarers name nothing.
+    """
+    files = classes.get(module, [])
+    if not files:
+        parent = module.rpartition(".")[0]
+        files = classes.get(parent, []) if parent else []
+    if len(files) == 1:
+        return {"path": files[0], "confidence": "EXTRACTED"}
+    return None
+
+
+def _resolve_groovy_package(importer: str, package: str, packages: dict[str, list[str]]) -> list:
+    """`import a.b.*` links to every file of package `a.b`, but not to
+    the importer itself.
+    """
+    return [
+        {"path": path, "confidence": "EXTRACTED"}
+        for path in sorted(packages.get(package, []))
+        if path != importer
+    ]
 
 
 def _resolve_haskell(

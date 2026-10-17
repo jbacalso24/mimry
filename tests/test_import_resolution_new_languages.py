@@ -1719,6 +1719,32 @@ def test_haskell_and_fortran_imports_index_as_exact_edges(tmp_path):
     }
 
 
+def test_groovy_imports_index_as_exact_edges(tmp_path):
+    """A declared class, a static member and a wildcard package link
+    with EXTRACTED. An import of a class no file declares links to
+    nothing.
+    """
+    root = tmp_path / "repo"
+    _index_repo(
+        root,
+        {
+            "src/main/groovy/demo/Helpers.groovy": (
+                "package demo\n\nclass Helpers {\n    static util() { 1 }\n}\n"
+            ),
+            "src/main/groovy/demo/Shapes.groovy": "package demo\n\ninterface Shapes {}\n",
+            "src/main/groovy/app/Main.groovy": (
+                "package app\n\nimport demo.Helpers\nimport static demo.Helpers.util\n"
+                "import demo.*\nimport org.missing.Gone\n\nclass Main {}\n"
+            ),
+        },
+    )
+
+    assert _import_confidences(root) == {
+        ("src/main/groovy/app/Main.groovy", "src/main/groovy/demo/Helpers.groovy"): "EXTRACTED",
+        ("src/main/groovy/app/Main.groovy", "src/main/groovy/demo/Shapes.groovy"): "EXTRACTED",
+    }
+
+
 class TestStyleImports:
     """CSS `@import` is relative to the stylesheet, and a bare package
     path is under node_modules/. SCSS partials follow Sass's rules.
@@ -2110,3 +2136,51 @@ class TestGroovyImports:
         rel_paths = {"app/Main.groovy", "a/demo/Book.groovy", "b/demo/Book.groovy"}
 
         assert resolve_imports(imports, rel_paths) == []
+
+    def test_declared_class_import_is_an_exact_edge(self):
+        imports = {"app/Main.groovy": ["demo.Book"]}
+        rel_paths = {"app/Main.groovy", "lib/Book.groovy"}
+        classes = {"demo.Book": ["lib/Book.groovy"]}
+
+        results = resolve_imports(imports, rel_paths, groovy_classes=classes)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("lib/Book.groovy", "EXTRACTED")
+        ]
+
+    def test_static_import_resolves_to_the_class_file(self):
+        imports = {"app/Main.groovy": ["demo.Book.make", "demo.Book.Chapter"]}
+        rel_paths = {"app/Main.groovy", "lib/Book.groovy"}
+        classes = {"demo.Book": ["lib/Book.groovy"]}
+
+        results = resolve_imports(imports, rel_paths, groovy_classes=classes)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("lib/Book.groovy", "EXTRACTED"),
+            ("lib/Book.groovy", "EXTRACTED"),
+        ]
+
+    def test_wildcard_import_links_to_every_file_of_the_package(self):
+        imports = {"app/Main.groovy": ["demo.*"]}
+        rel_paths = {"app/Main.groovy", "lib/Book.groovy", "lib/Shelf.groovy"}
+        packages = {"demo": ["lib/Shelf.groovy", "lib/Book.groovy", "app/Main.groovy"]}
+
+        results = resolve_imports(imports, rel_paths, groovy_packages=packages)
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("lib/Book.groovy", "EXTRACTED"),
+            ("lib/Shelf.groovy", "EXTRACTED"),
+        ]
+
+    def test_wildcard_of_an_unknown_package_is_no_edge(self):
+        imports = {"app/Main.groovy": ["demo.*"]}
+        rel_paths = {"app/Main.groovy", "lib/Book.groovy"}
+
+        assert resolve_imports(imports, rel_paths) == []
+
+    def test_class_declared_by_two_files_keeps_the_path_rule(self):
+        imports = {"app/Main.groovy": ["demo.Book"]}
+        rel_paths = {"app/Main.groovy", "a/Book.groovy", "b/Book.groovy"}
+        classes = {"demo.Book": ["a/Book.groovy", "b/Book.groovy"]}
+
+        assert resolve_imports(imports, rel_paths, groovy_classes=classes) == []

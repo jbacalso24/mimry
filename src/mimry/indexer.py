@@ -203,6 +203,7 @@ _REFERENCE_KEYS = (
     "dart_package",
     "go_module",
     "ts_config",
+    "groovy_package",
 )
 
 
@@ -611,6 +612,36 @@ def _respelled(record: dict, field: str, spellings: dict) -> dict:
     return {**record, field: name}
 
 
+_GROOVY_TYPE_KINDS = ("class", "interface", "enum")
+
+
+def _groovy_classes(files, symbols, packages: dict[str, str]) -> dict:
+    """Qualified class name -> [rel_path, ...] for each class, interface
+    or enum a Groovy file declares in its package.
+    """
+    rel_path_of = {f["file_id"]: f["rel_path"] for f in files}
+    classes: dict[str, list] = {}
+    for sym in symbols:
+        rel_path = rel_path_of.get(sym["file_id"])
+        package = packages.get(rel_path)
+        if sym.get("language") != "groovy" or sym["kind"] not in _GROOVY_TYPE_KINDS:
+            continue
+        if not package:
+            continue
+        declared = classes.setdefault(f"{package}.{sym['name']}", [])
+        if rel_path not in declared:
+            declared.append(rel_path)
+    return classes
+
+
+def _groovy_packages(packages: dict[str, str]) -> dict:
+    """package name -> [rel_path, ...] for each Groovy file of it."""
+    by_package: dict[str, list] = {}
+    for rel_path, package in packages.items():
+        by_package.setdefault(package, []).append(rel_path)
+    return by_package
+
+
 def _declared_modules(files, symbols, language: str, *, fold_case: bool = False) -> dict:
     """module name -> [rel_path, ...] for each module a file of
     ``language`` declares. ``fold_case`` lower-cases the names, for
@@ -829,6 +860,8 @@ def _build_core_graph(
         ts_paths=ts_paths,
         fortran_modules=_declared_modules(files, symbols, "fortran", fold_case=True),
         haskell_modules=_declared_modules(files, symbols, "haskell"),
+        groovy_classes=_groovy_classes(files, symbols, split_refs["groovy_package"]),
+        groovy_packages=_groovy_packages(split_refs["groovy_package"]),
     )
 
     graph["edges"] += _import_graph_edges(import_edges, file_id_of)

@@ -3263,6 +3263,10 @@ def _groovy_spans(result: dict) -> list[tuple[str, str, int, int]]:
     return [(d["name"], d["kind"], d["line_start"], d["line_end"]) for d in result["definitions"]]
 
 
+def _groovy_calls(result: dict) -> list[tuple[str, int, str | None]]:
+    return [(c["name"], c["line"], c.get("receiver")) for c in result["calls"]]
+
+
 class TestGroovySymbols:
     def test_annotated_parameters_with_arguments_keep_their_method(self):
         result = extract(
@@ -3418,7 +3422,7 @@ class TestGroovySymbols:
         }
         assert _lines(result, "BookService") == (4, 7)
 
-    def test_imports_are_modules_and_a_wildcard_is_no_edge(self):
+    def test_imports_are_modules_and_a_wildcard_keeps_its_package(self):
         source = (
             "import a.b.C\nimport static x.y.Z.run\nimport r.s.T as U\nimport p.q.*\nclass K {}\n"
         )
@@ -3428,6 +3432,7 @@ class TestGroovySymbols:
             ("a.b.C", 1),
             ("x.y.Z.run", 2),
             ("r.s.T", 3),
+            ("p.q.*", 4),
         ]
 
     def test_file_where_nothing_parses_has_no_symbols_and_a_parse_error(self):
@@ -3451,3 +3456,115 @@ class TestGroovySymbols:
 
         assert record["adapter"].endswith("tree-sitter-groovy")
         assert [(s["name"], s["kind"]) for s in symbols] == [("x", "task")]
+
+    def test_each_call_form_is_a_call_from_its_method(self):
+        result = extract(
+            "groovy/src/demo/Caller.groovy",
+            "class Caller {\n"
+            "    def helper() { 1 }\n"
+            "    def use() {\n"
+            "        helper()\n"
+            "        Helpers.util()\n"
+            "        this.helper()\n"
+            "        obj.name(1, 2)\n"
+            "        a.b.c()\n"
+            "    }\n"
+            "}\n",
+        )
+
+        assert _groovy_calls(result) == [
+            ("helper", 4, None),
+            ("util", 5, None),
+            ("helper", 6, "this"),
+            ("name", 7, None),
+            ("c", 8, None),
+        ]
+
+    def test_call_after_a_slashy_string_and_inside_a_gstring_are_calls(self):
+        result = extract(
+            "groovy/src/demo/Text.groovy",
+            "class Text {\n"
+            "    def use() {\n"
+            '        def n = "a/b".size() + /x/.size()\n'
+            '        def s = "${helper(1)} and ${Other.thing()}"\n'
+            "    }\n"
+            "    def helper(x) { x }\n"
+            "}\n",
+        )
+
+        assert _groovy_calls(result) == [
+            ("size", 3, None),
+            ("size", 3, None),
+            ("helper", 4, None),
+            ("thing", 4, None),
+        ]
+
+    def test_command_call_is_a_call_only_to_a_callable_of_the_file(self):
+        result = extract(
+            "groovy/src/demo/Cmd.groovy",
+            "class Cmd {\n"
+            "    def helper(x) { x }\n"
+            "    def use() {\n"
+            "        helper 1\n"
+            '        println "x"\n'
+            "        marker arg\n"
+            "    }\n"
+            "}\n",
+        )
+
+        assert _groovy_calls(result) == [("helper", 4, None)]
+
+    def test_keywords_closure_it_and_constructors_are_no_calls(self):
+        result = extract(
+            "groovy/src/demo/Skip.groovy",
+            "class Skip {\n"
+            "    def use() {\n"
+            "        if (x) { y() }\n"
+            "        it.bar()\n"
+            "        new Foo().use()\n"
+            "        this(1)\n"
+            "    }\n"
+            "}\n",
+        )
+
+        assert _groovy_calls(result) == [("y", 3, None), ("use", 5, None)]
+
+    def test_calls_outside_a_callable_body_are_no_calls(self):
+        result = extract(
+            "groovy/src/demo/Fields.groovy",
+            "class Fields {\n"
+            "    def f = helper()\n"
+            "    def helper() { 1 }\n"
+            "    def use() { helper() }\n"
+            "}\n",
+        )
+
+        assert _groovy_calls(result) == [("helper", 4, None)]
+
+    def test_gradle_build_script_has_no_calls(self):
+        result = extract(
+            "build.gradle",
+            "task hello {\n  println helper()\n}\ndef helper() { 1 }\n",
+        )
+
+        assert _groovy_calls(result) == []
+        assert _groovy_spans(result) == [("hello", "task", 1, 3), ("helper", "function", 4, 4)]
+
+    def test_extends_and_implements_are_inherits_of_each_type(self):
+        result = extract(
+            "groovy/src/demo/Heritage.groovy",
+            "class Box<T> extends Base<T> implements Ledger, pkg.Auditable<T> {\n}\n"
+            "interface Shape extends Drawable, Other {\n}\n"
+            "enum Tier implements Ranked {\n    GOLD\n}\n"
+            "trait Mixin extends Base2 {\n}\n",
+        )
+
+        assert [(i["type"], i["base"], i["line"]) for i in result["inherits"]] == [
+            ("Box", "Base", 1),
+            ("Box", "Ledger", 1),
+            ("Box", "Auditable", 1),
+            ("Shape", "Drawable", 3),
+            ("Shape", "Other", 3),
+            ("Tier", "Ranked", 5),
+            ("Mixin", "Base2", 8),
+        ]

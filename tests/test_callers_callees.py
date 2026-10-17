@@ -1119,3 +1119,51 @@ def test_split_file_line_and_ambiguity_hints():
     assert ambiguity_message("f", one).endswith("add --file <path> to pick one.")
     assert ambiguity_message("f", same).endswith("add --line N (or --file <path>:N) to pick one.")
     assert "--line N" in ambiguity_message("f", mixed)
+
+
+GROOVY_HELPERS = "package demo\n\nclass Helpers {\n    static String util() { 'x' }\n}\n"
+GROOVY_CONTROLLER = (
+    "package demo\n"
+    "import demo.Helpers\n"
+    "\n"
+    "class CallController extends Base implements Shape {\n"
+    "    def helper() { 1 }\n"
+    "\n"
+    "    def use() {\n"
+    "        helper()\n"
+    "        Helpers.util()\n"
+    "        this.helper()\n"
+    "    }\n"
+    "\n"
+    "    double area() { 0 }\n"
+    "}\n"
+)
+
+
+def _groovy_repo(tmp_path: Path, cache: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "src/main/groovy/demo").mkdir(parents=True)
+    (repo / "src/main/groovy/demo/Helpers.groovy").write_text(GROOVY_HELPERS, encoding="utf-8")
+    (repo / "src/main/groovy/demo/CallController.groovy").write_text(
+        GROOVY_CONTROLLER, encoding="utf-8"
+    )
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "MIMRY Test")
+    _git(repo, "config", "user.email", "test@example.com")
+    assert _mimry(repo, cache, "init").returncode == 0
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "Initial commit")
+    assert _mimry(repo, cache, "index").returncode == 0
+    return repo
+
+
+def test_callers_of_a_groovy_static_method_finds_the_calling_method(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _groovy_repo(tmp_path, cache)
+
+    res = _mimry(repo, cache, "callers", "util")
+
+    assert res.returncode == 0, res.stderr
+    assert "1 caller of util (src/main/groovy/demo/Helpers.groovy:4)" in res.stdout
+    assert "src/main/groovy/demo/CallController.groovy" in res.stdout
+    assert "use (inferred)  method  line 7" in res.stdout

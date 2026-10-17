@@ -42,11 +42,48 @@ _NOT_NAMES = frozenset(
     ("if", "for", "while", "switch", "catch", "synchronized", "return", "new", "assert", "throw")
 )
 _NOT_PREFIXES = frozenset(("return", "new", "throw", "else", "case", "assert", "yield", "in"))
+# Words that are never the name of a call, as a call or as the first
+# word of a command. `this(...)` and `super(...)` chain constructors.
+CALL_KEYWORDS = _NOT_NAMES | frozenset(
+    (
+        "this",
+        "super",
+        "it",
+        "def",
+        "class",
+        "interface",
+        "trait",
+        "enum",
+        "static",
+        "final",
+        "private",
+        "public",
+        "protected",
+        "abstract",
+        "package",
+        "import",
+        "else",
+        "case",
+        "yield",
+        "in",
+        "throws",
+    )
+)
 # A Gradle task: `task name {` or `tasks.register("name") {`.
 _TASK_HEAD = re.compile(r"^task\s+(?P<name>[A-Za-z_$][\w$]*)\s*(?:\([^)]*\))?$")
 _TASK_REGISTER = re.compile(r"^tasks\.register\(\s*[\"'](?P<name>[^\"']+)[\"']\s*(?:,[^)]*)?\)$")
-# An import line. A wildcard names a package, not a file, so it is
-# dropped by the caller.
+# A type argument list, removed (innermost first) before the bases of a
+# header are read, and the keywords that introduce the bases.
+_TYPE_ARGUMENTS = re.compile(r"<[^<>]*>")
+_HERITAGE_KEYWORD = re.compile(r"\b(?:extends|implements)\b")
+_QUALIFIED_NAME = re.compile(r"\s*(?:[A-Za-z_$][\w$]*\s*\.\s*)*(?P<name>[A-Za-z_$][\w$]*)\s*")
+# The package line of a file, such as `package a.b`.
+_PACKAGE = re.compile(
+    r"^[ \t]*package[ \t]+(?P<name>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)[ \t]*;?[ \t]*\r?$",
+    re.MULTILINE,
+)
+# An import line. A wildcard is kept as `a.b.*`, and the resolver
+# links it to the files of package `a.b`.
 _IMPORT = re.compile(
     rb"^[ \t]*import[ \t]+(?:static[ \t]+)?(?P<module>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)"
     rb"(?P<wild>\.\*)?[ \t]*(?:as[ \t]+[A-Za-z_$][\w$]*)?[ \t]*;?[ \t]*\r?$",
@@ -310,7 +347,14 @@ def head_at(raw: bytes, start: int, starts: list[int]) -> dict | None:
     base = {"start": start, "span_end": span_end, "line_start": line_start, "line_end": line_end}
     found = _TYPE_HEAD.match(head)
     if found:
-        return {**base, "kind": "type", "tag": found.group("tag"), "name": found.group("name")}
+        bases = _heritage_names(head[found.end() :])
+        return {
+            **base,
+            "kind": "type",
+            "tag": found.group("tag"),
+            "name": found.group("name"),
+            "bases": bases,
+        }
     if has_body:
         found = _TASK_HEAD.match(head) or _TASK_REGISTER.match(head)
         if found:
@@ -331,22 +375,49 @@ def head_at(raw: bytes, start: int, starts: list[int]) -> dict | None:
     name = found.group("name")
     if name in _NOT_NAMES or prefix[0] in _NOT_PREFIXES:
         return None
+    name_start = start + lead + _byte_len(head[: found.start("name")])
     return {
         **base,
         "kind": "callable",
         "tag": "callable",
         "name": _plain(name.strip("\"'")),
+        "name_start": name_start,
         "has_body": has_body,
         "abstract": "abstract" in prefix,
     }
 
 
-def symbols(raw: bytes, offsets: list[int]) -> list[dict]:
-    """Classes, interfaces, traits, enums, methods, functions and tasks.
+def _heritage_names(rest: str) -> list[str]:
+    """The base names an ``extends`` or ``implements`` clause names.
 
-    ``offsets`` are the byte offsets where a command starts. A callable
-    inside a type is a method, one outside is a function. A method with
-    no body is kept only in an interface, a trait or an abstract method.
+    ``rest`` is the header text after the type's name. Type arguments
+    are dropped, and a qualified base keeps its last segment.
+    """
+    text = rest
+    while True:
+        reduced = _TYPE_ARGUMENTS.sub("", text)
+        if reduced == text:
+            break
+        text = reduced
+    names: list[str] = []
+    # The text before the first keyword names no base, so it is skipped.
+    for clause in _HERITAGE_KEYWORD.split(text)[1:]:
+        for item in clause.split(","):
+            found = _QUALIFIED_NAME.fullmatch(item)
+            if found and found.group("name") not in names:
+                names.append(found.group("name"))
+    return names
+
+
+def definitions(raw: bytes, offsets: list[int]) -> dict:
+    """Symbols, inheritance records and callable bodies of a file.
+
+    ``offsets`` are the byte offsets where a command starts. ``symbols``
+    is what ``symbols`` returns. ``inherits`` holds the base names of
+    each kept type, as {"type", "base", "line"} records. ``bodies``
+    holds (name_start, start, span_end) for each kept function and
+    method with a body. ``callable_names`` holds the names of the kept
+    functions and methods.
     """
     starts = line_starts(raw)
     heads = {}
@@ -358,6 +429,9 @@ def symbols(raw: bytes, offsets: list[int]) -> list[dict]:
     types = [h for h in ordered if h["kind"] == "type"]
     type_starts = [h["start"] for h in types]
     result: list[dict] = []
+    inherits: list[dict] = []
+    bodies: list[tuple[int, int, int]] = []
+    callable_names: set[str] = set()
     seen: set[tuple[str, str, int]] = set()
     for head in ordered:
         if head["kind"] == "type":
@@ -388,7 +462,31 @@ def symbols(raw: bytes, offsets: list[int]) -> list[dict]:
                 "exported": False,
             }
         )
-    return result
+        if head["kind"] == "type":
+            inherits.extend(
+                {"type": head["name"], "base": base, "line": head["line_start"]}
+                for base in head["bases"]
+            )
+        elif kind in ("function", "method"):
+            callable_names.add(head["name"])
+            if head["has_body"]:
+                bodies.append((head["name_start"], head["start"], head["span_end"]))
+    return {
+        "symbols": result,
+        "inherits": inherits,
+        "bodies": bodies,
+        "callable_names": callable_names,
+    }
+
+
+def symbols(raw: bytes, offsets: list[int]) -> list[dict]:
+    """Classes, interfaces, traits, enums, methods, functions and tasks.
+
+    ``offsets`` are the byte offsets where a command starts. A callable
+    inside a type is a method, one outside is a function. A method with
+    no body is kept only in an interface, a trait or an abstract method.
+    """
+    return definitions(raw, offsets)["symbols"]
 
 
 def _innermost(head: dict, types: list[dict], type_starts: list[int]) -> dict | None:
@@ -405,17 +503,22 @@ def _innermost(head: dict, types: list[dict], type_starts: list[int]) -> dict | 
 
 
 def imports(raw: bytes, starts: list[int] | None = None) -> list[dict]:
-    """Module names of the import lines, with their lines."""
+    """Module names of the import lines, with their lines.
+
+    A wildcard import keeps its package with a ``.*`` suffix.
+    """
     if starts is None:
         starts = line_starts(raw)
     found = []
     for match in _IMPORT.finditer(raw):
+        module = match.group("module").decode("utf-8", "replace")
         if match.group("wild"):
-            continue
-        found.append(
-            {
-                "module": match.group("module").decode("utf-8", "replace"),
-                "line": bisect.bisect_right(starts, match.start()),
-            }
-        )
+            module += ".*"
+        found.append({"module": module, "line": bisect.bisect_right(starts, match.start())})
     return found
+
+
+def package_of(text: str) -> str | None:
+    """The name of the package a Groovy file declares, if any."""
+    found = _PACKAGE.search(text)
+    return found.group("name") if found else None
