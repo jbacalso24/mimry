@@ -291,6 +291,24 @@ On holdout3, never used to tune, MIMRY saves as much as on dev: 68.6% against 68
 It locates more tasks than grep in five of the six repositories, and fewer in guzzle (3 against 4).
 Per-task numbers are in [results.holdout3.ranges.json](results.holdout3.ranges.json).
 
+## Semantic search
+
+`--semantic` blends a vector search into MIMRY's ranking.
+Its vectors are hashed bags of words, not a trained embedding model, so it matches words loosely and not meaning.
+On dev (40 tasks), `mimry preflight --semantic` against the default, both on the same commit of main:
+
+| Reads | Located | Saved vs grep | Recall@5 | Median preflight |
+|---|---|---|---|---|
+| Whole files, default | 35 / 40 | **34.1%** | 77.5% | **239 ms** |
+| Whole files, `--semantic` | 35 / 40 | 33.9% | **78.1%** | 368 ms |
+| `grep -n` and `sed`, default | 31 / 40 | 32.3% | 77.5% | **370 ms** |
+| `grep -n` and `sed`, `--semantic` | 31 / 40 | **32.4%** | **78.1%** | 422 ms |
+| Line ranges, default | 34 / 40 | **67.9%** | 77.5% | **375 ms** |
+| Line ranges, `--semantic` | 34 / 40 | 67.7% | **78.1%** | 312 ms |
+
+It locates the same tasks and changes savings by at most 0.2 points, so it stays opt-in and off by default.
+Both runs are Token benchmark workflow runs 38987087355 (default) and 38987093054 (`--semantic`).
+
 ## Other alternatives
 
 holdout3 was also run with another local code-search tool, which splits files into chunks and ranks them with a local embedding model.
