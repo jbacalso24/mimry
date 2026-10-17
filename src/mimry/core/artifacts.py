@@ -379,30 +379,31 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
     # Fuzzy term matching would also accept any file sharing "src" or
     # ".py" with it, and the search would stop at whichever of those it
     # happened to reach first.
-    source_matches = _exact_surface_matches(nodes, source_query) or surface_matches(
-        root, source_query, limit=5
-    )
-    target_matches = _exact_surface_matches(nodes, target_query) or surface_matches(
-        root, target_query, limit=5
-    )
-    if not source_matches or not target_matches:
+    source_exact = _exact_surface_matches(nodes, source_query)
+    target_exact = _exact_surface_matches(nodes, target_query)
+    source_matches = source_exact or surface_matches(root, source_query, limit=5)
+    target_matches = target_exact or surface_matches(root, target_query, limit=5)
+    # Several exact matches mean the name is ambiguous, and the path
+    # uses one of them without saying which unless the caller asks.
+    ambiguous = {"source": len(source_exact) > 1, "target": len(target_exact) > 1}
+
+    def answer(found: bool, steps: list[dict]) -> dict:
         return {
-            "found": False,
+            "found": found,
             "source_matches": source_matches,
             "target_matches": target_matches,
-            "steps": [],
+            "ambiguous": ambiguous,
+            "steps": steps,
         }
+
+    if not source_matches or not target_matches:
+        return answer(False, [])
 
     # A fuzzy target can also match the source itself; that is not a
     # path to it.
     target_ids = {m["id"] for m in target_matches} - {m["id"] for m in source_matches}
     if not target_ids:
-        return {
-            "found": False,
-            "source_matches": source_matches,
-            "target_matches": target_matches,
-            "steps": [],
-        }
+        return answer(False, [])
     adjacency: dict[str, list[tuple[str, dict]]] = defaultdict(list)
     for edge in links:
         source, target = _edge_endpoints(edge)
@@ -432,12 +433,7 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
                     }
                 )
                 current = next_id or current
-            return {
-                "found": True,
-                "source_matches": source_matches,
-                "target_matches": target_matches,
-                "steps": steps,
-            }
+            return answer(True, steps)
         if len(path_edges) >= max_hops:
             continue
         for next_id, edge in adjacency.get(node_id, []):
@@ -445,12 +441,7 @@ def shortest_path(root: Path, source_query: str, target_query: str, max_hops: in
                 continue
             seen.add(next_id)
             queue.append((next_id, start_id, [*path_edges, edge]))
-    return {
-        "found": False,
-        "source_matches": source_matches,
-        "target_matches": target_matches,
-        "steps": [],
-    }
+    return answer(False, [])
 
 
 CALL_DIRECTIONS = ("callers", "callees")

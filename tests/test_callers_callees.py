@@ -11,6 +11,7 @@ import pytest
 from mimry import mcp_tools
 from mimry.core.artifacts import call_lookup, call_relations
 from mimry.mcp_protocol import input_schema
+from mimry.queries import _several_text
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTE = (
@@ -697,6 +698,66 @@ def test_path_marks_an_inferred_step_and_json_carries_confidence(tmp_path):
         {"from": "helper2", "relation": "calls", "to": "helper", "confidence": "INFERRED"}
     ]
     assert "(inferred)" not in extracted.stdout and "Inferred means" not in extracted.stdout
+
+
+def test_path_puts_each_relation_between_the_two_nodes_it_joins(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+
+    two = _mimry(repo, cache, "path", "helper2", "leaf")
+    one = _mimry(repo, cache, "path", "helper2", "helper")
+
+    assert two.returncode == 0, two.stderr
+    assert two.stdout.splitlines()[0] == "OK helper2 connects to leaf in 2 steps"
+    assert two.stdout.split("\n\n", 1)[1].splitlines()[:5] == [
+        "  helper2 (app/two.py)",
+        "    calls (inferred)",
+        "  helper (app/one.py)",
+        "    calls",
+        "  leaf (app/one.py)",
+    ]
+    assert one.stdout.split("\n\n", 1)[1].splitlines()[:3] == [
+        "  helper2 (app/two.py)",
+        "    calls (inferred)",
+        "  helper (app/one.py)",
+    ]
+    assert one.stdout.rstrip().endswith(INFERRED)
+
+
+def test_path_says_when_a_name_matches_several_symbols(tmp_path):
+    cache = tmp_path / "cache"
+    repo = _repo(tmp_path, cache)
+    _add_second_helper(repo)
+
+    res = _mimry(repo, cache, "path", "helper", "leaf")
+    payload = json.loads(_mimry(repo, cache, "path", "helper", "leaf", "--json").stdout)
+    picked = _mimry(repo, cache, "path", "app/one.py", "leaf")
+    picked_payload = json.loads(_mimry(repo, cache, "path", "app/one.py", "leaf", "--json").stdout)
+
+    assert res.returncode == 0, res.stderr
+    lines = res.stdout.splitlines()
+    ok = lines.index("OK helper connects to leaf in 1 step")
+    assert lines[ok + 1] == (
+        '  Several symbols are named "helper": app/one.py, app/three.py. Using app/one.py;'
+        " give a file path to pick another."
+    )
+    assert payload["found"] is True
+    assert payload["ambiguous"] == {"source": ["app/three.py"], "target": []}
+    assert "Several symbols" not in picked.stdout
+    assert "ambiguous" not in picked_payload
+
+
+def test_several_names_list_at_most_five_paths(tmp_path):
+    candidates = [
+        {"id": f"s{i}", "label": "x", "path": f"pkg/m{i}.py", "score": 1, "node": {}}
+        for i in range(7)
+    ]
+    text = _several_text("x", {"candidates": candidates, "used": "s3"})
+
+    assert text == (
+        'Several symbols are named "x": pkg/m0.py, pkg/m1.py, pkg/m2.py, pkg/m3.py,'
+        " pkg/m4.py, and 2 more. Using pkg/m3.py; give a file path to pick another."
+    )
 
 
 def test_mcp_symbol_and_path_carry_confidence(tmp_path, monkeypatch):

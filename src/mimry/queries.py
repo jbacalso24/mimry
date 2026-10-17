@@ -1075,18 +1075,17 @@ def run_path(a, found: list | None = None):
                 )
         else:
             ui.ok(found)
+        picks = _ambiguous_sides(result)
+        for side, query in (("source", source), ("target", target)):
+            if side in picks:
+                ui.detail(_several_text(query, picks[side]))
         print()
+        # Each relation sits between the two nodes it joins.
         ui.detail(_node_text(steps[0]["from"]))
-        ui.table(
-            [
-                (
-                    _relation_text(_step_relation(step)) + inferred_mark(step["confidence"]),
-                    _node_text(step["to"]),
-                )
-                for step in steps
-            ],
-            indent=4,
-        )
+        for step in steps:
+            relation = _relation_text(_step_relation(step)) + inferred_mark(step["confidence"])
+            ui.detail(relation, indent=4)
+            ui.detail(_node_text(step["to"]))
         if any(step["confidence"] == "INFERRED" for step in steps):
             ui.detail(INFERRED_NOTE)
         return 0
@@ -1125,7 +1124,7 @@ def inferred_mark(confidence: str) -> str:
 
 def path_payload(result: dict) -> dict:
     """The path answer as data, for ``mimry path --json`` and MCP."""
-    return {
+    payload = {
         "found": result["found"],
         "source_matches": [
             {"label": m["label"], "path": m["path"]} for m in result["source_matches"]
@@ -1143,6 +1142,46 @@ def path_payload(result: dict) -> dict:
             for step in result["steps"]
         ],
     }
+    picks = _ambiguous_sides(result)
+    if picks:
+        # Only the candidates the path did not use.
+        payload["ambiguous"] = {"source": [], "target": []}
+        for side, pick in picks.items():
+            others = [m["path"] for m in pick["candidates"] if m["id"] != pick["used"]]
+            payload["ambiguous"][side] = others
+    return payload
+
+
+def _ambiguous_sides(result: dict) -> dict[str, dict]:
+    """The sides whose name matched several symbols, and the pick.
+
+    ``used`` is the id of the node the path starts or ends at, or None
+    when no path was found.
+    """
+    steps = result["steps"]
+    used = {
+        "source": steps[0]["from"]["id"] if steps else None,
+        "target": steps[-1]["to"]["id"] if steps else None,
+    }
+    flags = result.get("ambiguous", {})
+    return {
+        side: {"candidates": result[f"{side}_matches"], "used": used[side]}
+        for side in ("source", "target")
+        if flags.get(side)
+    }
+
+
+def _several_text(query: str, pick: dict) -> str:
+    """The notice for a name with several symbols, and the one used."""
+    paths = sorted({m["path"] for m in pick["candidates"]})
+    shown = ", ".join(paths[:5])
+    if len(paths) > 5:
+        shown += f", and {len(paths) - 5} more"
+    text = f"Several symbols are named {ui.quote(query)}: {shown}."
+    chosen = next((m["path"] for m in pick["candidates"] if m["id"] == pick["used"]), None)
+    if chosen is None:
+        return text
+    return f"{text} Using {chosen}; give a file path to pick another."
 
 
 def calls_payload(
