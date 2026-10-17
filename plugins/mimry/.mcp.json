@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "mimry==0.5.0",
+        "mimry==0.6.0",
         "mimry-mcp"
       ]
     }

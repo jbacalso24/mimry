@@ -2,6 +2,41 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.6.0 - 2026-10-17
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`; it refreshes the skills, always-on rules and hooks you installed.
+  The first command after upgrading reparses every file, so the new languages and whole-document search take effect, and `index` says how many unchanged files it reparsed ([#397](https://github.com/jbacalso24/mimry/pull/397)).
+- `.html`, `.css` and `.scss` files no longer take the boost source files get for edit tasks ([#365](https://github.com/jbacalso24/mimry/pull/365)).
+- `.pp` files are Pascal and `.m` files Objective-C only when their content says so; Puppet and MATLAB files become searchable text ([#396](https://github.com/jbacalso24/mimry/pull/396)).
+- A JS/TS `const` holding a function or arrow is now kind `function` (or `component` with JSX), and calls inside a local's initializer count for the enclosing function ([#360](https://github.com/jbacalso24/mimry/pull/360)).
+- Fortran and Pascal `program` blocks are kind `program`, not `module` ([#397](https://github.com/jbacalso24/mimry/pull/397)).
+
+### New features
+
+- MIMRY parses 40 languages, up from 21: Elixir, Haskell, OCaml, R, Julia, Solidity, Fortran, Pascal, CSS, SCSS, HTML, Vue, Svelte, YAML, JSON, TOML, XML, Terraform and SQL ([#355](https://github.com/jbacalso24/mimry/pull/355), [#357](https://github.com/jbacalso24/mimry/pull/357), [#363](https://github.com/jbacalso24/mimry/pull/363), [#366](https://github.com/jbacalso24/mimry/pull/366), [#372](https://github.com/jbacalso24/mimry/pull/372)).
+  Data files give their keys as dotted names, Kubernetes documents give `Deployment/web`, Terraform blocks keep their reference names and kinds, and secret values are never indexed ([#392](https://github.com/jbacalso24/mimry/pull/392)).
+- PDF, Word, Excel and PowerPoint files are searched in full, and a result names the page, section, sheet or slide to read ([#367](https://github.com/jbacalso24/mimry/pull/367), [#390](https://github.com/jbacalso24/mimry/pull/390)).
+- `mimry install` covers Windsurf, Cline, Roo Code, Zed, JetBrains Junie and Grok Build ([#369](https://github.com/jbacalso24/mimry/pull/369), [#395](https://github.com/jbacalso24/mimry/pull/395)).
+- A Docker image, `ghcr.io/jbacalso24/mimry`, for amd64 and arm64 with the grammars baked in ([#371](https://github.com/jbacalso24/mimry/pull/371)).
+- `mimry preflight --semantic` and `mimry_preflight(semantic=true)` add semantic matches to the ranking; it stays opt-in, since it located the same tasks on the token benchmark ([#375](https://github.com/jbacalso24/mimry/pull/375), [#376](https://github.com/jbacalso24/mimry/pull/376)).
+- `--language` accepts the names users see, such as Terraform, TypeScript or Objective-C ([#397](https://github.com/jbacalso24/mimry/pull/397)).
+
+### Fixes
+
+- A YAML file nested past 200 levels no longer crashes `index`; it is reported as unparsed and stays searchable ([#391](https://github.com/jbacalso24/mimry/pull/391)).
+- The secret scan runs in linear time over long runs of spaces; a deeply indented file indexed in 40 seconds now takes under 2 ([#394](https://github.com/jbacalso24/mimry/pull/394)).
+- A cache folder MIMRY refuses to write to gets one plain error from every command and MCP tool ([#373](https://github.com/jbacalso24/mimry/pull/373)).
+- `uninstall` keeps a skill file another installed platform still uses, Zed with a commented `settings.json` says to paste the entry by hand, and `uninstall` with nothing installed prints only that ([#395](https://github.com/jbacalso24/mimry/pull/395), [#397](https://github.com/jbacalso24/mimry/pull/397)).
+- `callers` and `callees` rows say `line 4` instead of a bare `:4` ([#397](https://github.com/jbacalso24/mimry/pull/397)).
+- `llms.txt` lists all 9 default MCP tools ([#389](https://github.com/jbacalso24/mimry/pull/389)).
+
+### Other changes
+
+- The README and site lead with what MIMRY gets you ([#368](https://github.com/jbacalso24/mimry/pull/368)).
+- The adapter modules live in one `adapters` package, and CI runs the tests in parallel ([#354](https://github.com/jbacalso24/mimry/pull/354), [#358](https://github.com/jbacalso24/mimry/pull/358), [#359](https://github.com/jbacalso24/mimry/pull/359), [#362](https://github.com/jbacalso24/mimry/pull/362)).
+
 ## 0.5.0 - 2026-10-17
 
 ### Upgrade notes

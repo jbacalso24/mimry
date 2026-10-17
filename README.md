@@ -241,9 +241,9 @@ Other extensions can be mapped to a supported language in `mimry.toml`, see [Con
 
 ### Planned
 
-We're adding these next; progress is tracked in [#47](https://github.com/jbacalso24/mimry/issues/47), where you can ask for yours.
+We're adding these next; progress is tracked in [#374](https://github.com/jbacalso24/mimry/issues/374), and you can ask for yours in a new issue.
 
-- [ ] Apps and systems: Groovy
+- [ ] Apps and systems: Groovy and Gradle
 
 ## Supported agents
 
