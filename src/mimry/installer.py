@@ -58,7 +58,7 @@ class MimryPlatform:
 # Installs before .mimry_version held the version wrote this marker.
 _OLD_MARKER = "0.1.0"
 # Agents without MCP support; the skill alone covers them.
-_NO_MCP = frozenset({"aider", "pi", "agents"})
+_NO_MCP = frozenset({"aider", "pi", "agents", "grok"})
 _PLATFORM_ALIASES = {
     "claude": "claude-code",
     "claude-code": "claude-code",
@@ -1309,6 +1309,23 @@ def _remove_hooks(
     return dst
 
 
+def _mcp_by_hand(cfg: MimryPlatform, data: dict | None) -> bool:
+    """True when MIMRY cannot write this platform's MCP entry itself.
+
+    That is a config file it cannot parse, or one a .jsonc sibling
+    shadows. The user then pastes the entry in by hand.
+    """
+    if not isinstance(cfg.mcp, McpJson):
+        return False
+    path = cfg.mcp.path
+    key = cfg.mcp.key
+    return (
+        data is None
+        or path.with_suffix(".jsonc").exists()
+        or (key in data and not isinstance(data[key], dict))
+    )
+
+
 def register_mcp(cfg: MimryPlatform, *, dry_run: bool) -> None:
     """Register the MIMRY MCP server with the agent.
 
@@ -1353,12 +1370,7 @@ def register_mcp(cfg: MimryPlatform, *, dry_run: bool) -> None:
         path = cfg.mcp.path
         key = cfg.mcp.key
         data = _read_json_config(path)
-        jsonc_sibling = path.with_suffix(".jsonc")
-        if (
-            data is None
-            or jsonc_sibling.exists()
-            or (key in data and not isinstance(data[key], dict))
-        ):
+        if _mcp_by_hand(cfg, data):
             ui.detail(f"To give {cfg.label} MIMRY's tools, add this MCP server in its settings:")
             entry_shape = {key: {"mimry": cfg.mcp.entry(server)}}
             print(json.dumps(entry_shape, indent=2))
@@ -1519,7 +1531,15 @@ def install_status_with_code(
     no_mcp = _read_state(dst).get("no_mcp") is True
     mcp_check = None if _mcp_disabled(False) else mcp_registered(cfg)
     mcp_off = no_mcp and not mcp_check
-    if mcp_check is not None and not mcp_off:
+    # An entry MIMRY cannot write (Zed with comments) is a manual step,
+    # not a fault, so it does not count against health.
+    mcp_by_hand = (
+        not mcp_off
+        and mcp_check is False
+        and isinstance(cfg.mcp, McpJson)
+        and _mcp_by_hand(cfg, _read_json_config(cfg.mcp.path))
+    )
+    if mcp_check is not None and not mcp_off and not mcp_by_hand:
         result["mcp"] = mcp_check
     # Health is what `mimry install --platform <key>` (plus --project)
     # produces: skill, references, version and MCP registration. Opt-in
@@ -1585,6 +1605,10 @@ def install_status_with_code(
         rows.append(_status_row(result["mcp"], "MCP server", "registered", "not registered"))
     elif mcp_off:
         rows.append(_status_row(None, "MCP server", "", "not registered (--no-mcp)"))
+    elif mcp_by_hand:
+        shown_mcp = ui.display_path(cfg.mcp.path)
+        by_hand = f"paste the entry by hand into {shown_mcp}"
+        rows.append(_status_row(None, "MCP server", "", by_hand))
     ui.table(rows)
     if not healthy:
         flags = " --project" if project else ""
@@ -1673,12 +1697,13 @@ def _missing_paths(targets: list[Path]) -> list[Path]:
     return list(missing)
 
 
-def _record_install(dst: Path, *, created: list[Path], base: Path, mcp: bool) -> None:
+def _record_install(dst: Path, *, created: list[Path], base: Path, mcp: bool, key: str) -> None:
     """Merge what this install created into the record.
 
     Entries that are absolute or outside base are dropped, not carried
     forward. Also note whether MCP was turned off: a plain install (mcp)
-    clears the --no-mcp choice.
+    clears the --no-mcp choice. The platform key joins "platforms", the
+    list of platforms installed into this folder.
     """
     state = _read_state(dst)
     known = _read_created(state, base) | set(created)
@@ -1689,6 +1714,8 @@ def _record_install(dst: Path, *, created: list[Path], base: Path, mcp: bool) ->
         state.pop("no_mcp", None)
     else:
         state["no_mcp"] = True
+    listed = state.get("platforms")
+    state["platforms"] = sorted({*(listed if isinstance(listed, list) else []), key})
     _atomic_write(dst.parent / _STATE_FILE, json.dumps(state, indent=2) + "\n")
 
 
@@ -1756,7 +1783,7 @@ def install_skill(
     created = [path for path in _missing_paths(targets) if path not in skill_paths]
     _write_skill_files(dst, key)
     base = _state_base(dst, root, project)
-    _record_install(dst, created=created, base=base, mcp=mcp)
+    _record_install(dst, created=created, base=base, mcp=mcp, key=key)
     git_paths = [
         dst,
         dst.parent / ".mimry_version",
@@ -1797,6 +1824,57 @@ def install_skill(
     return dst
 
 
+def _skill_path(cfg: MimryPlatform, root: Path, project: bool) -> Path:
+    return (root / cfg.project_path if project else cfg.global_path).resolve()
+
+
+def _shared_skill_user(key: str, root: Path, project: bool) -> str | None:
+    """The label of another platform still installed on this skill file.
+
+    Platforms that resolve to the same SKILL.md share it, and the file
+    alone cannot say which of them are installed, so the install record
+    lists them. A record from before that list existed names no one,
+    so the file goes, as it did then.
+    """
+    dst = _skill_path(platforms()[key], root, project)
+    if not dst.exists():
+        return None
+    listed = _read_state(dst).get("platforms")
+    for other_key, other in platforms().items():
+        if other_key == key or _skill_path(other, root, project) != dst:
+            continue
+        if isinstance(listed, list) and other_key in listed:
+            return other.label
+    return None
+
+
+def _forget_platform(dst: Path, key: str) -> None:
+    """Drop a platform from the install record of a file that stays."""
+    state = _read_state(dst)
+    if isinstance(state.get("platforms"), list):
+        state["platforms"] = [name for name in state["platforms"] if name != key]
+        _atomic_write(dst.parent / _STATE_FILE, json.dumps(state, indent=2) + "\n")
+
+
+def _remove_skill_files(dst: Path) -> list[Path]:
+    """Remove the skill, version marker, state and references.
+
+    Returns what was removed.
+    """
+    removed: list[Path] = []
+    for path in (dst, dst.parent / ".mimry_version"):
+        if path.exists():
+            path.unlink()
+            removed.append(path)
+    # Gone before the folders are checked, or the folder is never empty.
+    (dst.parent / _STATE_FILE).unlink(missing_ok=True)
+    refs = dst.parent / "references"
+    if refs.exists():
+        _remove_tree(refs)
+        removed.append(refs)
+    return removed
+
+
 def uninstall_skill(
     platform_name: str,
     *,
@@ -1809,19 +1887,16 @@ def uninstall_skill(
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
     root = root.resolve()
-    dst = (root / cfg.project_path if project else cfg.global_path).resolve()
+    dst = _skill_path(cfg, root, project)
     created = frozenset(_read_created(_read_state(dst), _state_base(dst, root, project)))
+    # Zed and Agent Skills install the same SKILL.md. While another
+    # platform still uses it, the file and its companions stay.
+    shared_with = _shared_skill_user(key, root, project)
     removed: list[Path] = []
-    for path in (dst, dst.parent / ".mimry_version"):
-        if path.exists():
-            path.unlink()
-            removed.append(path)
-    # Gone before the folders are checked, or the folder is never empty.
-    (dst.parent / _STATE_FILE).unlink(missing_ok=True)
-    refs = dst.parent / "references"
-    if refs.exists():
-        _remove_tree(refs)
-        removed.append(refs)
+    if shared_with:
+        _forget_platform(dst, key)
+    else:
+        removed = _remove_skill_files(dst)
     settings: list[str] = []
     if always_on and project and (path := _remove_always_on(root, cfg, created)):
         settings.append(_settings_line(path, root, project, "always-on block"))
@@ -1837,7 +1912,7 @@ def uninstall_skill(
             folder.rmdir()
         except OSError:
             break
-    if not removed and not settings and not mcp_removed:
+    if not removed and not settings and not mcp_removed and not shared_with:
         print(
             f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label}"
             f" ({_scope(project)})."
@@ -1846,6 +1921,8 @@ def uninstall_skill(
     ui.ok(f"Removed MIMRY for {cfg.label} ({_scope(project)})")
     for path in removed:
         ui.detail(ui.faint(_shown(path, root, project)))
+    if shared_with:
+        ui.detail(f"Kept {_shown(dst, root, project)}: {shared_with} still uses it")
     for line in settings:
         ui.detail(line)
     if mcp_removed:

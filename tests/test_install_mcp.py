@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mimry import installer
+from mimry import installer, ui
 from mimry.cli import main
 
 
@@ -859,3 +859,103 @@ def test_new_platform_uninstall_removes_skill(mcp_test_fixture, key, monkeypatch
 
     installer.uninstall_skill(key, project=False, root=root)
     assert installer.install_status(key, project=False, root=root)["skill"] is False
+
+
+def test_zed_uninstall_keeps_skill_file_agents_still_uses(mcp_test_fixture, monkeypatch, capsys):
+    """Zed and Agent Skills share one SKILL.md, so Zed keeps it."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    fixture = mcp_test_fixture
+    root = fixture["tmp_path"]
+    skill = installer.platforms()["agents"].global_path
+    settings = fixture["fake_home"] / ".config" / "zed" / "settings.json"
+
+    installer.install_skill("agents", project=False, root=root)
+    installer.install_skill("zed", project=False, root=root)
+    capsys.readouterr()
+    installer.uninstall_skill("zed", project=False, root=root)
+    out = capsys.readouterr().out
+
+    assert skill.exists()
+    assert (skill.parent / ".mimry_version").exists()
+    assert (skill.parent / "references").is_dir()
+    assert f"Kept {ui.display_path(skill)}: Agent Skills still uses it" in out
+    assert "mimry" not in json.loads(settings.read_text()).get("context_servers", {})
+    assert installer.install_status("agents", project=False, root=root)["skill"] is True
+
+
+def test_zed_uninstall_removes_shared_skill_file_when_agents_is_gone(
+    mcp_test_fixture, monkeypatch, capsys
+):
+    """With no other platform on the file, Zed removes it."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    root = mcp_test_fixture["tmp_path"]
+    skill = installer.platforms()["zed"].global_path
+
+    installer.install_skill("agents", project=False, root=root)
+    installer.install_skill("zed", project=False, root=root)
+    installer.uninstall_skill("agents", project=False, root=root)
+    capsys.readouterr()
+    installer.uninstall_skill("zed", project=False, root=root)
+    out = capsys.readouterr().out
+
+    assert not skill.exists()
+    assert "Kept" not in out
+
+
+def test_uninstall_removes_a_shared_file_installed_before_the_list(
+    mcp_test_fixture, monkeypatch, capsys
+):
+    """A record from before the platforms list names no sharer, so the
+    file goes, as it did then, instead of staying for good."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    root = mcp_test_fixture["tmp_path"]
+    skill = installer.platforms()["zed"].global_path
+
+    installer.install_skill("agents", project=False, root=root)
+    state_file = skill.parent / installer._STATE_FILE
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    del state["platforms"]
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+    installer.uninstall_skill("agents", project=False, root=root)
+
+    assert not skill.exists()
+    assert "Kept" not in capsys.readouterr().out
+
+
+def test_zed_with_comments_status_asks_for_manual_paste(mcp_test_fixture, monkeypatch, capsys):
+    """A commented Zed settings file is a manual step, not a repair."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    fixture = mcp_test_fixture
+    root = fixture["tmp_path"]
+    settings = fixture["fake_home"] / ".config" / "zed" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text('// my settings\n{\n  "theme": "One Dark"\n}\n', encoding="utf-8")
+
+    installer.install_skill("zed", project=False, root=root)
+    capsys.readouterr()
+    result, code = installer.install_status_with_code("zed", project=False, root=root)
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert "mcp" not in result
+    assert "needs repair" not in out
+    assert "paste the entry by hand into" in out
+    assert "settings.json" in out
+    assert "mimry install --platform zed" not in out
+
+
+def test_grok_install_prints_no_mcp_snippet(mcp_test_fixture, monkeypatch, capsys):
+    """Grok Build has no MCP config MIMRY knows: the skill covers it."""
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    root = mcp_test_fixture["tmp_path"]
+
+    installer.install_skill("grok", project=False, root=root)
+    out = capsys.readouterr().out
+
+    assert "Grok Build has no MCP support; the skill covers it" in out
+    assert "mcpServers" not in out
+    assert "mimry-mcp" not in out

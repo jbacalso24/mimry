@@ -92,7 +92,7 @@ mimry install --platform vscode
 
 This installs the MIMRY skill at `~/.copilot/skills/mimry/SKILL.md` and adds the local MCP server to the `servers` section of your VS Code user `mcp.json`.
 That file is at `%APPDATA%\Code\User\mcp.json` on Windows, `~/Library/Application Support/Code/User/mcp.json` on macOS, and `$XDG_CONFIG_HOME/Code/User/mcp.json` (default `~/.config/Code/User/mcp.json`) on Linux.
-The skill path is shared with GitHub Copilot CLI, so uninstalling either one removes the skill for both.
+The skill path is shared with GitHub Copilot CLI, so uninstalling one keeps the skill while the other is still installed.
 Add `--project` to install the skill at `.github/skills/mimry/` in the current repository instead.
 Add `--always-on` with `--project` to write the MIMRY section to `.github/copilot-instructions.md`, which Copilot reads.
 Check the result with:
@@ -167,10 +167,12 @@ mimry install --platform zed
 This installs the MIMRY skill at `~/.agents/skills/mimry/SKILL.md`.
 Add `--project` to install the skill at `.agents/skills/mimry/` in the current repository instead.
 The `.agents` folder is shared with `mimry install --platform agents`, so each install rewrites the same file and the last one wins.
+`mimry uninstall --platform zed` keeps that file while Agent Skills is still installed, and removes only Zed's MCP entry.
 Add `--always-on` with `--project` to write the MIMRY section to `AGENTS.md`, which Zed reads.
 `mimry install` adds the local MCP server under `context_servers` in Zed's `settings.json`: `~/.config/zed/` on macOS, `$XDG_CONFIG_HOME/zed/` (default `~/.config/zed/`) on Linux, and `%APPDATA%\Zed\` on Windows.
 Zed's settings file usually starts with comments, and MIMRY never rewrites a file it cannot parse as plain JSON.
 In that case `mimry install` prints the `context_servers` entry for you to paste into Zed's settings.
+`--status` then reports the entry as a manual step with that file's path, and the skill still counts as installed.
 Check the result with:
 
 ```bash
