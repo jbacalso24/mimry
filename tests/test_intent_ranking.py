@@ -968,3 +968,26 @@ def test_an_exact_named_template_leads_the_start_order():
     ordered = start_order(rows, "orders.component")
 
     assert [row["path"] for row in ordered] == [ORDERS_HTML, "src/orders/list.py"]
+
+
+def test_an_extension_written_on_a_file_name_is_not_a_query_word():
+    assert query_terms("nosuchthing.ts") == ["nosuchthing"]
+    assert query_terms("fix huge.pdf") == ["fix", "huge"]
+    # A plain word that is an extension keeps its weight.
+    assert query_terms("pdf export") == ["pdf", "export"]
+
+
+def test_a_file_name_match_is_not_made_by_the_extension_alone(tmp_path):
+    _graph(
+        tmp_path,
+        [
+            _node("n-index", "index.ts", "src/index.ts"),
+            _node("n-config", "Config.ts", "src/Config.ts"),
+            _node("n-session", "session.ts", "services/billing/session.ts"),
+        ],
+    )
+
+    assert graph_rows(tmp_path, "nosuchthing.ts", limit=10) == []
+
+    rows = graph_rows(tmp_path, "session.ts", limit=10)
+    assert [r["path"] for r in rows] == ["services/billing/session.ts"]

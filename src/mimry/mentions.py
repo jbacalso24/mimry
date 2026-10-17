@@ -14,6 +14,9 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from .core.documents import DOCUMENT_EXTENSIONS
+from .core.languages import EXTENSION_LANGUAGE
+
 NAMED_PATH_BOOST = 120
 PATH_REASON = "named in query: path"
 MODULE_REASON = "named in query: module"
@@ -26,6 +29,8 @@ MIN_SUFFIX_COMPONENTS = 2
 # Word characters, dots, dashes and slashes (either kind). Quotes,
 # backticks, colons (line numbers), commas and brackets end a run.
 _MENTION_RE = re.compile(r"\w[\w.\-]*(?:[/\\][\w.\-]+)*")
+# A word with one of these extensions is a file name (session.ts).
+FILE_EXTENSIONS = frozenset(EXTENSION_LANGUAGE) | frozenset(DOCUMENT_EXTENSIONS)
 
 
 @dataclass
@@ -147,6 +152,29 @@ def exact_name_paths(q: str, known_paths: Iterable[str]) -> list[str]:
     if not wanted or _MENTION_RE.fullmatch(wanted) is None:
         return []
     return _credit([path for path in known_paths if _whole_name_matches(path, wanted)])
+
+
+def is_file_name(token: str) -> bool:
+    """A word that ends in a known file extension and has a stem."""
+    stem, dot, extension = token.rpartition(".")
+    return bool(stem and dot and f".{extension.lower()}" in FILE_EXTENSIONS)
+
+
+def unindexed_file_names(q: str, known_paths: Iterable[str]) -> list[str]:
+    """File names the query writes out that no indexed file has.
+
+    ``nosuchthing.ts`` names a file; when no indexed file has that name,
+    the caller says so instead of listing the other ``.ts`` files.
+    """
+    known = list(known_paths)
+    missing: list[str] = []
+    for raw in _MENTION_RE.findall(q or ""):
+        token = raw.replace("\\", "/").rstrip(".-")
+        if not is_file_name(token) or token in missing:
+            continue
+        if not any(_whole_name_matches(path, token.lower()) for path in known):
+            missing.append(token)
+    return missing
 
 
 def named_paths(q: str, known_paths: Iterable[str]) -> dict[str, str]:

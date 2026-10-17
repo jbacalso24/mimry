@@ -30,6 +30,7 @@ from .mentions import (
     exact_name_paths,
     named_boost,
     named_paths,
+    unindexed_file_names,
 )
 from .paths import canonical_cached_rel_path
 from .pieces import best_ranges, piece_matches
@@ -361,6 +362,12 @@ def _with_semantic(rows, idx, root_id, q, known_paths, limit, semantic, excluded
     merged = merge_semantic_rows(rows, sem_rows, limit=limit)
     ranked = apply_feedback_to_rows(merged, idx, root_id, q, known_paths=known_paths)
     return _apply_exclusions(_without_excluded(ranked, excluded_paths), q)
+
+
+def missing_file_names(idx, q) -> list[str]:
+    """File names the query writes out that the index does not hold."""
+    files, _ = filter_index_records(load_jsonl(idx / "files.jsonl"))
+    return unindexed_file_names(q, [f["rel_path"] for f in files])
 
 
 def find_rows(

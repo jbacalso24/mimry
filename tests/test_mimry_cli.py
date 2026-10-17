@@ -1542,6 +1542,18 @@ def test_find_and_related_with_no_matches_exit_1_and_say_so(tmp_path):
         assert "No files match" in res.stdout
 
 
+def test_find_says_when_the_named_file_is_not_indexed(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+
+    res = run_cli(repo, cache, "find", "nosuchthing.ts")
+
+    assert res.returncode == 1, res.stdout + res.stderr
+    assert 'No file named "nosuchthing.ts" is indexed.' in res.stdout.splitlines()
+
+
 def test_path_to_a_file_that_is_not_indexed_is_an_error_not_a_guess(tmp_path):
     repo = copy_fixture(tmp_path)
     cache = tmp_path / "cache"

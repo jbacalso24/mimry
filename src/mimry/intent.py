@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
-from .mentions import EXACT_NAME_REASON
+from .mentions import EXACT_NAME_REASON, FILE_EXTENSIONS
 
 CONCEPT_INTENT_TERMS = {
     "overview",
@@ -451,6 +451,22 @@ def excluded_query_terms(q: str) -> list[str]:
     return excluded
 
 
+FILE_NAME_EXTENSION_RE = re.compile(r"(?<=\w)\.([A-Za-z0-9]+)\b")
+
+
+def _without_file_extensions(q: str) -> str:
+    """Drop the extension of each file name in the query (session.ts).
+
+    The extension names the file's type, not the file, so it would match
+    every file of that type. The stem stays, and a bare "ts" stays too.
+    """
+
+    def drop(match: re.Match[str]) -> str:
+        return "" if f".{match.group(1).lower()}" in FILE_EXTENSIONS else match.group(0)
+
+    return FILE_NAME_EXTENSION_RE.sub(drop, q)
+
+
 def query_terms(q: str) -> list[str]:
     """Return positive normalized query tokens.
 
@@ -459,7 +475,7 @@ def query_terms(q: str) -> list[str]:
     excluded = set(excluded_query_terms(q))
     return [
         term
-        for term in _normalized_terms(q)
+        for term in _normalized_terms(_without_file_extensions(q))
         if term not in excluded and term not in EXCLUSION_CONTROL_TERMS
     ]
 

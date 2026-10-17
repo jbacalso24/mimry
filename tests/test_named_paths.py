@@ -11,6 +11,7 @@ from mimry.mentions import (
     exact_name_paths,
     named_boost,
     named_paths,
+    unindexed_file_names,
 )
 from mimry.search import find_rows
 from mimry.storage import write_jsonl
@@ -232,3 +233,30 @@ def test_a_test_file_named_in_the_headline_of_a_test_task_gets_the_boost(tmp_pat
 
     test_row = next(r for r in rows if r["path"] == "tests/test_checkout_redirect.py")
     assert PATH_REASON in test_row["reason"]
+
+
+def test_a_file_name_the_index_lacks_matches_no_file_of_its_extension(tmp_path):
+    paths = ["src/index.ts", "src/Config.ts", "services/billing/session.ts"]
+    idx = _fixture_index(tmp_path, paths)
+
+    assert find_rows(idx, "nosuchthing.ts", limit=10, root=tmp_path) == []
+
+    rows = find_rows(idx, "session.ts", limit=10, root=tmp_path)
+    assert [r["path"] for r in rows] == ["services/billing/session.ts"]
+
+
+def test_a_plain_extension_word_still_matches_by_name(tmp_path):
+    idx = _fixture_index(tmp_path, ["docs/export_pdf.py", "src/order.py"])
+
+    rows = find_rows(idx, "pdf export", limit=10, root=tmp_path)
+
+    assert rows[0]["path"] == "docs/export_pdf.py"
+
+
+def test_unindexed_file_names_names_only_the_missing_files():
+    known = ["src/index.ts", "docs/empty.pdf"]
+
+    assert unindexed_file_names("fix nosuchthing.ts", known) == ["nosuchthing.ts"]
+    assert unindexed_file_names("huge.pdf and src/index.ts", known) == ["huge.pdf"]
+    assert unindexed_file_names("pdf export", known) == []
+    assert unindexed_file_names("open docs/empty.pdf", known) == []

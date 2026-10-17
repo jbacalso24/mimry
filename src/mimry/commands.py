@@ -88,7 +88,7 @@ from .queries import (
     write_context_pack,
 )
 from .routing import route_payload, write_brief
-from .search import find_rows
+from .search import find_rows, missing_file_names
 from .security import (
     redact_sensitive_text,
     safe_root,
@@ -749,6 +749,9 @@ def _find_in_directory(a, root, start):
         except ValueError as exc:
             ui.fail("Invalid snippet limits", str(exc))
             return 2
+    if not rows:
+        for name in missing_file_names(idx, query):
+            print(f"No file named {ui.quote(redact_sensitive_text(name))} is indexed.")
     return _print_search("Best matches for", query, rows, verbose=getattr(a, "verbose", False))
 
 
