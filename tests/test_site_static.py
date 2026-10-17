@@ -165,3 +165,15 @@ def test_robots_is_truthful_about_project_scope() -> None:
     assert "cannot publish /mimry/robots.txt only" not in robots
     assert "project can publish /mimry/robots.txt only" in robots
     assert "cannot\n# create GitHub Pages' host-root /robots.txt" in robots
+
+
+def test_llms_txt_lists_the_default_mcp_tools() -> None:
+    import re
+
+    from mimry.mcp_server import CORE_TOOLS
+
+    text = (ROOT / "llms.txt").read_text(encoding="utf-8")
+    line = next(line for line in text.splitlines() if "By default the server lists" in line)
+    listed = re.findall(r"`(mimry_\w+)`", line)
+    assert f"lists {len(CORE_TOOLS)} tools" in line
+    assert sorted(listed) == sorted(CORE_TOOLS)
