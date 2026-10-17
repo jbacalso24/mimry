@@ -39,11 +39,29 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.6.3">
+<header class="release-meta">
+<h2>0.6.3</h2>
+<p class="release-date"><time datetime="2026-10-18">18 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.6.3">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.6.3/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Upgrade notes</h3>
+<ul><li>Upgrade with <code>mimry upgrade</code>. The first command after upgrading reparses every file, so tsconfig bases named in an <code>extends</code> array show up without a full reindex.</li></ul>
+<h3>New features</h3>
+<ul><li><code>preflight</code>, <code>route</code> and <code>explain</code> mark a file with uncommitted changes, including untracked files and files in a nested repo or submodule: <code>(uncommitted)</code> in the Start with list and an <code>Uncommitted changes: yes</code> line in the context pack, so an agent does not take work in progress as shipped (<a href="https://github.com/jbacalso24/mimry/pull/454">#454</a>, <a href="https://github.com/jbacalso24/mimry/pull/456">#456</a>).</li></ul>
+<h3>Fixes</h3>
+<ul><li>A <code>tsconfig.json</code> whose <code>extends</code> is an array follows each base in order, and a base with any <code>.json</code> name, such as <code>./base.json</code>, resolves its path aliases (<a href="https://github.com/jbacalso24/mimry/pull/453">#453</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.6.2">
 <header class="release-meta">
 <h2>0.6.2</h2>
-<p class="release-date"><time datetime="2026-10-18">18 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-18">18 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.6.2">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.6.2/">PyPI</a></li>

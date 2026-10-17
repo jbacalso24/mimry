@@ -2,6 +2,21 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.6.3 - 2026-10-18
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`.
+  The first command after upgrading reparses every file, so tsconfig bases named in an `extends` array show up without a full reindex.
+
+### New features
+
+- `preflight`, `route` and `explain` mark a file with uncommitted changes, including untracked files and files in a nested repo or submodule: `(uncommitted)` in the Start with list and an `Uncommitted changes: yes` line in the context pack, so an agent does not take work in progress as shipped ([#454](https://github.com/jbacalso24/mimry/pull/454), [#456](https://github.com/jbacalso24/mimry/pull/456)).
+
+### Fixes
+
+- A `tsconfig.json` whose `extends` is an array follows each base in order, and a base with any `.json` name, such as `./base.json`, resolves its path aliases ([#453](https://github.com/jbacalso24/mimry/pull/453)).
+
 ## 0.6.2 - 2026-10-18
 
 ### Upgrade notes
