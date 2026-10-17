@@ -23,6 +23,12 @@ from mimry.routing import _is_setup_command, project_test_command, verification_
 from mimry.scanner import adapt
 from mimry.search import _with_reason
 
+requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="git not available")
+UNCOMMITTED_LINE = (
+    "Uncommitted changes: yes - this file differs from the last commit; "
+    "do not assume the work is shipped."
+)
+
 
 def _posix(text: str) -> str:
     """Normalize printed paths for comparison.
@@ -1894,6 +1900,68 @@ def test_preflight_initializes_git_repo_and_ignores_mimry(tmp_path):
         check=False,
     )
     assert ignored.returncode == 0, ignored.stderr
+
+
+def _commit_everything(repo: Path) -> None:
+    git = [
+        "git",
+        "-c",
+        "user.name=MIMRY Test",
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "commit.gpgsign=false",
+    ]
+    subprocess.run([*git, "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-qm", "init"], cwd=repo, check=True, capture_output=True)
+
+
+def _pack_block(pack: str, path: str) -> str:
+    blocks = pack.split("\n### ")
+    return next(block for block in blocks if f"`{path}`" in block.split("\n", 1)[0])
+
+
+@requires_git
+def test_preflight_marks_modified_and_untracked_files_in_the_pack(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True)
+    (repo / "clean_session.py").write_text("def session_token_clean():\n    return 1\n")
+    (repo / "dirty_session.py").write_text("def session_token_dirty():\n    return 1\n")
+    _commit_everything(repo)
+    (repo / "dirty_session.py").write_text("def session_token_dirty():\n    return 2\n")
+    (repo / "new_session.py").write_text("def session_token_new():\n    return 3\n")
+
+    res = run_cli(repo, tmp_path / "cache", "preflight", "session token")
+
+    assert res.returncode == 0, res.stderr
+    assert "dirty_session.py (uncommitted)" in res.stdout
+    assert "new_session.py (uncommitted)" in res.stdout
+    assert "clean_session.py (uncommitted)" not in res.stdout
+    pack = (repo / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    assert UNCOMMITTED_LINE in _pack_block(pack, "dirty_session.py")
+    assert UNCOMMITTED_LINE in _pack_block(pack, "new_session.py")
+    assert "`clean_session.py`" in pack
+    assert UNCOMMITTED_LINE not in _pack_block(pack, "clean_session.py")
+
+
+@requires_git
+def test_preflight_marks_uncommitted_files_when_root_is_a_git_subfolder(tmp_path):
+    outer = tmp_path / "outer"
+    app = outer / "app"
+    app.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=outer, check=True, capture_output=True)
+    (app / "dirty_session.py").write_text("def session_token_dirty():\n    return 1\n")
+    (app / "clean_session.py").write_text("def session_token_clean():\n    return 1\n")
+    _commit_everything(outer)
+    (app / "dirty_session.py").write_text("def session_token_dirty():\n    return 2\n")
+
+    res = run_cli(app, tmp_path / "cache", "preflight", "session token")
+
+    assert res.returncode == 0, res.stderr
+    pack = (app / ".mimry" / "mimry-out" / "context" / "latest.md").read_text(encoding="utf-8")
+    assert UNCOMMITTED_LINE in _pack_block(pack, "dirty_session.py")
+    assert UNCOMMITTED_LINE not in _pack_block(pack, "clean_session.py")
 
 
 def test_status_reports_graph_artifact_health(tmp_path):

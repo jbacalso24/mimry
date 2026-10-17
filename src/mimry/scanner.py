@@ -454,6 +454,26 @@ def _status_paths(status: bytes) -> list[bytes]:
     return paths
 
 
+def uncommitted_paths(root: Path) -> set[str]:
+    """Paths under root that differ from the last commit, untracked too.
+
+    Paths are relative to root. Empty when git cannot answer.
+    """
+    root = Path(root)
+    prefix = _git_output(root, "rev-parse", "--show-prefix")
+    status = _git_output(root, "--no-optional-locks", "status", "--porcelain=v1", "-z", "-uall")
+    if prefix is None or status is None:
+        return set()
+    # Porcelain paths are relative to the repo top-level, so drop the
+    # prefix that places root inside it and skip paths outside root.
+    base = os.fsdecode(prefix).rstrip("\n")
+    return {
+        path[len(base) :]
+        for path in map(os.fsdecode, _status_paths(status))
+        if path.startswith(base)
+    }
+
+
 def worktree_fingerprint(root: Path) -> str | None:
     """sha256 of the working tree as git sees it, or None.
 

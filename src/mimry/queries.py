@@ -71,7 +71,7 @@ from .paths import (
     task_context_file,
 )
 from .routing import project_test_command, verification_commands
-from .scanner import size_limit_text
+from .scanner import size_limit_text, uncommitted_paths
 from .search import find_rows
 from .security import filter_index_records, markdown_inline, redact_sensitive_text, sanitize_query
 from .semantic import semantic_health
@@ -477,6 +477,7 @@ def write_context_pack(
         "Where a file lists lines to read first, read those lines before the rest of the file.",
         "",
     ]
+    dirty = uncommitted_paths(root)
     for i, r in enumerate(rows, 1):
         role = _file_role(r["path"], minified=bool(r.get("minified")))
         phrases = ui.reason_phrases(r["reason"])
@@ -496,6 +497,12 @@ def write_context_pack(
             why_line,
             f"Role: {role}",
         ]
+        if r["path"] in dirty:
+            r["uncommitted"] = True
+            lines += [
+                "Uncommitted changes: yes - this file differs from the last commit;"
+                " do not assume the work is shipped."
+            ]
         if r.get("ranges"):
             lines += [f"Read first: {_ranges_text(r['ranges'], _code_name)}"]
         details = r.get("details") or ""
@@ -769,7 +776,8 @@ def _document_part_text(ranges: list[dict]) -> str:
 
 def print_results(rows: list[dict], *, verbose: bool) -> None:
     for i, row in enumerate(rows, 1):
-        print(f"  {i:>2}  {row['path']}")
+        tag = " (uncommitted)" if row.get("uncommitted") else ""
+        print(f"  {i:>2}  {row['path']}{tag}")
         print(f"      {ui.faint(ui.reason_summary(row['reason']))}")
         if row.get("ranges"):
             print(f"      read first: {_ranges_text(row['ranges'])}")
