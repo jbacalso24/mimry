@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import PurePosixPath
 
 from .mentions import EXACT_NAME_REASON, FILE_EXTENSIONS
@@ -379,9 +380,83 @@ def text_terms(text: str) -> frozenset[str]:
     return frozenset(term for term in terms if len(term) >= 2 and term not in STOPWORDS)
 
 
+# Query words also match by light stem, so "callbacks" finds "callback"
+# and "errors" finds "error". False compares words exactly, as before.
+_QUERY_STEMS = True
+# Words that end like an inflection but are not one ("canvas" is not
+# "canva" plus s).
+STEM_EXCEPTIONS = frozenset(
+    {
+        "class",
+        "process",
+        "status",
+        "alias",
+        "address",
+        "access",
+        "canvas",
+        "axis",
+        "this",
+        "has",
+        "is",
+        "was",
+        "does",
+        "bus",
+        "gas",
+        "news",
+        "series",
+        "species",
+    }
+)
+
+
+def _undouble(stem: str) -> str:
+    """Drop one of a doubled final consonant: "stopp" -> "stop".
+
+    l, s and z stay doubled in base words ("call", "pass").
+    """
+    if len(stem) > 1 and stem[-1] == stem[-2] and stem[-1] not in "aeiouslz":
+        return stem[:-1]
+    return stem
+
+
+@lru_cache(maxsize=65536)
+def light_stem(word: str) -> str:
+    """A small deterministic English stem, used only to compare words.
+
+    The first suffix rule that leaves at least four letters applies,
+    once. Words with non-ASCII letters or in STEM_EXCEPTIONS stay as
+    written.
+    """
+    if not word.isascii() or word in STEM_EXCEPTIONS:
+        return word
+    candidates = []
+    if word.endswith("ies"):
+        candidates.append(word[:-3] + "y")
+    # "sses" -> "ss" is this rule too: "classes" -> "class".
+    if word.endswith(("ses", "xes", "zes", "ches", "shes")):
+        candidates.append(word[:-2])
+    if word.endswith("ing"):
+        candidates.append(_undouble(word[:-3]))
+    if word.endswith("ed"):
+        candidates.append(_undouble(word[:-2]))
+    if word.endswith("s") and word[-2:-1] not in ("s", "u", "i"):
+        candidates.append(word[:-1])
+    for stem in candidates:
+        if len(stem) >= 4:
+            return stem
+    return word
+
+
+def query_stem(term: str) -> str:
+    """The form a query word is compared by: its light stem, or the word
+    itself when query stems are off."""
+    return light_stem(term) if _QUERY_STEMS else term
+
+
 def term_matches_token(term: str, token: str) -> bool:
     """Whole-token match that tolerates inflections
-    (completion/completions).
+    (completion/completions) and shares a light stem
+    (callbacks/callback).
 
     Substring matching made "art" match "start" and "args" match every
     "*args*" identifier, which buried specific files under incidental
@@ -391,6 +466,10 @@ def term_matches_token(term: str, token: str) -> bool:
         return True
     if len(term) < 4 or len(token) < 4:
         return False
+    # ponytail: stems are looked up per vocabulary token; precompute the
+    # vocabulary's stems if graph matching ever shows up in profiles.
+    if query_stem(term) == query_stem(token):
+        return True
     word, inflected = sorted((term, token), key=len)
     stems = [word]
     if word.endswith("e"):

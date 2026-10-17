@@ -16,6 +16,7 @@ from ..intent import (
     intent_terms,
     location_terms,
     matching_tokens,
+    query_stem,
     query_terms,
     text_terms,
 )
@@ -823,11 +824,14 @@ def _term_weights(
     "completion" points at a dozen. Treating them equally ranked
     whichever file matched the common word most often.
     """
-    df = dict.fromkeys(terms, 0)
+    # Counted per stem, so "error" and "errors" share one weight.
+    stems = {term: query_stem(term) for term in terms}
+    df = dict.fromkeys(stems.values(), 0)
     for path_hits, node_hits in file_hits.values():
-        for term in path_hits.union(*(hits for hits, _ in node_hits)):
-            df[term] += 1
-    return {term: 1.0 + math.log((total_files + 1) / (df[term] + 1)) for term in terms}
+        hit_terms = path_hits.union(*(hits for hits, _ in node_hits))
+        for stem in {stems[term] for term in hit_terms}:
+            df[stem] += 1
+    return {term: 1.0 + math.log((total_files + 1) / (df[stems[term]] + 1)) for term in terms}
 
 
 def graph_rows(

@@ -23,6 +23,7 @@ from .intent import (
     excluded_query_terms,
     intent_terms,
     is_test_file,
+    query_stem,
     query_terms,
 )
 from .mentions import (
@@ -176,7 +177,9 @@ def _fts_match_query(terms: list[str]) -> str:
         if not term:
             continue
         if not CJK_RUN_RE.fullmatch(term):
-            clauses.append(f'"{term}"*')
+            # A stem prefix also matches the word's other forms.
+            stem = query_stem(term)
+            clauses.append(f'"{term}"*' if stem == term else f'("{term}"* OR "{stem}"*)')
             continue
         # A CJK run is one FTS word, so a substring of it matches its
         # character pairs instead (indexed by body_terms).
@@ -283,8 +286,9 @@ def score(
     s = 0
     reasons = []
     for term in terms:
+        stem = query_stem(term)
         for label, text in h.items():
-            if term in text:
+            if term in text or stem in text:
                 s += {"filename": 30, "path": 20, "content hint": 10, "metadata": 6}[label]
                 reason = f"{label} match"
                 token_reason = f"token match: {term}"
