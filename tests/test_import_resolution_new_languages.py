@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from mimry.commands import cmd_init
+from mimry.core import groovy_files
 from mimry.core.languages import extract
 from mimry.core.resolve import resolve_calls, resolve_imports
 from mimry.indexer import write_index
@@ -2173,7 +2174,7 @@ class TestGroovyImports:
         ]
 
     def test_static_wildcard_import_resolves_to_the_class_file(self):
-        imports = {"app/Main.groovy": ["demo.Book.*"]}
+        imports = {"app/Main.groovy": ["static demo.Book.*"]}
         rel_paths = {"app/Main.groovy", "lib/Book.groovy"}
         classes = {"demo.Book": ["lib/Book.groovy"]}
 
@@ -2181,6 +2182,41 @@ class TestGroovyImports:
 
         assert [(r["target"], r["confidence"]) for r in results] == [
             ("lib/Book.groovy", "EXTRACTED")
+        ]
+
+    def test_plain_wildcard_of_a_class_name_links_its_package(self):
+        imports = {"app/Main.groovy": ["a.b.C.*"]}
+        rel_paths = {"app/Main.groovy", "a/b/C.groovy", "a/b/C/Helper.groovy"}
+        classes = {"a.b.C": ["a/b/C.groovy"]}
+        packages = {"a.b.C": ["a/b/C/Helper.groovy"]}
+
+        results = resolve_imports(
+            imports, rel_paths, groovy_classes=classes, groovy_packages=packages
+        )
+
+        assert [(r["target"], r["confidence"]) for r in results] == [
+            ("a/b/C/Helper.groovy", "EXTRACTED")
+        ]
+
+    def test_static_wildcard_of_a_class_name_links_the_class_file(self):
+        imports = {"app/Main.groovy": ["static a.b.C.*"]}
+        rel_paths = {"app/Main.groovy", "a/b/C.groovy", "a/b/C/Helper.groovy"}
+        classes = {"a.b.C": ["a/b/C.groovy"]}
+        packages = {"a.b.C": ["a/b/C/Helper.groovy"]}
+
+        results = resolve_imports(
+            imports, rel_paths, groovy_classes=classes, groovy_packages=packages
+        )
+
+        assert [(r["target"], r["confidence"]) for r in results] == [("a/b/C.groovy", "EXTRACTED")]
+
+    def test_import_lines_mark_only_the_static_wildcard(self):
+        raw = b"import a.b.C.*\nimport static a.b.C.*\nimport static a.b.C.m\n"
+
+        assert groovy_files.imports(raw) == [
+            {"module": "a.b.C.*", "line": 1},
+            {"module": "static a.b.C.*", "line": 2},
+            {"module": "a.b.C.m", "line": 3},
         ]
 
     def test_wildcard_of_an_unknown_package_is_no_edge(self):

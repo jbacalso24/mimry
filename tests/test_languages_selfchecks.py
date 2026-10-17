@@ -5,6 +5,8 @@ language_for, definitions, imports, calls, inheritance edges, and line
 pointers work correctly.
 """
 
+import time
+
 import pytest
 
 from mimry.constants import TEXT_EXTS
@@ -3599,6 +3601,15 @@ class TestGroovySymbols:
             ("pack", "method", 5, 7),
             ("after", "method", 8, 8),
         ]
+
+    def test_a_line_of_forty_generic_types_extracts_in_time(self):
+        line = " ".join(["List<Map<K, V>>"] * 40) + " m"
+        started = time.perf_counter()
+        source = f"class Chain {{\n    {line}\n}}\n"
+        result = extract("groovy/src/demo/Chain.groovy", source)
+
+        assert time.perf_counter() - started < 2
+        assert _groovy_spans(result) == [("Chain", "class", 1, 3)]
 
     def test_everyday_syntax_keeps_the_class_and_its_methods(self):
         result = extract("groovy/src/demo/Account.groovy", GROOVY_EVERYDAY)

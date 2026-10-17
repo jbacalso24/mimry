@@ -29,9 +29,13 @@ _TYPE_HEAD = re.compile(
 # is fixed here.
 _NESTED_ARGS = r"<(?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*>"
 # A word before a method name: a modifier, a type, `def`, an annotation
-# or a generic parameter list.
+# or a generic parameter list. A type word is atomic, so a failed match
+# does not retry each shorter generic part: that retry is exponential
+# on a line with many generic types.
 _PREFIX_WORD = (
-    r"(?:@[\w.]+(?:\([^)]*\))?|" + _NESTED_ARGS + r"|[A-Za-z_$][\w$.]*(?:<[^{}()=]*>)?(?:\[\])*)"
+    r"(?:@[\w.]+(?:\([^)]*\))?|"
+    + _NESTED_ARGS
+    + r"|(?>[A-Za-z_$][\w$.]*(?:<[^{}()=]*>)?(?:\[\])*))"
 )
 # A method or function header up to the '(' of its parameter list. Spock
 # names, which are strings, keep their quotes here and lose them in
@@ -89,9 +93,11 @@ _PACKAGE = re.compile(
     re.MULTILINE,
 )
 # An import line. A wildcard is kept as `a.b.*`, and the resolver
-# links it to the files of package `a.b`.
+# links it to the files of package `a.b`. A static one keeps a
+# `static ` prefix, which only it takes the class route for.
 _IMPORT = re.compile(
-    rb"^[ \t]*import[ \t]+(?:static[ \t]+)?(?P<module>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)"
+    rb"^[ \t]*import[ \t]+(?P<static>static[ \t]+)?"
+    rb"(?P<module>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)"
     rb"(?P<wild>\.\*)?[ \t]*(?:as[ \t]+[A-Za-z_$][\w$]*)?[ \t]*;?[ \t]*\r?$",
     re.MULTILINE,
 )
@@ -526,7 +532,8 @@ def _innermost(head: dict, types: list[dict], type_starts: list[int]) -> dict | 
 def imports(raw: bytes, starts: list[int] | None = None) -> list[dict]:
     """Module names of the import lines, with their lines.
 
-    A wildcard import keeps its package with a ``.*`` suffix.
+    A wildcard import keeps its package with a ``.*`` suffix, and a
+    static one also a ``static `` prefix.
     """
     if starts is None:
         starts = line_starts(raw)
@@ -535,6 +542,8 @@ def imports(raw: bytes, starts: list[int] | None = None) -> list[dict]:
         module = match.group("module").decode("utf-8", "replace")
         if match.group("wild"):
             module += ".*"
+            if match.group("static"):
+                module = "static " + module
         found.append({"module": module, "line": bisect.bisect_right(starts, match.start())})
     return found
 

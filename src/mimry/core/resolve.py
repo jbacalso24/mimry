@@ -145,7 +145,7 @@ def resolve_imports(
                 targets = _resolve_go(module, go_modules or {}, go_package_files)
             elif is_groovy and module.endswith(".*"):
                 targets = _resolve_groovy_wildcard(
-                    importer, module[:-2], groovy_classes or {}, groovy_packages or {}
+                    importer, module, groovy_classes or {}, groovy_packages or {}
                 )
             else:
                 target = _resolve_groovy_class(module, groovy_classes or {}) if is_groovy else None
@@ -431,15 +431,18 @@ def _resolve_groovy_class(module: str, classes: dict[str, list[str]]) -> dict | 
 
 def _resolve_groovy_wildcard(
     importer: str,
-    prefix: str,
+    module: str,
     classes: dict[str, list[str]],
     packages: dict[str, list[str]],
 ) -> list:
-    """`import a.b.C.*` (a static one, say) is the class file of `a.b.C`
-    when a single file declares it. Otherwise `a.b.*` is the package.
+    """`import static a.b.C.*` is the class file of `a.b.C` when a
+    single file declares it. A plain `import a.b.C.*` is always the
+    package `a.b.C`, and so is a static one with no single class file.
     """
+    static = module.startswith("static ")
+    prefix = module.removeprefix("static ")[:-2]
     files = classes.get(prefix, [])
-    if len(files) == 1 and files[0] != importer:
+    if static and len(files) == 1 and files[0] != importer:
         return [{"path": files[0], "confidence": "EXTRACTED"}]
     return _resolve_groovy_package(importer, prefix, packages)
 
