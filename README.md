@@ -200,7 +200,7 @@ MIMRY parses these languages with tree-sitter for symbols, imports, calls and in
 | JSON | `.json`, `.jsonc` |
 | YAML | `.yaml`, `.yml` |
 | TOML | `.toml` |
-| XML | `.xml`, `.xsd` |
+| XML | `.csproj`, `.fsproj`, `.nuspec`, `.plist`, `.props`, `.resx`, `.targets`, `.vbproj`, `.xaml`, `.xml`, `.xsd` |
 | Terraform (HCL) | `.hcl`, `.tf`, `.tfvars` |
 
 Fortran is read in free form only. Fixed-form `.f` and `.for` files do not parse with the grammar MIMRY uses, so they get no symbols or edges.
@@ -226,10 +226,11 @@ The data formats get the names an agent looks them up by.
 JSON, YAML and TOML give their keys to depth two, named by path, such as `services.web` or `tool.ruff.line-length`, and TOML also gives each table header.
 A YAML document that is a Kubernetes object also gives a `<kind>/<name>` resource, such as `Deployment/web`.
 XML gives each element with an `id` or `name` attribute, and a Maven `pom.xml` gives its `groupId:artifactId`.
+MSBuild project and props files give each property in a `PropertyGroup` and each `Target` name, with each `ProjectReference` as an import, a plist gives the keys of its top-level dict, and XAML gives each `x:Name` and `x:Key`.
 Terraform gives each `resource`, `data`, `module`, `variable`, `output`, `provider` and `locals` entry under the name it is referenced by, such as `aws_s3_bucket.b`, `data.aws_iam_policy_document.p`, `module.bucket`, `var.region` and `local.name`.
 A `var.region` reference finds the variable in the same folder, and a module's local `source` links to its folder.
 Values are never symbols, so a secret stored as a value is never indexed.
-Lock files and files over 256 KB get no symbols, and manifests keep their own adapter above.
+Lock files and files over 256 KiB get no symbols, and manifests keep their own adapter above.
 Every data file is also indexed as text, so `mimry find` matches its content.
 
 SQL files name each schema object as the source writes it, such as `public.users`: tables, views, materialized views, indexes, sequences, schemas and types, and functions, procedures and triggers.
@@ -237,7 +238,7 @@ A view, function, trigger or index that reads or writes a table gets a call edge
 A plain query or an `ALTER TABLE` belongs to no object, so it adds no edge.
 A statement the parser does not know costs only itself, and the objects around it are kept.
 A trigger written with a `BEGIN ... END` body gives its name and table, but its body is not read.
-Files over 256 KB get no symbols, so a large dump stays text-searchable.
+Files over 256 KiB get no symbols, so a large dump stays text-searchable.
 
 Groovy and Gradle files name each class, interface, trait, enum, method and top-level `def` function as the source writes it.
 A Spock feature method keeps its string, such as `adds two numbers`, as its name.

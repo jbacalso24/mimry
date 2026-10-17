@@ -429,13 +429,12 @@ Start with
         <article class="cell c-graph">
           <h3>A graph of how the code connects</h3>
           <p>Imports, calls, definitions and references. An ambiguous reference produces no edge rather than a guess.</p>
-          <ol class="chain" aria-label="Output of mimry path backend/api/auth.py db/schema.sql">
-            <li>backend/<wbr>api/<wbr>auth.py<span class="edge">imports</span></li>
-            <li>backend/<wbr>services/<wbr>session_service.py<span class="edge">imports</span></li>
-            <li>backend/<wbr>repositories/<wbr>session_repository.py<span class="edge">references</span></li>
-            <li>sessions<span class="edge">defined in db/schema.sql</span></li>
+          <ol class="chain" aria-label="Output of mimry path app/api.py load_session">
+            <li>app/<wbr>api.py<span class="edge">imports</span></li>
+            <li>app/<wbr>service.py<span class="edge">defines</span></li>
+            <li>load_session (app/<wbr>service.py)</li>
           </ol>
-          <p class="caption">From <code>mimry path</code> on the sample shop app.</p>
+          <p class="caption">From <code>mimry path</code> on a small sample app.</p>
         </article>
         <article class="cell">
           <h3>It learns from what helped</h3>

@@ -2427,6 +2427,15 @@ class TestDataLanguageFor:
             ("Cargo.toml", "toml"),
             ("layout.xml", "xml"),
             ("schema.xsd", "xml"),
+            ("app.csproj", "xml"),
+            ("app.fsproj", "xml"),
+            ("app.vbproj", "xml"),
+            ("Directory.Build.props", "xml"),
+            ("build.targets", "xml"),
+            ("Info.plist", "xml"),
+            ("MainPage.xaml", "xml"),
+            ("Strings.resx", "xml"),
+            ("Demo.nuspec", "xml"),
             ("main.tf", "hcl"),
             ("prod.tfvars", "hcl"),
             ("config.hcl", "hcl"),
@@ -2437,6 +2446,33 @@ class TestDataLanguageFor:
 
     def test_svg_stays_a_document_not_xml(self):
         assert language_for("logo.svg") is None
+
+    def test_msbuild_project_is_indexed_as_xml_not_generic(self, tmp_path):
+        """A .csproj gets the XML grammar, so it is not generic."""
+        record, _symbols, *_ = adapt(self._write(tmp_path, "app.csproj"), tmp_path)
+
+        assert record["adapter"] != "generic"
+        assert record["parse_status"] == "ok"
+
+    def test_binary_plist_stays_generic(self, tmp_path):
+        """A binary plist is not XML, so it is not a parse error."""
+        target = tmp_path / "Info.plist"
+        target.write_bytes(b"bplist00" + bytes(range(64)))
+        record, symbols, *_ = adapt(target, tmp_path)
+
+        assert record["adapter"] == "generic"
+        assert record["parse_status"] == "ok"
+        assert symbols == []
+
+    @staticmethod
+    def _write(tmp_path, name):
+        target = tmp_path / name
+        target.write_text(
+            '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
+            "<TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>\n",
+            encoding="utf-8",
+        )
+        return target
 
 
 class TestYamlSymbols:
@@ -2715,6 +2751,104 @@ class TestXmlSymbols:
         resource = _symbols(result)["com.example:app"]
         assert resource["kind"] == "resource"
         assert (resource["line_start"], resource["line_end"]) == (1, 5)
+
+    def test_msbuild_property_names_are_keys(self):
+        source = (
+            '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
+            "<TargetFramework>net8.0</TargetFramework>"
+            "<AssemblyName>Demo</AssemblyName></PropertyGroup></Project>\n"
+        )
+        result = extract("app.csproj", source)
+
+        assert {n: d["kind"] for n, d in _symbols(result).items()} == {
+            "TargetFramework": "key",
+            "AssemblyName": "key",
+        }
+
+    def test_msbuild_target_name_is_a_key(self):
+        source = (
+            "<Project>\n"
+            '  <Target Name="Hello" BeforeTargets="Build">\n'
+            '    <Message Text="Building Demo" Importance="high" />\n'
+            "  </Target>\n"
+            "</Project>\n"
+        )
+        result = extract("build.targets", source)
+
+        assert set(_symbols(result)) == {"Hello"}
+        assert _lines(result, "Hello") == (2, 4)
+
+    def test_name_attribute_is_only_a_key_on_msbuild_target(self):
+        """Capital Name is a key only on an MSBuild Target."""
+        msbuild = extract("app.csproj", '<Project><Foo Name="Bar"/></Project>\n')
+        plain = extract("data.xml", '<root><Target Name="Hello"/></root>\n')
+
+        assert set(_symbols(msbuild)) == set()
+        assert set(_symbols(plain)) == set()
+
+    def test_project_reference_is_an_import_package_reference_is_not(self):
+        source = (
+            "<Project>\n"
+            "  <ItemGroup>\n"
+            '    <ProjectReference Include="..\\Lib\\Lib.csproj" />\n'
+            '    <PackageReference Include="Serilog" Version="3.1.1" />\n'
+            "  </ItemGroup>\n"
+            "</Project>\n"
+        )
+        result = extract("app.csproj", source)
+
+        assert [(i["module"], i["line"]) for i in result["imports"]] == [
+            ("..\\Lib\\Lib.csproj", 3),
+        ]
+
+    def test_plist_top_level_keys_are_keys_and_nested_keys_are_not(self):
+        source = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+            '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+            '<plist version="1.0">\n'
+            "<dict>\n"
+            "  <key>CFBundleName</key>\n"
+            "  <string>Demo</string>\n"
+            "  <key>CFBundleIdentifier</key>\n"
+            "  <string>com.example.demo</string>\n"
+            "  <key>NSAppTransportSecurity</key>\n"
+            "  <dict>\n"
+            "    <key>NSAllowsArbitraryLoads</key>\n"
+            "    <true/>\n"
+            "  </dict>\n"
+            "</dict>\n"
+            "</plist>\n"
+        )
+        result = extract("Info.plist", source)
+
+        assert set(_symbols(result)) == {
+            "CFBundleName",
+            "CFBundleIdentifier",
+            "NSAppTransportSecurity",
+        }
+        assert _symbols(result)["CFBundleIdentifier"]["kind"] == "key"
+        assert _lines(result, "CFBundleIdentifier") == (7, 7)
+
+    def test_xaml_x_name_and_x_key_are_keys(self):
+        source = (
+            '<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui" '
+            'x:Class="Demo.MainPage" x:Name="MainPageRoot">\n'
+            '  <Label x:Name="Greeting" Text="Hello" />\n'
+            "  <ContentPage.Resources>\n"
+            '    <Color x:Key="Brand">#512BD4</Color>\n'
+            "  </ContentPage.Resources>\n"
+            "</ContentPage>\n"
+        )
+        result = extract("MainPage.xaml", source)
+
+        assert set(_symbols(result)) == {"MainPageRoot", "Greeting", "Brand"}
+        assert _lines(result, "Brand") == (4, 4)
+
+    def test_x_name_is_not_a_key_outside_xaml(self):
+        result = extract("layout.xml", '<root><Label x:Name="Greeting"/></root>\n')
+
+        assert set(_symbols(result)) == set()
 
 
 TERRAFORM_MODULE = """variable "region" {

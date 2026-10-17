@@ -395,17 +395,22 @@ def _xml_child_elements(element):
             yield from (c for c in child.children if c.type == "element")
 
 
+def _xml_element_text(raw: bytes, element) -> str | None:
+    """Text directly inside ``element``, or None when it is empty."""
+    content = next((c for c in element.children if c.type == "content"), None)
+    if content is None:
+        return None
+    text = "".join(_text(raw, c) for c in content.children if c.type == "CharData")
+    return text.strip() or None
+
+
 def _xml_child_text(raw: bytes, element, tag: str) -> str | None:
     """Text of the first direct child element named ``tag``."""
     for child in _xml_child_elements(element):
         start = _xml_start(child)
         if start is None or _xml_name(raw, start) != tag:
             continue
-        content = next((c for c in child.children if c.type == "content"), None)
-        if content is None:
-            return None
-        text = "".join(_text(raw, c) for c in content.children if c.type == "CharData")
-        return text.strip() or None
+        return _xml_element_text(raw, child)
     return None
 
 
@@ -413,7 +418,7 @@ def _xml_local(value: str) -> bool:
     return bool(value) and "://" not in value and not value.startswith("//")
 
 
-def _xml_imports(tag: str, attributes: dict, line: int) -> list[dict]:
+def _xml_imports(tag: str, attributes: dict, line: int, msbuild: bool = False) -> list[dict]:
     values = []
     if tag == "import" and "resource" in attributes:
         values.append(attributes["resource"])
@@ -424,13 +429,45 @@ def _xml_imports(tag: str, attributes: dict, line: int) -> list[dict]:
         values.extend(attributes["xsi:schemaLocation"].split()[1::2])
     if "xsi:noNamespaceSchemaLocation" in attributes:
         values.append(attributes["xsi:noNamespaceSchemaLocation"])
+    # A PackageReference names a package, not a file: no import.
+    if msbuild and tag == "ProjectReference" and "Include" in attributes:
+        values.append(attributes["Include"])
     return [{"module": v, "line": line} for v in values if _xml_local(v)]
+
+
+# MSBuild project and props files, Directory.Build.props included.
+_MSBUILD_SUFFIXES = (".csproj", ".fsproj", ".vbproj", ".props", ".targets")
+
+
+def _msbuild_properties(raw: bytes, group, definitions: list[dict], seen: set[str]) -> None:
+    """Each property in a PropertyGroup, named by its tag."""
+    for child in _xml_child_elements(group):
+        start = _xml_start(child)
+        if start is not None:
+            _add_unique(definitions, seen, _xml_name(raw, start) or "", "key", child)
+
+
+def _plist_keys(raw: bytes, plist, definitions: list[dict], seen: set[str]) -> None:
+    """Keys of the top-level dict only: depth one."""
+    for child in _xml_child_elements(plist):
+        start = _xml_start(child)
+        if start is None or _xml_name(raw, start) != "dict":
+            continue
+        for key in _xml_child_elements(child):
+            key_start = _xml_start(key)
+            if key_start is None or _xml_name(raw, key_start) != "key":
+                continue
+            _add_unique(definitions, seen, _xml_element_text(raw, key) or "", "key", key)
 
 
 def extract_xml(root, raw: bytes, filename: str) -> dict:
     definitions: list[dict] = []
     imports: list[dict] = []
     seen: set[str] = set()
+    lower = filename.lower()
+    msbuild = lower.endswith(_MSBUILD_SUFFIXES)
+    plist = lower.endswith(".plist")
+    xaml = lower.endswith(".xaml")
     for index, element in enumerate(_xml_elements(root)):
         start = _xml_start(element)
         if start is None:
@@ -439,7 +476,18 @@ def extract_xml(root, raw: bytes, filename: str) -> dict:
         attributes = _xml_attributes(raw, start)
         if index == 0 and filename == "pom.xml" and tag == "project":
             _maven_resource(raw, element, definitions)
-        for attribute in _XML_ID_ATTRIBUTES:
+        if index == 0 and plist and tag == "plist":
+            _plist_keys(raw, element, definitions, seen)
+        if msbuild and tag == "PropertyGroup":
+            _msbuild_properties(raw, element, definitions, seen)
+        # Each kind adds its names: "Name" on an MSBuild Target, and
+        # "x:Name" and "x:Key" in XAML. Other files keep id and name.
+        names = _XML_ID_ATTRIBUTES
+        if xaml:
+            names = (*names, "x:Name", "x:Key")
+        if msbuild and tag == "Target":
+            names = (*names, "Name")
+        for attribute in names:
             value = attributes.get(attribute, "")
             if value:
                 # Android writes ids as "@+id/name".
@@ -447,7 +495,7 @@ def extract_xml(root, raw: bytes, filename: str) -> dict:
                     value = value.rsplit("/", 1)[-1]
                 _add_unique(definitions, seen, value, "key", element)
                 break
-        imports.extend(_xml_imports(tag or "", attributes, element.start_point[0] + 1))
+        imports.extend(_xml_imports(tag or "", attributes, element.start_point[0] + 1, msbuild))
     return _result(definitions, imports=imports)
 
 

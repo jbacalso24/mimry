@@ -922,6 +922,9 @@ def _content_checked(path, ext, language, data, settings):
         return None
     if ext == ".m" and not is_objc_source(data):
         return None
+    # A binary plist is not XML; it stays text, as before .plist mapped.
+    if ext == ".plist" and data.startswith(b"bplist00"):
+        return None
     return language
 
 
