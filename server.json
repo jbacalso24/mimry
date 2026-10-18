@@ -8,13 +8,13 @@
     "url": "https://github.com/jbacalso24/mimry",
     "source": "github"
   },
-  "version": "0.6.3",
+  "version": "0.6.4",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "mimry",
-      "version": "0.6.3",
+      "version": "0.6.4",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

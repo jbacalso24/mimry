@@ -2,6 +2,19 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.6.4 - 2026-10-18
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`.
+  The first command after upgrading reparses every file, so tsconfig bases named `.jsonc` show up without a full reindex.
+
+### Fixes
+
+- On Windows and macOS, a file renamed only in case (`src/a.py` to `Src/A.py`) is marked as uncommitted ([#460](https://github.com/jbacalso24/mimry/pull/460)).
+- A tsconfig `extends` base named `.jsonc`, or a middle base that only extends another, continues the chain to the path aliases ([#461](https://github.com/jbacalso24/mimry/pull/461)).
+- A very deep `extends` chain no longer stops `mimry index`; links past 32 are not followed ([#463](https://github.com/jbacalso24/mimry/pull/463)).
+
 ## 0.6.3 - 2026-10-18
 
 ### Upgrade notes

@@ -39,11 +39,27 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.6.4">0.6.4</a><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.6.4">
+<header class="release-meta">
+<h2>0.6.4</h2>
+<p class="release-date"><time datetime="2026-10-18">18 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.6.4">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.6.4/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Upgrade notes</h3>
+<ul><li>Upgrade with <code>mimry upgrade</code>. The first command after upgrading reparses every file, so tsconfig bases named <code>.jsonc</code> show up without a full reindex.</li></ul>
+<h3>Fixes</h3>
+<ul><li>On Windows and macOS, a file renamed only in case (<code>src/a.py</code> to <code>Src/A.py</code>) is marked as uncommitted (<a href="https://github.com/jbacalso24/mimry/pull/460">#460</a>).</li><li>A tsconfig <code>extends</code> base named <code>.jsonc</code>, or a middle base that only extends another, continues the chain to the path aliases (<a href="https://github.com/jbacalso24/mimry/pull/461">#461</a>).</li><li>A very deep <code>extends</code> chain no longer stops <code>mimry index</code>; links past 32 are not followed (<a href="https://github.com/jbacalso24/mimry/pull/463">#463</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.6.3">
 <header class="release-meta">
 <h2>0.6.3</h2>
-<p class="release-date"><time datetime="2026-10-18">18 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-18">18 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.6.3">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.6.3/">PyPI</a></li>
