@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import math
 import re
 from functools import cache
 from pathlib import Path
@@ -23,6 +24,9 @@ from .intent import (
     cjk_bigrams,
     excluded_query_terms,
     intent_terms,
+    is_doc_or_plan,
+    is_migration,
+    is_supporting_code,
     is_test_file,
     query_terms,
 )
@@ -45,6 +49,44 @@ LANGUAGE_ALIASES = {ext.lstrip("."): language for ext, language in EXTENSION_LAN
 NAMED_DEFINITION_LIFT = 0.1
 # Most named identifiers counted for one file.
 NAMED_DEFINITION_CAP = 3
+# Rows the learned order reranks. Rows past the pool keep their order.
+LEARNED_POOL = 50
+# Pairwise logistic regression over these parts, fitted on the SWE-bench
+# train set (tasks.train.json); refit when signals change.
+LEARNED_WEIGHTS = {
+    "graph_label": -244,
+    "graph_path": 167,
+    "graph_coverage": -63,
+    "graph_matches": -157,
+    "graph_multi": 91,
+    "graph_degree": 142,
+    "graph_topology": -85,
+    "graph_reached": 65,
+    "graph_score": 1,
+    "filename_hits": -254,
+    "path_hits": 197,
+    "hint_hits": 55,
+    "metadata_hits": 49,
+    "fts": 22,
+    "named_path": 396,
+    "content_score": 69,
+    "content_on_graph": 287,
+    "named_defs": 1501,
+    "feedback": 0,
+    "exact_lift": 0,
+    "cluster_bonus": 0,
+    "final_score": 517,
+    "file_bytes": 136,
+    "intent_multiplier": 183,
+    "log_rank": -847,
+    "has_graph": 514,
+    "has_content": 323,
+    "doc": -1367,
+    "supporting": -818,
+    "migration": 5,
+    "init": -112,
+    "depth": -78,
+}
 _QUERY_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _BACKTICK_NAME_RE = re.compile(r"`([A-Za-z_][\w.]*)(?:\(\))?`")
 
@@ -407,6 +449,50 @@ def _named_definition_lift(rows, q, symbols, id_by_path):
     return sorted(lifted, key=lambda r: (-r["score"], r["path"]))
 
 
+def _learned_score(row, rank, size_by_path):
+    """The fitted ranker's score for one row at its 1-based rank."""
+    parts = row.get("parts", {})
+    path = row["path"]
+    derived = {
+        "intent_multiplier": parts.get("intent_multiplier", 1.0),
+        "log_rank": math.log(rank),
+        "has_graph": float("graph_score" in parts),
+        "has_content": float("content_score" in parts or "content_on_graph" in parts),
+        "doc": float(is_doc_or_plan(path)),
+        "supporting": float(is_supporting_code(path)),
+        "migration": float(is_migration(path)),
+        "init": float(path.endswith("__init__.py")),
+        "depth": float(path.count("/")),
+    }
+    total = 0.0
+    for name, weight in LEARNED_WEIGHTS.items():
+        if name in derived:
+            value = derived[name]
+        elif name == "final_score":
+            value = math.log1p(max(0, row["score"]))
+        elif name == "file_bytes":
+            value = math.log1p(max(0, size_by_path.get(path, 0)))
+        else:
+            value = math.log1p(max(0, parts.get(name, 0)))
+        total += round(value, 3) * weight
+    return round(total, 3)
+
+
+def _learned_rerank(rows, size_by_path):
+    """Reorder the first LEARNED_POOL rows by the fitted ranker (#42).
+
+    Scores stay as they are; only the order of the pool moves. Rows
+    past the pool keep their place after it.
+    """
+    pool = []
+    for rank, row in enumerate(rows[:LEARNED_POOL], start=1):
+        learned = _learned_score(row, rank, size_by_path)
+        parts = {**row.get("parts", {}), "learned": learned}
+        pool.append((-learned, rank, {**row, "parts": parts}))
+    pool.sort(key=lambda item: (item[0], item[1]))
+    return [row for _, _, row in pool] + rows[LEARNED_POOL:]
+
+
 def _apply_exclusions(rows, q):
     excluded_terms = excluded_query_terms(q)
     if not excluded_terms:
@@ -642,6 +728,7 @@ def find_rows(
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
             ranked = _named_definition_lift(ranked, q, symbols, id_by_path)
+            ranked = _learned_rerank(ranked, size_by_path)
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
             ranked = _with_semantic(
                 ranked,
@@ -660,6 +747,7 @@ def find_rows(
             )
             return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)
     fallback_rows = _named_definition_lift(fallback_rows, q, symbols, id_by_path)
+    fallback_rows = _learned_rerank(fallback_rows, size_by_path)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     ranked = _with_semantic(
         ranked,

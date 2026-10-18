@@ -396,3 +396,33 @@ def test_find_rows_rows_carry_parts_ending_in_final_score(tmp_path, monkeypatch)
     for row in rows:
         assert row["parts"]["final_score"] == row["score"]
         assert all(isinstance(value, int | float) for value in row["parts"].values())
+
+
+def test_learned_top_ten_is_the_same_at_every_limit(tmp_path, monkeypatch):
+    repo, ptr = _indexed(tmp_path, monkeypatch)
+    idx = Path(ptr["indexPath"])
+    top_ten = find_rows(idx, "auth session", limit=10, root=repo)
+    wide = find_rows(idx, "auth session", limit=50, root=repo)
+    assert [row["path"] for row in top_ten] == [row["path"] for row in wide[:10]]
+
+
+def test_learned_pass_top_ten_does_not_depend_on_limit(tmp_path, monkeypatch):
+    idx, _files = _ranking_index(tmp_path)
+    _patch_ranking_dependencies(monkeypatch)
+    small = find_rows(idx, "query", limit=3)
+    wide = find_rows(idx, "query", limit=50)
+    assert [row["path"] for row in small] == [row["path"] for row in wide[:3]]
+
+
+def test_learned_order_moves_a_source_file_above_a_doc(tmp_path):
+    rows = [
+        {"path": "docs/design.md", "score": 100, "reason": "", "parts": {}},
+        {"path": "src/app.py", "score": 90, "reason": "", "parts": {}},
+    ]
+    assert [row["path"] for row in rows] == ["docs/design.md", "src/app.py"]
+
+    ranked = search._learned_rerank(rows, {})
+
+    assert [row["path"] for row in ranked] == ["src/app.py", "docs/design.md"]
+    assert [row["score"] for row in ranked] == [90, 100]
+    assert all("learned" in row["parts"] for row in ranked)
