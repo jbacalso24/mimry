@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from mimry import __version__, installer, lifecycle
+from mimry import __version__, installer, lifecycle, queries
 from mimry.adapters.config_manifest import extract_config_metadata
 from mimry.commands import _languages_text
 from mimry.core.languages import language_counts
@@ -1919,6 +1919,19 @@ def _commit_everything(repo: Path) -> None:
 def _pack_block(pack: str, path: str) -> str:
     blocks = pack.split("\n### ")
     return next(block for block in blocks if f"`{path}`" in block.split("\n", 1)[0])
+
+
+@pytest.mark.parametrize(("case_insensitive", "tagged"), [(True, True), (False, False)])
+def test_mark_uncommitted_matches_case_only_renames_only_when_fs_ignores_case(
+    tmp_path, monkeypatch, case_insensitive, tagged
+):
+    monkeypatch.setattr(queries, "uncommitted_paths", lambda root: {"src/a.py"})
+    monkeypatch.setattr(queries, "_CASE_INSENSITIVE_FS", case_insensitive)
+    rows = [{"path": "Src/A.py"}]
+
+    queries.mark_uncommitted(tmp_path, rows)
+
+    assert rows[0].get("uncommitted", False) is tagged
 
 
 @requires_git

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
 import re
 import subprocess
+import sys
 import time
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
@@ -403,12 +405,18 @@ def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]
     return lines
 
 
+# Windows and macOS filesystems ignore case by default.
+_CASE_INSENSITIVE_FS = os.name == "nt" or sys.platform == "darwin"
+
+
 def mark_uncommitted(root: Path, rows: list[dict]) -> None:
     """Tag rows whose file or parent folder has uncommitted work."""
-    dirty = uncommitted_paths(root)
+    # git keeps the old case after a rename; fold both sides.
+    fold = str.casefold if _CASE_INSENSITIVE_FS else str
+    dirty = {fold(p) for p in uncommitted_paths(root)}
     for row in rows:
-        path = row["path"]
-        folders = [str(p) for p in PurePosixPath(path).parents if str(p) != "."]
+        path = fold(row["path"])
+        folders = [fold(str(p)) for p in PurePosixPath(row["path"]).parents if str(p) != "."]
         if path in dirty or any(folder in dirty for folder in folders):
             row["uncommitted"] = True
 
