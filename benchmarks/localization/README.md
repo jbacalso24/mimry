@@ -124,6 +124,8 @@ The full per-instance output of the latest run, with each result's score line, i
 |---|---|---|---|---|---|
 | 0.3.3 (4b937cf) | 26.4% | 54.0% | 66.2% | 57.4% | 69.8% |
 | After #239, #240 and #241 (37eb25b) | 34.8% | 63.8% | 74.6% | 67.6% | 77.7% |
+| 0.6.4 (main before #42's lift) | 35.2% | 64.0% | 74.6% | 67.8% | 77.9% |
+| Named-identifier lift (#42) | **37.6%** | **65.4%** | **77.2%** | **69.5%** | **80.2%** |
 
 The three changes were chosen and measured on the dev set first, one at a time, and Verified was run once with all three:
 
@@ -133,18 +135,24 @@ The three changes were chosen and measured on the dev set first, one at a time, 
 
 On the dev set they moved Acc@10 from 57.4% to 65.4%.
 
+The named-identifier lift (#42) raises a file's score by 10% for each code identifier the task names that the file defines, up to three.
+A code identifier is a word in backticks, or one with an inner underscore or a lowercase letter followed by an uppercase one, such as `parse_header_line` or `getItrs`.
+On the dev set it moved Acc@1 from 26.8% to 30.4% and Acc@10 from 65.9% to 66.6%; on Verified the first gold rank improved for 71 instances and worsened for 26.
+A lift for files whose name is a word of the task was measured with it and dropped: commit scopes such as `fix(types)` name a topic, not the file, and it cost 1.3 points of token savings on holdout2.
+With the identifier lift alone, holdout2 token savings are unchanged.
+
 Acc@10 by repository:
 
 | Repository | Instances | 0.3.3 | Now |
 |---|---|---|---|
-| django/django | 231 | 66.7% | 77.9% |
+| django/django | 231 | 66.7% | 79.7% |
 | sympy/sympy | 75 | 70.7% | 70.7% |
-| sphinx-doc/sphinx | 44 | 65.9% | 65.9% |
-| matplotlib/matplotlib | 34 | 55.9% | 67.6% |
+| sphinx-doc/sphinx | 44 | 65.9% | 68.2% |
+| matplotlib/matplotlib | 34 | 55.9% | 73.5% |
 | scikit-learn/scikit-learn | 32 | 87.5% | 93.8% |
-| astropy/astropy | 22 | 77.3% | 68.2% |
-| pydata/xarray | 22 | 40.9% | 63.6% |
-| pytest-dev/pytest | 19 | 52.6% | 73.7% |
+| astropy/astropy | 22 | 77.3% | 72.7% |
+| pydata/xarray | 22 | 40.9% | 81.8% |
+| pytest-dev/pytest | 19 | 52.6% | 78.9% |
 | pylint-dev/pylint | 10 | 20.0% | 40.0% |
 | psf/requests | 8 | 100.0% | 100.0% |
 | mwaskom/seaborn | 2 | 50.0% | 100.0% |
@@ -152,4 +160,4 @@ Acc@10 by repository:
 
 When MIMRY finds a gold file, the median first gold rank is now 1.
 Instances whose fix touches more than one file remain the hardest: Acc@10 is 50.7% over those 71.
-96 instances still have no gold file in the top 10; ranking work continues in #42.
+83 instances still have no gold file in the top 10; ranking work continues in #42.

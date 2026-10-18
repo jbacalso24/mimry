@@ -397,7 +397,7 @@ Tokens an agent read before it found the code each pull request changed, measure
 
 See [benchmarks/tokens](benchmarks/tokens/README.md) for the method, per-project results and how to reproduce them.
 
-On the 500 issues of SWE-bench Verified, one `mimry find` with the issue text puts every file the fix changes in the top 10 for 74.6% of issues, in the top 5 for 63.8%, and first for 34.8%.
+On the 500 issues of SWE-bench Verified, one `mimry find` with the issue text puts every file the fix changes in the top 10 for 77.2% of issues, in the top 5 for 65.4%, and first for 37.6%.
 See [benchmarks/localization](benchmarks/localization/README.md) for the protocol and per-repository results.
 
 To measure MIMRY on your own repository's merged pull requests, run `mimry bench`; see [Benchmark your repository](docs/commands.md#benchmark-your-repository).
