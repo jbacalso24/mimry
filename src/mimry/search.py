@@ -454,7 +454,9 @@ def _learned_score(row, rank, size_by_path):
     parts = row.get("parts", {})
     path = row["path"]
     derived = {
-        "intent_multiplier": parts.get("intent_multiplier", 1.0),
+        # A flat intent bonus on a tiny base score reads as a big ratio;
+        # 99% of the training rows were at or under 2.
+        "intent_multiplier": min(parts.get("intent_multiplier", 1.0), 2.0),
         "log_rank": math.log(rank),
         "has_graph": float("graph_score" in parts),
         "has_content": float("content_score" in parts or "content_on_graph" in parts),
