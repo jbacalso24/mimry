@@ -500,6 +500,7 @@ def apply_feedback_to_rows(
         labels = ", ".join(sorted(signal["reasons"]))
         if path in by_path:
             score = by_path[path]["score"]
+            before = score
             if weight > 0:
                 score += round(FEEDBACK_SHARE * min(weight, 1.0) * top)
             elif weight < 0:
@@ -507,6 +508,8 @@ def apply_feedback_to_rows(
             if signal["unused"]:
                 score = max(1, round(score * FEEDBACK_DECAY))
             by_path[path]["score"] = max(1, score)
+            parts = {**by_path[path].get("parts", {}), "feedback": by_path[path]["score"] - before}
+            by_path[path]["parts"] = parts
             reason = by_path[path].get("reason", "")
             by_path[path]["reason"] = f"{reason}, {labels}" if reason else labels
         elif path in indexed_paths and weight > 0:
@@ -517,5 +520,6 @@ def apply_feedback_to_rows(
                     "score": gain,
                     "reason": labels,
                     "source": "feedback",
+                    "parts": {"feedback": gain},
                 }
     return sorted(by_path.values(), key=lambda r: (-r["score"], r["path"]))

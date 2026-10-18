@@ -817,8 +817,11 @@ def _expand_along_edges(
             best_reached[src] = max(best_reached.get(src, 0), reached[node_id])
 
     for src, carried in sorted(best_reached.items()):
-        row = by_file.setdefault(src, {"path": src, "score": 0, "reasons": set(), "nodes": []})
+        row = by_file.setdefault(
+            src, {"path": src, "score": 0, "reasons": set(), "nodes": [], "parts": {}}
+        )
         row["score"] += carried
+        row["parts"]["graph_reached"] = carried
         row["reasons"].add("reached by MIMRY graph relationship")
 
 
@@ -903,12 +906,24 @@ def graph_rows(
         # named cases, outrank the one source file the task is about.
         best_weight, best_hits, best = matched[0] if matched else (0.0, frozenset(), None)
         covered = best_hits.union(*(hits for _, hits, _ in matched))
+        path_weight = sum(weights[t] for t in path_hits)
+        coverage_weight = sum(weights[t] for t in covered - best_hits)
+        multi_weight = min(15.0, 5 * math.log2(len(matched))) if len(matched) > 1 else 0.0
         score = (
             _LABEL_WEIGHT * best_weight
-            + _PATH_WEIGHT * sum(weights[t] for t in path_hits)
-            + _COVERAGE_WEIGHT * sum(weights[t] for t in covered - best_hits)
-            + (min(15.0, 5 * math.log2(len(matched))) if len(matched) > 1 else 0.0)
+            + _PATH_WEIGHT * path_weight
+            + _COVERAGE_WEIGHT * coverage_weight
+            + multi_weight
         )
+        # Raw signal values behind score, before the weights, for a
+        # later fit of those weights.
+        parts = {
+            "graph_label": best_weight,
+            "graph_path": path_weight,
+            "graph_coverage": coverage_weight,
+            "graph_matches": len(matched),
+            "graph_multi": multi_weight,
+        }
         reasons = set()
         if matched:
             reasons.add("graph node label match")
@@ -920,6 +935,8 @@ def graph_rows(
             deg = degree.get(str(best.get("id")), 0)
             in_community = best.get("community") is not None
             topology_boost = min(25, deg * 5) + (5 if in_community else 0)
+            parts["graph_degree"] = deg
+            parts["graph_topology"] = topology_boost
             if topology_boost:
                 score += topology_boost
                 detail = ", ".join(
@@ -934,6 +951,7 @@ def graph_rows(
             "score": int(round(score)),
             "reasons": reasons,
             "nodes": [str(n.get("label") or n.get("id")) for _, _, n in matched],
+            "parts": parts,
         }
         for node_weight, _, n in matched:
             node_id = str(n.get("id"))
@@ -945,12 +963,17 @@ def graph_rows(
 
     rows = []
     for row in by_file.values():
+        before_intent = row["score"]
+        row["parts"]["graph_score"] = before_intent
         row["score"], intent_reasons = apply_intent_adjustment(
             row["score"],
             row["path"],
             intent,
             graph=True,
             minified=row["path"] in minified_paths,
+        )
+        row["parts"]["intent_multiplier"] = (
+            round(row["score"] / before_intent, 4) if before_intent else 1.0
         )
 
         if row["score"] <= 0:
@@ -961,7 +984,13 @@ def graph_rows(
         if node_preview:
             reason += f"; nodes: {node_preview}"
         rows.append(
-            {"path": row["path"], "score": row["score"], "reason": reason, "source": "graph"}
+            {
+                "path": row["path"],
+                "score": row["score"],
+                "reason": reason,
+                "source": "graph",
+                "parts": row["parts"],
+            }
         )
     return sorted(rows, key=lambda r: (-r["score"], r["path"]))[:limit]
 

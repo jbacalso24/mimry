@@ -5,6 +5,7 @@ network: the dataset is never fetched here.
 """
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -177,6 +178,18 @@ def test_select_dev_drops_verified_and_keeps_sha256_order():
     assert build_tasks.select_dev(ids, verified) == everything
     assert build_tasks.select_dev(ids, verified, size=2) == everything[:2]
     assert build_tasks.select_dev(ids, verified, size=99) == everything
+
+
+def test_train_set_is_disjoint_from_dev_and_verified():
+    # Read the committed task files only; nothing is fetched here.
+    def ids(name):
+        tasks = json.loads(build_tasks.task_path(name).read_text(encoding="utf-8"))
+        return {task["instance_id"] for task in tasks}
+
+    train, dev, verified = ids("train"), ids("dev"), ids("verified")
+    assert len(train) == build_tasks.TRAIN_SIZE
+    assert not train & dev
+    assert not train & verified
 
 
 def test_parse_find_explained_pairs_paths_with_score_lines():

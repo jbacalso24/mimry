@@ -7,10 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       set:
-        description: "Task set to run: dev (tuning) or verified (final)"
+        description: "Task set to run: dev or train (tuning) or verified (final)"
         type: choice
         options:
           - dev
+          - train
           - verified
         default: dev
       diagnose:

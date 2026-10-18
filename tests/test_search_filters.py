@@ -387,3 +387,12 @@ def test_a_plain_word_matching_a_file_name_gets_no_lift(tmp_path, monkeypatch):
     rows = find_rows(Path(ptr["indexPath"]), "fix(parser): crash", limit=10)
 
     assert all("defines" not in r["reason"] for r in rows)
+
+
+def test_find_rows_rows_carry_parts_ending_in_final_score(tmp_path, monkeypatch):
+    repo, ptr = _indexed(tmp_path, monkeypatch)
+    rows = find_rows(Path(ptr["indexPath"]), "auth session", limit=10, root=repo)
+    assert rows
+    for row in rows:
+        assert row["parts"]["final_score"] == row["score"]
+        assert all(isinstance(value, int | float) for value in row["parts"].values())

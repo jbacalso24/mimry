@@ -1,14 +1,20 @@
 """Build tasks.<set>.json with each instance's gold files.
 
-There are two sets.
+There are three sets.
 The verified set is the SWE-bench Verified test split, 500 rows.
 The dev set is a fixed sample of 300 instances from the full SWE-bench
 test split that are not in Verified. Ranking changes are tuned on dev,
 and Verified is run once per frozen change.
+The train set is a fixed sample of 600 instances from the same full
+split that are in neither Verified nor dev. It is for fitting ranking
+weights, never for reporting results.
 
 The dev selection rule is fixed in select_dev, before any result is
 seen: drop every instance id that is in Verified, sort the rest by the
 hex sha256 digest of the id, and keep the first 300.
+The train selection rule is fixed the same way, before any result is
+seen: drop every instance id that is in Verified or dev, sort the rest
+by the same digest, and keep the first 600.
 
 The rows come from the Hugging Face datasets-server JSON API. Only the
 fields the runner needs are kept. Neither the issue text nor the patch
@@ -20,6 +26,7 @@ Run from the repo root:
 
     uv run python benchmarks/localization/build_tasks.py
     uv run python benchmarks/localization/build_tasks.py --set dev
+    uv run python benchmarks/localization/build_tasks.py --set train
 """
 
 from __future__ import annotations
@@ -39,11 +46,14 @@ API = "https://datasets-server.huggingface.co/rows"
 PAGE = 100
 ATTEMPTS = 6
 DEV_SIZE = 300
+TRAIN_SIZE = 600
 # The dataset each set is built from, and the exact row count of its
-# test split. The dev set is drawn from the full SWE-bench test split.
+# test split. The dev and train sets are drawn from the full SWE-bench
+# test split.
 SETS = {
     "verified": {"dataset": "princeton-nlp/SWE-bench_Verified", "rows": 500},
     "dev": {"dataset": "princeton-nlp/SWE-bench", "rows": 2294},
+    "train": {"dataset": "princeton-nlp/SWE-bench", "rows": 2294},
 }
 
 
@@ -186,12 +196,34 @@ def select_dev(instance_ids: list[str], verified_ids: set[str], size: int = DEV_
     return candidates[:size]
 
 
+def _ids_in(set_name: str) -> set[str]:
+    return {
+        task["instance_id"] for task in json.loads(task_path(set_name).read_text(encoding="utf-8"))
+    }
+
+
+def select_train(
+    instance_ids: list[str],
+    verified_ids: set[str],
+    dev_ids: set[str],
+    size: int = TRAIN_SIZE,
+) -> list[str]:
+    """The train instance ids: select_dev's rule, with dev dropped too.
+
+    Drop every id that is in Verified or dev, sort the rest by the hex
+    sha256 digest of the id, and keep the first `size`.
+    """
+    return select_dev(instance_ids, verified_ids | dev_ids, size)
+
+
+def _full_split_subset(full_rows: list[dict], chosen_ids: list[str]) -> list[dict]:
+    by_id = {row["instance_id"]: row for row in full_rows}
+    return build([by_id[instance_id] for instance_id in chosen_ids])
+
+
 def build_dev(full_rows: list[dict]) -> list[dict]:
     """The dev tasks, drawn from the full split rows fetched for it."""
-    verified = {
-        task["instance_id"]
-        for task in json.loads(task_path("verified").read_text(encoding="utf-8"))
-    }
+    verified = _ids_in("verified")
     ids = [row["instance_id"] for row in full_rows]
     missing = verified - set(ids)
     if missing:
@@ -201,8 +233,18 @@ def build_dev(full_rows: list[dict]) -> list[dict]:
     chosen = select_dev(ids, verified)
     if len(chosen) != DEV_SIZE:
         raise RuntimeError(f"dev: {len(chosen)} eligible instances, expected {DEV_SIZE}")
-    by_id = {row["instance_id"]: row for row in full_rows}
-    return build([by_id[instance_id] for instance_id in chosen])
+    return _full_split_subset(full_rows, chosen)
+
+
+def build_train(full_rows: list[dict]) -> list[dict]:
+    """The train tasks, drawn from the full split rows fetched."""
+    verified = _ids_in("verified")
+    dev = _ids_in("dev")
+    ids = [row["instance_id"] for row in full_rows]
+    chosen = select_train(ids, verified, dev)
+    if len(chosen) != TRAIN_SIZE:
+        raise RuntimeError(f"train: {len(chosen)} eligible instances, expected {TRAIN_SIZE}")
+    return _full_split_subset(full_rows, chosen)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -217,7 +259,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     spec = SETS[args.set_name]
     rows = fetch_rows(spec["dataset"], spec["rows"])
-    tasks = build_dev(rows) if args.set_name == "dev" else build(rows)
+    builders = {"dev": build_dev, "train": build_train}
+    tasks = builders.get(args.set_name, build)(rows)
     out = task_path(args.set_name)
     out.write_text(
         json.dumps(tasks, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n"

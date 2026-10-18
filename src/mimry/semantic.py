@@ -436,6 +436,7 @@ def merge_semantic_rows(
             existing = by_path[row["path"]]
             boost = min(35, max(8, int(row["score"] * 0.35)))
             existing["score"] += boost
+            existing["parts"] = {**existing.get("parts", {}), "semantic_boost": boost}
             existing["reason"] = (
                 f"{existing.get('reason', '')}, {row['reason']}"
                 if existing.get("reason")
@@ -446,5 +447,10 @@ def merge_semantic_rows(
         else:
             # Keep semantic-only candidates useful but below strong
             # exact/graph evidence.
-            by_path[row["path"]] = {**row, "score": min(row["score"], 80)}
+            capped = min(row["score"], 80)
+            by_path[row["path"]] = {
+                **row,
+                "score": capped,
+                "parts": {**row.get("parts", {}), "semantic_score": capped},
+            }
     return sorted(by_path.values(), key=lambda r: (-r["score"], r["path"]))[:limit]

@@ -276,9 +276,11 @@ def score(
     terms: list[str] | None = None,
     intent: list[str] | None = None,
     named: tuple[int, str] | None = None,
+    parts: dict | None = None,
 ):
     # find_rows passes both lists in, computed once per query; other
-    # callers get them from q.
+    # callers get them from q. When parts is given, the raw signal
+    # values are written into it; the score is the same either way.
     terms = query_terms(q) if terms is None else terms
     intent = intent_terms(q) if intent is None else intent
     h = {
@@ -289,9 +291,11 @@ def score(
     }
     s = 0
     reasons = []
+    matched = dict.fromkeys(h, 0)
     for term in terms:
         for label, text in h.items():
             if term in text:
+                matched[label] += 1
                 s += {"filename": 30, "path": 20, "content hint": 10, "metadata": 6}[label]
                 reason = f"{label} match"
                 token_reason = f"token match: {term}"
@@ -300,11 +304,21 @@ def score(
                 if token_reason not in reasons:
                     reasons.append(token_reason)
 
+    if parts is not None:
+        parts.update(
+            filename_hits=matched["filename"],
+            path_hits=matched["path"],
+            hint_hits=matched["content hint"],
+            metadata_hits=matched["metadata"],
+        )
+
     if fts_boost:
         boost, reason = fts_boost
         s += boost
         if reason not in reasons:
             reasons.append(reason)
+        if parts is not None:
+            parts["fts"] = boost
 
     if named:
         # Before the intent adjustment, so a named test file still takes
@@ -312,15 +326,23 @@ def score(
         boost, reason = named
         s += boost
         reasons.append(reason)
+        if parts is not None:
+            parts["named_path"] = boost
 
     if s and f["adapter"] != "generic":
         s += 8
         reasons.append(f["adapter"] + " adapter")
+        if parts is not None:
+            parts["adapter_bonus"] = 8
 
+    before_intent = s
     s, intent_reasons = apply_intent_adjustment(
         s, f["rel_path"], intent, minified=bool(f.get("minified"))
     )
     reasons.extend(intent_reasons)
+    if parts is not None:
+        parts["content_score"] = before_intent
+        parts["intent_multiplier"] = round(s / before_intent, 4) if before_intent else 1.0
 
     return s, reasons
 
@@ -344,7 +366,8 @@ def _exact_names_first(rows, exact_paths):
         reason = r["reason"]
         if EXACT_NAME_REASON not in reason:
             reason = ", ".join(filter(None, [reason, EXACT_NAME_REASON]))
-        lifted.append({**r, "score": r["score"] + lift, "reason": reason})
+        parts = {**r.get("parts", {}), "exact_lift": lift}
+        lifted.append({**r, "score": r["score"] + lift, "reason": reason, "parts": parts})
     return lifted + others
 
 
@@ -378,6 +401,7 @@ def _named_definition_lift(rows, q, symbols, id_by_path):
                 **row,
                 "score": int(row["score"] * multiplier),
                 "reason": _with_reason(row["reason"], f"defines {defined} named {noun}"),
+                "parts": {**row.get("parts", {}), "named_defs": defined},
             }
         )
     return sorted(lifted, key=lambda r: (-r["score"], r["path"]))
@@ -394,7 +418,8 @@ def _apply_exclusions(rows, q):
             continue
         score, reasons = apply_exclusion_adjustment(row["score"], row["path"], excluded_terms)
         reason = ", ".join(filter(None, [row.get("reason", ""), *reasons]))
-        adjusted.append({**row, "score": score, "reason": reason})
+        parts = {**row.get("parts", {}), "exclusion": score - row["score"]}
+        adjusted.append({**row, "score": score, "reason": reason, "parts": parts})
     return sorted(adjusted, key=lambda r: (-r["score"], r["path"]))
 
 
@@ -429,6 +454,22 @@ def missing_file_names(idx, q) -> list[str]:
     """File names the query writes out that the index does not hold."""
     files, _ = filter_index_records(load_jsonl(idx / "files.jsonl"))
     return unindexed_file_names(q, [f["rel_path"] for f in files])
+
+
+def _stamp_final(rows, size_by_path):
+    """Record each row's score, after every adjustment, and its file
+    size as parts."""
+    return [
+        {
+            **row,
+            "parts": {
+                **row.get("parts", {}),
+                "final_score": row["score"],
+                "file_bytes": size_by_path.get(row["path"], 0),
+            },
+        }
+        for row in rows
+    ]
 
 
 def find_rows(
@@ -472,6 +513,7 @@ def find_rows(
     _unused, symbols = filter_index_records(files, load_jsonl(idx / "symbols.jsonl"))
     file_paths = {f["file_id"]: f["rel_path"] for f in files}
     languages_by_path: dict[str, set[str]] = {f["rel_path"]: _file_languages(f) for f in files}
+    size_by_path = {f["rel_path"]: f.get("size", 0) for f in files}
     for symbol in symbols:
         language = str(symbol.get("language") or "").strip().casefold()
         path = file_paths.get(symbol.get("file_id"))
@@ -507,6 +549,7 @@ def find_rows(
         if named_reason and not tests_asked and is_test_file(path):
             named_reason = None
         named_match = (named_boost(named_reason), named_reason) if named_reason else None
+        parts: dict = {}
         s, rs = score(
             f,
             q,
@@ -514,6 +557,7 @@ def find_rows(
             terms=terms,
             intent=intent,
             named=named_match,
+            parts=parts,
         )
 
         if s:
@@ -521,7 +565,8 @@ def find_rows(
             if graph and folder in clusters:
                 s += 5
                 rs.append("graph cluster relationship")
-            row = {"path": f["rel_path"], "score": s, "reason": ", ".join(rs)}
+                parts["cluster_bonus"] = 5
+            row = {"path": f["rel_path"], "score": s, "reason": ", ".join(rs), "parts": parts}
             if any(
                 adapter in f.get("adapter", "")
                 for adapter in (
@@ -573,6 +618,12 @@ def find_rows(
                 content_row = content_by_path.get(path)
                 if content_row:
                     graph_row["score"] += content_row["score"]
+                    # On a shared key the graph part wins.
+                    graph_row["parts"] = {
+                        **content_row.get("parts", {}),
+                        **graph_row.get("parts", {}),
+                        "content_on_graph": content_row["score"],
+                    }
                     graph_row["reason"] = _with_reason(
                         graph_row["reason"], "corroborated by MIMRY content index"
                     )
@@ -603,7 +654,10 @@ def find_rows(
                 excluded_paths,
             )
             ranked = _exact_names_first(ranked, exact_paths)
-            rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
+            rows = _stamp_final(
+                _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path),
+                size_by_path,
+            )
             return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)
     fallback_rows = _named_definition_lift(fallback_rows, q, symbols, id_by_path)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
@@ -618,5 +672,7 @@ def find_rows(
         excluded_paths,
     )
     ranked = _exact_names_first(ranked, exact_paths)
-    rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
+    rows = _stamp_final(
+        _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path), size_by_path
+    )
     return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)

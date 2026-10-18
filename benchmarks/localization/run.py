@@ -9,7 +9,8 @@ for scoring.
 This measures file retrieval from issue text, not issue resolution.
 README.md has the protocol and the metrics.
 
-`--set dev` runs the dev set instead of Verified (default: verified).
+`--set dev` or `--set train` runs that set instead of Verified (default:
+verified).
 
 Run one instance locally:
 
@@ -44,6 +45,9 @@ from pathlib import Path
 from build_tasks import SETS, fetch_rows, task_path
 
 from mimry.core.artifacts import load_graph, node_source_file
+from mimry.lifecycle import require
+from mimry.search import find_rows
+from mimry.storage import active_index_pointer
 
 TOP = 10
 # `mimry find` prints "  %2d  <path>" per result. Reason lines are
@@ -220,6 +224,58 @@ def partner_links(
     return partners
 
 
+def in_process_rows(repo: Path, env: dict[str, str], query: str) -> list[dict]:
+    """The rows `mimry find` ranks for the query, read in this process.
+
+    The arguments are the ones the CLI's find passes for a whole-repo
+    search, with the limit raised to DIAGNOSE_DEPTH. MIMRY_CACHE_HOME is
+    set to the run's cache for the call, as it is for the subprocesses,
+    so no developer cache is read.
+    """
+    previous = os.environ.get("MIMRY_CACHE_HOME")
+    os.environ["MIMRY_CACHE_HOME"] = env["MIMRY_CACHE_HOME"]
+    try:
+        with active_index_pointer(repo):
+            ptr = require(repo)
+            return find_rows(
+                Path(ptr["indexPath"]),
+                query,
+                DIAGNOSE_DEPTH,
+                root=repo,
+                root_id=ptr.get("rootId"),
+                semantic=False,
+                languages=[],
+                path_globs=[],
+                exclude_globs=[],
+                offset=None,
+            )
+    finally:
+        if previous is None:
+            os.environ.pop("MIMRY_CACHE_HOME", None)
+        else:
+            os.environ["MIMRY_CACHE_HOME"] = previous
+
+
+def candidate_dump(rows: list[dict], cli_top: list[str]) -> dict:
+    """The in-process ranking to DIAGNOSE_DEPTH, with each row's parts.
+
+    candidates_mismatch is True when its top 10 differs from the top 10
+    the CLI printed for the same query. It is recorded, not raised.
+    """
+    return {
+        "candidates": [
+            {
+                "rank": position,
+                "path": row["path"],
+                "score": row["score"],
+                "parts": row.get("parts", {}),
+            }
+            for position, row in enumerate(rows[:DIAGNOSE_DEPTH], 1)
+        ],
+        "candidates_mismatch": [row["path"] for row in rows[:TOP]] != cli_top,
+    }
+
+
 def diagnosis(
     explained: list[tuple[str, str | None]], gold: list[str], graph: dict | None = None
 ) -> dict:
@@ -314,6 +370,8 @@ def run_instance(
         # The repo-local graph `mimry index` just wrote, read after the
         # lookup is timed.
         graph = load_graph(repo) if diagnose else None
+        if diagnose:
+            candidates = candidate_dump(in_process_rows(repo, env, query), ranked)
     except (RuntimeError, OSError) as exc:
         return row | {"status": "error", "error": f"{stage} failed: {exc}"}
     return (
@@ -325,7 +383,11 @@ def run_instance(
             "lookup_ms": round(lookup_ms),
         }
         | score(ranked, task["gold"])
-        | ({"diagnosis": diagnosis(explained, task["gold"], graph)} if diagnose else {})
+        | (
+            {"diagnosis": diagnosis(explained, task["gold"], graph) | candidates}
+            if diagnose
+            else {}
+        )
     )
 
 
