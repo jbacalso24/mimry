@@ -25,6 +25,8 @@ _JS_EXTENSIONS = (
     ".svelte",
 )
 CONFIG_NAMES = ("tsconfig.json", "jsconfig.json")
+# Extends links followed from one config before the chain is cut off.
+MAX_EXTENDS_DEPTH = 32
 
 
 def is_config_name(name: str) -> bool:
@@ -90,7 +92,8 @@ def _load(
     Each relative ``extends`` that names a config in the index is
     followed, in order, so a later base replaces an earlier one's
     setting. A child's setting replaces its bases'. A cycle stops the
-    chain.
+    chain. Past MAX_EXTENDS_DEPTH links the bases are not read, but the
+    file's own settings still apply.
     """
     parsed = configs[path]
     folder = posixpath.dirname(path)
@@ -107,6 +110,8 @@ def _load(
             continue
         for candidate in (target, target + ".json"):
             if candidate in configs and candidate not in stack:
+                if len(stack) >= MAX_EXTENDS_DEPTH:
+                    break
                 parent_base, parent_paths, parent_folder = _load(
                     candidate, configs, stack | {path}
                 )

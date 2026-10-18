@@ -1187,6 +1187,20 @@ def test_a_middle_base_with_only_extends_reaches_the_base_paths(tmp_path):
     assert "OK src/app.ts connects to src/util.ts" in res.stdout
 
 
+def test_a_chain_past_the_depth_cap_does_not_crash():
+    """A 1000-link extends chain is cut off, not recursed into."""
+    from mimry.core.tsconfig import build_ts_paths, parse_tsconfig
+
+    configs = {"tsconfig.json": parse_tsconfig('{"extends": "./c0.json"}')}
+    for i in range(999):
+        configs[f"c{i}.json"] = parse_tsconfig(f'{{"extends": "./c{i + 1}.json"}}')
+    configs["c999.json"] = parse_tsconfig('{"compilerOptions": {"baseUrl": "."}}')
+
+    table = build_ts_paths(configs, {"src/a.ts"})
+
+    assert "" in table
+
+
 def test_jsonc_keeps_comment_markers_inside_strings():
     from mimry.core.data_files import loads_jsonc
 
