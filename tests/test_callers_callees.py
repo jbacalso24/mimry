@@ -1201,6 +1201,32 @@ def test_a_chain_past_the_depth_cap_does_not_crash():
     assert "" in table
 
 
+def test_a_30_level_diamond_extends_resolves_the_alias():
+    """Each level extends two copies of the next, so bases are shared.
+
+    Without a memo 30 levels takes hours, so finishing is the check.
+    """
+    from mimry.core.tsconfig import build_ts_paths, parse_tsconfig, resolve_ts_alias
+
+    depth = 30
+    configs = {"tsconfig.json": parse_tsconfig('{"extends": ["./d0a.json", "./d0b.json"]}')}
+    for i in range(depth):
+        for side in "ab":
+            if i == depth - 1:
+                text = '{"compilerOptions": {"baseUrl": ".", "paths": {"@/*": ["src/*"]}}}'
+            else:
+                text = json.dumps({"extends": [f"./d{i + 1}a.json", f"./d{i + 1}b.json"]})
+            configs[f"d{i}{side}.json"] = parse_tsconfig(text)
+    rel = {"src/a.ts", "src/util.ts"}
+
+    table = build_ts_paths(configs, rel)
+
+    assert resolve_ts_alias("src/a.ts", "@/util", rel, table) == {
+        "path": "src/util.ts",
+        "confidence": "EXTRACTED",
+    }
+
+
 def test_jsonc_keeps_comment_markers_inside_strings():
     from mimry.core.data_files import loads_jsonc
 

@@ -85,7 +85,10 @@ def _normalise(path: str) -> str | None:
 
 
 def _load(
-    path: str, configs: dict[str, dict], stack: frozenset[str]
+    path: str,
+    configs: dict[str, dict],
+    stack: frozenset[str],
+    memo: dict[str, tuple],
 ) -> tuple[str | None, dict | None, str]:
     """(baseUrl folder, paths map, paths' folder), after extends.
 
@@ -93,8 +96,13 @@ def _load(
     followed, in order, so a later base replaces an earlier one's
     setting. A child's setting replaces its bases'. A cycle stops the
     chain. Past MAX_EXTENDS_DEPTH links the bases are not read, but the
-    file's own settings still apply.
+    file's own settings still apply. ``memo`` holds one call's results,
+    so a base shared by two extends is read once. It is keyed by path
+    alone, so a cycle or the depth cap cuts a shared base the same way
+    for every caller.
     """
+    if path in memo:
+        return memo[path]
     parsed = configs[path]
     folder = posixpath.dirname(path)
     base: str | None = None
@@ -113,7 +121,7 @@ def _load(
                 if len(stack) >= MAX_EXTENDS_DEPTH:
                     break
                 parent_base, parent_paths, parent_folder = _load(
-                    candidate, configs, stack | {path}
+                    candidate, configs, stack | {path}, memo
                 )
                 if parent_base is not None:
                     base = parent_base
@@ -125,7 +133,9 @@ def _load(
     if parsed["paths"] is not None:
         paths = parsed["paths"]
         paths_folder = folder
-    return base, paths, paths_folder
+    result = (base, paths, paths_folder)
+    memo[path] = result
+    return result
 
 
 def build_ts_paths(configs: dict[str, dict], rel_paths: set[str]) -> dict[str, dict]:
@@ -148,8 +158,9 @@ def build_ts_paths(configs: dict[str, dict], rel_paths: set[str]) -> dict[str, d
             chosen[folder] = path
 
     table: dict[str, dict] = {}
+    memo: dict[str, tuple] = {}
     for folder, path in sorted(chosen.items()):
-        base, paths, paths_folder = _load(path, configs, frozenset())
+        base, paths, paths_folder = _load(path, configs, frozenset(), memo)
         anchor = base if base is not None else paths_folder
         entries = []
         for pattern, targets in sorted((paths or {}).items()):
