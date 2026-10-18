@@ -769,10 +769,13 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
         package = groovy_files.package_of(data_decoded)
         if package:
             references["groovy_package"] = package
-    # A base named any other way (`./base.json`) counts when it holds
-    # compilerOptions. The substring test skips parsing the other JSON.
+    # A base with another name (`./base.jsonc`, or a middle
+    # `./root.json` that only extends) counts when it holds
+    # compilerOptions or extends. The substring tests skip parsing the
+    # other JSON.
     if is_config_name(posixpath.basename(rel_path)) or (
-        ext == ".json" and '"compilerOptions"' in data_decoded
+        ext in {".json", ".jsonc"}
+        and ('"compilerOptions"' in data_decoded or '"extends"' in data_decoded)
     ):
         # Path aliases, for resolving `@/x` style imports. A config that
         # does not parse is skipped, as if absent.

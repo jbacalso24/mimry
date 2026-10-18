@@ -1145,6 +1145,48 @@ def test_extends_to_a_base_with_any_json_name_reaches_its_paths(tmp_path):
     assert "OK src/app.ts connects to src/util.ts" in res.stdout
 
 
+def test_extends_to_a_jsonc_base_reaches_its_paths(tmp_path):
+    """A base.jsonc with a comment is followed like a base.json."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "tsconfig.json": '{"extends": "./base.jsonc"}\n',
+            "base.jsonc": '{\n  // aliases\n  "compilerOptions": {"baseUrl": ".", '
+            '"paths": {"@/*": ["src/*"]}}\n}\n',
+            "src/app.ts": 'import { u } from "@/util";\n',
+            "src/util.ts": "export const u = 1;\n",
+        },
+    )
+
+    res = _mimry(repo, cache, "path", "src/app.ts", "src/util.ts")
+
+    assert res.returncode == 0, res.stderr
+    assert "OK src/app.ts connects to src/util.ts" in res.stdout
+
+
+def test_a_middle_base_with_only_extends_reaches_the_base_paths(tmp_path):
+    """A three-step extends chain still resolves the base paths."""
+    cache = tmp_path / "cache"
+    repo = _indexed_repo(
+        tmp_path,
+        cache,
+        {
+            "tsconfig.json": '{"extends": "./configs/root.json"}\n',
+            "configs/root.json": '{"extends": "../base.json"}\n',
+            "base.json": '{"compilerOptions": {"baseUrl": ".", "paths": {"@/*": ["src/*"]}}}\n',
+            "src/app.ts": 'import { u } from "@/util";\n',
+            "src/util.ts": "export const u = 1;\n",
+        },
+    )
+
+    res = _mimry(repo, cache, "path", "src/app.ts", "src/util.ts")
+
+    assert res.returncode == 0, res.stderr
+    assert "OK src/app.ts connects to src/util.ts" in res.stdout
+
+
 def test_jsonc_keeps_comment_markers_inside_strings():
     from mimry.core.data_files import loads_jsonc
 
