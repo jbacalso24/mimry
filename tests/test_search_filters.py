@@ -17,9 +17,13 @@ from mimry.storage import load_pointer, save_pointer
 FIXTURE = Path(__file__).parent / "fixtures" / "simple_repo"
 
 
-def _indexed(tmp_path: Path, monkeypatch):
+def _indexed(tmp_path: Path, monkeypatch, files=None):
     repo = tmp_path / "repo"
-    shutil.copytree(FIXTURE, repo)
+    if files is None:
+        shutil.copytree(FIXTURE, repo)
+    for rel_path, text in (files or {}).items():
+        (repo / rel_path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel_path).write_text(text, encoding="utf-8")
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
     root_id = str(uuid.uuid4())
     ptr = {
@@ -355,3 +359,42 @@ def test_tsx_files_count_as_typescript():
     assert search._file_languages({"rel_path": "web/App.tsx"}) == {"tsx", "typescript"}
     assert search._file_languages({"rel_path": "web/app.ts"}) == {"typescript"}
     assert search._file_languages({"rel_path": "README"}) == set()
+
+
+NAMED_NOTE = "# fix the header line parsing in this reader\n"
+
+
+def test_file_defining_a_named_identifier_ranks_first(tmp_path, monkeypatch):
+    other = f"{NAMED_NOTE}\n\ndef read_header(line):\n    return line\n"
+    definer = f"{NAMED_NOTE}\n\ndef parse_header_line(line):\n    return line\n"
+    _repo, ptr = _indexed(
+        tmp_path,
+        monkeypatch,
+        {"src/aaa_helpers.py": other, "src/zzz_helpers.py": definer},
+    )
+
+    rows = find_rows(Path(ptr["indexPath"]), "fix parse_header_line in reader", limit=10)
+
+    assert rows[0]["path"] == "src/zzz_helpers.py"
+    assert "defines 1 named identifier" in rows[0]["reason"]
+    assert "defines" not in rows[1]["reason"]
+
+
+def test_file_named_in_the_task_gets_a_lift(tmp_path, monkeypatch):
+    body = "def handle(value):\n    return value\n\n\n# fix the parser crash\n"
+    _repo, ptr = _indexed(tmp_path, monkeypatch, {"src/alpha.py": body, "src/parser.py": body})
+
+    rows = find_rows(Path(ptr["indexPath"]), "fix the parser crash", limit=10)
+
+    assert rows[0]["path"] == "src/parser.py"
+    assert "file name in the task" in rows[0]["reason"]
+    assert "file name in the task" not in rows[1]["reason"]
+
+
+def test_generic_file_name_gets_no_stem_lift(tmp_path, monkeypatch):
+    body = "def handle(value):\n    return value\n\n\n# fix the utils crash\n"
+    _repo, ptr = _indexed(tmp_path, monkeypatch, {"src/alpha.py": body, "src/utils.py": body})
+
+    rows = {r["path"]: r for r in find_rows(Path(ptr["indexPath"]), "fix the utils crash")}
+
+    assert "file name in the task" not in rows["src/utils.py"]["reason"]

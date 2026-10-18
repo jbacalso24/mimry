@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 from functools import cache
 from pathlib import Path
 
@@ -40,6 +41,16 @@ from .storage import connect, load_jsonl, load_pointer
 
 # `--language py` means python: extensions work as language names.
 LANGUAGE_ALIASES = {ext.lstrip("."): language for ext, language in EXTENSION_LANGUAGE.items()}
+# Score lift per named identifier a file defines.
+NAMED_DEFINITION_LIFT = 0.1
+# Most named identifiers counted for one file.
+NAMED_DEFINITION_CAP = 3
+# Score lift when the file name is a word of the task.
+FILE_NAME_LIFT = 0.1
+# File stems too generic to count as a file the task names.
+GENERIC_STEMS = frozenset({"__init__", "base", "utils", "core", "models", "api", "index", "main"})
+_QUERY_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_BACKTICK_NAME_RE = re.compile(r"`([A-Za-z_][\w.]*)(?:\(\))?`")
 
 
 def _file_languages(record: dict) -> set[str]:
@@ -341,6 +352,48 @@ def _exact_names_first(rows, exact_paths):
     return lifted + others
 
 
+def _named_definition_lift(rows, q, symbols, id_by_path):
+    """Lift files that define an identifier the task names, and files
+    whose name is a word of the task. Needs the whole query and every
+    symbol, so it runs on merged rows rather than inside score()."""
+    words = set(_QUERY_WORD_RE.findall(q))
+    named = {m.split(".")[-1] for m in _BACKTICK_NAME_RE.findall(q)}
+    named |= {w for w in words if "_" in w.strip("_") or re.search(r"[a-z][A-Z]", w)}
+    names_by_file: dict[str, set[str]] = {}
+    for symbol in symbols:
+        name = str(symbol.get("name") or "").split(".")[-1]
+        if name:
+            names_by_file.setdefault(symbol.get("file_id"), set()).add(name)
+    lifted = []
+    for row in rows:
+        path = row["path"]
+        defined = len(named & names_by_file.get(id_by_path.get(path), set()))
+        stem = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        in_task = stem in words and stem not in GENERIC_STEMS
+        if not defined and not in_task:
+            lifted.append(row)
+            continue
+        multiplier = (
+            1
+            + NAMED_DEFINITION_LIFT * min(defined, NAMED_DEFINITION_CAP)
+            + (FILE_NAME_LIFT if in_task else 0)
+        )
+        extras = []
+        if defined:
+            noun = "identifier" if defined == 1 else "identifiers"
+            extras.append(f"defines {defined} named {noun}")
+        if in_task:
+            extras.append("file name in the task")
+        lifted.append(
+            {
+                **row,
+                "score": int(row["score"] * multiplier),
+                "reason": _with_reason(row["reason"], ", ".join(extras)),
+            }
+        )
+    return sorted(lifted, key=lambda r: (-r["score"], r["path"]))
+
+
 def _apply_exclusions(rows, q):
     excluded_terms = excluded_query_terms(q)
     if not excluded_terms:
@@ -548,6 +601,7 @@ def find_rows(
                 merged.append(extra)
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
+            ranked = _named_definition_lift(ranked, q, symbols, id_by_path)
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
             ranked = _with_semantic(
                 ranked,
@@ -562,6 +616,7 @@ def find_rows(
             ranked = _exact_names_first(ranked, exact_paths)
             rows = _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path)
             return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)
+    fallback_rows = _named_definition_lift(fallback_rows, q, symbols, id_by_path)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     ranked = _with_semantic(
         ranked,
