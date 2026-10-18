@@ -483,8 +483,9 @@ def _learned_score(row, rank, size_by_path):
 def _learned_rerank(rows, size_by_path):
     """Reorder the first LEARNED_POOL rows by the fitted ranker (#42).
 
-    Scores stay as they are; only the order of the pool moves. Rows
-    past the pool keep their place after it.
+    The pool's own scores are handed out again in the new order, so the
+    scale stays the same and a later sort by score (feedback, semantic
+    merge) keeps the learned order. Rows past the pool keep their place.
     """
     pool = []
     for rank, row in enumerate(rows[:LEARNED_POOL], start=1):
@@ -492,7 +493,9 @@ def _learned_rerank(rows, size_by_path):
         parts = {**row.get("parts", {}), "learned": learned}
         pool.append((-learned, rank, {**row, "parts": parts}))
     pool.sort(key=lambda item: (item[0], item[1]))
-    return [row for _, _, row in pool] + rows[LEARNED_POOL:]
+    scores = sorted((row["score"] for _, _, row in pool), reverse=True)
+    reranked = [{**row, "score": score} for (_, _, row), score in zip(pool, scores, strict=True)]
+    return reranked + rows[LEARNED_POOL:]
 
 
 def _apply_exclusions(rows, q):

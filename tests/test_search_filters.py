@@ -424,5 +424,5 @@ def test_learned_order_moves_a_source_file_above_a_doc(tmp_path):
     ranked = search._learned_rerank(rows, {})
 
     assert [row["path"] for row in ranked] == ["src/app.py", "docs/design.md"]
-    assert [row["score"] for row in ranked] == [90, 100]
+    assert [row["score"] for row in ranked] == [100, 90]
     assert all("learned" in row["parts"] for row in ranked)
