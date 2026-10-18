@@ -7,6 +7,7 @@ network: the dataset is never fetched here.
 import importlib.util
 import json
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -326,3 +327,48 @@ def test_partner_edges_inside_one_file_ignored():
     assert m5["direct"] == []
     assert m5["hops_to_found_gold"] is None
     assert m5["hops_to_top10"] is None
+
+
+FAKE_TOOL = """\
+import json
+import sys
+
+if sys.argv[1] == "index":
+    sys.exit(0)
+for line in sys.stdin:
+    message = json.loads(line)
+    if "id" not in message:
+        continue
+    if message["method"] == "initialize":
+        result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}}
+    else:
+        hits = [{"file": "b.py"}, {"file": "a.py"}, {"file": "b.py"}]
+        result = {"content": [{"type": "text", "text": json.dumps({"hits": hits})}]}
+    print(json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": result}), flush=True)
+"""
+
+
+def test_external_variant_runs_index_and_mcp_end_to_end(tmp_path):
+    tool = tmp_path / "pack" / "fake-search"
+    tool.parent.mkdir()
+    tool.write_text(FAKE_TOOL, encoding="utf-8")
+    archive = tmp_path / "fake-search.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(tool, arcname="fake-search")
+    spec = {
+        "url": archive.as_uri(),
+        "bin": "fake-search",
+        "index": [sys.executable, "{bin}", "index", "{root}"],
+        "serve": [sys.executable, "{bin}", "mcp", "--root", "{root}"],
+        "tool": "search",
+        "args": {"query": "{query}", "limit": 100},
+        "cache_env": "FAKE_CACHE_DIR",
+        "variants": {"keywords": {"FAKE_EMBED": "0"}},
+    }
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    binary = run.fetch_external(spec, tmp_path / "work")
+    result = run.run_external_variant(spec, binary, repo, "keywords", "fix the bug", ["a.py"])
+    assert result["status"] == "scored"
+    assert result["ranked"] == ["b.py", "a.py"]
+    assert result["first_gold_rank"] == 2

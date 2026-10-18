@@ -31,6 +31,7 @@ Merge shard outputs into one results file:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import posixpath
@@ -38,9 +39,13 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
+import urllib.request
 from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Any
 
 from build_tasks import SETS, fetch_rows, task_path
 
@@ -59,6 +64,12 @@ SCORE_LINE = re.compile(r"^      (score -?\d+: .*)$")
 DIAGNOSE_DEPTH = 50
 # Diagnosis searches the file graph this many hops for a partner file.
 PARTNER_HOPS = 3
+# An external tool is an MCP server over stdio. It is warmed up with
+# this query before the timed call, and given this long to exit at the
+# end.
+EXTERNAL_PROTOCOL = "2025-06-18"
+EXTERNAL_WARM_QUERY = "main"
+EXTERNAL_STOP_SECONDS = 30
 
 
 def score(ranked: list[str], gold: list[str]) -> dict:
@@ -330,8 +341,17 @@ def load_problems(work: Path, set_name: str, tasks: list[dict]) -> dict[str, dic
 
 
 def run_instance(
-    task: dict, problem: dict[str, str], work: Path, env: dict[str, str], diagnose: bool = False
+    task: dict,
+    problem: dict[str, str],
+    work: Path,
+    env: dict[str, str],
+    diagnose: bool = False,
+    external: tuple[dict, Path] | None = None,
 ) -> dict:
+    """Score MIMRY on one instance and each external variant on it.
+
+    The external variants use the same checkout and the same query.
+    """
     row = {
         "instance_id": task["instance_id"],
         "repo": task["repo"],
@@ -374,7 +394,7 @@ def run_instance(
             candidates = candidate_dump(in_process_rows(repo, env, query), ranked)
     except (RuntimeError, OSError) as exc:
         return row | {"status": "error", "error": f"{stage} failed: {exc}"}
-    return (
+    result = (
         row
         | {
             "status": "scored",
@@ -389,6 +409,201 @@ def run_instance(
             else {}
         )
     )
+    if external is not None:
+        spec, binary = external
+        result["external"] = {
+            variant: run_external_variant(spec, binary, repo, variant, query, task["gold"])
+            for variant in spec["variants"]
+        }
+    return result
+
+
+def fetch_external(spec: dict, work: Path) -> Path:
+    """The external tool binary, downloaded and extracted on first use.
+
+    spec["url"] is a .tar.gz. The file named spec["bin"] inside it is
+    made executable. An extraction already in the work directory is
+    reused.
+    """
+    folder = work / "external"
+    binary = find_binary(folder, spec["bin"])
+    if binary is None:
+        folder.mkdir(parents=True, exist_ok=True)
+        archive = folder / "archive.tar.gz"
+        with urllib.request.urlopen(spec["url"], timeout=300) as response:
+            with archive.open("wb") as out:
+                shutil.copyfileobj(response, out)
+        with tarfile.open(archive, "r:gz") as tar:
+            tar.extractall(folder, filter="data")
+        binary = find_binary(folder, spec["bin"])
+        if binary is None:
+            raise RuntimeError(f"the archive has no file named {spec['bin']}")
+        binary.chmod(binary.stat().st_mode | 0o111)
+    return binary
+
+
+def find_binary(folder: Path, name: str) -> Path | None:
+    if not folder.is_dir():
+        return None
+    return next((path for path in folder.rglob(name) if path.is_file()), None)
+
+
+def fill_argv(argv: list[str], binary: Path, repo: Path) -> list[str]:
+    """The argv with {bin} and {root} replaced."""
+    return [part.replace("{bin}", str(binary)).replace("{root}", str(repo)) for part in argv]
+
+
+def fill_query(value: Any, query: str) -> Any:
+    """Tool arguments with each {query} string replaced by the query."""
+    if value == "{query}":
+        return query
+    if isinstance(value, dict):
+        return {key: fill_query(item, query) for key, item in value.items()}
+    if isinstance(value, list):
+        return [fill_query(item, query) for item in value]
+    return value
+
+
+def repo_relative(path: str, repo: Path) -> str:
+    """A printed path as a POSIX path relative to the repo root."""
+    text = path.replace("\\", "/")
+    prefix = repo.as_posix().rstrip("/") + "/"
+    if text.startswith(prefix):
+        text = text[len(prefix) :]
+    return posixpath.normpath(text)
+
+
+class McpStdio:
+    """The JSON-RPC calls the benchmark makes to a stdio MCP server."""
+
+    def __init__(self, process: subprocess.Popen) -> None:
+        self.process = process
+        self.next_id = 0
+
+    def notify(self, method: str) -> None:
+        self._send({"jsonrpc": "2.0", "method": method})
+
+    def request(self, method: str, params: dict) -> dict:
+        """Send a request and return its result, skipping other ids."""
+        self.next_id += 1
+        request_id = self.next_id
+        self._send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        while True:
+            line = self.process.stdout.readline()
+            if not line:
+                raise RuntimeError(f"{method}: the server closed its output")
+            if not line.strip():
+                continue
+            reply = json.loads(line)
+            if reply.get("id") != request_id:
+                continue
+            if "error" in reply:
+                raise RuntimeError(f"{method}: {reply['error']}")
+            return reply["result"]
+
+    def _send(self, message: dict) -> None:
+        self.process.stdin.write(json.dumps(message) + "\n")
+        self.process.stdin.flush()
+
+
+def call_tool(client: McpStdio, spec: dict, query: str) -> dict:
+    result = client.request(
+        "tools/call", {"name": spec["tool"], "arguments": fill_query(spec["args"], query)}
+    )
+    if result.get("isError"):
+        raise RuntimeError(f"{spec['tool']} returned an error result")
+    return result
+
+
+def stop(process: subprocess.Popen) -> None:
+    """Close the server's input and wait for it to exit.
+
+    It is killed if it does not exit in time.
+    """
+    with contextlib.suppress(OSError):
+        process.stdin.close()
+    try:
+        process.wait(timeout=EXTERNAL_STOP_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+    process.stdout.close()
+
+
+def query_external(
+    spec: dict, binary: Path, repo: Path, variant: str, query: str
+) -> tuple[list[str], int, int]:
+    """Index the checkout with one variant and query it.
+
+    Returns the top files in rank order, then the index and lookup times
+    in milliseconds. The cache directory is deleted afterwards.
+    """
+    cache = tempfile.mkdtemp(prefix="external-cache-")
+    env = {**os.environ, **spec["variants"][variant], spec["cache_env"]: cache}
+    try:
+        started = time.perf_counter_ns()
+        subprocess.run(
+            fill_argv(spec["index"], binary, repo),
+            cwd=repo,
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+        index_ms = (time.perf_counter_ns() - started) / 1_000_000
+        # ponytail: no read timeout, a hung server blocks the shard
+        # until the job times out
+        process = subprocess.Popen(
+            fill_argv(spec["serve"], binary, repo),
+            cwd=repo,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+        )
+        try:
+            client = McpStdio(process)
+            client.request(
+                "initialize",
+                {
+                    "protocolVersion": EXTERNAL_PROTOCOL,
+                    "capabilities": {},
+                    "clientInfo": {"name": "bench", "version": "1"},
+                },
+            )
+            client.notify("notifications/initialized")
+            call_tool(client, spec, EXTERNAL_WARM_QUERY)
+            started = time.perf_counter_ns()
+            result = call_tool(client, spec, query)
+            lookup_ms = (time.perf_counter_ns() - started) / 1_000_000
+        finally:
+            stop(process)
+    finally:
+        shutil.rmtree(cache, ignore_errors=True)
+    hits = json.loads(result["content"][0]["text"])["hits"]
+    ranked = list(dict.fromkeys(repo_relative(hit["file"], repo) for hit in hits))
+    return ranked[:TOP], round(index_ms), round(lookup_ms)
+
+
+def run_external_variant(
+    spec: dict, binary: Path, repo: Path, variant: str, query: str, gold: list[str]
+) -> dict:
+    """Score one variant of the external tool on one checkout.
+
+    A failure becomes this variant's error, so MIMRY's row and the other
+    variants are kept.
+    """
+    try:
+        ranked, index_ms, lookup_ms = query_external(spec, binary, repo, variant, query)
+        return {
+            "status": "scored",
+            "ranked": ranked,
+            "index_ms": index_ms,
+            "lookup_ms": lookup_ms,
+        } | score(ranked, gold)
+    except Exception as exc:  # any failure is this variant's error only
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
 
 
 def select(
@@ -434,6 +649,32 @@ def summarize(rows: list[dict]) -> dict:
     }
 
 
+def external_view(row: dict, variant: str) -> dict:
+    """The row a variant is summarized from.
+
+    That is its result, or MIMRY's status when it has none, so both
+    summaries cover the same instances.
+    """
+    result = row.get("external", {}).get(variant)
+    if result is None:
+        return {"status": row["status"], "repo": row["repo"]}
+    return result | {"repo": row["repo"]}
+
+
+def payload_for(rows: list[dict], variants: list[str] | None) -> dict:
+    """The results file with the MIMRY summary.
+
+    With variants given, the summary also gets one entry per variant.
+    """
+    summary = summarize(rows)
+    if variants is not None:
+        summary["external"] = {
+            variant: summarize([external_view(row, variant) for row in rows])
+            for variant in variants
+        }
+    return {"instances": rows, "summary": summary}
+
+
 def write(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -442,17 +683,25 @@ def write(path: Path, payload: dict) -> None:
 
 
 def merge(paths: list[Path], out: Path) -> int:
+    payloads = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
     rows: list[dict] = []
-    for path in paths:
-        rows.extend(json.loads(path.read_text(encoding="utf-8"))["instances"])
+    for payload in payloads:
+        rows.extend(payload["instances"])
     counts = Counter(row["instance_id"] for row in rows)
     duplicates = sorted(instance for instance, count in counts.items() if count > 1)
     if duplicates:
         raise SystemExit(f"instances appear in more than one shard: {duplicates[:5]}")
     rows.sort(key=lambda row: row["instance_id"])
-    summary = summarize(rows)
-    write(out, {"instances": rows, "summary": summary})
-    print(json.dumps(summary, indent=1, sort_keys=True))
+    # The external variants are the ones the shards were run with.
+    if any("external" in payload["summary"] for payload in payloads):
+        variants = sorted(
+            {name for shard in payloads for name in shard["summary"].get("external", {})}
+        )
+    else:
+        variants = None
+    payload = payload_for(rows, variants)
+    write(out, payload)
+    print(json.dumps(payload["summary"], indent=1, sort_keys=True))
     return 0
 
 
@@ -480,6 +729,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--merge", type=Path, nargs="+", help="Merge these shard files into --out and exit"
     )
+    parser.add_argument(
+        "--external",
+        help="JSON spec of an external MCP search tool to run beside MIMRY",
+    )
     args = parser.parse_args(argv)
     if args.merge:
         return merge(args.merge, args.out)
@@ -487,12 +740,19 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--work is required to run instances")
     work = args.work.resolve()
     env = {**os.environ, "MIMRY_CACHE_HOME": str(work / "cache"), "PYTHONIOENCODING": "utf-8"}
+    external = None
+    if args.external:
+        try:
+            spec = json.loads(args.external)
+        except json.JSONDecodeError as exc:
+            parser.error(f"--external is not JSON: {exc}")
+        external = (spec, fetch_external(spec, work))
     all_tasks = json.loads(task_path(args.set_name).read_text(encoding="utf-8"))
     tasks = select(all_tasks, args.shard, args.only, args.limit)
     problems = load_problems(work, args.set_name, all_tasks)
     rows = []
     for task in tasks:
-        row = run_instance(task, problems[task["instance_id"]], work, env, args.diagnose)
+        row = run_instance(task, problems[task["instance_id"]], work, env, args.diagnose, external)
         rows.append(row)
         detail = (
             f"acc@10 {row['acc_at_10']} first {row['first_gold_rank']}"
@@ -501,7 +761,8 @@ def main(argv: list[str] | None = None) -> int:
             else row.get("error", row["status"])
         )
         print(f"{row['instance_id']:<36} {row['status']:<8} {detail}", file=sys.stderr)
-    payload = {"instances": rows, "summary": summarize(rows)}
+    variants = list(external[0]["variants"]) if external else None
+    payload = payload_for(rows, variants)
     write(args.out, payload)
     summary = payload["summary"]
     print(
