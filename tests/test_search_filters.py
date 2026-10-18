@@ -380,21 +380,10 @@ def test_file_defining_a_named_identifier_ranks_first(tmp_path, monkeypatch):
     assert "defines" not in rows[1]["reason"]
 
 
-def test_file_named_in_the_task_gets_a_lift(tmp_path, monkeypatch):
+def test_a_plain_word_matching_a_file_name_gets_no_lift(tmp_path, monkeypatch):
     body = "def handle(value):\n    return value\n\n\n# fix the parser crash\n"
     _repo, ptr = _indexed(tmp_path, monkeypatch, {"src/alpha.py": body, "src/parser.py": body})
 
-    rows = find_rows(Path(ptr["indexPath"]), "fix the parser crash", limit=10)
+    rows = find_rows(Path(ptr["indexPath"]), "fix(parser): crash", limit=10)
 
-    assert rows[0]["path"] == "src/parser.py"
-    assert "file name in the task" in rows[0]["reason"]
-    assert "file name in the task" not in rows[1]["reason"]
-
-
-def test_generic_file_name_gets_no_stem_lift(tmp_path, monkeypatch):
-    body = "def handle(value):\n    return value\n\n\n# fix the utils crash\n"
-    _repo, ptr = _indexed(tmp_path, monkeypatch, {"src/alpha.py": body, "src/utils.py": body})
-
-    rows = {r["path"]: r for r in find_rows(Path(ptr["indexPath"]), "fix the utils crash")}
-
-    assert "file name in the task" not in rows["src/utils.py"]["reason"]
+    assert all("defines" not in r["reason"] for r in rows)

@@ -45,10 +45,6 @@ LANGUAGE_ALIASES = {ext.lstrip("."): language for ext, language in EXTENSION_LAN
 NAMED_DEFINITION_LIFT = 0.1
 # Most named identifiers counted for one file.
 NAMED_DEFINITION_CAP = 3
-# Score lift when the file name is a word of the task.
-FILE_NAME_LIFT = 0.1
-# File stems too generic to count as a file the task names.
-GENERIC_STEMS = frozenset({"__init__", "base", "utils", "core", "models", "api", "index", "main"})
 _QUERY_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _BACKTICK_NAME_RE = re.compile(r"`([A-Za-z_][\w.]*)(?:\(\))?`")
 
@@ -353,9 +349,13 @@ def _exact_names_first(rows, exact_paths):
 
 
 def _named_definition_lift(rows, q, symbols, id_by_path):
-    """Lift files that define an identifier the task names, and files
-    whose name is a word of the task. Needs the whole query and every
-    symbol, so it runs on merged rows rather than inside score()."""
+    """Lift files that define an identifier the task names.
+
+    Needs the whole query and every symbol, so it runs on merged rows
+    rather than inside score(). A plain word that matches a file name
+    is not lifted: commit scopes such as `fix(types)` name a folder or
+    a topic, not the file to edit.
+    """
     words = set(_QUERY_WORD_RE.findall(q))
     named = {m.split(".")[-1] for m in _BACKTICK_NAME_RE.findall(q)}
     named |= {w for w in words if "_" in w.strip("_") or re.search(r"[a-z][A-Z]", w)}
@@ -368,27 +368,16 @@ def _named_definition_lift(rows, q, symbols, id_by_path):
     for row in rows:
         path = row["path"]
         defined = len(named & names_by_file.get(id_by_path.get(path), set()))
-        stem = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
-        in_task = stem in words and stem not in GENERIC_STEMS
-        if not defined and not in_task:
+        if not defined:
             lifted.append(row)
             continue
-        multiplier = (
-            1
-            + NAMED_DEFINITION_LIFT * min(defined, NAMED_DEFINITION_CAP)
-            + (FILE_NAME_LIFT if in_task else 0)
-        )
-        extras = []
-        if defined:
-            noun = "identifier" if defined == 1 else "identifiers"
-            extras.append(f"defines {defined} named {noun}")
-        if in_task:
-            extras.append("file name in the task")
+        multiplier = 1 + NAMED_DEFINITION_LIFT * min(defined, NAMED_DEFINITION_CAP)
+        noun = "identifier" if defined == 1 else "identifiers"
         lifted.append(
             {
                 **row,
                 "score": int(row["score"] * multiplier),
-                "reason": _with_reason(row["reason"], ", ".join(extras)),
+                "reason": _with_reason(row["reason"], f"defines {defined} named {noun}"),
             }
         )
     return sorted(lifted, key=lambda r: (-r["score"], r["path"]))
