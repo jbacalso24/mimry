@@ -125,7 +125,8 @@ The full per-instance output of the latest run, with each result's score line, i
 | 0.3.3 (4b937cf) | 26.4% | 54.0% | 66.2% | 57.4% | 69.8% |
 | After #239, #240 and #241 (37eb25b) | 34.8% | 63.8% | 74.6% | 67.6% | 77.7% |
 | 0.6.4 (main before #42's lift) | 35.2% | 64.0% | 74.6% | 67.8% | 77.9% |
-| Named-identifier lift (#42) | **37.6%** | **65.4%** | **77.2%** | **69.5%** | **80.2%** |
+| Named-identifier lift (#42) | 37.6% | 65.4% | 77.2% | 69.5% | 80.2% |
+| Learned ranker (#42) | **42.8%** | **70.0%** | **79.0%** | **74.0%** | **81.7%** |
 
 The three changes were chosen and measured on the dev set first, one at a time, and Verified was run once with all three:
 
@@ -141,23 +142,29 @@ On the dev set it moved Acc@1 from 26.8% to 30.4% and Acc@10 from 65.9% to 66.6%
 A lift for files whose name is a word of the task was measured with it and dropped: commit scopes such as `fix(types)` name a topic, not the file, and it cost 1.3 points of token savings on holdout2.
 With the identifier lift alone, holdout2 token savings are unchanged.
 
+The learned ranker (#42) reorders the top 50 with a linear model fitted on 600 SWE-bench issues that are in neither Verified nor the dev set.
+Its inputs are the ranking parts MIMRY already computes for each file, such as graph, content and named-path scores, plus the file's size, depth and rank.
+The weights are fixed integers in the source, so results stay deterministic, and the pool keeps its own scores in the new order so feedback and semantic sorts keep it.
+On the dev set it moved Acc@1 from 30.4% to 31.8%, Acc@5 from 57.2% to 61.5% and Acc@10 from 66.6% to 67.6%; on Verified the first gold rank improved for 99 instances and worsened for 43.
+Dev token savings rose from 34.1% to 36.0% with full reads, and holdout2 located the same 33 tasks with mean recall@5 up from 62.9% to 66.3%.
+
 Acc@10 by repository:
 
 | Repository | Instances | 0.3.3 | Now |
 |---|---|---|---|
-| django/django | 231 | 66.7% | 79.7% |
-| sympy/sympy | 75 | 70.7% | 70.7% |
+| django/django | 231 | 66.7% | 81.8% |
+| sympy/sympy | 75 | 70.7% | 69.3% |
 | sphinx-doc/sphinx | 44 | 65.9% | 68.2% |
-| matplotlib/matplotlib | 34 | 55.9% | 73.5% |
+| matplotlib/matplotlib | 34 | 55.9% | 79.4% |
 | scikit-learn/scikit-learn | 32 | 87.5% | 93.8% |
 | astropy/astropy | 22 | 77.3% | 72.7% |
-| pydata/xarray | 22 | 40.9% | 81.8% |
-| pytest-dev/pytest | 19 | 52.6% | 78.9% |
-| pylint-dev/pylint | 10 | 20.0% | 40.0% |
+| pydata/xarray | 22 | 40.9% | 86.4% |
+| pytest-dev/pytest | 19 | 52.6% | 84.2% |
+| pylint-dev/pylint | 10 | 20.0% | 50.0% |
 | psf/requests | 8 | 100.0% | 100.0% |
 | mwaskom/seaborn | 2 | 50.0% | 100.0% |
 | pallets/flask | 1 | 100.0% | 100.0% |
 
 When MIMRY finds a gold file, the median first gold rank is now 1.
-Instances whose fix touches more than one file remain the hardest: Acc@10 is 50.7% over those 71.
-83 instances still have no gold file in the top 10; ranking work continues in #42.
+Instances whose fix touches more than one file remain the hardest: Acc@10 is 54.9% over those 71.
+77 instances still have no gold file in the top 10; ranking work continues in #42.
