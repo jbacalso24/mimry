@@ -7,7 +7,7 @@ from typing import Any
 
 from . import security
 from .reuse import INDEXED, SENSITIVE, code_fingerprint, load_stat_cache
-from .scanner import read_snapshot, scan_stats, size_limit
+from .scanner import SensitiveContentError, indexable_bytes, read_snapshot, scan_stats, size_limit
 from .security import filter_index_records, path_has_ignored_part
 from .settings import index_settings
 from .state import (
@@ -242,7 +242,9 @@ def _index_freshness(root: Path, ptr: dict[str, Any], verify: bool) -> dict[str,
                 data, _ = read_snapshot(p, root=root, settings=settings)
             except OSError:
                 continue
-            if security.has_sensitive_content(p, data=data):
+            try:
+                indexable_bytes(p, data)
+            except SensitiveContentError:
                 secret_skipped.append(rel)
             else:
                 changed.append(rel)

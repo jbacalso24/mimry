@@ -60,6 +60,7 @@ from .scanner import (
     UnopenableFileError,
     adapt,
     body_terms,
+    indexable_bytes,
     read_snapshot,
     scan_stats,
     worktree_fingerprint,
@@ -272,7 +273,12 @@ def _adapt_file(
             if path.suffix.lower() in DOCUMENT_UNITS
             else None
         )
-        output = adapt(path, root, snapshot, settings=settings, document=document)
+        # Secret-looking lines of a code file are redacted here, and
+        # every derived field below reads these bytes. The stat identity
+        # and hash still come from the snapshot. Refused as before when
+        # the lines cannot be redacted cleanly.
+        content = indexable_bytes(path, snapshot[0])
+        output = adapt(path, root, snapshot, settings=settings, document=document, content=content)
     except UnopenableFileError:
         # Locked or ACL-protected: skipped like ignored files, not
         # refused.
@@ -299,8 +305,8 @@ def _adapt_file(
         row["fts_body"] = document_body(document.parts)
         row["pieces"] = document_pieces(document.parts)
     else:
-        row["fts_body"] = body_terms(snapshot[0]) if is_text(path) else ""
-        row["pieces"] = file_pieces(snapshot[0], file_symbols) if is_text(path) else []
+        row["fts_body"] = body_terms(content) if is_text(path) else ""
+        row["pieces"] = file_pieces(content, file_symbols) if is_text(path) else []
     return INDEXED, identity(snapshot[1]), json.dumps(row, sort_keys=True)
 
 

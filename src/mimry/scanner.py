@@ -967,12 +967,44 @@ def _content_checked(path, ext, language, data, settings):
     return language
 
 
+def indexable_bytes(path, data: bytes) -> bytes:
+    """The bytes the index may keep for a file.
+
+    Raises SensitiveContentError when the file holds a secret it may not
+    keep. A file without secret-looking content keeps its own bytes. A
+    code file whose secret-looking lines redact cleanly keeps its
+    redacted text, so ordinary lines such as
+    ``TOKEN = 'CSRF token missing.'`` stay searchable. Redaction must
+    keep the line count, so line numbers still match the file, and the
+    redacted text must pass the same check. Anything else with a secret
+    is refused, as before.
+    """
+    if not has_sensitive_content(path, data=data):
+        return data
+    refused = SensitiveContentError("secret-bearing content is not indexable")
+    if not is_code_path(path) or is_sensitive(path):
+        raise refused
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        # A lossy decode could keep a fragment of a secret, so refuse.
+        raise refused from exc
+    redacted = redact_sensitive_text(text)
+    redacted_bytes = redacted.encode("utf-8")
+    if len(redacted.splitlines()) != len(text.splitlines()) or has_sensitive_content(
+        path, data=redacted_bytes
+    ):
+        raise refused
+    return redacted_bytes
+
+
 def adapt(
     path,
     root,
     snapshot=None,
     settings: IndexSettings | None = None,
     document: DocumentText | None = None,
+    content: bytes | None = None,
 ):
     # The extension picks the parser, so a mimry.toml override applies.
     # Manifests and documents keep their checks on the real path.
@@ -982,18 +1014,19 @@ def adapt(
     # shifted meanwhile. Callers that record the snapshot's stat
     # identity pass the snapshot in.
     snapshot = snapshot or read_snapshot(path, root=root)
-    data, _st = snapshot
-    # Check sensitivity using the captured bytes (not a separate file
-    # read) to ensure hash and security classification derive from the
-    # same content.
-    if has_sensitive_content(path, data=data):
-        raise SensitiveContentError("secret-bearing content is not indexable")
+    _st = snapshot[1]
+    # Every derived field reads `content`: the captured bytes, or the
+    # redacted text of a code file with secret-looking lines (see
+    # indexable_bytes). The record's size, mtime and hash still come
+    # from `snapshot`, so they describe the file on disk.
+    if content is None:
+        content = indexable_bytes(path, snapshot[0])
     # Check sources keep the file text as their hint, so content search
     # is unchanged; their commands are carried in metadata_text.
     hint = (
-        safe_hint(path, data=data, root=root)
+        safe_hint(path, data=content, root=root)
         if is_config_manifest(path) and not is_check_source(path)
-        else text_hint(path, data=data)
+        else text_hint(path, data=content)
     )
     f = file_record(path, root, "generic", "ok", hint, snapshot)
     symbols = []
@@ -1004,13 +1037,13 @@ def adapt(
     inherits = []
     references = {"doc_links": [], "table_refs": []}
     if is_config_manifest(path) and ext != ".py":
-        metadata = extract_config_metadata(path, root, data=data)
+        metadata = extract_config_metadata(path, root, data=content)
         f = file_record(path, root, "config-manifest", "ok", hint, snapshot)
         f["metadata_text"] = metadata
     elif ext == ".py":
         f = file_record(path, root, "python-ast", "ok", hint, snapshot)
         try:
-            source = _source_text(data)
+            source = _source_text(content)
             tree = ast.parse(source)
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -1095,7 +1128,7 @@ def adapt(
             )
     elif ext in TS_EXTENSIONS:
         f = file_record(path, root, "typescript-ast", "ok", hint, snapshot)
-        source = _source_text(data)
+        source = _source_text(content)
         symbols, edges, imports, exports, status, adapter = parse_ts_like(
             path, root, f, source=source, extension=ext
         )
@@ -1110,7 +1143,7 @@ def adapt(
         # passes in the parts it already read, so a document is parsed
         # once per index run.
         if document is None:
-            document = extract_document_parts(path, data=data)
+            document = extract_document_parts(path, data=content)
         f = _document_record(path, root, document, snapshot, references)
         ext = path.suffix.lower()
     else:
@@ -1118,16 +1151,16 @@ def adapt(
         language = EXTENSION_LANGUAGE.get(ext)
         # `ext` is still ".h" only when no mimry.toml override names it,
         # so an override of `.h` keeps its language.
-        if ext == ".h" and is_objc_header(data):
+        if ext == ".h" and is_objc_header(content):
             language = "objc"
-        language = _content_checked(path, ext, language, data, settings)
+        language = _content_checked(path, ext, language, content, settings)
         # Data files keep no symbols when they are lock files or large.
         # SQL does too: a dump is text to search, not objects to name.
-        if language in SIZE_LIMITED_LANGUAGES and not symbols_allowed(path.name, len(data)):
+        if language in SIZE_LIMITED_LANGUAGES and not symbols_allowed(path.name, len(content)):
             language = None
         if language and ext != ".py" and ext not in TS_EXTENSIONS:
             try:
-                source = _source_text(data)
+                source = _source_text(content)
                 result = extract_language(path, source, language=language)
                 if result.get("status") == "ok":
                     f = file_record(path, root, f"tree-sitter-{language}", "ok", hint, snapshot)
@@ -1149,9 +1182,9 @@ def adapt(
             except (OSError, UnicodeError):
                 pass
     if ext in {".md", ".mdx"}:
-        symbols, edges = markdown_heading_symbols(f["file_id"], _source_text(data))
+        symbols, edges = markdown_heading_symbols(f["file_id"], _source_text(content))
     rel_path = canonical_rel_path(path, root)
-    _populate_references(ext, data, references, inherits, path, root, rel_path)
+    _populate_references(ext, content, references, inherits, path, root, rel_path)
     if is_config_manifest(path) and ext == ".py":
         # noxfile.py keeps its symbols; sessions join the metadata.
         f["adapter"] = f"{f['adapter']}+config-manifest"
@@ -1159,11 +1192,11 @@ def adapt(
             part
             for part in (
                 f.get("metadata_text", ""),
-                extract_config_metadata(path, root, data=data),
+                extract_config_metadata(path, root, data=content),
             )
             if part
         )
-    f = enrich_framework_facts(path, root, f, symbols, edges, source_data=data)
+    f = enrich_framework_facts(path, root, f, symbols, edges, source_data=content)
     verify_unchanged(path, _st, root=root)
     if contains_sensitive_data(
         (f, symbols, edges, imports, exports, calls, references), code=is_code_path(path)

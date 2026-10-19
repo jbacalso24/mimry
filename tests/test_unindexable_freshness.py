@@ -260,8 +260,10 @@ def test_changed_file_that_becomes_sensitive_is_hidden_from_stale_context(
     stdout = capsys.readouterr().out
     context = context_file(root).read_text(encoding="utf-8")
     assert "Reindexed first" in stdout
-    assert "app/clean.py" not in stdout
-    assert "app/clean.py" not in context
+    # The reindex keeps app/clean.py as code with its literal redacted.
+    assert token not in stdout
+    assert token not in context
+    assert "app/clean.py" in context
     assert index_freshness(root, load_pointer(root))["state"] == "current"
 
 
@@ -440,11 +442,13 @@ def test_native_nfd_file_keeps_graph_current_in_status(tmp_path: Path, capsys) -
 def test_files_skipped_for_secrets_are_reported_by_index_and_status(
     tmp_path: Path, capsys
 ) -> None:
-    # A whole source file dropped for a secret-like line used to vanish
-    # without a word, which hid a detector false positive on the most
-    # important files.
+    # A whole file dropped for a secret-like line used to vanish without
+    # a word, which hid a detector false positive on the most important
+    # files. A code file is redacted and indexed now (see
+    # test_privacy_hardening), so this uses a data file the index still
+    # refuses.
     root = _repo(tmp_path)
-    (root / "app" / "settings.py").write_text(
+    (root / "app" / "settings.conf").write_text(
         'API_TOKEN = "' + "x1y2z3" * 4 + '"\n', encoding="utf-8"
     )
     ptr = _index(root)
@@ -455,7 +459,7 @@ def test_files_skipped_for_secrets_are_reported_by_index_and_status(
     out = capsys.readouterr().out
     assert "1 file skipped: may contain secrets" in out
     assert "could not be read" not in out
-    assert "app/settings.py" not in out
+    assert "app/settings.conf" not in out
 
 
 def test_status_verbose_names_the_path_of_a_file_skipped_for_secrets(
@@ -464,7 +468,7 @@ def test_status_verbose_names_the_path_of_a_file_skipped_for_secrets(
     # Size skips are named under -v. Secret skips are named the same
     # way, by path only, never the matched text (issue #324).
     root = _repo(tmp_path)
-    (root / "app" / "settings.py").write_text(
+    (root / "app" / "settings.conf").write_text(
         'API_TOKEN = "' + "x1y2z3" * 4 + '"\n', encoding="utf-8"
     )
     _index(root)
@@ -473,7 +477,7 @@ def test_status_verbose_names_the_path_of_a_file_skipped_for_secrets(
     assert cmd_status(SimpleNamespace(root=root, json=False, verbose=True)) == 0
     out = capsys.readouterr().out
     assert "1 file skipped: may contain secrets" in out
-    assert "app/settings.py" in out
+    assert "app/settings.conf" in out
     assert "x1y2z3" not in out
 
 
@@ -482,20 +486,20 @@ def test_a_secret_verdict_from_older_code_is_checked_again(tmp_path: Path, monke
     # must count as a change; trusting the old verdict kept it out of
     # the index with "up to date".
     import mimry.reuse as reuse
-    import mimry.security as security
+    import mimry.scanner as scanner
 
     root = _repo(tmp_path)
-    settings = root / "app" / "settings.py"
+    settings = root / "app" / "settings.conf"
     settings.write_text('API_TOKEN = "' + "x1y2z3" * 4 + '"\n', encoding="utf-8")
     old = settings.stat().st_mtime - 3600
     os.utime(settings, (old, old))
     ptr = _index(root)
-    assert "app/settings.py" not in index_freshness(root, ptr)["changed"]
+    assert "app/settings.conf" not in index_freshness(root, ptr)["changed"]
 
     monkeypatch.setattr(reuse, "code_fingerprint", lambda: "upgraded")
-    monkeypatch.setattr(security, "has_sensitive_content", lambda path, data=None: False)
+    monkeypatch.setattr(scanner, "has_sensitive_content", lambda path, data=None: False)
 
-    assert "app/settings.py" in index_freshness(root, ptr)["changed"]
+    assert "app/settings.conf" in index_freshness(root, ptr)["changed"]
 
 
 def test_index_built_by_other_mimry_code_is_stale_until_reindexed(

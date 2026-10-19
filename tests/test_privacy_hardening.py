@@ -295,9 +295,14 @@ def test_scan_prunes_ignored_directories_and_secret_files_stay_unrecorded(
     assert [path.name for path in scan(repo)] == ["venv_module.py", "leak.py", "safe.py"]
 
     files, *_, unindexable = _collect(repo)
-    assert [record["rel_path"] for record in files] == [".env/lib/venv_module.py", "safe.py"]
-    # Unrecorded, so freshness re-checks the file and reports it once
-    # its secret is removed.
+    # leak.py is a code file: its secret-looking line is redacted, so it
+    # is indexed without the value.
+    assert [record["rel_path"] for record in files] == [
+        ".env/lib/venv_module.py",
+        "leak.py",
+        "safe.py",
+    ]
+    assert VALUE_CANARY not in json.dumps(files)
     assert unindexable == []
 
 
@@ -689,7 +694,9 @@ def test_configuration_values_are_literals_unless_null_numeric_or_a_reference():
         assert CONFIG_VALUE not in redact_sensitive_text(line), line
 
 
-def test_index_keeps_source_that_only_names_credentials_and_drops_literal_secrets(tmp_path: Path):
+def test_index_keeps_source_that_only_names_credentials_and_redacts_literal_secrets(
+    tmp_path: Path,
+):
     from mimry.indexer import _collect
 
     repo = tmp_path / "repo"
@@ -710,7 +717,67 @@ def test_index_keeps_source_that_only_names_credentials_and_drops_literal_secret
 
     files, *_ = _collect(repo)
 
-    assert [record["rel_path"] for record in files] == ["app.py"]
+    # settings.py is code, so its literal is redacted and it is indexed;
+    # deploy.yaml is data, so it stays out.
+    assert [record["rel_path"] for record in files] == ["app.py", "settings.py"]
+    assert DEFENSIVE_MARKER not in json.dumps(files)
+
+
+def test_code_with_credential_looking_names_is_indexed_and_searchable(tmp_path: Path):
+    # Ordinary source whose lines trip the credential detector is kept
+    # with its secret-looking lines redacted, so it stays searchable.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "csrf.py").write_text(
+        "REASON_CSRF_TOKEN_MISSING = 'CSRF token missing.'\n"
+        "\n"
+        "\n"
+        "def rotate_csrf_token(request):\n"
+        "    return request\n",
+        encoding="utf-8",
+    )
+    cache = tmp_path / "cache"
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    indexed = (Path(pointer["indexPath"]) / "files.jsonl").read_text(encoding="utf-8")
+    assert "csrf.py" in indexed
+    found = run_cli(repo, cache, "find", "rotate csrf token")
+    assert found.returncode == 0, found.stderr
+    assert "csrf.py" in found.stdout
+
+
+def test_code_with_a_secret_is_indexed_and_the_value_is_nowhere_stored_or_shown(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "loader.py").write_text(
+        f'def load():\n    api_key = "{CANARY}"\n    return api_key\n', encoding="utf-8"
+    )
+    cache = tmp_path / "cache"
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    idx = Path(pointer["indexPath"])
+    indexed = (idx / "files.jsonl").read_text(encoding="utf-8")
+    assert "loader.py" in indexed
+    assert "load" in (idx / "symbols.jsonl").read_text(encoding="utf-8")
+
+    # Every file the index or the owned output holds, as bytes.
+    canary = CANARY.encode("utf-8")
+    owned = [*idx.rglob("*"), *(repo / ".mimry").rglob("*")]
+    for candidate in owned:
+        if candidate.is_file():
+            assert canary not in candidate.read_bytes(), candidate.name
+    assert CANARY not in sqlite_dump(idx / "mimry.sqlite")
+
+    found = run_cli(repo, cache, "find", "load api key")
+    assert found.returncode == 0, found.stderr
+    assert "loader.py" in found.stdout
+    context = run_cli(repo, cache, "context", "load api key")
+    assert context.returncode == 0, context.stderr
+    assert CANARY not in found.stdout + found.stderr + context.stdout + context.stderr
 
 
 def test_line_leading_javascript_declarations_and_yaml_quoted_multiline_scalars_are_redacted():
@@ -886,9 +953,11 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
     for result in cli_results:
         assert result.returncode == 0, result.stderr
         assert DEFENSIVE_MARKER not in result.stdout + result.stderr
-    # A search with no matches exits 1 and must not echo the value.
+    # The query is redacted before it is echoed or searched, so it
+    # matches the redacted line of call.py, never the stored value.
     find = run_cli(repo, cache, "find", f"CONFIDENTIAL={DEFENSIVE_MARKER}")
-    assert find.returncode == 1, find.stderr
+    assert find.returncode == 0, find.stderr
+    assert "call.py" in find.stdout
     assert DEFENSIVE_MARKER not in find.stdout + find.stderr
 
     pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
@@ -900,7 +969,9 @@ def test_confidential_and_credential_labels_never_reach_cli_mcp_indexes_or_gener
     )
     assert DEFENSIVE_MARKER not in owned
     indexed = (index / "files.jsonl").read_text(encoding="utf-8")
-    assert all(name not in indexed for name in labeled_files)
+    # call.py is code: its quoted literal is redacted and it is indexed.
+    assert "call.py" in indexed
+    assert all(name not in indexed for name in labeled_files if name != "call.py")
     assert "ordinary.md" in indexed
 
     payloads = (
@@ -1027,7 +1098,10 @@ def test_bare_secret_assignments_never_reach_index_or_graph(tmp_path: Path, monk
     assert VALUE_CANARY not in owned_text
     assert VALUE_CANARY not in sqlite_dump(idx / "mimry.sqlite")
     indexed = (idx / "files.jsonl").read_text(encoding="utf-8")
-    assert all(name not in indexed for name in assignments)
+    # All three are code, so each literal is redacted and the file is
+    # indexed; the canary checks above prove the value itself is gone.
+    assert all(name in indexed for name in assignments)
+    assert "[REDACTED]" in indexed
 
 
 def test_credential_label_placeholder_comment_keeps_source_indexed_and_a_literal_token_skips_it(
@@ -1055,7 +1129,9 @@ def test_credential_label_placeholder_comment_keeps_source_indexed_and_a_literal
     symbols = (idx / "symbols.jsonl").read_text(encoding="utf-8")
     assert "documented.py" in indexed
     assert "helper" in symbols
-    assert "leaked.py" not in indexed
+    # leaked.py is code: the literal is redacted and the file indexed.
+    assert "leaked.py" in indexed
+    assert "load" in symbols
     assert github_canary not in all_text_files(idx)
 
 
@@ -1500,11 +1576,15 @@ def test_files_with_url_or_metadata_under_a_credential_name_are_indexed(tmp_path
 
     files, *_ = _collect(repo)
 
+    # sauce.py is code: its credential-named literal is redacted, so it
+    # is indexed without the value.
     assert sorted(record["rel_path"] for record in files) == [
         "web/oauth.js",
         "web/policy.yml",
         "web/reset.py",
+        "web/sauce.py",
     ]
+    assert "tomato" not in json.dumps(files)
 
 
 # Credentials in text formats outside TEXT_EXTS, and *.env names (#169).
@@ -1534,7 +1614,10 @@ def test_text_formats_outside_the_text_list_with_credentials_are_not_indexed(tmp
 
     files, *_ = _collect(repo)
 
-    assert [record["rel_path"] for record in files] == ["notes.conf"]
+    # terraform.tfvars is HCL, which is code: its quoted literal is
+    # redacted and the file is indexed. The data formats stay out.
+    assert [record["rel_path"] for record in files] == ["notes.conf", "terraform.tfvars"]
+    assert CONFIG_VALUE not in json.dumps(files)
 
 
 def test_long_runs_of_spaces_scan_in_linear_time():
