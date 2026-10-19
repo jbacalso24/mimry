@@ -378,3 +378,12 @@ def test_embed_files_ranks_the_file_sharing_the_query_words_first(tmp_path):
     for kind in ("title", "code", "file"):
         assert [row["path"] for row in ranking[kind]][0] == "src/parse/config.py"
         assert [row["pos"] for row in ranking[kind]] == list(range(1, len(ranking[kind]) + 1))
+
+    # A long issue: the first line names config, later lines name view.
+    issue = "parse config\nrender view render view"
+    ranking = run.embed_files(tmp_path, root, issue, WordCounts())
+
+    assert [row["path"] for row in ranking["title"]][0] == "src/render/view.py"
+    for kind in ("title_head", "code_head", "file_head"):
+        assert [row["path"] for row in ranking[kind]][0] == "src/parse/config.py"
+        assert [row["pos"] for row in ranking[kind]] == list(range(1, len(ranking[kind]) + 1))

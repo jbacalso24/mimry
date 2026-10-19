@@ -307,21 +307,29 @@ def _words(text: str) -> str:
     return CAMEL_BOUNDARY_RE.sub(" ", re.sub(r"[/_.]", " ", text))
 
 
-def _best_cosines(model, query_vec, texts: list[str], owners: list[str]) -> dict[str, float]:
-    """Each file's best cosine to the query over its texts."""
+def _best_cosines(
+    model, query_vecs, texts: list[str], owners: list[str]
+) -> list[dict[str, float]]:
+    """Each file's best cosine to each query vector over its texts.
+
+    The texts are encoded once, and every query vector is scored
+    against the same matrix. Returns one dict per query vector, in
+    order.
+    """
     import numpy as np
 
     if not texts:
-        return {}
+        return [{} for _ in query_vecs]
     batches = [
         model.encode(texts[start : start + EMBED_BATCH])
         for start in range(0, len(texts), EMBED_BATCH)
     ]
-    cosines = _unit(np.vstack(batches)) @ query_vec
-    best: dict[str, float] = {}
-    for file_id, cosine in zip(owners, cosines.tolist(), strict=True):
-        best[file_id] = max(cosine, best.get(file_id, cosine))
-    return best
+    cosines = (_unit(np.vstack(batches)) @ query_vecs.T).tolist()
+    bests: list[dict[str, float]] = [{} for _ in query_vecs]
+    for file_id, row in zip(owners, cosines, strict=True):
+        for best, cosine in zip(bests, row, strict=True):
+            best[file_id] = max(cosine, best.get(file_id, cosine))
+    return bests
 
 
 def _ranked_files(scores: dict[str, float], paths: dict[str, str], limit: int) -> list[dict]:
@@ -336,6 +344,12 @@ def _ranked_files(scores: dict[str, float], paths: dict[str, str], limit: int) -
     ]
 
 
+def query_headline(query: str) -> str:
+    """The first non-empty line, stripped and cut to 300 characters."""
+    line = next((line.strip() for line in query.splitlines() if line.strip()), "")
+    return line[:300]
+
+
 def embed_files(index_path: Path, root: Path, query: str, model, limit: int = 30) -> dict:
     """The top ``limit`` files for the query under a static model.
 
@@ -344,9 +358,12 @@ def embed_files(index_path: Path, root: Path, query: str, model, limit: int = 30
     alone per file, so a file without symbols still counts. A code
     text per piece: its path, name and the lines it spans, read from
     ``root``. A file text per file: its path and first characters,
-    skipping unreadable and binary files. Returns
-    ``{"title": [...], "code": [...], "file": [...]}``, or ``{}`` if
-    the index cannot be read.
+    skipping unreadable and binary files. Each kind is ranked twice:
+    for the full query, and for its headline (see ``query_headline``),
+    since a long issue averaged into one vector blurs the problem its
+    first line states. Returns the keys ``title``, ``code``, ``file``
+    and the same with a ``_head`` suffix, or ``{}`` if the index
+    cannot be read.
     """
     try:
         con = sqlite3.connect(Path(index_path) / "mimry.sqlite")
@@ -386,14 +403,17 @@ def embed_files(index_path: Path, root: Path, query: str, model, limit: int = 30
         if b"\0" not in data[:8000]:
             file_texts.append(f"{rel_path}\n{text[:EMBED_CODE_CHARS]}")
             file_owners.append(file_id)
-    query_vec = _unit(model.encode([query]))[0]
-    title = _best_cosines(model, query_vec, title_texts, title_owners)
-    code = _best_cosines(model, query_vec, code_texts, code_owners)
-    file = _best_cosines(model, query_vec, file_texts, file_owners)
+    query_vecs = _unit(model.encode([query, query_headline(query)]))
+    title_full, title_head = _best_cosines(model, query_vecs, title_texts, title_owners)
+    code_full, code_head = _best_cosines(model, query_vecs, code_texts, code_owners)
+    file_full, file_head = _best_cosines(model, query_vecs, file_texts, file_owners)
     return {
-        "title": _ranked_files(title, paths, limit),
-        "code": _ranked_files(code, paths, limit),
-        "file": _ranked_files(file, paths, limit),
+        "title": _ranked_files(title_full, paths, limit),
+        "code": _ranked_files(code_full, paths, limit),
+        "file": _ranked_files(file_full, paths, limit),
+        "title_head": _ranked_files(title_head, paths, limit),
+        "code_head": _ranked_files(code_head, paths, limit),
+        "file_head": _ranked_files(file_head, paths, limit),
     }
 
 
