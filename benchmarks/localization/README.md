@@ -158,19 +158,19 @@ Acc@10 by repository:
 
 | Repository | Instances | 0.3.3 | Now |
 |---|---|---|---|
-| django/django | 231 | 66.7% | 81.8% |
-| sympy/sympy | 75 | 70.7% | 69.3% |
-| sphinx-doc/sphinx | 44 | 65.9% | 68.2% |
-| matplotlib/matplotlib | 34 | 55.9% | 79.4% |
+| django/django | 231 | 66.7% | 87.0% |
+| sympy/sympy | 75 | 70.7% | 72.0% |
+| sphinx-doc/sphinx | 44 | 65.9% | 70.5% |
+| matplotlib/matplotlib | 34 | 55.9% | 73.5% |
 | scikit-learn/scikit-learn | 32 | 87.5% | 93.8% |
-| astropy/astropy | 22 | 77.3% | 72.7% |
-| pydata/xarray | 22 | 40.9% | 86.4% |
+| astropy/astropy | 22 | 77.3% | 77.3% |
+| pydata/xarray | 22 | 40.9% | 81.8% |
 | pytest-dev/pytest | 19 | 52.6% | 84.2% |
-| pylint-dev/pylint | 10 | 20.0% | 50.0% |
+| pylint-dev/pylint | 10 | 20.0% | 40.0% |
 | psf/requests | 8 | 100.0% | 100.0% |
 | mwaskom/seaborn | 2 | 50.0% | 100.0% |
 | pallets/flask | 1 | 100.0% | 100.0% |
 
 When MIMRY finds a gold file, the median first gold rank is now 1.
-Instances whose fix touches more than one file remain the hardest: Acc@10 is 54.9% over those 71.
-77 instances still have no gold file in the top 10; ranking work continues in #42.
+Instances whose fix touches more than one file remain the hardest: Acc@10 is 56.3% over those 71.
+67 instances still have no gold file in the top 10; ranking work continues in #42.
