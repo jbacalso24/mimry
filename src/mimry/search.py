@@ -38,7 +38,7 @@ from .mentions import (
     unindexed_file_names,
 )
 from .paths import canonical_cached_rel_path
-from .pieces import best_ranges, piece_matches
+from .pieces import best_ranges, piece_file_ranking, piece_matches
 from .security import filter_index_records
 from .semantic import merge_semantic_rows, semantic_rows
 from .storage import connect, load_jsonl, load_pointer
@@ -278,6 +278,31 @@ def _fts_scores(idx, q: str) -> dict[str, tuple[int, str]]:
             boost = 8
         scores[file_id] = (boost, "FTS/BM25 match")
     return scores
+
+
+def _piece_parts(idx, q, path_by_id) -> dict[str, dict]:
+    """Each file's place in the repository-wide piece ranking, by path,
+    for its row to carry as parts.
+    """
+    if not q:
+        return {}
+    return {
+        path_by_id[entry["file_id"]]: {
+            key: entry[key] for key in ("piece_pos", "piece_best", "piece_sum", "piece_hits")
+        }
+        for entry in piece_file_ranking(idx, q)
+        if entry["file_id"] in path_by_id
+    }
+
+
+def _with_piece_parts(rows, piece_by_path):
+    """Add each row's piece ranking to its parts, if it has one."""
+    return [
+        {**row, "parts": {**row.get("parts", {}), **piece_by_path[row["path"]]}}
+        if row["path"] in piece_by_path
+        else row
+        for row in rows
+    ]
 
 
 def _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths=frozenset()):
@@ -616,6 +641,7 @@ def find_rows(
         shown = sorted({LANGUAGE_LABELS.get(g, g) for g in known_languages}, key=str.casefold)
         raise ValueError(f"unknown language {', '.join(unknown)}; use one of: " + ", ".join(shown))
     fts_scores = _fts_scores(idx, q)
+    piece_by_path = _piece_parts(idx, q, file_paths)
     id_by_path = {f["rel_path"]: f["file_id"] for f in files}
     cut_at = {f["rel_path"]: f["cut_at"] for f in files if f.get("cut_at")}
     minified_paths = frozenset(f["rel_path"] for f in files if f.get("minified"))
@@ -733,6 +759,7 @@ def find_rows(
                 seen.add(r["path"])
             ranked = sorted(merged, key=lambda r: (-r["score"], r["path"]))
             ranked = _named_definition_lift(ranked, q, symbols, id_by_path)
+            ranked = _with_piece_parts(ranked, piece_by_path)
             ranked = _learned_rerank(ranked, size_by_path)
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
             ranked = _with_semantic(
@@ -752,6 +779,7 @@ def find_rows(
             )
             return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)
     fallback_rows = _named_definition_lift(fallback_rows, q, symbols, id_by_path)
+    fallback_rows = _with_piece_parts(fallback_rows, piece_by_path)
     fallback_rows = _learned_rerank(fallback_rows, size_by_path)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     ranked = _with_semantic(

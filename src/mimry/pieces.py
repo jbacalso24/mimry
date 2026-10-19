@@ -41,6 +41,13 @@ ATTACHED_LINES = 15
 # decorator or attribute. Any other line is code, such as the
 # signature of the function above, and must not join the piece.
 ATTACHED_LINE = re.compile(r"(?:#|//|/\*|\*(?:\s|/|$)|@|--|\[[A-Z])")
+# Matching pieces read for the repository-wide file ranking, and the
+# most query terms they are matched on.
+PIECE_LIMIT = 200
+PIECE_TERMS = 64
+# A file's later pieces add to its score, each half the weight of the
+# one before, over this many of them.
+PIECE_TAIL = 8
 
 
 def file_pieces(data: bytes, symbols: list[dict]) -> list[list]:
@@ -118,6 +125,77 @@ def piece_matches(
     for file_id, start, end, name, rank in rows:
         by_file.setdefault(file_id, []).append((rank, int(start), int(end), name))
     return by_file
+
+
+def piece_file_ranking(idx: Path, q: str, limit: int = PIECE_LIMIT) -> list[dict]:
+    """Files of the whole repository by their best-matching pieces, in
+    the order each file first appears among the top ``limit`` pieces.
+
+    A file's score is its best piece's BM25 score; its ``piece_sum``
+    adds half of a decaying sum of its next pieces. Recorded as ranking
+    parts only, so it does not reorder results.
+    """
+    terms = list(dict.fromkeys(query_terms(q)))[:PIECE_TERMS]
+    match = " OR ".join(f'"{term}"*' for term in terms if term)
+    if not match:
+        return []
+    try:
+        con = sqlite3.connect(Path(idx) / "mimry.sqlite")
+        try:
+            rows = con.execute(
+                "select file_id, line_start, bm25(pieces_fts, 0.0, 0.0, 0.0, 1.4, 1.0) as rank "
+                "from pieces_fts where pieces_fts match ? "
+                "order by rank, file_id, line_start limit ?",
+                (match, limit),
+            ).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+    by_file: dict[str, list[float]] = {}
+    for file_id, _start, rank in rows:
+        by_file.setdefault(file_id, []).append(-rank)
+    ranking = []
+    for position, (file_id, scores) in enumerate(by_file.items(), start=1):
+        tail = sum(s * 0.5 ** (i + 1) for i, s in enumerate(scores[1 : PIECE_TAIL + 1]))
+        ranking.append(
+            {
+                "file_id": file_id,
+                "piece_pos": position,
+                "piece_best": round(scores[0], 4),
+                "piece_sum": round(scores[0] + 0.5 * tail, 4),
+                "piece_hits": len(scores),
+            }
+        )
+    return ranking
+
+
+def piece_files(idx: Path, q: str, limit: int = 30) -> list[dict]:
+    """The first ``limit`` files of ``piece_file_ranking`` with their
+    paths, for the localization benchmark's diagnosis.
+    """
+    ranking = piece_file_ranking(idx, q)
+    ids = [entry["file_id"] for entry in ranking]
+    if not ids:
+        return []
+    marks = ", ".join("?" for _ in ids)
+    try:
+        con = sqlite3.connect(Path(idx) / "mimry.sqlite")
+        try:
+            paths = dict(
+                con.execute(
+                    f"select file_id, rel_path from files where file_id in ({marks})", ids
+                ).fetchall()
+            )
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+    return [
+        {**entry, "path": paths[entry["file_id"]]}
+        for entry in ranking
+        if entry["file_id"] in paths
+    ][:limit]
 
 
 def document_pieces(parts: list[DocumentPart]) -> list[list]:

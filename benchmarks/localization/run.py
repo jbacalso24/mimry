@@ -46,6 +46,7 @@ from build_tasks import SETS, fetch_rows, task_path
 
 from mimry.core.artifacts import load_graph, node_source_file
 from mimry.lifecycle import require
+from mimry.pieces import piece_files
 from mimry.search import find_rows
 from mimry.storage import active_index_pointer
 
@@ -224,36 +225,53 @@ def partner_links(
     return partners
 
 
-def in_process_rows(repo: Path, env: dict[str, str], query: str) -> list[dict]:
-    """The rows `mimry find` ranks for the query, read in this process.
+def _in_repo_index(repo: Path, env: dict[str, str], call):
+    """Run ``call(pointer)`` for the repo's index, read in this process.
 
-    The arguments are the ones the CLI's find passes for a whole-repo
-    search, with the limit raised to DIAGNOSE_DEPTH. MIMRY_CACHE_HOME is
-    set to the run's cache for the call, as it is for the subprocesses,
-    so no developer cache is read.
+    MIMRY_CACHE_HOME is set to the run's cache for the call, as it is
+    for the subprocesses, so no developer cache is read.
     """
     previous = os.environ.get("MIMRY_CACHE_HOME")
     os.environ["MIMRY_CACHE_HOME"] = env["MIMRY_CACHE_HOME"]
     try:
         with active_index_pointer(repo):
-            ptr = require(repo)
-            return find_rows(
-                Path(ptr["indexPath"]),
-                query,
-                DIAGNOSE_DEPTH,
-                root=repo,
-                root_id=ptr.get("rootId"),
-                semantic=False,
-                languages=[],
-                path_globs=[],
-                exclude_globs=[],
-                offset=None,
-            )
+            return call(require(repo))
     finally:
         if previous is None:
             os.environ.pop("MIMRY_CACHE_HOME", None)
         else:
             os.environ["MIMRY_CACHE_HOME"] = previous
+
+
+def in_process_rows(repo: Path, env: dict[str, str], query: str) -> list[dict]:
+    """The rows `mimry find` ranks for the query, read in this process.
+
+    The arguments are the ones the CLI's find passes for a whole-repo
+    search, with the limit raised to DIAGNOSE_DEPTH.
+    """
+    return _in_repo_index(
+        repo,
+        env,
+        lambda ptr: find_rows(
+            Path(ptr["indexPath"]),
+            query,
+            DIAGNOSE_DEPTH,
+            root=repo,
+            root_id=ptr.get("rootId"),
+            semantic=False,
+            languages=[],
+            path_globs=[],
+            exclude_globs=[],
+            offset=None,
+        ),
+    )
+
+
+def in_process_piece_files(repo: Path, env: dict[str, str], query: str) -> list[dict]:
+    """The repository-wide piece ranking for the query, read in this
+    process the same way as in_process_rows.
+    """
+    return _in_repo_index(repo, env, lambda ptr: piece_files(Path(ptr["indexPath"]), query))
 
 
 def candidate_dump(rows: list[dict], cli_top: list[str]) -> dict:
@@ -371,7 +389,9 @@ def run_instance(
         # lookup is timed.
         graph = load_graph(repo) if diagnose else None
         if diagnose:
-            candidates = candidate_dump(in_process_rows(repo, env, query), ranked)
+            candidates = candidate_dump(in_process_rows(repo, env, query), ranked) | {
+                "piece_files": in_process_piece_files(repo, env, query)
+            }
     except (RuntimeError, OSError) as exc:
         return row | {"status": "error", "error": f"{stage} failed: {exc}"}
     return (

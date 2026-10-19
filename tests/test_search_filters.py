@@ -11,6 +11,7 @@ import mimry.search as search
 from mimry.indexer import write_index
 from mimry.mcp_tools import mimry_find
 from mimry.paths import idx_path
+from mimry.pieces import piece_file_ranking, piece_files
 from mimry.search import _path_glob_matches, _search_scope, find_rows
 from mimry.storage import load_pointer, save_pointer
 
@@ -396,6 +397,39 @@ def test_find_rows_rows_carry_parts_ending_in_final_score(tmp_path, monkeypatch)
     for row in rows:
         assert row["parts"]["final_score"] == row["score"]
         assert all(isinstance(value, int | float) for value in row["parts"].values())
+
+
+def test_piece_ranking_puts_the_matching_function_before_a_passing_mention(tmp_path, monkeypatch):
+    matching = "def parse_header_line(line):\n    tokens = line.split(':')\n    return tokens\n"
+    passing = "def render(page):\n    header = page\n    return page\n"
+    _repo, ptr = _indexed(
+        tmp_path,
+        monkeypatch,
+        {"src/parse_header.py": matching, "src/render.py": passing},
+    )
+    idx = Path(ptr["indexPath"])
+    query = "parse header line tokens"
+
+    ranking = piece_file_ranking(idx, query)
+    assert [entry["piece_pos"] for entry in ranking] == [1, 2]
+    assert [entry["path"] for entry in piece_files(idx, query)] == [
+        "src/parse_header.py",
+        "src/render.py",
+    ]
+
+
+def test_find_rows_records_piece_parts_without_changing_order(tmp_path, monkeypatch):
+    repo, ptr = _indexed(tmp_path, monkeypatch)
+    idx = Path(ptr["indexPath"])
+    rows = find_rows(idx, "auth session", limit=10, root=repo, root_id=ptr["rootId"])
+    assert any("piece_pos" in row["parts"] for row in rows)
+
+    monkeypatch.setattr(search, "piece_file_ranking", lambda *_args, **_kwargs: [])
+    without = find_rows(idx, "auth session", limit=10, root=repo, root_id=ptr["rootId"])
+    assert [(row["path"], row["score"]) for row in rows] == [
+        (row["path"], row["score"]) for row in without
+    ]
+    assert all("piece_pos" not in row["parts"] for row in without)
 
 
 def test_learned_top_ten_is_the_same_at_every_limit(tmp_path, monkeypatch):
