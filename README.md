@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="#benchmarks">On 92 real pull requests, agents read 50% fewer tokens with MIMRY.</a>
+  <a href="#benchmarks">In a scripted retrieval benchmark, MIMRY cut the tokens read to reach the changed code by 53%.</a>
 </p>
 
 <p align="center">
@@ -76,7 +76,7 @@ An AUR package is coming, see [#64](https://github.com/jbacalso24/mimry/issues/6
 ### Docker
 
 The image `ghcr.io/jbacalso24/mimry` has every tree-sitter grammar built in, so indexing needs no network.
-Tags are `latest`, the full version such as `0.5.0`, and the minor line such as `0.5`.
+Tags are `latest`, the full version such as `1.2.3`, and the minor line such as `1.2`.
 
 Mount your repo at `/repo` and keep the index in a named volume at `/cache`.
 Without the volume, each container starts with no index.
@@ -160,7 +160,7 @@ mimry install --platform claude-code
 ```
 
 > [!TIP]
-> Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` whenever it starts a broad grep, and answers a grep for a known symbol with its definition and callers. The hooks also refresh the index in the background when a session starts and after each file edit.
+> Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` when it starts a broad search of the repository, at most three times a session, and answers a grep for a known symbol with its definition and callers. The hooks also refresh the index in the background when a session starts and after each file edit.
 
 ## Features
 
@@ -168,7 +168,7 @@ mimry install --platform claude-code
 |---|---|
 | Ranked lookup | Ranks files by name, path, content, symbol and graph matches, and shows why each one ranked |
 | Line ranges | Names the functions, classes or sections to read first in each file |
-| Code graph | Maps imports, calls and inheritance across 41 languages with tree-sitter |
+| Code graph | Parses 41 languages with tree-sitter: symbols, imports, calls and inheritance for code, and the names you search by for markup, style and data files |
 | Deterministic | The same code gives the same symbols, graph, rankings and context pack on every machine; CI checks every change against committed golden values ([how](docs/determinism.md)) |
 | Documents | Indexes Markdown, text, PDF, Word, Excel and PowerPoint files alongside code |
 | Incremental indexing | Re-reads only changed files, and refreshes the index before the main lookups answer |
@@ -178,7 +178,8 @@ mimry install --platform claude-code
 
 ## Supported languages
 
-MIMRY parses these languages with tree-sitter for symbols, imports, calls and inheritance.
+MIMRY parses these languages with tree-sitter.
+Programming languages give symbols, imports, calls and inheritance; markup, style and data formats give the names an agent searches them by, described below the table.
 
 | Language | Extensions |
 |---|---|
@@ -312,7 +313,7 @@ See [docs/agents.md](docs/agents.md) for where each agent's files go and how its
 |---|---|
 | `--project` | Install into the current repository only, instead of for every repository |
 | `--always-on` | Add a short rules block to the agent's always-read file, such as `AGENTS.md` |
-| `--hooks` | Suggest `mimry find` when the agent starts a broad grep, answer a search for a known symbol with its definition and callers, and refresh the index in the background when a session starts and after each file edit. For Codex, project hooks run after you trust them with `/hooks`. |
+| `--hooks` | Suggest `mimry find` when the agent starts a broad search of the repository, at most three times a session, answer a search for a known symbol with its definition and callers, and refresh the index in the background when a session starts and after each file edit. For Codex, project hooks run after you trust them with `/hooks`. |
 | `--no-mcp` | Install the skill without registering the MCP server |
 | `--no-global-gitignore` | Do not add `.mimry/` to Git's global ignore file |
 
@@ -387,13 +388,18 @@ MIMRY always skips folders named `build`, `bin`, `obj`, `dist`, `target`, `node_
 
 ## Benchmarks
 
-Tokens an agent read before it found the code each pull request changed, measured on 92 merged pull requests from 12 open-source projects.
+These numbers come from a scripted retrieval benchmark, not from complete agent sessions.
+Two scripted agents get the same task text and a budget of 10 file reads: one starts with `mimry preflight`, the other with grep.
+Each follows fixed rules, and the benchmark counts the tokens it reads before it has read every file the pull request changed.
+A model-driven agent chooses its reads differently, so treat these as a measure of retrieval, not a saving you are guaranteed in your own sessions.
 
-| How the agent reads files | Tokens saved with MIMRY |
-|---|---|
-| Whole files | **50%** |
-| `grep -n`, then a few lines around each match | **48%** |
-| The line ranges MIMRY names first | **67%** |
+Measured with MIMRY 0.6.4 on 44 merged pull requests from 6 open-source projects, the set rerun for every release:
+
+| How the agent reads files | Tokens saved with MIMRY | Tasks located, MIMRY / grep |
+|---|---|---|
+| Whole files | **53.2%** | **33** / 28 |
+| `grep -n`, then 100 lines around each match | **49.5%** | **31** / 27 |
+| The line ranges MIMRY names first | **70.8%** | **32** / 28 |
 
 See [benchmarks/tokens](benchmarks/tokens/README.md) for the method, per-project results and how to reproduce them.
 
@@ -404,7 +410,7 @@ To measure MIMRY on your own repository's merged pull requests, run `mimry bench
 
 ### One task, start to finish
 
-Task `fastapi/typer#1820` from the holdout2 run: "Respect wait=False when launching URLs with xdg-open".
+Task `fastapi/typer#1820` from the holdout2 run, as the scripted agents read it: "Respect wait=False when launching URLs with xdg-open".
 The fix changed `typer/main.py`.
 Its 75.3% saving is the median for that run, so it is a typical task, not the best one.
 
@@ -446,7 +452,7 @@ See [docs/how-it-works.md](docs/how-it-works.md) for details.
 ## Privacy
 
 Indexing and search run locally.
-Credential files are skipped, secret-looking values are redacted from feedback, and untracked files named in `.gitignore` are not indexed.
+Credential files are skipped, secret-looking values are redacted before they reach the index or feedback, and untracked files named in `.gitignore` are not indexed.
 
 ## Contributing
 
