@@ -57,6 +57,8 @@ KEYWORD_FUSE_K = 5
 KEYWORD_FUSE_WEIGHT = 0.75
 # Keyword files that take part, by their place in the list.
 KEYWORD_FUSE_LIST = 30
+# Distinct query terms before fusion; short queries are name-like.
+KEYWORD_FUSE_MIN_TERMS = 20
 # Pairwise logistic regression over these parts, fitted on the SWE-bench
 # train set (tasks.train.json); refit when signals change.
 LEARNED_WEIGHTS = {
@@ -700,6 +702,7 @@ def find_rows(
     if graph and (idx / "graph.json").exists():
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
     terms = query_terms(q)
+    fuse_keywords = len(set(terms)) >= KEYWORD_FUSE_MIN_TERMS
     intent = intent_terms(q)
     named = named_paths(q, known_paths)
     # A test file named only in the body of a source task (a traceback
@@ -822,7 +825,8 @@ def find_rows(
             ranked = _named_definition_lift(ranked, q, symbols, id_by_path)
             ranked = _with_piece_parts(ranked, piece_by_path)
             ranked = _learned_rerank(ranked, size_by_path)
-            ranked = _keyword_fuse(ranked, piece_by_path, keyword_allowed)
+            if fuse_keywords:
+                ranked = _keyword_fuse(ranked, piece_by_path, keyword_allowed)
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
             ranked = _with_semantic(
                 ranked,
@@ -843,7 +847,8 @@ def find_rows(
     fallback_rows = _named_definition_lift(fallback_rows, q, symbols, id_by_path)
     fallback_rows = _with_piece_parts(fallback_rows, piece_by_path)
     fallback_rows = _learned_rerank(fallback_rows, size_by_path)
-    fallback_rows = _keyword_fuse(fallback_rows, piece_by_path, keyword_allowed)
+    if fuse_keywords:
+        fallback_rows = _keyword_fuse(fallback_rows, piece_by_path, keyword_allowed)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     ranked = _with_semantic(
         ranked,

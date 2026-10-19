@@ -452,14 +452,16 @@ def test_keyword_ranking_puts_a_test_file_below_an_equal_source_file(tmp_path, m
 def test_find_rows_records_piece_parts_and_fuses_them_into_the_order(tmp_path, monkeypatch):
     repo, ptr = _indexed(tmp_path, monkeypatch)
     idx = Path(ptr["indexPath"])
+    # Under KEYWORD_FUSE_MIN_TERMS, so the keyword list is not fused.
     rows = find_rows(idx, "auth session", limit=10, root=repo, root_id=ptr["rootId"])
     assert any("piece_pos" in row["parts"] for row in rows)
-    assert all("keyword_fused" in row["parts"] for row in rows)
+    assert not any("keyword_fused" in row["parts"] for row in rows)
 
     monkeypatch.setattr(search, "piece_file_ranking", lambda *_args, **_kwargs: [])
     without = find_rows(idx, "auth session", limit=10, root=repo, root_id=ptr["rootId"])
     assert all("piece_pos" not in row["parts"] for row in without)
     assert all("keyword_fused" not in row["parts"] for row in without)
+    assert [row["path"] for row in rows] == [row["path"] for row in without]
 
     # With no keyword ranking, the fusion is a no-op.
     monkeypatch.setattr(search, "_keyword_fuse", lambda rows, _piece, _allowed: rows)
@@ -467,6 +469,14 @@ def test_find_rows_records_piece_parts_and_fuses_them_into_the_order(tmp_path, m
     assert [(row["path"], row["score"]) for row in without] == [
         (row["path"], row["score"]) for row in learned
     ]
+
+
+def test_find_rows_fuses_the_keyword_list_once_the_query_is_long_enough(tmp_path, monkeypatch):
+    repo, ptr = _indexed(tmp_path, monkeypatch)
+    idx = Path(ptr["indexPath"])
+    monkeypatch.setattr(search, "KEYWORD_FUSE_MIN_TERMS", 1)
+    rows = find_rows(idx, "auth session", limit=10, root=repo, root_id=ptr["rootId"])
+    assert all("keyword_fused" in row["parts"] for row in rows)
 
 
 def _ranked_rows(count, start=0):
