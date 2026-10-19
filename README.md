@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="#benchmarks">In a scripted retrieval benchmark, MIMRY cut the tokens read to reach the changed code by 53%.</a>
+  <a href="#benchmarks">71% fewer tokens to reach the code a task changes, in a scripted retrieval benchmark.</a>
 </p>
 
 <p align="center">
@@ -397,9 +397,9 @@ Measured with MIMRY 0.6.4 on 44 merged pull requests from 6 open-source projects
 
 | How the agent reads files | Tokens saved with MIMRY | Tasks located, MIMRY / grep |
 |---|---|---|
+| The line ranges MIMRY names first | **70.8%** | **32** / 28 |
 | Whole files | **53.2%** | **33** / 28 |
 | `grep -n`, then 100 lines around each match | **49.5%** | **31** / 27 |
-| The line ranges MIMRY names first | **70.8%** | **32** / 28 |
 
 See [benchmarks/tokens](benchmarks/tokens/README.md) for the method, per-project results and how to reproduce them.
 
