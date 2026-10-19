@@ -691,7 +691,6 @@ def find_rows(
         shown = sorted({LANGUAGE_LABELS.get(g, g) for g in known_languages}, key=str.casefold)
         raise ValueError(f"unknown language {', '.join(unknown)}; use one of: " + ", ".join(shown))
     fts_scores = _fts_scores(idx, q)
-    piece_by_path = _piece_parts(idx, q, file_paths)
     id_by_path = {f["rel_path"]: f["file_id"] for f in files}
     cut_at = {f["rel_path"]: f["cut_at"] for f in files if f.get("cut_at")}
     minified_paths = frozenset(f["rel_path"] for f in files if f.get("minified"))
@@ -703,6 +702,9 @@ def find_rows(
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
     terms = query_terms(q)
     fuse_keywords = len(set(terms)) >= KEYWORD_FUSE_MIN_TERMS
+    # The keyword ranking only feeds the fusion and the kw_*/piece_*
+    # parts, so a short query skips its cost.
+    piece_by_path = _piece_parts(idx, q, file_paths) if fuse_keywords else {}
     intent = intent_terms(q)
     named = named_paths(q, known_paths)
     # A test file named only in the body of a source task (a traceback
