@@ -449,18 +449,83 @@ def test_keyword_ranking_puts_a_test_file_below_an_equal_source_file(tmp_path, m
     assert paths.index("src/budget.py") < paths.index("tests/test_budget.py")
 
 
-def test_find_rows_records_piece_parts_without_changing_order(tmp_path, monkeypatch):
+def test_find_rows_records_piece_parts_and_fuses_them_into_the_order(tmp_path, monkeypatch):
     repo, ptr = _indexed(tmp_path, monkeypatch)
     idx = Path(ptr["indexPath"])
     rows = find_rows(idx, "auth session", limit=10, root=repo, root_id=ptr["rootId"])
     assert any("piece_pos" in row["parts"] for row in rows)
+    assert all("keyword_fused" in row["parts"] for row in rows)
 
     monkeypatch.setattr(search, "piece_file_ranking", lambda *_args, **_kwargs: [])
     without = find_rows(idx, "auth session", limit=10, root=repo, root_id=ptr["rootId"])
-    assert [(row["path"], row["score"]) for row in rows] == [
-        (row["path"], row["score"]) for row in without
-    ]
     assert all("piece_pos" not in row["parts"] for row in without)
+    assert all("keyword_fused" not in row["parts"] for row in without)
+
+    # With no keyword ranking, the fusion is a no-op.
+    monkeypatch.setattr(search, "_keyword_fuse", lambda rows, _piece, _allowed: rows)
+    learned = find_rows(idx, "auth session", limit=10, root=repo, root_id=ptr["rootId"])
+    assert [(row["path"], row["score"]) for row in without] == [
+        (row["path"], row["score"]) for row in learned
+    ]
+
+
+def _ranked_rows(count, start=0):
+    return [
+        {
+            "path": f"src/file_{start + i}.py",
+            "score": 100.0 - (start + i),
+            "reason": "",
+            "parts": {},
+        }
+        for i in range(count)
+    ]
+
+
+def test_keyword_fuse_lands_a_top_keyword_file_in_the_top_three():
+    rows = _ranked_rows(5)
+    # Keyword rank 1 ties MIMRY rank 3; path order breaks the tie.
+    pool = search._keyword_fuse(rows, {"src/aardvark.py": {"kw_pos": 1}}, lambda _path: True)
+    paths = [row["path"] for row in pool]
+    assert "src/aardvark.py" in paths[:3]
+    assert {row["path"] for row in pool} == {row["path"] for row in rows} | {"src/aardvark.py"}
+
+
+def test_keyword_fuse_keeps_a_first_ranked_row_above_a_tenth_ranked_row():
+    rows = _ranked_rows(12)
+    pool = search._keyword_fuse(rows, {"src/file_5.py": {"kw_pos": 3}}, lambda _path: True)
+    paths = [row["path"] for row in pool]
+    assert paths.index("src/file_0.py") < paths.index("src/file_9.py")
+
+
+def test_keyword_fuse_never_joins_a_disallowed_path():
+    rows = _ranked_rows(60)
+    # file_55 is in the tail. secret is not a candidate.
+    piece = {"src/secret.py": {"kw_pos": 1}, "src/file_55.py": {"kw_pos": 1}}
+    result = search._keyword_fuse(rows, piece, lambda path: path != "src/secret.py")
+    paths = [row["path"] for row in result]
+    assert "src/secret.py" not in paths
+    assert paths.index("src/file_55.py") < search.LEARNED_POOL
+
+
+def test_keyword_fuse_hands_the_pool_scores_out_in_descending_order():
+    rows = _ranked_rows(60)
+    piece = {"src/new.py": {"kw_pos": 1}, "src/file_3.py": {"kw_pos": 2}}
+    result = search._keyword_fuse(rows, piece, lambda _path: True)
+    old_pool_scores = [row["score"] for row in rows[: search.LEARNED_POOL]]
+    joined_floor = rows[search.LEARNED_POOL - 1]["score"]
+    new_pool = result[: search.LEARNED_POOL + 1]
+    assert [row["score"] for row in new_pool] == sorted(
+        [*old_pool_scores, joined_floor], reverse=True
+    )
+    assert all("keyword_fused" in row["parts"] for row in new_pool)
+    assert [row["path"] for row in result[search.LEARNED_POOL + 1 :]] == [
+        row["path"] for row in rows[search.LEARNED_POOL :]
+    ]
+
+
+def test_keyword_fuse_without_a_keyword_ranking_returns_rows_unchanged():
+    rows = _ranked_rows(5)
+    assert search._keyword_fuse(rows, {}, lambda _path: True) == rows
 
 
 def test_learned_top_ten_is_the_same_at_every_limit(tmp_path, monkeypatch):
