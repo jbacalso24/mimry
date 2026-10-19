@@ -36,6 +36,7 @@ import os
 import posixpath
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -45,6 +46,7 @@ from pathlib import Path
 from build_tasks import SETS, fetch_rows, task_path
 
 from mimry.core.artifacts import load_graph, node_source_file
+from mimry.intent import CAMEL_BOUNDARY_RE
 from mimry.lifecycle import require
 from mimry.pieces import piece_files
 from mimry.search import find_rows
@@ -60,6 +62,11 @@ SCORE_LINE = re.compile(r"^      (score -?\d+: .*)$")
 DIAGNOSE_DEPTH = 50
 # Diagnosis searches the file graph this many hops for a partner file.
 PARTNER_HOPS = 3
+# The embedding ranking encodes this many texts per call, and reads this
+# many characters of each piece's code.
+EMBED_BATCH = 512
+EMBED_CODE_CHARS = 2000
+_EMBED_MODELS: dict[str, object] = {}
 
 
 def score(ranked: list[str], gold: list[str]) -> dict:
@@ -274,6 +281,106 @@ def in_process_piece_files(repo: Path, env: dict[str, str], query: str) -> list[
     return _in_repo_index(repo, env, lambda ptr: piece_files(Path(ptr["indexPath"]), query))
 
 
+def load_embed_model(name: str):
+    """The static embedding model ``name``, loaded once per process.
+
+    model2vec is imported here, so a run without --embed-model does not
+    need it.
+    """
+    if name not in _EMBED_MODELS:
+        from model2vec import StaticModel
+
+        _EMBED_MODELS[name] = StaticModel.from_pretrained(name)
+    return _EMBED_MODELS[name]
+
+
+def _unit(vectors):
+    """Rows scaled to length one, so a dot product is a cosine."""
+    import numpy as np
+
+    vectors = np.asarray(vectors, dtype=float)
+    return vectors / np.maximum(np.linalg.norm(vectors, axis=-1, keepdims=True), 1e-12)
+
+
+def _words(text: str) -> str:
+    """A name or path with separators and camelCase as spaces."""
+    return CAMEL_BOUNDARY_RE.sub(" ", re.sub(r"[/_.]", " ", text))
+
+
+def _best_cosines(model, query_vec, texts: list[str], owners: list[str]) -> dict[str, float]:
+    """Each file's best cosine to the query over its texts."""
+    import numpy as np
+
+    if not texts:
+        return {}
+    batches = [
+        model.encode(texts[start : start + EMBED_BATCH])
+        for start in range(0, len(texts), EMBED_BATCH)
+    ]
+    cosines = _unit(np.vstack(batches)) @ query_vec
+    best: dict[str, float] = {}
+    for file_id, cosine in zip(owners, cosines.tolist(), strict=True):
+        best[file_id] = max(cosine, best.get(file_id, cosine))
+    return best
+
+
+def _ranked_files(scores: dict[str, float], paths: dict[str, str], limit: int) -> list[dict]:
+    """Files by score, best first and ties by path."""
+    ordered = sorted(
+        ((score, paths[file_id]) for file_id, score in scores.items()),
+        key=lambda item: (-item[0], item[1]),
+    )[:limit]
+    return [
+        {"path": path, "pos": pos, "score": round(score, 6)}
+        for pos, (score, path) in enumerate(ordered, start=1)
+    ]
+
+
+def embed_files(index_path: Path, query: str, model, limit: int = 30) -> dict:
+    """The top ``limit`` files for the query under a static model.
+
+    Each file scores by its best piece, under two texts per piece: a
+    title (path and symbol name) and the code (name and body). Every
+    file also gets a title of its path alone, so a file without
+    symbols still counts. Returns ``{"title": [...], "code": [...]}``,
+    or ``{}`` if the index cannot be read.
+    """
+    try:
+        con = sqlite3.connect(Path(index_path) / "mimry.sqlite")
+        try:
+            paths = dict(con.execute("select file_id, rel_path from files").fetchall())
+            rows = con.execute("select file_id, line_start, name, body from pieces_fts").fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
+    title_texts = [_words(rel_path) for rel_path in paths.values()]
+    title_owners = list(paths)
+    code_texts: list[str] = []
+    code_owners: list[str] = []
+    for file_id, _line_start, name, body in rows:
+        if file_id not in paths:
+            continue
+        title_texts.append(_words(f"{paths[file_id]} {name}"))
+        title_owners.append(file_id)
+        code_texts.append(f"{name} {body}"[:EMBED_CODE_CHARS])
+        code_owners.append(file_id)
+    query_vec = _unit(model.encode([query]))[0]
+    title = _best_cosines(model, query_vec, title_texts, title_owners)
+    code = _best_cosines(model, query_vec, code_texts, code_owners)
+    return {
+        "title": _ranked_files(title, paths, limit),
+        "code": _ranked_files(code, paths, limit),
+    }
+
+
+def in_process_embed_files(repo: Path, env: dict[str, str], query: str, model) -> dict:
+    """The embedding ranking for the query, read in this process as
+    in_process_piece_files reads its ranking.
+    """
+    return _in_repo_index(repo, env, lambda ptr: embed_files(Path(ptr["indexPath"]), query, model))
+
+
 def candidate_dump(rows: list[dict], cli_top: list[str]) -> dict:
     """The in-process ranking to DIAGNOSE_DEPTH, with each row's parts.
 
@@ -348,7 +455,12 @@ def load_problems(work: Path, set_name: str, tasks: list[dict]) -> dict[str, dic
 
 
 def run_instance(
-    task: dict, problem: dict[str, str], work: Path, env: dict[str, str], diagnose: bool = False
+    task: dict,
+    problem: dict[str, str],
+    work: Path,
+    env: dict[str, str],
+    diagnose: bool = False,
+    embed_model: str = "",
 ) -> dict:
     row = {
         "instance_id": task["instance_id"],
@@ -392,6 +504,12 @@ def run_instance(
             candidates = candidate_dump(in_process_rows(repo, env, query), ranked) | {
                 "piece_files": in_process_piece_files(repo, env, query)
             }
+            if embed_model:
+                model = load_embed_model(embed_model)
+                stage = "embed"
+                started = time.perf_counter_ns()
+                candidates["embed_files"] = in_process_embed_files(repo, env, query, model)
+                candidates["embed_ms"] = round((time.perf_counter_ns() - started) / 1_000_000)
     except (RuntimeError, OSError) as exc:
         return row | {"status": "error", "error": f"{stage} failed: {exc}"}
     return (
@@ -498,6 +616,11 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Also record gold ranks to {DIAGNOSE_DEPTH} and the score line of each result",
     )
     parser.add_argument(
+        "--embed-model",
+        default="",
+        help="With --diagnose, also record a ranking from this static embedding model (model2vec)",
+    )
+    parser.add_argument(
         "--merge", type=Path, nargs="+", help="Merge these shard files into --out and exit"
     )
     args = parser.parse_args(argv)
@@ -512,7 +635,9 @@ def main(argv: list[str] | None = None) -> int:
     problems = load_problems(work, args.set_name, all_tasks)
     rows = []
     for task in tasks:
-        row = run_instance(task, problems[task["instance_id"]], work, env, args.diagnose)
+        row = run_instance(
+            task, problems[task["instance_id"]], work, env, args.diagnose, args.embed_model
+        )
         rows.append(row)
         detail = (
             f"acc@10 {row['acc_at_10']} first {row['first_gold_rank']}"

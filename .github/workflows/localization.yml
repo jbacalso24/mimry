@@ -18,6 +18,10 @@ on:
         description: "Record gold ranks to 50 and each result's score line"
         type: boolean
         default: false
+      embed_model:
+        description: "Static embedding model to record an extra ranking with (diagnosis only; empty = none)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -47,11 +51,18 @@ jobs:
       - name: Sync locked environment
         run: uv sync --locked --python "3.14"
 
+      - name: Install the embedding model package
+        if: ${{ inputs.embed_model != '' }}
+        run: uv pip install "model2vec>=0.6,<1"
+
       - name: Run shard
+        env:
+          EMBED_MODEL: ${{ inputs.embed_model }}
         run: >-
           uv run python benchmarks/localization/run.py --work /tmp/loc
           --set ${{ inputs.set }} --shard ${{ matrix.shard }}/10
           ${{ inputs.diagnose && '--diagnose' || '' }}
+          --embed-model "$EMBED_MODEL"
           --out /tmp/loc-shard-${{ matrix.shard }}.json
 
       - name: Upload shard results

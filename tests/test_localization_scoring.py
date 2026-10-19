@@ -6,10 +6,13 @@ network: the dataset is never fetched here.
 
 import importlib.util
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
 import pytest
+
+from mimry.pieces import PIECES_FTS_CREATE
 
 LOC = Path(__file__).resolve().parents[1] / "benchmarks" / "localization"
 # run.py imports build_tasks as a sibling module, so the folder must be
@@ -326,3 +329,42 @@ def test_partner_edges_inside_one_file_ignored():
     assert m5["direct"] == []
     assert m5["hops_to_found_gold"] is None
     assert m5["hops_to_top10"] is None
+
+
+def test_embed_files_ranks_the_file_sharing_the_query_words_first(tmp_path):
+    np = pytest.importorskip("numpy")
+    words = ["parse", "config", "render", "view"]
+
+    class WordCounts:
+        """Counts the known words in each text, as a stand-in model."""
+
+        def encode(self, texts):
+            vectors = np.zeros((len(texts), len(words)))
+            for row, text in enumerate(texts):
+                for column, word in enumerate(words):
+                    vectors[row, column] = text.lower().split().count(word)
+            return vectors
+
+    con = sqlite3.connect(tmp_path / "mimry.sqlite")
+    con.execute(
+        "create table if not exists files(file_id text primary key, rel_path text, filename "
+        "text, extension text, adapter text, parse_status text, content_hint text, "
+        "metadata_text text)"
+    )
+    con.execute(PIECES_FTS_CREATE)
+    con.executemany(
+        "insert into files(file_id, rel_path) values (?, ?)",
+        [("f1", "src/parse/config.py"), ("f2", "src/render/view.py")],
+    )
+    con.executemany(
+        "insert into pieces_fts(file_id, line_start, line_end, name, body) values (?, ?, ?, ?, ?)",
+        [("f1", 1, 3, "parse_config", "parse config tokens"), ("f2", 1, 3, "render_view", "draw")],
+    )
+    con.commit()
+    con.close()
+
+    ranking = run.embed_files(tmp_path, "parse config", WordCounts())
+
+    for kind in ("title", "code"):
+        assert [row["path"] for row in ranking[kind]][0] == "src/parse/config.py"
+        assert [row["pos"] for row in ranking[kind]] == list(range(1, len(ranking[kind]) + 1))
