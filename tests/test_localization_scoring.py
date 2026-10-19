@@ -345,6 +345,16 @@ def test_embed_files_ranks_the_file_sharing_the_query_words_first(tmp_path):
                     vectors[row, column] = text.lower().split().count(word)
             return vectors
 
+    root = tmp_path / "repo"
+    (root / "src" / "parse").mkdir(parents=True)
+    (root / "src" / "render").mkdir(parents=True)
+    (root / "src" / "parse" / "config.py").write_text(
+        "def parse_config(text):\n    # parse the config text\n    return tokens(text)\n",
+        encoding="utf-8",
+    )
+    (root / "src" / "render" / "view.py").write_text(
+        "def render_view(page):\n    return draw(page)\n", encoding="utf-8"
+    )
     con = sqlite3.connect(tmp_path / "mimry.sqlite")
     con.execute(
         "create table if not exists files(file_id text primary key, rel_path text, filename "
@@ -358,13 +368,13 @@ def test_embed_files_ranks_the_file_sharing_the_query_words_first(tmp_path):
     )
     con.executemany(
         "insert into pieces_fts(file_id, line_start, line_end, name, body) values (?, ?, ?, ?, ?)",
-        [("f1", 1, 3, "parse_config", "parse config tokens"), ("f2", 1, 3, "render_view", "draw")],
+        [("f1", 1, 3, "parse_config", "config parse tokens"), ("f2", 1, 2, "render_view", "draw")],
     )
     con.commit()
     con.close()
 
-    ranking = run.embed_files(tmp_path, "parse config", WordCounts())
+    ranking = run.embed_files(tmp_path, root, "parse config", WordCounts())
 
-    for kind in ("title", "code"):
+    for kind in ("title", "code", "file"):
         assert [row["path"] for row in ranking[kind]][0] == "src/parse/config.py"
         assert [row["pos"] for row in ranking[kind]] == list(range(1, len(ranking[kind]) + 1))

@@ -63,9 +63,9 @@ DIAGNOSE_DEPTH = 50
 # Diagnosis searches the file graph this many hops for a partner file.
 PARTNER_HOPS = 3
 # The embedding ranking encodes this many texts per call, and reads this
-# many characters of each piece's code.
+# many characters of each piece's code or of each file.
 EMBED_BATCH = 512
-EMBED_CODE_CHARS = 2000
+EMBED_CODE_CHARS = 3000
 _EMBED_MODELS: dict[str, object] = {}
 
 
@@ -336,41 +336,64 @@ def _ranked_files(scores: dict[str, float], paths: dict[str, str], limit: int) -
     ]
 
 
-def embed_files(index_path: Path, query: str, model, limit: int = 30) -> dict:
+def embed_files(index_path: Path, root: Path, query: str, model, limit: int = 30) -> dict:
     """The top ``limit`` files for the query under a static model.
 
-    Each file scores by its best piece, under two texts per piece: a
-    title (path and symbol name) and the code (name and body). Every
-    file also gets a title of its path alone, so a file without
-    symbols still counts. Returns ``{"title": [...], "code": [...]}``,
-    or ``{}`` if the index cannot be read.
+    Each file scores by its best text, under three kinds of text. A
+    title (path and symbol name) per piece, and a title of the path
+    alone per file, so a file without symbols still counts. A code
+    text per piece: its path, name and the lines it spans, read from
+    ``root``. A file text per file: its path and first characters,
+    skipping unreadable and binary files. Returns
+    ``{"title": [...], "code": [...], "file": [...]}``, or ``{}`` if
+    the index cannot be read.
     """
     try:
         con = sqlite3.connect(Path(index_path) / "mimry.sqlite")
         try:
             paths = dict(con.execute("select file_id, rel_path from files").fetchall())
-            rows = con.execute("select file_id, line_start, name, body from pieces_fts").fetchall()
+            rows = con.execute(
+                "select file_id, line_start, line_end, name from pieces_fts"
+            ).fetchall()
         finally:
             con.close()
     except sqlite3.Error:
         return {}
     title_texts = [_words(rel_path) for rel_path in paths.values()]
     title_owners = list(paths)
-    code_texts: list[str] = []
-    code_owners: list[str] = []
-    for file_id, _line_start, name, body in rows:
+    pieces: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
+    for file_id, line_start, line_end, name in rows:
         if file_id not in paths:
             continue
         title_texts.append(_words(f"{paths[file_id]} {name}"))
         title_owners.append(file_id)
-        code_texts.append(f"{name} {body}"[:EMBED_CODE_CHARS])
-        code_owners.append(file_id)
+        pieces[file_id].append((line_start, line_end, name))
+    code_texts: list[str] = []
+    code_owners: list[str] = []
+    file_texts: list[str] = []
+    file_owners: list[str] = []
+    for file_id, rel_path in paths.items():
+        try:
+            data = (Path(root) / rel_path).read_bytes()
+        except OSError:
+            continue
+        text = data.decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        for line_start, line_end, name in pieces.get(file_id, []):
+            body = "\n".join(lines[line_start - 1 : line_end])
+            code_texts.append(f"{rel_path} {name}\n{body}"[:EMBED_CODE_CHARS])
+            code_owners.append(file_id)
+        if b"\0" not in data[:8000]:
+            file_texts.append(f"{rel_path}\n{text[:EMBED_CODE_CHARS]}")
+            file_owners.append(file_id)
     query_vec = _unit(model.encode([query]))[0]
     title = _best_cosines(model, query_vec, title_texts, title_owners)
     code = _best_cosines(model, query_vec, code_texts, code_owners)
+    file = _best_cosines(model, query_vec, file_texts, file_owners)
     return {
         "title": _ranked_files(title, paths, limit),
         "code": _ranked_files(code, paths, limit),
+        "file": _ranked_files(file, paths, limit),
     }
 
 
@@ -378,7 +401,9 @@ def in_process_embed_files(repo: Path, env: dict[str, str], query: str, model) -
     """The embedding ranking for the query, read in this process as
     in_process_piece_files reads its ranking.
     """
-    return _in_repo_index(repo, env, lambda ptr: embed_files(Path(ptr["indexPath"]), query, model))
+    return _in_repo_index(
+        repo, env, lambda ptr: embed_files(Path(ptr["indexPath"]), repo, query, model)
+    )
 
 
 def candidate_dump(rows: list[dict], cli_top: list[str]) -> dict:
