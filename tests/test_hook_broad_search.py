@@ -93,8 +93,8 @@ def test_query_words(pattern, query):
         ("rg foo(bar)", "foo(bar)"),
     ],
 )
-def test_shell_broad_searches_return_pattern(command, pattern):
-    assert shell_search_pattern(command) == pattern
+def test_shell_broad_searches_return_pattern(tmp_path, command, pattern):
+    assert shell_search_pattern(command, tmp_path) == pattern
 
 
 @pytest.mark.parametrize(
@@ -113,18 +113,39 @@ def test_shell_broad_searches_return_pattern(command, pattern):
         "",
     ],
 )
-def test_shell_exact_or_unparsable_commands_are_not_broad(command):
-    assert shell_search_pattern(command) is None
+def test_shell_exact_or_unparsable_commands_are_not_broad(tmp_path, command):
+    assert shell_search_pattern(command, tmp_path) is None
 
 
-def test_broad_search_query_by_tool_name():
-    assert broad_search_query("grep", {"pattern": "auth|session"}, "") == "auth session"
-    assert broad_search_query("grep", {"pattern": "session", "-i": True}, "") == "session"
-    assert broad_search_query("grep", {"pattern": "Foo\\.bar"}, "") is None
-    assert broad_search_query("glob", {"pattern": "src/**"}, "") == "src"
-    assert broad_search_query("glob", {"pattern": "**/session.py"}, "") is None
-    assert broad_search_query("", {}, 'rg "auth|session"') == "auth session"
-    assert broad_search_query("read", {"pattern": "a|b"}, "") is None
+@pytest.mark.parametrize(
+    ("command", "pattern"),
+    [
+        ('rg -n "auth|session" app/one.py', None),
+        ('rg -n "auth|session" app/one.py app/two.py', None),
+        ('rg -n "auth|session" app/one.py app', "auth|session"),
+        ('rg -n "auth|session" app', "auth|session"),
+        ('rg -n "auth|session"', "auth|session"),
+    ],
+)
+def test_shell_search_of_named_files_is_not_a_tree_search(tmp_path, command, pattern):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "one.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "app" / "two.py").write_text("x = 2\n", encoding="utf-8")
+    assert shell_search_pattern(command, tmp_path) == pattern
+    expected = None if pattern is None else "auth session"
+    assert broad_search_query("", {}, command, tmp_path) == expected
+
+
+def test_broad_search_query_by_tool_name(tmp_path):
+    assert broad_search_query("grep", {"pattern": "auth|session"}, "", tmp_path) == "auth session"
+    assert (
+        broad_search_query("grep", {"pattern": "session", "-i": True}, "", tmp_path) == "session"
+    )
+    assert broad_search_query("grep", {"pattern": "Foo\\.bar"}, "", tmp_path) is None
+    assert broad_search_query("glob", {"pattern": "src/**"}, "", tmp_path) == "src"
+    assert broad_search_query("glob", {"pattern": "**/session.py"}, "", tmp_path) is None
+    assert broad_search_query("", {}, 'rg "auth|session"', tmp_path) == "auth session"
+    assert broad_search_query("read", {"pattern": "a|b"}, "", tmp_path) is None
 
 
 @pytest.mark.parametrize(
@@ -136,8 +157,8 @@ def test_broad_search_query_by_tool_name():
         ("**/auth*.py", "auth"),
     ],
 )
-def test_glob_query_leaves_out_file_extensions(pattern, query):
-    assert broad_search_query("glob", {"pattern": pattern}, "") == query
+def test_glob_query_leaves_out_file_extensions(tmp_path, pattern, query):
+    assert broad_search_query("glob", {"pattern": pattern}, "", tmp_path) == query
 
 
 @pytest.mark.parametrize(

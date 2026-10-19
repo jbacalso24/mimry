@@ -318,3 +318,50 @@ def test_phrase_with_a_symbol_name_gets_the_nudge_not_its_symbol(
 
     assert text.startswith("MIMRY can answer this: run `mimry find")
     assert "MIMRY knows" not in text
+
+
+@pytest.mark.parametrize(
+    "command",
+    ['rg -n "ASSIGN|assignment" app/one.py', 'rg -n "def helper|piece_files" app/two.py'],
+)
+def test_search_of_one_named_file_gets_no_nudge(repo, monkeypatch, capsys, command):
+    assert _hook(monkeypatch, capsys, repo, _shell(command)) == ""
+
+
+@pytest.mark.parametrize("command", ['rg -n "alpha|bravo" app', 'rg -n "alpha|bravo"'])
+def test_search_of_a_directory_or_the_tree_still_gets_the_nudge(
+    repo, monkeypatch, capsys, command
+):
+    text = _hook(monkeypatch, capsys, repo, _shell(command))
+
+    assert text.startswith('MIMRY can answer this: run `mimry find "alpha bravo"`')
+
+
+def test_generic_nudge_is_capped_per_session(repo, monkeypatch, capsys):
+    queries = ["alpha|bravo", "charlie|delta", "echo|foxtrot", "golf|hotel", "india|juliet"]
+    texts = [
+        _hook(monkeypatch, capsys, repo, _shell(f'rg -n "{query}" app', session="capped"))
+        for query in queries
+    ]
+
+    assert [bool(text) for text in texts] == [True, True, True, False, False]
+    assert all(text.startswith("MIMRY can answer this") for text in texts if text)
+    fresh = _hook(monkeypatch, capsys, repo, _shell('rg -n "kilo|lima" app', session="fresh"))
+    assert fresh.startswith("MIMRY can answer this")
+
+
+def test_symbol_answer_is_still_given_after_the_nudge_cap(repo, monkeypatch, capsys):
+    for query in ["alpha|bravo", "charlie|delta", "echo|foxtrot", "golf|hotel"]:
+        _hook(monkeypatch, capsys, repo, _shell(f'rg -n "{query}" app', session="capped"))
+
+    text = _hook(monkeypatch, capsys, repo, _grep("leaf", session="capped"))
+
+    assert text.startswith("MIMRY knows leaf: function at app/one.py:5.")
+
+
+def test_unreadable_nudge_count_still_nudges(repo, monkeypatch, capsys):
+    (repo / ".mimry" / "hook-nudges").mkdir()
+
+    text = _hook(monkeypatch, capsys, repo, _shell('rg -n "alpha|bravo" app', session="s9"))
+
+    assert text.startswith("MIMRY can answer this")

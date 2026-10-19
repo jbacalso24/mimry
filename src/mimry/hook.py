@@ -4,7 +4,8 @@ Claude Code runs this before matched tool calls. When an agent starts a
 broad search (a regex or case-insensitive grep, rg, ag, ack or git grep
 over the tree, a Grep call with a regex, or a Glob with a ``**``), it
 names the ``mimry find`` command to run instead. Exact-string searches
-stay quiet. The reminder is printed once per session and query.
+stay quiet, and so does a shell search of one named file. The reminder
+is printed once per session and query, at most three times per session.
 
 When a search over the tree names a symbol the index knows, the hook
 answers with its definition and top callers instead, read from the
@@ -73,6 +74,8 @@ DECLARATION_WORDS = frozenset(
         "async export public private static return import from self this"
     ).split()
 )
+# Generic reminders shown per session; symbol answers are not capped.
+NUDGE_LIMIT = 3
 SYMBOL_LIMIT = 3
 DEFINITION_LIMIT = 3
 CALLER_LIMIT = 5
@@ -249,17 +252,18 @@ def _shell_searches(command: str) -> list[_Search]:
     return [search for search in found if search is not None]
 
 
-def shell_search_pattern(command: str) -> str | None:
-    """Pattern of the first broad search in a shell ``command``.
+def shell_search_pattern(command: str, root: Path) -> str | None:
+    """Pattern of the first broad search of the tree in a shell command.
 
-    Returns None when no segment is a broad search, or when the command
-    does not parse.
+    A search of one named file is skipped. Returns None when there is
+    none, or when the command does not parse.
     """
     for search in _shell_searches(command):
         if (
             search.recursive
             and search.pattern is not None
             and (search.ignore_case or regex_is_broad(search.pattern))
+            and not _is_one_file(search.paths, root)
         ):
             return search.pattern
     return None
@@ -281,11 +285,12 @@ def shell_tree_patterns(command: str, root: Path) -> list[str]:
     ]
 
 
-def broad_search_query(tool_name: str, tool_input: dict, command: str) -> str | None:
+def broad_search_query(tool_name: str, tool_input: dict, command: str, root: Path) -> str | None:
     """The ``mimry find`` query for a broad search, else None.
 
     ``tool_name`` is lower case. Grep and Glob are identified by name;
-    every other tool is checked by its ``command`` text.
+    every other tool is checked by its ``command`` text, and ``root`` is
+    the repository the searched paths are checked against.
     """
     if tool_name == "grep":
         pattern = str(tool_input.get("pattern") or "")
@@ -299,7 +304,7 @@ def broad_search_query(tool_name: str, tool_input: dict, command: str) -> str | 
         # File extensions say what kind of file, not what it is about:
         # "**/*.py" has no words left, so it gets no nudge at all.
         return query_for(re.sub(r"\.[A-Za-z0-9]+(?=/|$)", "", pattern))
-    pattern = shell_search_pattern(command)
+    pattern = shell_search_pattern(command, root)
     return None if pattern is None else query_for(pattern)
 
 
@@ -448,6 +453,37 @@ def _first_for_query(mimry_dir: Path, session: str, query: str) -> bool:
     if key in seen:
         return False
     seen_file.write_text("\n".join([*seen, key][-50:]) + "\n", encoding="utf-8")
+    return True
+
+
+def _nudge_allowed(mimry_dir: Path, session: str) -> bool:
+    """Count one reminder for ``session``; say whether it may show.
+
+    Counts live in ``hook-nudges`` as ``session<TAB>count`` lines, the
+    last 50 sessions kept. A file that cannot be read or written never
+    blocks the reminder.
+    """
+    count_file = mimry_dir / "hook-nudges"
+    try:
+        lines = count_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    counts: dict[str, int] = {}
+    for line in lines:
+        name, _, value = line.partition("\t")
+        if value.isdigit():
+            counts[name] = int(value)
+    shown = counts.pop(session, 0)
+    if shown >= NUDGE_LIMIT:
+        return False
+    counts[session] = shown + 1
+    try:
+        count_file.write_text(
+            "".join(f"{name}\t{value}\n" for name, value in list(counts.items())[-50:]),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
     return True
 
 
@@ -675,10 +711,12 @@ def _hook_check(root: Path) -> None:
         return
     answer = _symbol_answer(root, session, tool_name, tool_input, command)
     if answer is None:
-        query = broad_search_query(tool_name, tool_input, command)
+        query = broad_search_query(tool_name, tool_input, command, root)
         if query is None:
             return
         if session and not _first_for_query(mimry_dir, session, query):
+            return
+        if session and not _nudge_allowed(mimry_dir, session):
             return
         answer = nudge(query)
     print(
