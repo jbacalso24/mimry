@@ -36,6 +36,7 @@ import os
 import posixpath
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -60,6 +61,10 @@ SCORE_LINE = re.compile(r"^      (score -?\d+: .*)$")
 DIAGNOSE_DEPTH = 50
 # Diagnosis searches the file graph this many hops for a partner file.
 PARTNER_HOPS = 3
+# Diagnosis keeps at most this many graph neighbours per top file, and
+# this many co-change partners per file.
+GRAPH_KEEP = 40
+COCHANGE_KEEP = 30
 
 
 def score(ranked: list[str], gold: list[str]) -> dict:
@@ -161,17 +166,15 @@ def parse_find_explained(output: str, depth: int = TOP) -> list[tuple[str, str |
     return results[:depth]
 
 
-def partner_links(
-    graph: dict, gold: list[str], top: list[str], rank: dict[str, int | None]
-) -> dict:
-    """How each gold file outside the top 10 links to the top 10.
+def file_neighbours(
+    graph: dict,
+) -> tuple[dict[str, set[str]], dict[tuple[str, str], set[str]]]:
+    """Undirected file neighbours and the relations between files.
 
     `graph` is MIMRY's graph (nodes and links or edges). Edges are taken
-    between files, pairs within one file are dropped, and hops are
-    undirected and searched at most PARTNER_HOPS deep.
+    between files, and pairs within one file are dropped. relations maps
+    (source, target) to the relation names of the edges between them.
     """
-    top_set = set(top)
-    found = {path for path in gold if path in top_set}
     file_of = {
         str(node["id"]): node_source_file(node)
         for node in graph.get("nodes") or []
@@ -191,6 +194,19 @@ def partner_links(
         relations[(source, target)].add(edge.get("relation") or edge.get("type") or "relates")
         neighbours[source].add(target)
         neighbours[target].add(source)
+    return neighbours, relations
+
+
+def partner_links(
+    graph: dict, gold: list[str], top: list[str], rank: dict[str, int | None]
+) -> dict:
+    """How each gold file outside the top 10 links to the top 10.
+
+    Hops are undirected and searched at most PARTNER_HOPS deep.
+    """
+    top_set = set(top)
+    found = {path for path in gold if path in top_set}
+    neighbours, relations = file_neighbours(graph)
 
     def nearest(start: str, targets: set[str]) -> int | None:
         seen = {start}
@@ -272,6 +288,73 @@ def in_process_piece_files(repo: Path, env: dict[str, str], query: str) -> list[
     process the same way as in_process_rows.
     """
     return _in_repo_index(repo, env, lambda ptr: piece_files(Path(ptr["indexPath"]), query))
+
+
+def cochange_counts(index_path: Path, paths: list[str], max_files: int = 20) -> dict[str, dict]:
+    """How often each path changed in the same commit as other files.
+
+    A commit counts only when it touches at most max_files files in
+    total, so a large rename or merge does not link everything to
+    everything. "with" keeps the COCHANGE_KEEP other files that share
+    the most commits. An index without history tables gives {}.
+    """
+    sql = (
+        "with small as ("
+        " select commit_id from commit_files where commit_id in"
+        " (select commit_id from commit_files where path = :path)"
+        " group by commit_id having count(*) <= :max_files)"
+        " select (select count(*) from small), other.path,"
+        " count(distinct other.commit_id)"
+        " from small left join commit_files other"
+        " on other.commit_id = small.commit_id and other.path != :path"
+        " group by other.path"
+    )
+    counts = {}
+    try:
+        con = sqlite3.connect(
+            Path(index_path).resolve().joinpath("mimry.sqlite").as_uri() + "?mode=ro", uri=True
+        )
+        try:
+            for path in paths:
+                rows = con.execute(sql, {"path": path, "max_files": max_files}).fetchall()
+                shared = {other: n for _, other, n in rows if other is not None}
+                kept = sorted(shared.items(), key=lambda item: (-item[1], item[0]))
+                counts[path] = {
+                    "commits": rows[0][0] if rows else 0,
+                    "with": dict(kept[:COCHANGE_KEEP]),
+                }
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
+    return counts
+
+
+def in_process_neighbours(
+    repo: Path, env: dict[str, str], graph: dict, top: list[str]
+) -> dict[str, dict]:
+    """The graph and co-change neighbours of each top file, read in this
+    process the same way as in_process_rows.
+    """
+    cochange = _in_repo_index(repo, env, lambda ptr: cochange_counts(Path(ptr["indexPath"]), top))
+    neighbours, relations = file_neighbours(graph)
+    out = {}
+    for path in top:
+        linked = []
+        for other in sorted(neighbours.get(path, set())):
+            forward = relations.get((path, other), set())
+            back = relations.get((other, path), set())
+            direction = "both" if forward and back else "out" if forward else "in"
+            linked.append(
+                {"file": other, "relations": sorted(forward | back), "direction": direction}
+            )
+        kept = sorted(linked, key=lambda item: (-len(item["relations"]), item["file"]))
+        out[path] = {
+            "graph": sorted(kept[:GRAPH_KEEP], key=lambda item: item["file"]),
+            "graph_degree": len(linked),
+            "cochange": cochange.get(path, {}),
+        }
+    return out
 
 
 def candidate_dump(rows: list[dict], cli_top: list[str]) -> dict:
@@ -389,8 +472,12 @@ def run_instance(
         # lookup is timed.
         graph = load_graph(repo) if diagnose else None
         if diagnose:
-            candidates = candidate_dump(in_process_rows(repo, env, query), ranked) | {
-                "piece_files": in_process_piece_files(repo, env, query)
+            rows = in_process_rows(repo, env, query)
+            candidates = candidate_dump(rows, ranked) | {
+                "piece_files": in_process_piece_files(repo, env, query),
+                "neighbours": in_process_neighbours(
+                    repo, env, graph or {}, [row["path"] for row in rows[:TOP]]
+                ),
             }
     except (RuntimeError, OSError) as exc:
         return row | {"status": "error", "error": f"{stage} failed: {exc}"}

@@ -6,6 +6,7 @@ network: the dataset is never fetched here.
 
 import importlib.util
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -326,3 +327,37 @@ def test_partner_edges_inside_one_file_ignored():
     assert m5["direct"] == []
     assert m5["hops_to_found_gold"] is None
     assert m5["hops_to_top10"] is None
+
+
+# History tables, copied from HISTORY_SCHEMA in src/mimry/history.py.
+HISTORY_DDL = """
+create table if not exists commits(
+    id integer primary key, sha text not null unique, date text not null,
+    subject text not null, body text not null);
+create table if not exists commit_files(
+    commit_id integer not null, status text not null, path text not null, old_path text);
+"""
+
+
+def test_cochange_counts_skip_commits_touching_many_files(tmp_path):
+    commits = {
+        1: ["a.py", "b.py"],
+        2: ["a.py", "b.py"],
+        3: ["a.py", "c.py"],
+        4: ["a.py"] + [f"big/{n}.py" for n in range(24)],
+    }
+    con = sqlite3.connect(tmp_path / "mimry.sqlite")
+    con.executescript(HISTORY_DDL)
+    for commit_id, files in commits.items():
+        con.execute(
+            "insert into commits(id, sha, date, subject, body) values (?, ?, '', '', '')",
+            (commit_id, f"sha{commit_id}"),
+        )
+        con.executemany(
+            "insert into commit_files(commit_id, status, path, old_path) values (?, 'M', ?, null)",
+            [(commit_id, path) for path in files],
+        )
+    con.commit()
+    con.close()
+    counts = run.cochange_counts(tmp_path, ["a.py"])
+    assert counts["a.py"] == {"commits": 3, "with": {"b.py": 2, "c.py": 1}}
