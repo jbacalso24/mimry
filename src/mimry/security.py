@@ -108,6 +108,10 @@ SENSITIVE_LABEL_TOKENS = {
     "secrets",
     "token",
 }
+# A comparison is judged by its right-hand side, not as an assignment.
+COMPARISON_OPERATORS = frozenset({"==", "==="})
+# Shortest literal a comparison may hold and still be a credential.
+COMPARED_SECRET_MIN_CHARS = 8
 # Assignment boundaries are deliberately structural rather than
 # line-only. This catches object/JSON/code members after ``{``, `(`, `,`
 # or `;` without treating a credential word embedded in ordinary prose
@@ -125,7 +129,9 @@ ASSIGNMENT_RE = re.compile(
     r"(?ims)(?P<boundary>^|(?<=[{(,;])|(?P<spaced>(?<=[ \t])(?![ \t])))"
     r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
-    r"[ \t]*(?P<operator>(?(spaced)=|[=:]))[ \t]*"
+    # A comparison is an operator of its own, so the first ``=`` of
+    # ``==`` never reads as an assignment (#473).
+    r"[ \t]*(?P<operator>===|==|(?(spaced)=|[=:]))[ \t]*"
     # A value may start on the next line when that line is an indented
     # scalar (``password:\n  hunter2``); a nested ``key: value`` is its
     # own assignment.
@@ -167,7 +173,7 @@ SENSITIVE_VALUE_RE = re.compile(
 SPACED_SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)(?P<label>\b(?:api[ \t_-]+key|client[ \t_-]+secret|private[ \t_-]+key|"
     r"access[ \t_-]+token|auth(?:entication|orization)?[ \t_-]+token|"
-    r"service[ \t_-]+credentials?))(?P<separator>[ \t]*[:=][ \t]*)"
+    r"service[ \t_-]+credentials?))(?P<separator>[ \t]*(?:===|==|[:=])[ \t]*)"
     # A bracketed value is captured whole, so ``<your key here>`` is
     # judged as one placeholder, not as its first word.
     r"(?P<value>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|"
@@ -518,7 +524,8 @@ def _value_is_credential(
             text, start, scanner
         )
     if candidate[0] == "=":
-        # ``:=`` binds and ``==`` compares: judge the right-hand side.
+        # ``:=`` binds: judge the right-hand side. A comparison's value
+        # never starts with ``=``; see _comparison_is_credential.
         rhs = start
         while text.startswith(("=", " ", "\t"), rhs):
             rhs += 1
@@ -1031,6 +1038,8 @@ def _spaced_assignment_value_is_sensitive(
     # A label with a space in it (``api key: ...``) only occurs in
     # comments and prose.
     code = code and not any(char.isspace() for char in label)
+    if match.group("separator").strip(" \t") in COMPARISON_OPERATORS:
+        return _comparison_is_credential(match.string, match.start("value"), code=code)
     return _value_is_credential(
         match.string,
         match.start("value"),
@@ -1110,12 +1119,34 @@ def _redact_spaced_assignment(match: re.Match[str], scanner: _Scanner) -> str | 
     return f"{match.group('label')}{match.group('separator')}{quote}{REDACTED}{quote}"
 
 
+def _comparison_is_credential(text: str, start: int, *, code: bool) -> bool:
+    """Whether a comparison's right-hand side, at ``text[start:]``, is a
+    string literal that may be a credential.
+
+    The literal must be long enough, hold a letter or digit, and pass
+    the literal judge, so placeholders stay exempt. A typeof result is
+    a type name, not a value.
+    """
+    literal = _STRING_LITERAL_RE.match(text, start)
+    if literal is None:
+        return False
+    content = _literal_text(literal)
+    return (
+        len(content) >= COMPARED_SECRET_MIN_CHARS
+        and any(char.isalnum() for char in content)
+        and not _in_typeof_comparison(text, literal)
+        and _string_literal_is_credential(literal, code=code)
+    )
+
+
 def _assignment_match_is_sensitive(
     match: re.Match[str], *, code: bool = False, scanner: _Scanner
 ) -> bool:
     label = match.group("label")
     if not _is_sensitive_label(label, match.group("value")):
         return False
+    if match.group("operator") in COMPARISON_OPERATORS:
+        return _comparison_is_credential(match.string, match.start("value"), code=code)
     if code and not match.group("label_quote") and match.group("value").startswith(">"):
         # ``token => token.value``: a bare name before ``=>`` is an
         # arrow function's parameter. Only a literal it returns, as in

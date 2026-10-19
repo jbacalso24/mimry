@@ -1370,6 +1370,54 @@ def test_credential_word_inside_another_identifier_keeps_its_verdict():
     assert redact_sensitive_text(line) == line
 
 
+# A comparison with ``==`` is not an assignment: the first ``=`` of
+# ``==`` must not read as the operator (#473).
+def test_double_equals_comparison_is_not_a_secret_assignment():
+    line = "if token == ', ':\n    pass\n"
+    assert not has_sensitive_content(Path("x.py"), data=line.encode("utf-8"))
+    assert redact_sensitive_text("if token == ', ':\n") == "if token == ', ':\n"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "if token == ', ':\n    pass\n",
+        'if password == "x":\n    pass\n',
+        "if secret === 'abc':\n    pass\n",
+        "if api_key == value:\n    pass\n",
+        "if api key == value:\n    pass\n",
+        "if token != 'abc':\n    pass\n",
+        "if password >= 3:\n    pass\n",
+    ],
+)
+def test_comparisons_are_not_secret_assignments(line: str):
+    assert not has_sensitive_content(Path("x.py"), data=line.encode("utf-8"))
+    assert redact_sensitive_text(line) == line
+
+
+def test_comparison_in_code_is_indexed_unchanged(tmp_path: Path):
+    from mimry.scanner import indexable_bytes
+
+    path = tmp_path / "split.py"
+    data = b"def split(token):\n    if token == ', ':\n        return 1\n"
+    path.write_bytes(data)
+    assert indexable_bytes(path, data) == data
+
+
+def test_redacted_literal_credentials_still_parse_as_python():
+    import ast
+
+    parsed = 0
+    for line in LITERAL_CREDENTIALS_IN_CODE:
+        try:
+            ast.parse(line)
+        except SyntaxError:
+            continue  # not Python, so nothing to keep parseable
+        parsed += 1
+        ast.parse(redact_sensitive_text(line))
+    assert parsed >= 5
+
+
 def test_credential_written_mid_sentence_never_reaches_the_context_pack(
     tmp_path: Path, monkeypatch
 ):
