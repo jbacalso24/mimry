@@ -286,10 +286,10 @@ def _piece_parts(idx, q, path_by_id) -> dict[str, dict]:
     """
     if not q:
         return {}
+    # A file outside the pieces list has only the kw_* keys.
+    keys = ("piece_pos", "piece_best", "piece_sum", "piece_hits", "kw_pos", "kw_score")
     return {
-        path_by_id[entry["file_id"]]: {
-            key: entry[key] for key in ("piece_pos", "piece_best", "piece_sum", "piece_hits")
-        }
+        path_by_id[entry["file_id"]]: {key: entry[key] for key in keys if key in entry}
         for entry in piece_file_ranking(idx, q)
         if entry["file_id"] in path_by_id
     }

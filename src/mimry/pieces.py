@@ -12,13 +12,14 @@ slightly more.
 
 from __future__ import annotations
 
+import math
 import re
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 
 from .core.documents import DOCUMENT_UNITS, DocumentPart
-from .intent import query_terms
+from .intent import is_doc_or_plan, is_test_file, query_terms
 from .scanner import body_terms
 from .security import redact_sensitive_text
 
@@ -41,13 +42,27 @@ ATTACHED_LINES = 15
 # decorator or attribute. Any other line is code, such as the
 # signature of the function above, and must not join the piece.
 ATTACHED_LINE = re.compile(r"(?:#|//|/\*|\*(?:\s|/|$)|@|--|\[[A-Z])")
-# Matching pieces read for the repository-wide file ranking, and the
-# most query terms they are matched on.
+# Matching pieces read for the repository-wide file ranking.
 PIECE_LIMIT = 200
-PIECE_TERMS = 64
 # A file's later pieces add to its score, each half the weight of the
 # one before, over this many of them.
 PIECE_TAIL = 8
+# The keyword ranking keeps this many of the query's terms, and weighs a
+# term that the query writes as code this much more than a plain word.
+KW_TERMS = 48
+IDENTIFIER_WEIGHT = 2.0
+# Reciprocal rank fusion: a file scores weight / (KW_RRF_K + rank) in
+# each list it is in, and a whole-file match counts double.
+KW_RRF_K = 20
+WHOLE_FILE_LIMIT = 100
+# A code name that more symbols than this share names no file.
+SYMBOL_NAME_SHARE = 4
+# Path factors: tests, docs and examples rank down, __init__.py less.
+TEST_FACTOR = 0.3
+DOC_FACTOR = 0.3
+INIT_FACTOR = 0.5
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_BACKTICK_RE = re.compile(r"`([^`]*)`")
 
 
 def file_pieces(data: bytes, symbols: list[dict]) -> list[list]:
@@ -127,46 +142,201 @@ def piece_matches(
     return by_file
 
 
-def piece_file_ranking(idx: Path, q: str, limit: int = PIECE_LIMIT) -> list[dict]:
-    """Files of the whole repository by their best-matching pieces, in
-    the order each file first appears among the top ``limit`` pieces.
-
-    A file's score is its best piece's BM25 score; its ``piece_sum``
-    adds half of a decaying sum of its next pieces. Recorded as ranking
-    parts only, so it does not reorder results.
+def code_identifiers(q: str) -> list[str]:
+    """Names the query writes as code, as written: those in backticks,
+    and words with an inner underscore or a lowercase letter then an
+    uppercase one.
     """
-    terms = list(dict.fromkeys(query_terms(q)))[:PIECE_TERMS]
-    match = " OR ".join(f'"{term}"*' for term in terms if term)
-    if not match:
+    names = []
+    for span in _BACKTICK_RE.findall(q):
+        names.extend(_IDENTIFIER_RE.findall(span))
+    for word in _IDENTIFIER_RE.findall(q):
+        if "_" in word.strip("_") or re.search(r"[a-z][A-Z]", word):
+            names.append(word)
+    return list(dict.fromkeys(names))
+
+
+def _identifier_terms(names: list[str]) -> set[str]:
+    """The lowercase sub-tokens of code names, split as file text is
+    (underscores and camelCase).
+    """
+    return {term for name in names for term in body_terms(name.encode("utf-8")).split()}
+
+
+def _exact_match(terms: list[str]) -> str:
+    return " OR ".join(f'"{term}"' for term in terms if term)
+
+
+def _kept_terms(con, terms: list[str], identifier_terms: set[str]) -> list[str]:
+    """The query terms with the most weight times rarity over the
+    pieces, at most ``KW_TERMS``. A term no piece has is dropped, and
+    ties keep the query's order.
+    """
+    con.execute(
+        "create virtual table if not exists temp.mimry_pieces_vocab "
+        "using fts5vocab(main, pieces_fts, 'row')"
+    )
+    marks = ", ".join("?" for _ in terms)
+    doc_counts = dict(
+        con.execute(
+            f"select term, doc from temp.mimry_pieces_vocab where term in ({marks})", terms
+        ).fetchall()
+    )
+    total = con.execute("select count(*) from pieces_fts").fetchone()[0]
+    weighted = []
+    for term in terms:
+        df = doc_counts.get(term, 0)
+        if not df:
+            continue
+        idf = math.log(1 + (total - df + 0.5) / (df + 0.5))
+        weight = IDENTIFIER_WEIGHT if term in identifier_terms else 1.0
+        weighted.append((weight * idf, term))
+    weighted.sort(key=lambda item: -item[0])
+    return [term for _weight, term in weighted[:KW_TERMS]]
+
+
+def _piece_scores(con, match: str, limit: int) -> dict[str, list[float]]:
+    """Each file's piece scores, best first, from the top ``limit``
+    pieces by BM25 (higher is better). Files keep their first
+    appearance order.
+    """
+    rows = con.execute(
+        "select file_id, line_start, bm25(pieces_fts, 0.0, 0.0, 0.0, 1.4, 1.0) as rank "
+        "from pieces_fts where pieces_fts match ? "
+        "order by rank, file_id, line_start limit ?",
+        (match, limit),
+    ).fetchall()
+    by_file: dict[str, list[float]] = {}
+    for file_id, _start, rank in rows:
+        by_file.setdefault(file_id, []).append(-rank)
+    return by_file
+
+
+def _exact_symbol_files(con, identifiers: list[str]) -> list[str]:
+    """Files defining a symbol named exactly by a code name in the
+    query, the rarest name first. A name that more than
+    ``SYMBOL_NAME_SHARE`` symbols share names no file.
+    """
+    names = list(dict.fromkeys(name.lower() for name in identifiers))
+    if not names:
         return []
+    marks = ", ".join("?" for _ in names)
+    shares = dict(
+        con.execute(
+            f"select lower(name), count(*) from symbols where lower(name) in ({marks}) "
+            "group by lower(name)",
+            names,
+        ).fetchall()
+    )
+    names = [name for name in names if 0 < shares.get(name, 0) <= SYMBOL_NAME_SHARE]
+    if not names:
+        return []
+    marks = ", ".join("?" for _ in names)
+    rows = con.execute(
+        f"select file_id, lower(name) from symbols where lower(name) in ({marks})", names
+    ).fetchall()
+    rows.sort(key=lambda row: (shares[row[1]], row[0]))
+    return list(dict.fromkeys(file_id for file_id, _name in rows))
+
+
+def _path_factor(rel_path: str) -> float:
+    """Tests, docs and examples rank down, and package __init__ files
+    less. Where several apply, the strongest one counts.
+    """
+    factors = [1.0]
+    if is_test_file(rel_path):
+        factors.append(TEST_FACTOR)
+    if is_doc_or_plan(rel_path) or {"example", "examples"} & set(rel_path.lower().split("/")):
+        factors.append(DOC_FACTOR)
+    if rel_path.rsplit("/", 1)[-1] == "__init__.py":
+        factors.append(INIT_FACTOR)
+    return min(factors)
+
+
+def piece_file_ranking(idx: Path, q: str, limit: int = PIECE_LIMIT) -> list[dict]:
+    """Files of the whole repository, fused from four ranked lists: the
+    query's kept terms over pieces, its identifier terms over pieces,
+    whole files, and files defining a symbol the query names exactly.
+
+    Each list ranks files by reciprocal rank fusion, the path factor
+    scales the sum, and the top ``limit`` files come in fused order with
+    ``kw_pos`` and ``kw_score``. A file in the pieces list also keeps
+    ``piece_pos``, ``piece_best``, ``piece_sum`` and ``piece_hits``, its
+    best piece's BM25 score and a decaying sum of its next pieces.
+    Recorded as ranking parts only, so it does not reorder results.
+    """
+    terms = list(dict.fromkeys(query_terms(q)))
+    identifiers = code_identifiers(q)
     try:
         con = sqlite3.connect(Path(idx) / "mimry.sqlite")
         try:
-            rows = con.execute(
-                "select file_id, line_start, bm25(pieces_fts, 0.0, 0.0, 0.0, 1.4, 1.0) as rank "
-                "from pieces_fts where pieces_fts match ? "
-                "order by rank, file_id, line_start limit ?",
-                (match, limit),
-            ).fetchall()
+            return _fused_ranking(con, terms, identifiers, limit)
         finally:
             con.close()
     except sqlite3.Error:
         return []
-    by_file: dict[str, list[float]] = {}
-    for file_id, _start, rank in rows:
-        by_file.setdefault(file_id, []).append(-rank)
+
+
+def _fused_ranking(con, terms: list[str], identifiers: list[str], limit: int) -> list[dict]:
+    identifier_terms = _identifier_terms(identifiers)
+    kept = _kept_terms(con, terms, identifier_terms) if terms else []
+    if not kept:
+        return []
+    by_piece = _piece_scores(con, _exact_match(kept), limit)
+    kept_identifiers = [term for term in kept if term in identifier_terms]
+    by_identifier = (
+        list(_piece_scores(con, _exact_match(kept_identifiers), limit)) if kept_identifiers else []
+    )
+    whole_files = [
+        file_id
+        for file_id, _rank in con.execute(
+            "select file_id, bm25(files_fts, 0.0, 1.0, 1.4, 0.4, 0.8, 0.8, 0.8) as rank "
+            "from files_fts where files_fts match ? "
+            "order by rank, rel_path, file_id limit ?",
+            (_exact_match(kept), WHOLE_FILE_LIMIT),
+        ).fetchall()
+    ]
+    symbol_files = _exact_symbol_files(con, identifiers)
+
+    fused: dict[str, float] = {}
+    lists = ((list(by_piece), 1.0), (by_identifier, 1.0), (whole_files, 2.0), (symbol_files, 1.0))
+    for ranked, weight in lists:
+        for position, file_id in enumerate(ranked, start=1):
+            fused[file_id] = fused.get(file_id, 0.0) + weight / (KW_RRF_K + position)
+    marks = ", ".join("?" for _ in fused)
+    paths = dict(
+        con.execute(
+            f"select file_id, rel_path from files where file_id in ({marks})", list(fused)
+        ).fetchall()
+    )
+    scored = sorted(
+        (
+            (
+                round(score * _path_factor(paths[file_id]) if file_id in paths else score, 6),
+                file_id,
+            )
+            for file_id, score in fused.items()
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )[:limit]
+
+    piece_position = {file_id: position for position, file_id in enumerate(by_piece, start=1)}
     ranking = []
-    for position, (file_id, scores) in enumerate(by_file.items(), start=1):
-        tail = sum(s * 0.5 ** (i + 1) for i, s in enumerate(scores[1 : PIECE_TAIL + 1]))
-        ranking.append(
-            {
-                "file_id": file_id,
-                "piece_pos": position,
-                "piece_best": round(scores[0], 4),
-                "piece_sum": round(scores[0] + 0.5 * tail, 4),
-                "piece_hits": len(scores),
-            }
-        )
+    for kw_pos, (kw_score, file_id) in enumerate(scored, start=1):
+        entry: dict = {"file_id": file_id}
+        if file_id in by_piece:
+            scores = by_piece[file_id]
+            tail = sum(s * 0.5 ** (i + 1) for i, s in enumerate(scores[1 : PIECE_TAIL + 1]))
+            entry.update(
+                {
+                    "piece_pos": piece_position[file_id],
+                    "piece_best": round(scores[0], 4),
+                    "piece_sum": round(scores[0] + 0.5 * tail, 4),
+                    "piece_hits": len(scores),
+                }
+            )
+        entry.update({"kw_pos": kw_pos, "kw_score": kw_score})
+        ranking.append(entry)
     return ranking
 
 

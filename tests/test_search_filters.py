@@ -418,6 +418,37 @@ def test_piece_ranking_puts_the_matching_function_before_a_passing_mention(tmp_p
     ]
 
 
+def test_keyword_ranking_puts_the_rare_identifier_before_common_words(tmp_path, monkeypatch):
+    budget = "def compute_retry_budget(attempts):\n    return min(attempts, 3)\n"
+    common = (
+        "# the function returns the value when the limit is not reached\n"
+        "def check(value):\n    return value\n"
+    )
+    _repo, ptr = _indexed(
+        tmp_path,
+        monkeypatch,
+        {"src/budget.py": budget, "src/common.py": common},
+    )
+    idx = Path(ptr["indexPath"])
+    query = "the function returns the value past the limit, compute_retry_budget is wrong"
+
+    ranking = piece_file_ranking(idx, query)
+    assert [entry["kw_pos"] for entry in ranking] == list(range(1, len(ranking) + 1))
+    assert [entry["path"] for entry in piece_files(idx, query)][0] == "src/budget.py"
+
+
+def test_keyword_ranking_puts_a_test_file_below_an_equal_source_file(tmp_path, monkeypatch):
+    body = "def load_budget(path):\n    return read_budget(path)\n"
+    _repo, ptr = _indexed(
+        tmp_path,
+        monkeypatch,
+        {"src/budget.py": body, "tests/test_budget.py": body},
+    )
+    idx = Path(ptr["indexPath"])
+    paths = [entry["path"] for entry in piece_files(idx, "load_budget reads the budget")]
+    assert paths.index("src/budget.py") < paths.index("tests/test_budget.py")
+
+
 def test_find_rows_records_piece_parts_without_changing_order(tmp_path, monkeypatch):
     repo, ptr = _indexed(tmp_path, monkeypatch)
     idx = Path(ptr["indexPath"])
