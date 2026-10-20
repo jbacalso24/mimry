@@ -53,6 +53,7 @@ from .security import (
     _has_heavy_ignore,
     contains_sensitive_data,
     has_sensitive_content,
+    in_mimry_install_folder,
     is_code_path,
     is_sensitive,
     is_text,
@@ -591,8 +592,9 @@ def scan_stats(
     ignored_files, ignored_dirs = git_ignored(root_str)
     # Prune ignored directories instead of walking and then filtering
     # them: .git, .venv and node_modules routinely hold 95%+ of the
-    # paths on disk. Only heavy-ignore names prune: every other path
-    # policy applies per file, exactly as when each file was checked
+    # paths on disk. Only heavy-ignore names and MIMRY's install folders
+    # prune: every other path policy applies per file, exactly as when
+    # each file was checked
     # against its full relative path. followlinks=False matches rglob,
     # which never descended into symlinked dirs.
     for dirpath, dirnames, filenames in os.walk(root_str, followlinks=False):
@@ -603,10 +605,14 @@ def scan_stats(
             continue
         rel_dir = dirpath[len(root_str) :].lstrip(os.sep).replace(os.sep, "/")
         prefix = f"{rel_dir}/" if rel_dir else ""
+        # MIMRY's own skill folders are written by `mimry install`, not
+        # repo content, so they prune with the other generated folders.
         dirnames[:] = [
             name
             for name in dirnames
-            if not _has_heavy_ignore((name,)) and f"{prefix}{name}/" not in ignored_dirs
+            if not _has_heavy_ignore((name,))
+            and f"{prefix}{name}/" not in ignored_dirs
+            and not in_mimry_install_folder(f"{prefix}{name}")
         ]
         for name in filenames:
             path = Path(dirpath, name)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import codecs
 import fnmatch
+import functools
 import os
 import re
 from pathlib import Path
@@ -1805,11 +1806,36 @@ def should_ignore(path, root):
     return should_ignore_path(path, root) or has_sensitive_content(path)
 
 
+@functools.cache
+def _install_folder_marks() -> tuple[str, ...]:
+    """The project skill folders as casefolded ``/folder/`` marks."""
+    # Imported here: the installer is a large module and only the
+    # path policy needs its table.
+    from .installer import project_skill_folders
+
+    return tuple(f"/{folder.casefold()}/" for folder in sorted(project_skill_folders()))
+
+
+def in_mimry_install_folder(path: str) -> bool:
+    """True for a folder a MIMRY install writes its skill into, or a
+    path inside one, such as ``.claude/skills/mimry/SKILL.md``.
+
+    The install keeps its ``.mimry_version`` and ``.mimry_state.json``
+    beside the skill, so they go with the folder. A user's other skills
+    and ``.claude/settings.json`` are outside these folders.
+    """
+
+    padded = f"/{path.strip('/').casefold()}/"
+    return any(mark in padded for mark in _install_folder_marks())
+
+
 def path_has_ignored_part(path: str | Path) -> bool:
     """Classify artifact/index paths without opening their source."""
 
     normalized = str(path).replace("\\", "/")
-    return _has_heavy_ignore(part for part in normalized.split("/") if part not in {"", "."})
+    return _has_heavy_ignore(
+        part for part in normalized.split("/") if part not in {"", "."}
+    ) or in_mimry_install_folder(normalized)
 
 
 def text_mentions_ignored_path(text: str) -> bool:

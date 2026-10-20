@@ -7,7 +7,7 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 ### Upgrade notes
 
 - Upgrade with `mimry upgrade`.
-  The first command after upgrading reparses every indexed file, and the upgrade then refreshes the installed skills and hooks.
+  The first query after upgrading (`find`, `preflight` and the like) reparses every indexed file, and the upgrade then refreshes the installed skills and hooks.
 - `mimry install --refresh` rewrites the installed skills, and adds the new hook entries to a project that already has MIMRY's hooks.
   In Claude Code those are an outline for a large file that the agent reads whole, and a restore of the working set after a context compaction.
 - Embeddings are optional and off until you install them: `uv tool install "mimry[embed]"`, then `mimry embed download`, which fetches a 64 MB model once.

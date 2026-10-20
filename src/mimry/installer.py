@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import os
 import re
@@ -619,6 +620,19 @@ def platforms() -> dict[str, MimryPlatform]:
             global_path=home / ".grok" / "skills" / "mimry" / "SKILL.md",
         ),
     }
+
+
+@functools.cache
+def project_skill_folders() -> frozenset[str]:
+    """Every folder a project-scope install writes a skill into.
+
+    POSIX paths relative to the project root, such as
+    ``.claude/skills/mimry``. Read from the platform table, so the
+    folders the scanner leaves out cannot drift from the folders the
+    installer writes. Project paths do not depend on the home folder,
+    so the result is safe to cache.
+    """
+    return frozenset(cfg.project_path.parent.as_posix() for cfg in platforms().values())
 
 
 def platform_keys() -> str:
