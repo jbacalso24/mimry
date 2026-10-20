@@ -133,26 +133,30 @@ ASSIGNMENT_RE = re.compile(
     # A spaced boundary is only the last blank before the label: any
     # earlier blank of the run would rescan the rest of it, which made
     # long runs of spaces quadratic.
-    r"(?ims)(?P<boundary>^|(?<=[{(,;])|(?P<spaced>(?<=[ \t])(?![ \t])))"
+    r"(?ims)(?P<boundary>^|(?<=[{(,;\[])|(?P<spaced>(?<=[ \t])(?![ \t])))"
     # A PHP or Perl variable keeps its sigil in front of the label.
     # A quoted shell variable (``"$password"``) has its quote in front
     # of the ``$``.
     r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)\$?"
-    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
+    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)(?:\])?"
     # A comparison is an operator of its own, so the first ``=`` of
     # ``==`` never reads as an assignment (#473). ``!=`` and ``!==``
     # are comparisons too (#500).
     # ``:=`` (Go, Python's walrus) is one operator too, so its ``=``
     # is not read as the value. A hash arrow (``'key' => "..."``) reads
     # as ``=`` with a value that starts at ``>``; see HASH_ENTRY_RE.
-    r"[ \t]*(?P<operator>===|==|!==|!=|(?(spaced)=|(?::=|[=:])))[ \t]*"
+    # ``+=`` is an assignment. A subscript such as ``cfg["password"]``
+    # has its ``]`` after the label, and a ``[`` opens it (#494).
+    r"[ \t]*(?P<operator>===|==|!==|!=|\+=|(?(spaced)=|(?::=|[=:])))[ \t]*"
     # A value may start on the next line when that line is an indented
     # scalar (``password:\n  hunter2``); a nested ``key: value`` is its
     # own assignment.
     r"(?:\r?\n(?=[ \t]+(?:[^\s#:\"'][^:\r\n]*(?:\r?\n|$)|"
     r"\"(?:\\.|[^\"\\\r\n])*\"(?![ \t]*:)|'(?:\\.|[^'\\\r\n])*'(?![ \t]*:)))[ \t]+)?)"
-    r"(?P<value>\"\"\".*?\"\"\"|'''.*?'''|\"(?:\\.|[^\"\\\r\n])*\"|"
-    r"'(?:\\.|[^'\\\r\n])*'|"
+    # A string with a prefix (``f"..."``, ``rb'...'``) or a template
+    # literal is one value, so its placeholders stay inside it (#494).
+    r"(?P<value>(?:[rR]?[fF])?(?:\"\"\".*?\"\"\"|'''.*?'''|\"(?:\\.|[^\"\\\r\n])*\"|"
+    r"'(?:\\.|[^'\\\r\n])*')|`(?:\\.|[^`\\\r\n])*`|"
     r"(?:\[[^\[\]\r\n]*\]|\\(?![nrt\"'])|[^,{;})\]\\\r\n'\"])*"
     r"(?:(?=[\"'])[^,{;})\r\n]*)?)"
     r"(?P<newline>\r?\n|$)?"
@@ -163,6 +167,62 @@ LITERAL_COMPARED_RE = re.compile(
     r"(?P<literal>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*')"
     r"[ \t]*(?P<operator>===|==|!==|!=)[ \t]*"
     r"(?P<label_quote>['\"]?)\$?(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
+)
+# A sensitive label on the left of a comparison with a string literal,
+# as in ``ok = token == "..."`` or ``foo(token != "...")``.
+# ASSIGNMENT_RE reads the rest of such a line as one value, so a
+# comparison inside it is not seen there (#494).
+LABEL_COMPARED_RE = re.compile(
+    r"(?<![\w$.-])(?P<label_quote>['\"]?)\$?(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
+    r"[ \t]*(?P<operator>===|==|!==|!=)[ \t]*"
+    r"(?P<literal>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*')"
+)
+# A tuple whose first element is a credential name and whose second is a
+# string literal, as in ``pair = (token, "...")``. Only a group counts,
+# not a call's arguments; see _tuple_is_sensitive (#494).
+TUPLE_LABELED_RE = re.compile(
+    r"\((?P<label>[A-Za-z_][A-Za-z0-9_.-]*)[ \t]*,[ \t]*"
+    r"(?P<literal>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*')"
+)
+# Text that is not a statement of its own: a comment, or a triple-quoted
+# string such as a docstring or YAML inside a Python string.
+# ASSIGNMENT_RE reads through a triple-quoted string as one value, and
+# a comment's text is read as code, so each is judged as text of its
+# own (#494).
+SUB_TEXT_RE = re.compile(
+    r"(?m)(?:^|(?<=[ \t]))(?:#|//)[^\r\n]*"
+    r"|(?P<quote>\"\"\"|''')[\s\S]*?(?P=quote)"
+)
+# How deep comments and strings are judged within each other. A comment
+# is judged, and a comment inside it, and no deeper: a line of many
+# ``//`` markers would otherwise recurse once per marker (#494).
+_SUB_TEXT_DEPTH = 2
+# A password in the userinfo of a URL, as in ``https://user:...@host``.
+# The head keeps the user name, so only the password is replaced.
+# The lookbehind starts a match at a word's first letter, so a long run
+# of letters is scanned once, not once per letter (#494).
+_URL_PASSWORD_RE = re.compile(
+    r"(?<![A-Za-z0-9+.-])(?P<head>[A-Za-z][A-Za-z0-9+.-]*://[^\s/?#@:]*:)"
+    r"(?P<password>[^\s/?#@]+)(?=@)"
+)
+# Any URL in a text, from its scheme to the next space or quote.
+_URL_SPAN_RE = re.compile(r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'`<>]*")
+# A word that a sensitive label may contain. A comment or string without
+# one has no label to judge, so it is not read again.
+_SENSITIVE_HINT_RE = re.compile(r"(?i)pass|token|secret|credential|auth|api|key|private|confid")
+# A query or fragment parameter: ``?password=...``, ``&token=...``.
+_URL_PARAM_RE = re.compile(
+    r"(?P<lead>[?#&;])(?P<name>[^=?#&;\s]*)=(?P<value>[^&#;\s\"'`<>)\],}]*)"
+)
+# A placeholder in a formatted string or template literal, as in ``{p}``
+# or ``${p}``. re.split keeps it, so odd parts are placeholders.
+_FORMAT_PLACEHOLDER_RE = re.compile(r"(\$?\{[^{}\r\n]*\})")
+# The literal text between placeholders that may hold a value: no space
+# and no code punctuation.
+_FORMATTED_PIECE_RE = re.compile(r"[^\s()\[\]{}<>;,'\"`]+")
+# A string with a prefix or a template literal, as one whole literal.
+_FORMATTED_LITERAL_RE = re.compile(
+    r"(?P<prefix>[rRbBuUfF]{0,2})(?P<quote>[\"'`])(?P<body>[\s\S]*)(?P=quote)"
 )
 # A PHP or Ruby hash entry with a fat arrow, ``'password' => "..."`` or
 # ``:password => "..."``, with its value on the same line. ASSIGNMENT_RE
@@ -345,7 +405,8 @@ _ENV_LOOKUP_RE = re.compile(
 )
 # Where a value ends outside parsed source: a separator, the line end,
 # or a comment, which follows whitespace.
-_VALUE_END_RE = re.compile(r"[ \t]*(?:[,;)\]}\r\n]|\\(?=[nrt\"'])|\Z|(?<=[ \t])(?:#|//))")
+_VALUE_END_RE = re.compile(r"[ \t]*(?:[,;)\]}\r\n`]|\\(?=[nrt\"'])|\Z|(?<=[ \t])(?:#|//))")
+_CLOSING_BACKTICK_RE = re.compile(r"[ \t]*`")
 _LINE_REST_RE = re.compile(r"[^\r\n]*")
 _LINE_BREAK_RE = re.compile(r"[ \t]*\r?\n")
 # An operator that binds tighter than a comparison, so the literal
@@ -442,18 +503,26 @@ def contains_sensitive_text(text: str, *, code: bool = False) -> bool:
 
     ``code`` marks parsed source (see is_code_path).
     """
+    return _contains_sensitive_text(text, code=code, depth=0)
+
+
+def _contains_sensitive_text(text: str, *, code: bool, depth: int) -> bool:
+    """See contains_sensitive_text. ``depth`` counts the comments and
+    strings the text is judged within, bounded by _SUB_TEXT_DEPTH.
+    """
     if not text:
         return False
     if (
         PRIVATE_KEY_BLOCK_RE.search(text)
         or STANDALONE_SECRET_RE.search(text)
         or SENSITIVE_VALUE_RE.search(text)
+        or _has_url_credential(text)
     ):
         return True
     # Every remaining detector is an assignment form whose pattern
-    # requires a literal "=" or ":". Most filenames and many short
-    # strings have neither.
-    if "=" not in text and ":" not in text:
+    # requires a literal "=" or ":", or a tuple, which needs a "(".
+    # Most filenames and many short strings have none of them.
+    if "=" not in text and ":" not in text and "(" not in text:
         return False
     scanner = _Scanner(text)
     if any(
@@ -483,10 +552,22 @@ def contains_sensitive_text(text: str, *, code: bool = False) -> bool:
         for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)
     ):
         return True
+    if depth < _SUB_TEXT_DEPTH and any(
+        _sub_text_is_sensitive(match, code=code, depth=depth)
+        for match in SUB_TEXT_RE.finditer(text)
+    ):
+        return True
     if any(
         _literal_comparison_is_sensitive(match, code=code)
         for match in LITERAL_COMPARED_RE.finditer(text)
     ):
+        return True
+    if any(
+        _label_comparison_is_sensitive(match, code=code)
+        for match in LABEL_COMPARED_RE.finditer(text)
+    ):
+        return True
+    if any(_tuple_is_sensitive(match, code=code) for match in TUPLE_LABELED_RE.finditer(text)):
         return True
     if any(
         _hash_entry_is_sensitive(match, code=code, scanner=scanner)
@@ -514,8 +595,20 @@ def redact_standalone_secrets(text: str) -> str:
 
 def redact_sensitive_text(text: str) -> str:
     """Remove high-confidence credentials from user and adapter text."""
+    return _redact_text(text, depth=0)
 
-    redacted = redact_standalone_secrets(text)
+
+def _redact_text(text: str, *, depth: int) -> str:
+    """See redact_sensitive_text. ``depth`` is bounded by
+    _SUB_TEXT_DEPTH."""
+
+    # Comments and triple-quoted strings first, each judged as text of
+    # its own, so the assignment pass below does not read through them.
+    redacted = text
+    if depth < _SUB_TEXT_DEPTH:
+        redacted = SUB_TEXT_RE.sub(lambda match: _redact_sub_text(match, depth=depth), text)
+    redacted = redact_standalone_secrets(redacted)
+    redacted = _redact_url_credentials(redacted)
     redacted = _redact_unclosed_quoted_values(redacted)
     redacted = _redact_values(redacted, SPACED_SENSITIVE_ASSIGNMENT_RE, _redact_spaced_assignment)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
@@ -523,6 +616,8 @@ def redact_sensitive_text(text: str) -> str:
     redacted = _redact_hash_entries(redacted)
     redacted = _redact_values(redacted, ASSIGNMENT_RE, _redact_assignment)
     redacted = LITERAL_COMPARED_RE.sub(_redact_literal_comparison, redacted)
+    redacted = LABEL_COMPARED_RE.sub(_redact_label_comparison, redacted)
+    redacted = TUPLE_LABELED_RE.sub(_redact_tuple, redacted)
     redacted = UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE.sub(
         _redact_unclosed_multiline_assignment, redacted
     )
@@ -610,6 +705,13 @@ def _value_is_credential(
         or candidate[0] == "|"
     ):
         return False  # nothing assigned, already redacted, or a YAML block (classified above)
+    # Punctuation alone (``...``, ``***``, ``---``) has no letter or
+    # digit to be a credential. A bracket or quote opens an expression
+    # (``API_KEY = (``), so it is not exempt.
+    if not any(char.isalnum() for char in candidate) and not any(
+        char in "([{\"'" for char in candidate
+    ):
+        return False
     if _is_location(candidate):
         return False
     start = pos + len(value) - len(value.lstrip())
@@ -650,6 +752,10 @@ def _value_is_credential(
             literal["literal"][0] * 3, literal.start("literal")
         ):
             return False  # an unclosed triple quote, classified and redacted on its own
+        if _CLOSING_BACKTICK_RE.match(text, literal.end()):
+            # The literal ends at the backtick closing inline code.
+            # Scanning on would read it as an unclosed template.
+            return _string_literal_is_credential(literal, code=False)
         return _expression_is_credential(text, start, scanner)
     lookup = _ENV_LOOKUP_RE.match(text, start)
     if lookup:
@@ -661,13 +767,6 @@ def _value_is_credential(
         lowered in _NON_CREDENTIAL_WORDS
         or _NUMBER_RE.fullmatch(candidate)
         or _REFERENCE_RE.match(text, start)
-        # Punctuation alone (``...``, ``***``, ``---``) has no letter or
-        # digit to be a credential. A bracket or quote opens an
-        # expression (``API_KEY = (``), so it is not exempt.
-        or (
-            not any(char.isalnum() for char in candidate)
-            and not any(char in "([{\"'" for char in candidate)
-        )
         or _SPACED_PLACEHOLDER_RE.fullmatch(candidate)
     ):
         return False
@@ -696,6 +795,19 @@ def _is_credential_param(name: str) -> bool:
     )
 
 
+def _is_placeholder_value(value: str) -> bool:
+    """Whether a value is empty, already redacted, or filled in at run
+    time (``{token}``, ``${TOKEN}``, ``***``).
+    """
+    return (
+        value == ""
+        or value == REDACTED
+        or _PLACEHOLDER_RE.fullmatch(value) is not None
+        or _REFERENCE_RE.fullmatch(value) is not None
+        or _TEMPLATE_PLACEHOLDER_RE.fullmatch(value) is not None
+    )
+
+
 def _has_credential_query(url: str) -> bool:
     """Whether a URL's query or fragment has a credential parameter.
 
@@ -703,18 +815,46 @@ def _has_credential_query(url: str) -> bool:
     """
     for part in re.split(r"[?#&;]", url)[1:]:
         name, separator, value = part.partition("=")
-        if (
-            separator
-            and _is_credential_param(name)
-            and not (
-                value == ""
-                or value == REDACTED
-                or _PLACEHOLDER_RE.fullmatch(value)
-                or _REFERENCE_RE.fullmatch(value)
-            )
-        ):
+        if separator and _is_credential_param(name) and not _is_placeholder_value(value):
             return True
     return False
+
+
+def _has_url_credential(text: str) -> bool:
+    """Whether a text holds a URL with a password in its userinfo or a
+    credential query parameter, whatever label is around the URL (#494).
+
+    A user name alone (``git@host``) is not a credential.
+    """
+    if "://" not in text:
+        return False
+    return any(
+        not _is_placeholder_value(match["password"]) for match in _URL_PASSWORD_RE.finditer(text)
+    ) or any(_has_credential_query(url) for url in _URL_SPAN_RE.findall(text))
+
+
+def _redact_url_password(match: re.Match[str]) -> str:
+    if _is_placeholder_value(match["password"]):
+        return match.group(0)
+    return match["head"] + REDACTED
+
+
+def _redact_url_param(match: re.Match[str]) -> str:
+    if not _is_credential_param(match["name"]) or _is_placeholder_value(match["value"]):
+        return match.group(0)
+    return f"{match['lead']}{match['name']}={REDACTED}"
+
+
+def _redact_url_credentials(text: str) -> str:
+    """Replace only the password and the credential parameter values of
+    each URL, so the rest of the URL and the line stay in place (#494).
+    """
+
+    def render(match: re.Match[str]) -> str:
+        url = _URL_PASSWORD_RE.sub(_redact_url_password, match.group(0))
+        return _URL_PARAM_RE.sub(_redact_url_param, url)
+
+    return _URL_SPAN_RE.sub(render, text)
 
 
 def _carries_credential(value: str) -> bool:
@@ -1110,13 +1250,36 @@ def _literal_text(literal: re.Match[str]) -> str:
 
 def _string_literal_is_credential(literal: re.Match[str], *, code: bool) -> bool:
     text = _literal_text(literal)
-    if code and (
-        ("f" in literal["prefix"].lower() and "{" in text)
-        or (literal["literal"][0] == "`" and "${" in text)
+    if ("f" in literal["prefix"].lower() and "{" in text) or (
+        literal["literal"][0] == "`" and "${" in text
     ):
-        return False  # a formatted string or template literal is an expression
+        # A formatted string or template literal is judged by the text
+        # around its placeholders: ``f"{p}<secret>"`` by its secret, and
+        # ``f"Bearer {token}"`` not at all (#494).
+        return any(_text_is_credential(piece) for piece in _formatted_pieces(text))
     if code and literal["literal"][0] == "`" and not any(char.isalnum() for char in text):
         return False  # tail of a nested template like `)}` has no letters or digits
+    return _text_is_credential(text)
+
+
+def _formatted_pieces(text: str) -> list[str]:
+    """The text of a formatted string between its placeholders.
+
+    Only a bare run of characters is judged as a value. A piece that
+    ends a label (``token=``, ``url:``), or holds code or prose
+    (``Bearer abc``, or ``stringToBase64(`` cut off by a nested
+    template), names a value rather than holding one, so it is not
+    judged (#494).
+    """
+    pieces = []
+    for piece in _FORMAT_PLACEHOLDER_RE.split(text)[::2]:
+        piece = piece.strip()
+        if _FORMATTED_PIECE_RE.fullmatch(piece) and not piece.endswith((":", "=", "/", "?", "&")):
+            pieces.append(piece)
+    return pieces
+
+
+def _text_is_credential(text: str) -> bool:
     lowered = text.lower()
     return bool(text) and not (
         text == REDACTED
@@ -1242,6 +1405,9 @@ def _redacted_secret(value: str) -> str:
     A trailing ``\\n``, ``\\r`` or ``\\t`` escape stays after the
     secret, before the closing quote.
     """
+    formatted = _FORMATTED_LITERAL_RE.fullmatch(value)
+    if formatted and ("f" in formatted["prefix"].lower() or formatted["quote"] == "`"):
+        return _redacted_formatted(formatted)
     quote = ""
     if len(value) >= 6 and value[:3] == value[-3:] and value[:3] in {'"""', "'''"}:
         quote = value[:3]
@@ -1255,6 +1421,28 @@ def _redacted_secret(value: str) -> str:
         return REDACTED + closing
     escape = _TRAILING_ESCAPE_RE.search(value, len(quote), len(value) - len(quote))
     return f"{quote}{REDACTED}{escape.group() if escape else ''}{quote}"
+
+
+def _redacted_formatted_chunk(chunk: str) -> str:
+    """Redact the literal text of a formatted string between its
+    placeholders, keeping a trailing escape such as ``\\n``.
+    """
+    escape = _TRAILING_ESCAPE_RE.search(chunk)
+    core = chunk[: escape.start()] if escape else chunk
+    if not core.strip():
+        return chunk
+    return REDACTED + (escape.group() if escape else "")
+
+
+def _redacted_formatted(literal: re.Match[str]) -> str:
+    """The redacted form of a formatted string: its placeholders stay,
+    so ``f"{p}<secret>"`` becomes ``f"{p}[REDACTED]"`` and still parses.
+    """
+    parts = _FORMAT_PLACEHOLDER_RE.split(literal["body"])
+    body = "".join(
+        part if index % 2 else _redacted_formatted_chunk(part) for index, part in enumerate(parts)
+    )
+    return f"{literal['prefix']}{literal['quote']}{body}{literal['quote']}"
 
 
 def _redact_spaced_assignment(match: re.Match[str], scanner: _Scanner) -> str | None:
@@ -1332,6 +1520,66 @@ def _redact_literal_comparison(match: re.Match[str]) -> str:
         return match.group(0)
     literal = match.group("literal")
     return _redacted_secret(literal) + match.group(0)[len(literal) :]
+
+
+def _label_comparison_is_sensitive(match: re.Match[str], *, code: bool = False) -> bool:
+    if not _is_sensitive_label(match.group("label")):
+        return False
+    return _comparison_is_credential(match.string, match.start("literal"), code=code)
+
+
+def _redact_label_comparison(match: re.Match[str]) -> str:
+    if not _label_comparison_is_sensitive(match):
+        return match.group(0)
+    literal = match.group("literal")
+    return match.group(0)[: -len(literal)] + _redacted_secret(literal)
+
+
+def _tuple_is_sensitive(match: re.Match[str], *, code: bool = False) -> bool:
+    """Whether a tuple's first element names a credential and its second
+    is a credential-shaped literal, as in ``pair = (token, "...")``.
+
+    The ``(`` must open a group: in a call, ``log(token, "...")`` is an
+    argument list, whose literal is a message or a key.
+    """
+    if not _is_sensitive_label(match.group("label")):
+        return False
+    line_start = match.string.rfind("\n", 0, match.start()) + 1
+    if not _opens_group(match.string, line_start, match.start()):
+        return False
+    return _comparison_is_credential(match.string, match.start("literal"), code=code)
+
+
+def _redact_tuple(match: re.Match[str]) -> str:
+    if not _tuple_is_sensitive(match):
+        return match.group(0)
+    literal = match.group("literal")
+    return match.group(0)[: -len(literal)] + _redacted_secret(literal)
+
+
+def _sub_text_parts(match: re.Match[str]) -> tuple[str, str, str]:
+    """The opening, the text judged on its own, and the closing of a
+    comment or a triple-quoted string.
+    """
+    whole = match.group(0)
+    if match.group("quote") is not None:
+        return whole[:3], whole[3:-3], whole[-3:]
+    marker = "//" if whole.startswith("//") else "#"
+    return marker, whole[len(marker) :], ""
+
+
+def _sub_text_is_sensitive(match: re.Match[str], *, code: bool, depth: int) -> bool:
+    _opening, body, _closing = _sub_text_parts(match)
+    if _SENSITIVE_HINT_RE.search(body) is None:
+        return False
+    return _contains_sensitive_text(body, code=code, depth=depth + 1)
+
+
+def _redact_sub_text(match: re.Match[str], *, depth: int) -> str:
+    opening, body, closing = _sub_text_parts(match)
+    if _SENSITIVE_HINT_RE.search(body) is None:
+        return match.group(0)
+    return opening + _redact_text(body, depth=depth + 1) + closing
 
 
 def _hash_entry_is_sensitive(

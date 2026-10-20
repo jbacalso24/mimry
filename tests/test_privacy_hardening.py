@@ -1986,3 +1986,122 @@ def test_redacted_comment_example_in_the_indexer_docstring_is_true(tmp_path: Pat
 def test_a_credential_value_that_never_closes_is_refused(tmp_path: Path, source: str):
     with pytest.raises(SensitiveContentError):
         indexable_bytes(tmp_path / "config.py", source.encode("utf-8"))
+
+
+# Secret shapes that were kept verbatim (#494). SECRET stands for the
+# canary. Each source is redacted in place, and the expected text keeps
+# its line count and, for Python, still parses.
+SECRET_SHAPES_494 = (
+    ("a.py", "ok = token == 'SECRET'\n", "ok = token == '[REDACTED]'\n"),
+    ("a.py", 'x = foo(token == "SECRET")\n', 'x = foo(token == "[REDACTED]")\n'),
+    ("a.py", 'ok = (token == "SECRET")\n', 'ok = (token == "[REDACTED]")\n'),
+    ("a.py", 'ok = token != "SECRET"\n', 'ok = token != "[REDACTED]"\n'),
+    ("a.py", 'x = foo(token != "SECRET")\n', 'x = foo(token != "[REDACTED]")\n'),
+    ("a.py", 'ok = (token != "SECRET")\n', 'ok = (token != "[REDACTED]")\n'),
+    ("a.py", 'token = f"{p}SECRET"\n', 'token = f"{p}[REDACTED]"\n'),
+    ("a.py", 'token = f"SECRET{p}"\n', 'token = f"[REDACTED]{p}"\n'),
+    ("a.py", 'connect(token=f"{p}SECRET")\n', 'connect(token=f"{p}[REDACTED]")\n'),
+    ("a.js", "const token = `${p}SECRET`;\n", "const token = `${p}[REDACTED]`;\n"),
+    ("a.py", 'url = "https://h/x?password=SECRET"\n', 'url = "https://h/x?password=[REDACTED]"\n'),
+    (
+        "a.py",
+        'url = "https://h/x?token=SECRET&a=1"\n',
+        'url = "https://h/x?token=[REDACTED]&a=1"\n',
+    ),
+    ("a.py", 'url = "https://user:SECRET@h/x"\n', 'url = "https://user:[REDACTED]@h/x"\n'),
+    ("a.py", 'password += "SECRET"\n', 'password += "[REDACTED]"\n'),
+    ("a.py", 'cfg["password"] = "SECRET"\n', 'cfg["password"] = "[REDACTED]"\n'),
+    ("a.py", "cfg['api_key'] = \"SECRET\"\n", "cfg['api_key'] = \"[REDACTED]\"\n"),
+    ("a.py", 'os.environ["TOKEN"] = "SECRET"\n', 'os.environ["TOKEN"] = "[REDACTED]"\n'),
+    ("a.py", "x = 1  # password = SECRET\n", "x = 1  # password = [REDACTED]\n"),
+    ("a.js", "// token: SECRET\n", "// token: [REDACTED]\n"),
+    ("a.go", "package main\n\n// token: SECRET\n", "package main\n\n// token: [REDACTED]\n"),
+    (
+        "a.py",
+        'DOC = """\npassword: SECRET\n"""\n',
+        'DOC = """\npassword: [REDACTED]\n"""\n',
+    ),
+    ("a.py", 'pair = (token, "SECRET")\n', 'pair = (token, "[REDACTED]")\n'),
+)
+
+
+@pytest.mark.parametrize(("name", "template", "expected"), SECRET_SHAPES_494)
+def test_secret_shapes_are_redacted_in_place_and_keep_their_code(
+    tmp_path: Path, name: str, template: str, expected: str
+):
+    source = template.replace("SECRET", VALUE_CANARY)
+    assert contains_sensitive_text(source, code=True), source
+    redacted = redact_sensitive_text(source)
+    assert redacted == expected
+    kept = indexable_bytes(tmp_path / name, source.encode("utf-8")).decode("utf-8")
+    assert kept == expected
+    assert kept.count("\n") == source.count("\n")
+    assert "privacy-canary" not in kept and "value-123456789" not in kept
+    if name.endswith(".py"):
+        ast.parse(kept)
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    (
+        ("a.sh", f"# api_key={VALUE_CANARY}\n"),
+        ("a.yaml", f"# api_key={VALUE_CANARY}\n"),
+    ),
+)
+def test_secret_in_a_comment_of_a_text_format_is_refused(tmp_path: Path, name: str, source: str):
+    with pytest.raises(SensitiveContentError):
+        indexable_bytes(tmp_path / name, source.encode("utf-8"))
+
+
+def test_clean_lines_near_the_secret_shapes_are_unchanged_and_the_file_is_kept(tmp_path: Path):
+    lines = (
+        "ok = token == compute()\n",
+        'if token == "":\n',
+        'url = f"https://h/x?page={n}"\n',
+        'cfg["timeout"] = 30\n',
+        'password += ""\n',
+        "# set the password in the env\n",
+        'token = f"{prefix}{suffix}"\n',
+        'headers["Authorization"] = f"Bearer {token}"\n',
+        'api_key = os.environ["KEY"]\n',
+        'log(token, "some message here")\n',
+        'pair = (token_type, "bearer")\n',
+        "password: ...\n",
+    )
+    for line in lines:
+        assert not contains_sensitive_text(line, code=True), line
+        assert redact_sensitive_text(line) == line, line
+    source = "".join(lines)
+    data = source.encode("utf-8")
+    assert indexable_bytes(tmp_path / "clean.py", data) == data
+
+
+def test_worst_case_inputs_are_judged_in_linear_time():
+    # Long lines of near-matches must not backtrack (#494): each input
+    # is judged by both entry points, and must finish within a second.
+    import time
+
+    worst = (
+        "x = " + "token == " * 5000 + "\n",
+        'u = "' + '"https://h/x?password=' * 5000 + "\n",
+        '"https://h/x?password=' + "a" * 10000,
+        "token = " + 'f"{p}' * 5000 + "\n",
+        "x = 1  # password = " + "a" * 10000 + "\n",
+        "x " + "// token: a " * 5000 + "\n",
+    )
+    for text in worst:
+        start = time.perf_counter()
+        redact_sensitive_text(text)
+        contains_sensitive_text(text, code=True)
+        assert time.perf_counter() - start < 1.0, text[:40]
+
+
+def test_a_secret_before_a_closing_backtick_keeps_the_inline_code():
+    # The backtick closes inline code in prose. Read as a template
+    # literal, it ran on to a later backtick and took the lines between
+    # with it (#494).
+    text = 'Set `cfg["password"] = "hunter2"` in the file.\nNext line.\n'
+    assert redact_sensitive_text(text) == (
+        'Set `cfg["password"] = "[REDACTED]"` in the file.\nNext line.\n'
+    )
+    assert not contains_sensitive_text(redact_sensitive_text(text), code=False)
