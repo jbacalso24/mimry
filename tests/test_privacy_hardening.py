@@ -1788,6 +1788,7 @@ def test_a_redacted_go_short_declaration_keeps_its_operator_and_quotes():
         ("a.rb", 'password = "privacy-canary-\nvalue-123456789"\nputs password\n'),
         ("a.php", '<?php\n$password = "privacy-canary-\nvalue-123456789";\necho $password;\n'),
         ("a.rs", 'fn main() {\n    let password = "privacy-canary-\nvalue-123456789";\n}\n'),
+        ("a.php", "<?php\n$cfg = ['password' => \"privacy-canary-\nvalue-123456789\"];\n"),
     ),
 )
 def test_a_quoted_secret_split_by_a_line_break_is_refused_without_its_tail(name: str, source: str):

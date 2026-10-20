@@ -481,7 +481,7 @@ See [docs/how-it-works.md](docs/how-it-works.md) for details.
 
 Indexing and search run locally.
 Credential files are skipped.
-In code files, secret-looking assignments and comparisons, such as `password = "..."` or `token == "..."`, are redacted before they reach the index.
+In code files, a secret-looking assignment such as `password = "..."`, or a comparison in an `if` such as `if token == "..."`, is redacted before it reaches the index.
 A file is skipped when its secret cannot be redacted cleanly.
 Feedback text is redacted too.
 Untracked files named in `.gitignore` are not indexed.

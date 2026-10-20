@@ -167,10 +167,11 @@ UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE = re.compile(
 UNCLOSED_QUOTED_ASSIGNMENT_START_RE = re.compile(
     # Only the last blank before the label is a boundary, as in
     # ASSIGNMENT_RE.
-    r"(?im)(?:^|(?<=[{(,;])|(?<=[ \t])(?![ \t]))"
+    r"(?im)(?:^|(?<=[{(\[,;])|(?<=[ \t])(?![ \t]))"
     r"[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?\$?"
     r"(?P<label_quote>['\"]?)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
-    r"[ \t]*(?:===|==|[=:])[ \t]*(?P<quote>[\"'])(?![\"'])"
+    # ``=>`` is the key arrow of PHP and Ruby: ``'password' => "...``.
+    r"[ \t]*(?:===|==|=>|[=:])[ \t]*(?P<quote>[\"'])(?![\"'])"
 )
 # How far a value may run on to find its closing quote. It stays within
 # the overlap of a streamed scan, so a value is judged whole.
