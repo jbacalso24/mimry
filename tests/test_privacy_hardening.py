@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import shutil
@@ -862,6 +863,7 @@ def test_non_sensitive_multiline_object_member_does_not_hide_later_sensitive_yam
 
 def test_quote_dense_yaml_multiline_secret_scan_is_bounded():
     script = """
+import ast
 import json
 import time
 from mimry.security import contains_sensitive_text, redact_sensitive_text
@@ -1680,3 +1682,75 @@ def test_long_runs_of_spaces_scan_in_linear_time():
     assert not contains_sensitive_text(text, code=True)
     assert redact_sensitive_text(text) == text
     assert time.perf_counter() - started < 5
+
+
+# #483: a redacted value ran past its end and swallowed a closing quote,
+# a brace or an escape, so the file no longer parsed.
+ISSUE_483_LINES = (
+    # An f-string placeholder is filled in at run time, so it is kept.
+    'pages[24] = f"deploy notes, api_key = {value}"\n',
+    f'DownloadError("Download error: bad token={VALUE_CANARY}\\nsecond line")\n',
+    "(repo / 'client.py').write_text(\n"
+    '    f\'def connect():\\n    token = "{value}"\\n    return token\\n\', encoding="utf-8"\n'
+    ")\n",
+)
+
+
+def test_redacted_issue_483_lines_parse_and_keep_no_part_of_the_value():
+    for line in ISSUE_483_LINES:
+        redacted = redact_sensitive_text(line)
+        ast.parse(redacted)
+        assert VALUE_CANARY not in redacted
+    assert redact_sensitive_text(ISSUE_483_LINES[0]) == ISSUE_483_LINES[0]
+    assert redact_sensitive_text(ISSUE_483_LINES[2]) == ISSUE_483_LINES[2]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["test_document_parts.py", "test_indexer_grammar_unavailable.py", "test_pieces.py"],
+)
+def test_repo_test_files_from_issue_483_index_as_parsable_source(name: str):
+    from mimry.scanner import indexable_bytes
+
+    path = ROOT / "tests" / name
+    indexed = indexable_bytes(path, path.read_bytes()).decode("utf-8")
+    ast.parse(indexed)
+
+
+def test_a_quoted_secret_with_a_trailing_escape_keeps_the_escape_and_quote():
+    line = f'token = "{VALUE_CANARY}\\n"' + "\n"
+    assert redact_sensitive_text(line) == 'token = "[REDACTED]\\n"' + "\n"
+
+
+def test_an_f_string_placeholder_is_not_a_secret():
+    line = 'x = f"api_key = {value}"' + "\n"
+    assert not contains_sensitive_text(line)
+    assert not contains_sensitive_text(line, code=True)
+    assert redact_sensitive_text(line) == line
+
+
+def test_a_bare_backslash_stays_inside_an_unquoted_secret():
+    # Only an escape (backslash, then n, r, t or a quote) ends a value.
+    secret = "ab\\cdefgh123"
+    cases = (
+        (f"password={secret}\n", "password=[REDACTED]\n"),
+        (f"password = {secret}\n", "password = [REDACTED]\n"),
+        (f"token: {secret}\n", "token: [REDACTED]\n"),
+    )
+    for line, expected in cases:
+        assert contains_sensitive_text(line, code=True), line
+        assert redact_sensitive_text(line) == expected
+
+
+def test_a_closing_quote_after_an_unquoted_secret_is_written_back():
+    line = f'DownloadError("bad token={VALUE_CANARY}")' + "\n"
+    assert contains_sensitive_text(line)
+    redacted = redact_sensitive_text(line)
+    assert redacted == 'DownloadError("bad token=[REDACTED]")' + "\n"
+    ast.parse(redacted)
+    assert not contains_sensitive_text(redacted)
+
+
+def test_a_balanced_quote_in_an_expression_is_redacted_as_before():
+    line = f'token = process.env.TOKEN || "{CONFIG_VALUE}"' + "\n"
+    assert redact_sensitive_text(line) == "token = [REDACTED]" + "\n"
