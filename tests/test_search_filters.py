@@ -179,7 +179,7 @@ def test_default_graph_search_ranks_every_graph_match_before_the_cut(tmp_path, m
     _patch_ranking_dependencies(monkeypatch)
     requested_limits = []
 
-    monkeypatch.setattr(search, "graph_available", lambda _root: True)
+    monkeypatch.setattr(search, "load_graph", lambda _root: {"nodes": [{"id": "x"}]})
 
     def graph_rows(_root, _query, limit, **_kwargs):
         requested_limits.append(limit)
@@ -232,7 +232,7 @@ def test_filtered_or_paginated_search_expands_candidates_before_slicing(tmp_path
     idx, files = _ranking_index(tmp_path)
     _patch_ranking_dependencies(monkeypatch)
     requested_limits = []
-    monkeypatch.setattr(search, "graph_available", lambda _root: True)
+    monkeypatch.setattr(search, "load_graph", lambda _root: {"nodes": [{"id": "x"}]})
 
     def graph_rows(_root, _query, limit, **_kwargs):
         requested_limits.append(limit)
@@ -251,7 +251,7 @@ def test_filtered_or_paginated_search_expands_candidates_before_slicing(tmp_path
 def test_explicit_graph_pagination_uses_one_expanded_ranking_from_page_one(tmp_path, monkeypatch):
     idx, files = _ranking_index(tmp_path)
     _patch_ranking_dependencies(monkeypatch)
-    monkeypatch.setattr(search, "graph_available", lambda _root: True)
+    monkeypatch.setattr(search, "load_graph", lambda _root: {"nodes": [{"id": "x"}]})
 
     def graph_rows(_root, _query, limit, **_kwargs):
         rows = [
