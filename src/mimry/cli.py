@@ -63,6 +63,7 @@ def build_parser():
         cmd_roots,
         cmd_route,
         cmd_semantic,
+        cmd_stats,
         cmd_status,
         cmd_symbol,
         cmd_watch,
@@ -631,6 +632,21 @@ def build_parser():
         help="Also remove MIMRY's block from Git's global ignore file",
     )
     u.set_defaults(func=cmd_uninstall)
+    st = sub.add_parser(
+        "stats",
+        help="Show the tokens MIMRY saved, estimated, for this session and all time",
+    )
+    st.add_argument("--json", action="store_true", help="Print the totals as JSON")
+    st.add_argument(
+        "--session",
+        help="The Claude Code session id to total (default: the MIMRY_SESSION_ID variable)",
+    )
+    st.add_argument(
+        "--statusline",
+        action="store_true",
+        help="Read Claude Code's status line JSON on stdin and print one line, or nothing",
+    )
+    st.set_defaults(func=cmd_stats)
     sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(
         func=cmd_hook_check
     )
@@ -710,6 +726,14 @@ def _hook_root(args) -> tuple[str, str] | None:
     return None
 
 
+def _statusline_argv(args) -> bool:
+    """True for exactly ``stats --statusline``.
+
+    The status line runs this on every refresh, so it skips the parser.
+    """
+    return list(args) == ["stats", "--statusline"]
+
+
 def _run_command(a):
     """Run a command, then close the session windows it may have closed.
 
@@ -725,7 +749,13 @@ def _run_command(a):
 
 
 def main(argv=None):
-    hook = _hook_root(sys.argv[1:] if argv is None else argv)
+    args = sys.argv[1:] if argv is None else argv
+    if _statusline_argv(args):
+        from .savings import run_statusline
+
+        configure_console()
+        return run_statusline()
+    hook = _hook_root(args)
     if hook is not None:
         from types import SimpleNamespace
 

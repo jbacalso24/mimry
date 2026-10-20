@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import re
 import shutil
 import sys
@@ -436,6 +437,24 @@ def _relative_status_path(root: Path, maybe_path: str | Path | None) -> str:
 @_requires_text("task", "task", 'mimry preflight "fix the login timeout"')
 def cmd_preflight(a):
     return run_preflight(a)
+
+
+def cmd_stats(a):
+    """Tokens MIMRY saved, estimated: this session and all time."""
+    from .savings import find_repo, format_report, run_statusline, savings_report
+
+    if getattr(a, "statusline", False):
+        return run_statusline()
+    start = Path(a.root)
+    root = find_repo(start) or start.resolve()
+    session = (getattr(a, "session", None) or os.environ.get("MIMRY_SESSION_ID", "")).strip()
+    report = savings_report(root, session)
+    if getattr(a, "json", False):
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    for line in format_report(report):
+        print(line)
+    return 0
 
 
 def cmd_feedback(a):

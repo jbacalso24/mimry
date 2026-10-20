@@ -162,6 +162,18 @@ mimry install --platform claude-code
 > [!TIP]
 > Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` when it starts a broad search of the repository, at most three times a session, answers a grep for a known symbol with its definition and callers, and outlines a large file when the agent reads it whole. The hooks also refresh the index in the background when a session starts and after each file edit, and restore the files it was working on after the context is compacted.
 
+### See the tokens MIMRY saved
+
+`mimry stats` shows the tokens MIMRY saved in this session and across the repo.
+It counts a ranged Read (one with `offset` or `limit`) of a file MIMRY named in the session, as the tokens of the rest of the file.
+A search the hooks answer from the index counts as one search, never as tokens.
+Tokens are estimated as characters / 4, so every number is about, not exact.
+To show the session total in Claude Code's status line, set this in your Claude Code settings:
+
+```json
+{"statusLine": {"type": "command", "command": "mimry stats --statusline"}}
+```
+
 ## Features
 
 | Feature | Description |

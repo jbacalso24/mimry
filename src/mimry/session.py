@@ -35,6 +35,7 @@ COMPACT_QUERY_LIMIT = 300
 COMPACT_NOTE_LIMIT = 1500
 QUERY_LOG = "session-queries.jsonl"
 FILE_LOG = "session-files.jsonl"
+START_LOG = "session-starts.jsonl"
 PATCH_PATH_RE = re.compile(r"^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+?)\s*$")
 
 
@@ -136,6 +137,53 @@ def log_file_event(root: Path, session: str, action: str, raw_paths: list[Any]) 
     except Exception:
         # The log is optional; never fail the hook or the command.
         pass
+
+
+def log_session_start(root: Path, session: str) -> None:
+    """Append the session's first hook call; queries count from here.
+
+    Queries carry no session id, so a query belongs to the session when
+    it came after this line. Never raises.
+    """
+    try:
+        state = _state_dir(root)
+        if state is None or not session_feedback_enabled():
+            return
+        when = datetime.now(UTC).isoformat()
+        _append(state / START_LOG, {"time": when, "session": session})
+    except Exception:
+        pass
+
+
+def session_started(state: Path, session: str) -> float | None:
+    """When the session's first logged hook call happened, or None."""
+    stamps = [
+        _stamp(row) for row in _read_rows(state / START_LOG) if row.get("session") == session
+    ]
+    stamps = [stamp for stamp in stamps if stamp is not None]
+    return min(stamps) if stamps else None
+
+
+def named_in_session(root: Path, session: str, rel: str) -> bool:
+    """Whether a query logged since the session began showed ``rel``.
+
+    Reads the logs only. Never raises.
+    """
+    try:
+        state = _state_dir(root)
+        if state is None or not session or not session_feedback_enabled():
+            return False
+        begin = session_started(state, session)
+        if begin is None:
+            return False
+        for query in _read_rows(state / QUERY_LOG):
+            stamp = _stamp(query)
+            shown = query.get("shown")
+            if stamp is not None and stamp >= begin and isinstance(shown, list) and rel in shown:
+                return True
+        return False
+    except Exception:
+        return False
 
 
 def edited_paths(tool_input: dict[str, Any]) -> list[str]:

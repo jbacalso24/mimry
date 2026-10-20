@@ -38,7 +38,16 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .constants import HEAVY_IGNORES, NON_CODE_KINDS
-from .session import compact_note, edited_paths, flush_session_feedback, log_file_event
+from .savings import record_answered_search, record_ranged_read
+from .session import (
+    compact_note,
+    edited_paths,
+    flush_session_feedback,
+    log_file_event,
+    log_session_start,
+    named_in_session,
+    session_feedback_enabled,
+)
 
 # Regex constructs that make a pattern broad. A plain identifier, an
 # escaped dot or an exact message is not matched by any of these.
@@ -484,6 +493,50 @@ def _first_for_query(mimry_dir: Path, session: str, query: str) -> bool:
     return True
 
 
+def _note_session_start(root: Path, session: str) -> None:
+    """Log the session's first hook call once. Never raises."""
+    try:
+        mimry_dir = root / ".mimry"
+        if not session or not session_feedback_enabled() or not mimry_dir.is_dir():
+            return
+        if _first_for_query(mimry_dir, session, "start:session"):
+            log_session_start(root, session)
+    except Exception:
+        pass
+
+
+def _outlined_this_session(mimry_dir: Path, session: str, rel_path: str) -> bool:
+    """Whether the hook printed ``rel_path``'s outline this session.
+
+    The outline records the key ``read:<path>`` in ``hook-sessions``.
+    """
+    try:
+        seen = (mimry_dir / "hook-sessions").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    return f"{session}\tread:{rel_path}" in seen
+
+
+def _count_ranged_read(root: Path, session: str, tool_input: dict) -> None:
+    """Count a ranged Read of a file MIMRY named. Never raises."""
+    try:
+        if not session or (tool_input.get("offset") is None and tool_input.get("limit") is None):
+            return
+        file_path = str(tool_input.get("file_path") or "")
+        rel_path = _outline_path(root, file_path) if file_path else None
+        if rel_path is None:
+            return
+        named = named_in_session(root, session, rel_path) or _outlined_this_session(
+            root / ".mimry", session, rel_path
+        )
+        if named:
+            record_ranged_read(
+                root, session, rel_path, tool_input.get("offset"), tool_input.get("limit")
+            )
+    except Exception:
+        pass
+
+
 def _nudge_allowed(mimry_dir: Path, session: str) -> bool:
     """Count one reminder for ``session``; say whether it may show.
 
@@ -828,6 +881,7 @@ def _hook_check(root: Path) -> None:
         data = json.loads(raw) if raw.strip() else {}
         tool_name = str(data.get("tool_name") or "").lower()
         session = str(data.get("session_id") or "")
+        _note_session_start(root, session)
         found = data.get("tool_input", data)
         if isinstance(found, dict):
             tool_input = found
@@ -839,6 +893,7 @@ def _hook_check(root: Path) -> None:
             answer = _big_read_answer(root, session, tool_input)
             if answer is not None:
                 _print_context(answer)
+            _count_ranged_read(root, session, tool_input)
             return
         command = str(tool_input.get("command") or "")
     except Exception:
@@ -850,7 +905,10 @@ def _hook_check(root: Path) -> None:
     ):
         return
     answer = _symbol_answer(root, session, tool_name, tool_input, command)
-    if answer is None:
+    if answer is not None:
+        # A symbol answer counts as one search, never as tokens.
+        record_answered_search(root, session)
+    else:
         query = broad_search_query(tool_name, tool_input, command, root)
         if query is None:
             return
