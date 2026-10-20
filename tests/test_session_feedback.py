@@ -642,16 +642,20 @@ def test_a_busy_flush_builds_no_feedback_record(tmp_path, monkeypatch):
 
 
 def test_a_held_append_lock_costs_the_event_not_the_hook(tmp_path, monkeypatch, capsys):
+    # The wait is short by design: the hook runs in the agent's path.
+    assert session.APPEND_WAIT <= 0.25
+    assert session.APPEND_STALE <= 5
     # A lock another process holds past the wait drops the event. The
     # hook still exits 0 and prints nothing that is not JSON, and leaves
     # the other process's lock alone.
     repo = _repo(tmp_path, monkeypatch)
     lock = repo / ".mimry" / session.APPEND_LOCK
     lock.write_text("", encoding="utf-8")
-    monkeypatch.setattr(session, "APPEND_WAIT", 0.05)
     capsys.readouterr()
 
+    started = time.monotonic()
     assert _read(monkeypatch, repo, repo / "src" / "auth" / "session.py") == 0
+    assert time.monotonic() - started < 1
     out = capsys.readouterr().out
     assert out == "" or isinstance(json.loads(out), dict)
     assert lock.exists()
@@ -674,3 +678,23 @@ def test_each_flushed_window_holds_only_its_own_sessions_events(tmp_path, monkey
     [record] = _rows(repo)
     assert record["query"] == QUERY
     assert record["opened_paths"] == [mine[0]]
+
+
+def test_a_hooked_session_without_a_tagged_query_names_its_mcp_query(
+    tmp_path, monkeypatch, capsys
+):
+    # The query came from an MCP tool, which no hook sees, so it has
+    # no session id. A query recorded before the session began must
+    # not be named.
+    repo = _repo(tmp_path, monkeypatch)
+    record_query(repo, "old query before the session", [])
+    time.sleep(0.01)
+    _read(monkeypatch, repo, repo / "src" / "auth" / "session.py")  # session starts
+    time.sleep(0.01)
+    shown = _find(repo, QUERY)  # the MCP find: no Bash hook, so untagged
+    time.sleep(0.01)
+    _edit(monkeypatch, repo, shown[1])
+
+    note = _restored(monkeypatch, capsys, repo)
+    assert f'you were working on: "{QUERY}".' in note
+    assert "old query" not in note

@@ -41,8 +41,8 @@ SESSION_LOCK_WAIT = 0.001
 # an event is never appended without it; a lock older than APPEND_STALE
 # came from a process that died holding it.
 APPEND_LOCK = "session-files.lock"
-APPEND_WAIT = 2.0
-APPEND_STALE = 10.0
+APPEND_WAIT = 0.25
+APPEND_STALE = 5.0
 # The last shell commands that named mimry, with the session that ran
 # them. A find run from such a command is tagged with that session.
 HOOK_COMMAND_LOG = "session-commands.jsonl"
@@ -548,13 +548,22 @@ def compact_note(root: Path, session: str) -> str | None:
             return None
         events.sort(key=lambda item: item[0])
         first = events[0][0]
-        # Only this session's queries: another process's query has no
-        # session id and is never named here.
-        queries = [
+        # A query the session's hook tagged is its own. Without any, the
+        # query came from an MCP tool, which no hook sees, so the
+        # untagged queries recorded since the session began count.
+        all_queries = [
             (t, q)
             for t, q in ((_stamp(r), r) for r in _read_rows(state / QUERY_LOG))
-            if t is not None and _session_of(q) == session
+            if t is not None
         ]
+        queries = [(t, q) for t, q in all_queries if _session_of(q) == session]
+        if not queries:
+            begun = session_started(state, session)
+            queries = [
+                (t, q)
+                for t, q in all_queries
+                if not _session_of(q) and (begun is None or t >= begun)
+            ]
         queries.sort(key=lambda item: item[0])
         # A find runs before the reads it leads to, so the work starts
         # at the query in effect when the first file event happened.
