@@ -7,7 +7,7 @@ description: Use local repo memory at the start of every repo task instead of ex
 
 MIMRY is local repo intelligence for coding agents. It exists to stop blind grep/read loops and give agents a repo map before edits. It is not proof: source files, tests, build output, and user-visible behavior remain final truth.
 
-Platform note: Bundled skill (Claude Code plugin or npx skills): prefer the MIMRY MCP tools when they are loaded. If the `mimry` command is not installed, run CLI commands as `uvx --from mimry==0.6.4 mimry <command>`, or install it with `uv tool install mimry`.
+Platform note: Bundled skill (Claude Code plugin or npx skills): prefer the MIMRY MCP tools when they are loaded. If the `mimry` command is not installed, run CLI commands as `uvx --from mimry==0.7.0 mimry <command>`, or install it with `uv tool install mimry`.
 
 ## Non-negotiable workflow
 

@@ -39,11 +39,29 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.6.4">0.6.4</a><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.7.0">0.7.0</a><a href="#v0.6.4">0.6.4</a><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.7.0">
+<header class="release-meta">
+<h2>0.7.0</h2>
+<p class="release-date"><time datetime="2026-10-21">21 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.7.0">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.7.0/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Upgrade notes</h3>
+<ul><li>Upgrade with <code>mimry upgrade</code>. The first command after upgrading reparses every indexed file, and the upgrade then refreshes the installed skills and hooks.</li><li><code>mimry install --refresh</code> rewrites the installed skills, and adds the new hook entries to a project that already has MIMRY's hooks. In Claude Code those are an outline for a large file that the agent reads whole, and a restore of the working set after a context compaction.</li><li>Embeddings are optional and off until you install them: <code>uv tool install "mimry[embed]"</code>, then <code>mimry embed download</code>, which fetches a 64 MB model once.</li><li>A code file with secret-looking lines is now indexed with those lines redacted, instead of being left out (<a href="https://github.com/jbacalso24/mimry/pull/470">#470</a>). Files that are not code, sensitive-named files, and code that cannot be redacted cleanly are still left out.</li></ul>
+<h3>New features</h3>
+<ul><li>A long <code>find</code> query, of 20 or more distinct words, also matches on meaning when the optional embedding model is installed (<a href="https://github.com/jbacalso24/mimry/pull/488">#488</a>).</li><li>Session learning records the files read and edited after a <code>find</code> as feedback (<a href="https://github.com/jbacalso24/mimry/pull/486">#486</a>). <code>MIMRY_SESSION_FEEDBACK=0</code> turns it off.</li><li>In Claude Code, the files the agent was working on are restored after a context compaction (<a href="https://github.com/jbacalso24/mimry/pull/487">#487</a>).</li><li><code>mimry stats</code> shows the tokens MIMRY saved, estimated, for this session and all time (<a href="https://github.com/jbacalso24/mimry/pull/489">#489</a>).</li><li>In Claude Code, a large file that the agent reads whole is outlined instead (<a href="https://github.com/jbacalso24/mimry/pull/484">#484</a>).</li><li>A learned reranker orders the top 50 results (<a href="https://github.com/jbacalso24/mimry/pull/468">#468</a>).</li><li>Files that define the identifiers a task names are lifted in the ranking (<a href="https://github.com/jbacalso24/mimry/pull/467">#467</a>), and a keyword ranking of files is fused into <code>find</code> for long queries (<a href="https://github.com/jbacalso24/mimry/pull/472">#472</a>). Both change the order of results, and the ranking is more accurate.</li></ul>
+<h3>Fixes</h3>
+<ul><li>Redaction no longer reads a <code>==</code> comparison as a secret assignment, keeps the quotes, escapes and brackets of a redacted value, keeps <code>:=</code> intact, and refuses a quoted secret that a line break splits (<a href="https://github.com/jbacalso24/mimry/pull/474">#474</a>, <a href="https://github.com/jbacalso24/mimry/pull/485">#485</a>, <a href="https://github.com/jbacalso24/mimry/pull/498">#498</a>). More comparison and <code>=&gt;</code> forms are caught, and redacted code stays parseable (<a href="https://github.com/jbacalso24/mimry/pull/502">#502</a>).</li><li>The search hook is quiet on a search of a single file, and it is capped per session (<a href="https://github.com/jbacalso24/mimry/pull/480">#480</a>).</li><li>A tsconfig whose <code>extends</code> bases share a base reads that shared base once, so indexing does not repeat the work (<a href="https://github.com/jbacalso24/mimry/pull/466">#466</a>).</li><li>An unreadable embedding title cache is rebuilt, and <code>embed status</code>, <code>status</code> and <code>doctor</code> report a broken model (<a href="https://github.com/jbacalso24/mimry/pull/496">#496</a>). A broken embedding model is skipped instead of being loaded on every search (<a href="https://github.com/jbacalso24/mimry/pull/502">#502</a>). Session feedback written during a flush is kept (<a href="https://github.com/jbacalso24/mimry/pull/496">#496</a>).</li><li>The README and site figures match the benchmarks, and the line-range saving is described first (<a href="https://github.com/jbacalso24/mimry/pull/481">#481</a>, <a href="https://github.com/jbacalso24/mimry/pull/482">#482</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.6.4">
 <header class="release-meta">
 <h2>0.6.4</h2>
-<p class="release-date"><time datetime="2026-10-18">18 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-18">18 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.6.4">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.6.4/">PyPI</a></li>

@@ -2,6 +2,41 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.7.0 - 2026-10-21
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade`.
+  The first command after upgrading reparses every indexed file, and the upgrade then refreshes the installed skills and hooks.
+- `mimry install --refresh` rewrites the installed skills, and adds the new hook entries to a project that already has MIMRY's hooks.
+  In Claude Code those are an outline for a large file that the agent reads whole, and a restore of the working set after a context compaction.
+- Embeddings are optional and off until you install them: `uv tool install "mimry[embed]"`, then `mimry embed download`, which fetches a 64 MB model once.
+- A code file with secret-looking lines is now indexed with those lines redacted, instead of being left out ([#470](https://github.com/jbacalso24/mimry/pull/470)).
+  Files that are not code, sensitive-named files, and code that cannot be redacted cleanly are still left out.
+
+### New features
+
+- A long `find` query, of 20 or more distinct words, also matches on meaning when the optional embedding model is installed ([#488](https://github.com/jbacalso24/mimry/pull/488)).
+- Session learning records the files read and edited after a `find` as feedback ([#486](https://github.com/jbacalso24/mimry/pull/486)).
+  `MIMRY_SESSION_FEEDBACK=0` turns it off.
+- In Claude Code, the files the agent was working on are restored after a context compaction ([#487](https://github.com/jbacalso24/mimry/pull/487)).
+- `mimry stats` shows the tokens MIMRY saved, estimated, for this session and all time ([#489](https://github.com/jbacalso24/mimry/pull/489)).
+- In Claude Code, a large file that the agent reads whole is outlined instead ([#484](https://github.com/jbacalso24/mimry/pull/484)).
+- A learned reranker orders the top 50 results ([#468](https://github.com/jbacalso24/mimry/pull/468)).
+- Files that define the identifiers a task names are lifted in the ranking ([#467](https://github.com/jbacalso24/mimry/pull/467)), and a keyword ranking of files is fused into `find` for long queries ([#472](https://github.com/jbacalso24/mimry/pull/472)).
+  Both change the order of results, and the ranking is more accurate.
+
+### Fixes
+
+- Redaction no longer reads a `==` comparison as a secret assignment, keeps the quotes, escapes and brackets of a redacted value, keeps `:=` intact, and refuses a quoted secret that a line break splits ([#474](https://github.com/jbacalso24/mimry/pull/474), [#485](https://github.com/jbacalso24/mimry/pull/485), [#498](https://github.com/jbacalso24/mimry/pull/498)).
+  More comparison and `=>` forms are caught, and redacted code stays parseable ([#502](https://github.com/jbacalso24/mimry/pull/502)).
+- The search hook is quiet on a search of a single file, and it is capped per session ([#480](https://github.com/jbacalso24/mimry/pull/480)).
+- A tsconfig whose `extends` bases share a base reads that shared base once, so indexing does not repeat the work ([#466](https://github.com/jbacalso24/mimry/pull/466)).
+- An unreadable embedding title cache is rebuilt, and `embed status`, `status` and `doctor` report a broken model ([#496](https://github.com/jbacalso24/mimry/pull/496)).
+  A broken embedding model is skipped instead of being loaded on every search ([#502](https://github.com/jbacalso24/mimry/pull/502)).
+  Session feedback written during a flush is kept ([#496](https://github.com/jbacalso24/mimry/pull/496)).
+- The README and site figures match the benchmarks, and the line-range saving is described first ([#481](https://github.com/jbacalso24/mimry/pull/481), [#482](https://github.com/jbacalso24/mimry/pull/482)).
+
 ## 0.6.4 - 2026-10-18
 
 ### Upgrade notes
