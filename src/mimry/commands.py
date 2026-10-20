@@ -11,7 +11,7 @@ from functools import wraps
 from importlib import metadata
 from pathlib import Path
 
-from . import __version__, ui
+from . import __version__, embed, ui
 from .adapters import list_adapters
 from .bench import run_bench
 from .cache_safety import (
@@ -297,6 +297,7 @@ def _print_status(
     languages = language_counts(fresh["files"], fresh["symbols"])
     if languages:
         ui.detail(f"Languages: {_languages_text(languages, LANGUAGE_DETAIL_LIMIT)}")
+    ui.detail(_embedding_text())
     print_skipped_counts(
         fresh["secret_skipped_count"],
         fresh["unreadable_count"],
@@ -378,6 +379,52 @@ def cmd_status(a):
     fresh, graph, semantic = health(root, ptr, verify=getattr(a, "verify", False))
     _print_status(root, ptr, fresh, graph, semantic, verbose=getattr(a, "verbose", False))
     return 0 if fresh["state"] == "current" else 2
+
+
+def _embedding_text() -> str:
+    """One status line for the optional embedding signal (#250)."""
+    state = embed.status()
+    if state["override"]:
+        return "Embeddings: off (MIMRY_EMBED=0)"
+    if not state["numpy"]:
+        return 'Embeddings: numpy not installed (pip install "mimry[embed]")'
+    if not state["model"]:
+        return "Embeddings: model not downloaded (run `mimry embed download`)"
+    return "Embeddings: ready"
+
+
+def cmd_embed_download(a):
+    try:
+        directory = embed.download()
+    except (embed.EmbedError, OSError, UnsafeCachePathError) as exc:
+        ui.fail("Could not download the embedding model", str(exc))
+        return 1
+    ui.ok(f"Embedding model {embed.MODEL_REVISION[:12]} is in {directory}")
+    return 0
+
+
+def _numpy_text(state: dict) -> str:
+    if state["numpy"]:
+        return "installed"
+    return 'not installed (pip install "mimry[embed]")'
+
+
+def cmd_embed_status(a):
+    state = embed.status()
+    ui.table(
+        [
+            ("numpy", _numpy_text(state)),
+            (
+                "model",
+                f"downloaded ({state['directory']})"
+                if state["model"]
+                else "not downloaded (run `mimry embed download`)",
+            ),
+            ("revision", state["revision"]),
+            ("override", "MIMRY_EMBED=0 turns it off" if state["override"] else "none"),
+        ]
+    )
+    return 0
 
 
 def _fresh_index(command):

@@ -26,6 +26,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry init` / `mimry index` | Set up a repo and build the index |
 | `mimry reindex` / `mimry refresh` | Update the index ahead of time (`--full` re-parses everything); query commands index a repo that was never indexed, update a stale index, and rebuild missing graph files on their own |
 | `mimry status` | Is the index current? (`--verify` re-hashes every file) |
+| `mimry embed download` / `mimry embed status` | Fetch the optional embedding model once (needs `mimry[embed]`), or show whether `find` can use it; `MIMRY_EMBED=0` turns it off |
 | `mimry doctor` | Read-only install, parser, index, and cache diagnostics (`--json` for tools); common problems and fixes are in [troubleshooting](troubleshooting.md) |
 | `mimry watch` | Poll for changes and refresh when they settle, printing one line per refresh |
 | `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`); the post-commit hook also records feedback from the commit, and re-running `mimry git-hooks` upgrades existing hooks |

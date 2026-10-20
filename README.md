@@ -127,6 +127,20 @@ It installs the skill only; for the MCP server and hooks, run `mimry install --p
 npx skills add jbacalso24/mimry
 ```
 
+### Embeddings (optional)
+
+`find` can also match on meaning, so a task that describes a behaviour in other words still reaches the file that names it differently.
+It is off until you install the extra and download the model:
+
+```bash
+uv tool install "mimry[embed]"
+mimry embed download
+```
+
+`mimry embed download` fetches a 64 MB MIT-licensed model (`minishlab/potion-code-16M`) from Hugging Face once, checks it, and keeps it in MIMRY's cache.
+Every search after that runs locally, with no network calls.
+Set `MIMRY_EMBED=0` to turn the signal off, and run `mimry embed status` to see whether it is ready.
+
 ## Quick start
 
 Run `mimry preflight` in your repository with a task description.

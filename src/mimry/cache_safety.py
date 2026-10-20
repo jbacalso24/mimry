@@ -72,6 +72,9 @@ def validated_cache_home(current_root: Path | None = None) -> Path:
         or (resolved / "roots.json.lock").exists()
         or (resolved / "indexes").exists()
         or _is_empty_dir(resolved)
+        # The embedding model folder, which `mimry embed download` makes
+        # before any index exists (#250).
+        or (resolved / "models").is_dir()
     )
     if resolved.exists() and not mimry_looking:
         raise UnsafeCachePathError(
