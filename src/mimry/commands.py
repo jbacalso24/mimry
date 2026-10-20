@@ -16,7 +16,9 @@ from . import __version__, embed, ui
 from .adapters import list_adapters
 from .bench import run_bench
 from .cache_safety import (
+    READ_ONLY_CACHE_STALE_WARNING,
     UnsafeCachePathError,
+    cache_write_denied,
     validated_cache_home,
     validated_current_root_cache_path,
 )
@@ -442,7 +444,16 @@ def _fresh_index(command):
     def guarded(a):
         root = command_root(a)
         started = time.perf_counter()
-        stats = refresh_if_stale(root, include_missing=True)
+        try:
+            stats = refresh_if_stale(root, include_missing=True)
+        except PermissionError as exc:
+            # A read-only cache (a sandbox) can still answer from an
+            # index that exists. An index never built cannot answer.
+            indexed = load_pointer(root, validate_active_generation=False)
+            if not cache_write_denied(exc) or not indexed:
+                raise
+            ui.warn(READ_ONLY_CACHE_STALE_WARNING)
+            stats = None
         if stats is not None and not getattr(a, "json", False):
             elapsed = ui.took(time.perf_counter() - started)
             if stats.get("set_up_worktree"):
@@ -469,6 +480,9 @@ def _build_graph_first(root: Path, a) -> None:
     try:
         elapsed = build_graph_first(root)
     except Exception as exc:
+        if cache_write_denied(exc):
+            # Read-only cache: the graph check reports what is missing.
+            return
         ui.warn(f"Could not build the graph first: {exc}")
         return
     if elapsed is not None and not getattr(a, "json", False):

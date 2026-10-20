@@ -47,7 +47,7 @@ from .core.languages import (
 from .core.languages import extract as extract_language
 from .core.tsconfig import is_config_name, parse_tsconfig
 from .intent import CAMEL_BOUNDARY_RE, CJK_RUN_RE, STOPWORDS, TOKEN_RE, cjk_bigrams
-from .paths import canonical_rel_path, stable_id
+from .paths import cache_home, canonical_rel_path, stable_id
 from .reuse import code_fingerprint
 from .security import (
     _has_heavy_ignore,
@@ -379,6 +379,20 @@ def scan_entries(root, *, probe_open: bool = True) -> list[tuple[str, Path]]:
     return [(canonical, path) for canonical, path, _st in scan_stats(root, probe_open=probe_open)]
 
 
+def _cache_rel(root) -> str | None:
+    """The cache, root-relative POSIX, when it sits inside root.
+
+    A cache under the project (a sandbox allows writes only there) is
+    MIMRY's own state, not repo content, so the walk and the git
+    fingerprint leave it out. None when the cache is elsewhere.
+    """
+    try:
+        rel = cache_home().expanduser().resolve().relative_to(Path(root).resolve())
+    except (OSError, ValueError):
+        return None
+    return rel.as_posix() if rel.parts else None
+
+
 def git_ignored(root: str) -> tuple[frozenset[str], frozenset[str]]:
     """Untracked files and directories that git ignores under ``root``,
     as root-relative POSIX paths, directories ending in "/".
@@ -506,6 +520,7 @@ def worktree_fingerprint(root: Path) -> str | None:
         "--",
         ".",
         ":(exclude).mimry",
+        *([f":(exclude){cache_rel}"] if (cache_rel := _cache_rel(root)) else []),
     )
     if status is None:
         return None
@@ -590,6 +605,7 @@ def scan_stats(
     root_str = str(root)
     entries: list[tuple[str, str, Path, os.stat_result]] = []
     ignored_files, ignored_dirs = git_ignored(root_str)
+    cache_rel = _cache_rel(root)
     # Prune ignored directories instead of walking and then filtering
     # them: .git, .venv and node_modules routinely hold 95%+ of the
     # paths on disk. Only heavy-ignore names and MIMRY's install folders
@@ -612,6 +628,7 @@ def scan_stats(
             for name in dirnames
             if not _has_heavy_ignore((name,))
             and f"{prefix}{name}/" not in ignored_dirs
+            and f"{prefix}{name}" != cache_rel
             and not in_mimry_install_folder(f"{prefix}{name}")
         ]
         for name in filenames:

@@ -810,7 +810,12 @@ def main(argv=None):
         return run(SimpleNamespace(root=hook_root))
     from pathlib import Path
 
-    from .cache_safety import IndexOutsideCacheError, UnsafeCachePathError
+    from .cache_safety import (
+        CACHE_NOT_WRITABLE_HINT,
+        IndexOutsideCacheError,
+        UnsafeCachePathError,
+        cache_write_denied,
+    )
     from .lifecycle import INDEX_REBUILT_NOTE, rebuild_outdated_index
     from .plan import PlanError
     from .security import UnsafeRootError
@@ -853,6 +858,12 @@ def main(argv=None):
         ui.fail("This repo's index is in another MIMRY cache", str(exc))
     except UnsafeCachePathError as exc:
         ui.fail(str(exc))
+    except PermissionError as exc:
+        if not cache_write_denied(exc):
+            raise
+        from .paths import cache_home
+
+        ui.fail(f"MIMRY cannot use its cache at {cache_home()}", CACHE_NOT_WRITABLE_HINT)
     except PlanError as exc:
         ui.fail("Plan error", str(exc))
     except IndexSettingsError as exc:

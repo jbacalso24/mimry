@@ -10,6 +10,26 @@ class UnsafeCachePathError(ValueError):
     pass
 
 
+CACHE_NOT_WRITABLE_HINT = (
+    "The MCP tools still work. Or set MIMRY_CACHE_HOME to a folder inside the project, "
+    "which a sandbox allows."
+)
+READ_ONLY_CACHE_STALE_WARNING = (
+    "The index is out of date, and the cache is read-only here, so it was not updated"
+)
+
+
+def cache_write_denied(exc: BaseException) -> bool:
+    """Whether ``exc`` is the OS refusing a write inside MIMRY's cache.
+
+    A sandbox can allow writes only inside the project, so the cache can
+    be read-only for a command that still has to answer.
+    """
+    if not isinstance(exc, PermissionError) or not exc.filename:
+        return False
+    return Path(exc.filename).is_relative_to(cache_home().expanduser())
+
+
 class IndexOutsideCacheError(UnsafeCachePathError):
     """A repo's index lives outside the current MIMRY cache, usually
     because MIMRY_CACHE_HOME changed since it was built.

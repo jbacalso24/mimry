@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 from . import ui
-from .cache_safety import IndexOutsideCacheError
+from .cache_safety import READ_ONLY_CACHE_STALE_WARNING, IndexOutsideCacheError, cache_write_denied
 from .constants import NON_CODE_KINDS
 from .core.artifacts import (
     INFERRED_NOTE,
@@ -680,7 +680,13 @@ def run_preflight(a):
         )
     ):
         started = time.perf_counter()
-        stats = write_index(root, ptr)
+        try:
+            stats = write_index(root, ptr)
+        except PermissionError as exc:
+            # A stale index still answers when the cache is read-only.
+            if not cache_write_denied(exc) or fresh["state"] == "missing":
+                raise
+            ui.warn(READ_ONLY_CACHE_STALE_WARNING)
         elapsed = time.perf_counter() - started
 
     with ui.working("Finding the files for this task"):

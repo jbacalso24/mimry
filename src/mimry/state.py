@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 # Byte 0 of a lock file is the byte Windows range-locks. msvcrt locks
 # are mandatory rather than advisory, so a waiter cannot even READ a
@@ -604,6 +604,30 @@ def _effective_shared_lock(shared: bool, *, platform: str | None = None) -> bool
     return shared and (os.name if platform is None else platform) != "nt"
 
 
+def _open_lock_file(path: Path, *, shared: bool) -> tuple[BinaryIO, bool]:
+    """Open a lock file. Returns (handle, writable).
+
+    A read-only command can run where the cache is not writable, such
+    as Codex's Windows sandbox, which allows writes only inside the
+    project. An initialised lock file still takes its lock from a read
+    handle, so a shared request falls back to ``rb`` then. Writers, and
+    a lock file that is missing or still empty, keep the original error.
+    """
+    try:
+        return path.open("a+b"), True
+    except PermissionError as exc:
+        try:
+            initialised = shared and path.stat().st_size > 0
+        except OSError:
+            initialised = False
+        if not initialised:
+            raise
+        try:
+            return path.open("rb"), False
+        except OSError:
+            raise exc from None
+
+
 @contextmanager
 def file_lock(
     path: Path, *, shared: bool = False, timeout: float | None = None, poll_interval: float = 0.05
@@ -618,7 +642,7 @@ def file_lock(
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = path.open("a+b")
+    handle, writable = _open_lock_file(path, shared=shared)
     acquired = False
     effective_shared = _effective_shared_lock(shared)
     timeout = _lock_timeout(timeout)
@@ -663,10 +687,11 @@ def file_lock(
                 jitter = random.uniform(0.9, 1.1)
                 sleep_time = min(poll_interval * jitter, max(0.0, deadline - time.monotonic()))
                 time.sleep(sleep_time)
-        if not effective_shared:
+        if not effective_shared and writable:
             # Truncate to the lock byte, not to zero, so the byte
             # Windows has locked survives and holder metadata is
-            # rewritten after it.
+            # rewritten after it. A read-only handle keeps the holder
+            # metadata that the last writer wrote.
             handle.seek(LOCK_METADATA_OFFSET)
             handle.truncate()
             handle.write(

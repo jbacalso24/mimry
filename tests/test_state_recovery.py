@@ -17,12 +17,14 @@ from unittest.mock import patch
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
-from mimry import state
+from mimry import cli, commands, state
+from mimry.cache_safety import READ_ONLY_CACHE_STALE_WARNING
 from mimry.commands import cmd_cache_wipe, cmd_feedback, cmd_preflight
 from mimry.freshness import index_freshness
 from mimry.indexer import _cleanup_generations, write_index
 from mimry.mcp_tools import _capture_command, mimry_find, mimry_preflight
 from mimry.paths import idx_path
+from mimry.scanner import scan_entries
 from mimry.storage import (
     active_index_pointer,
     load_pointer,
@@ -949,6 +951,148 @@ def test_windows_shared_operation_requests_fall_back_to_exclusive_locking():
     assert state._effective_shared_lock(True, platform="posix") is True
     assert state._effective_shared_lock(True, platform="nt") is False
     assert state._effective_shared_lock(False, platform="nt") is False
+
+
+def _deny_append_opens(monkeypatch, lock: Path, count: int | None = None) -> None:
+    """Make append-mode opens of ``lock`` fail, as a sandbox does.
+
+    With ``count``, only that many opens fail, so a later writer opens.
+    """
+    original = Path.open
+    remaining = [count]
+
+    def guarded(self, mode="r", *args, **kwargs):
+        if self == lock and "a" in mode and remaining[0] != 0:
+            if remaining[0] is not None:
+                remaining[0] -= 1
+            raise PermissionError(errno.EACCES, "Permission denied", str(self))
+        return original(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded)
+
+
+def test_read_only_cache_shared_lock_takes_lock_on_read_handle(tmp_path: Path, monkeypatch):
+    lock = tmp_path / "operation.lock"
+    lock.write_bytes(b"\0{}")
+    _deny_append_opens(monkeypatch, lock)
+
+    with state.shared_file_lock(lock):
+        pass
+
+    assert lock.read_bytes() == b"\0{}"
+
+
+@pytest.mark.parametrize("content", [None, b""], ids=["missing", "empty"])
+def test_read_only_cache_uninitialised_lock_file_raises_original_error(
+    tmp_path: Path, monkeypatch, content
+):
+    lock = tmp_path / "operation.lock"
+    if content is not None:
+        lock.write_bytes(content)
+    _deny_append_opens(monkeypatch, lock)
+
+    with pytest.raises(PermissionError, match="Permission denied"):
+        with state.shared_file_lock(lock):
+            pass
+
+
+def test_read_only_cache_writer_fails_fast_instead_of_locking(tmp_path: Path, monkeypatch):
+    lock = tmp_path / "operation.lock"
+    lock.write_bytes(b"\0{}")
+    _deny_append_opens(monkeypatch, lock)
+
+    started = time.monotonic()
+    with pytest.raises(PermissionError, match="Permission denied"):
+        with state.exclusive_file_lock(lock):
+            pass
+
+    assert time.monotonic() - started < 0.5
+
+
+def test_read_only_cache_reader_lock_still_excludes_a_writer(tmp_path: Path, monkeypatch):
+    lock = tmp_path / "operation.lock"
+    lock.write_bytes(b"\0{}")
+    _deny_append_opens(monkeypatch, lock, count=1)
+    entered = threading.Event()
+    release = threading.Event()
+
+    def reader():
+        with state.shared_file_lock(lock):
+            entered.set()
+            assert release.wait(_WAIT)
+
+    thread = threading.Thread(target=reader)
+    thread.start()
+    assert entered.wait(_WAIT)
+    try:
+        with pytest.raises(state.StateLockTimeoutError):
+            with state.exclusive_file_lock(lock, timeout=0.08, poll_interval=0.01):
+                pass
+    finally:
+        release.set()
+        thread.join(_WAIT)
+
+
+def test_cache_inside_the_project_is_not_indexed_or_left_stale(tmp_path: Path, monkeypatch):
+    repo = copy_fixture(tmp_path)
+    cache = repo / "cache-home"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index", "--full").returncode == 0
+
+    paths = {canonical for canonical, _path in scan_entries(repo)}
+
+    assert not [path for path in paths if path.startswith("cache-home/")]
+    assert index_freshness(repo, load_pointer(repo))["state"] == "current"
+
+
+def test_cache_write_denial_prints_one_short_error_not_a_traceback(
+    tmp_path: Path, monkeypatch, capsys
+):
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    denied = cache / "indexes" / "root" / "operation.lock"
+
+    def refused(a):
+        raise PermissionError(errno.EACCES, "Permission denied", str(denied))
+
+    monkeypatch.setattr(cli, "_run_command", refused)
+
+    assert cli.main(["--root", str(tmp_path), "status"]) != 0
+    err = capsys.readouterr().err
+    assert f"MIMRY cannot use its cache at {cache}" in err
+    assert "MCP tools still work" in err
+    assert "MIMRY_CACHE_HOME" in err
+    assert "Traceback" not in err
+
+
+def test_permission_error_outside_the_cache_still_raises(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(tmp_path / "cache"))
+    outside = tmp_path / "repo" / "file.txt"
+
+    def refused(a):
+        raise PermissionError(errno.EACCES, "Permission denied", str(outside))
+
+    monkeypatch.setattr(cli, "_run_command", refused)
+
+    with pytest.raises(PermissionError):
+        cli.main(["--root", str(tmp_path), "status"])
+
+
+def test_read_only_cache_answers_from_stale_index_with_one_warning(
+    tmp_path: Path, monkeypatch, capsys
+):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    denied = idx_path(load_pointer(repo)["rootId"]) / "operation.lock"
+
+    def refused(root, *, include_missing=False):
+        raise PermissionError(errno.EACCES, "Permission denied", str(denied))
+
+    monkeypatch.setattr(commands, "refresh_if_stale", refused)
+
+    assert cli.main(["--root", str(repo), "find", "def"]) == 0
+    assert READ_ONLY_CACHE_STALE_WARNING in capsys.readouterr().out
 
 
 def test_cache_wipe_all_refuses_without_touching_cache_while_root_writer_is_active(
