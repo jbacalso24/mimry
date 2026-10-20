@@ -441,8 +441,12 @@ def test_available_needs_a_model_whose_bytes_match_not_only_its_sizes(tmp_path, 
     assert embed.available() is False
 
     # The same folder with the right bytes is ready, and a second check
-    # does not hash the file again.
+    # does not hash the file again. The rewrite keeps the size, so move
+    # the mtime on: a coarse clock can give both writes the same one.
     _model_folder(tmp_path, monkeypatch, body)
+    target = tmp_path / "config.json"
+    later = target.stat().st_mtime_ns + 2_000_000_000
+    os.utime(target, ns=(later, later))
     hashed: list[str] = []
     real = embed._sha256
     monkeypatch.setattr(embed, "_sha256", lambda path: hashed.append(path.name) or real(path))

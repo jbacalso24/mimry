@@ -209,6 +209,9 @@ def download() -> Path:
         target = directory / name
         if not _verified(target, size, digest):
             _fetch(MODEL_URL + name, target, size, digest)
+            # A replacement can keep the old size and, on a coarse
+            # clock, the old mtime, so the memo must not vouch for it.
+            (directory / VERIFIED_NAME).unlink(missing_ok=True)
     return directory
 
 
