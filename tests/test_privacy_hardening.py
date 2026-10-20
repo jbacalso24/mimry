@@ -1791,7 +1791,7 @@ def test_a_redacted_go_short_declaration_keeps_its_operator_and_quotes():
         ("a.php", "<?php\n$cfg = ['password' => \"privacy-canary-\nvalue-123456789\"];\n"),
     ),
 )
-def test_a_quoted_secret_split_by_a_line_break_is_redacted_without_its_tail(name: str, source: str):
+def test_a_quoted_secret_split_by_a_line_break_is_redacted_whole(name: str, source: str):
     assert contains_sensitive_text(source, code=True)
     redacted = redact_sensitive_text(source)
     assert "privacy-canary" not in redacted and "value-123456789" not in redacted
