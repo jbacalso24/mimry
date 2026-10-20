@@ -136,6 +136,53 @@ def test_shell_search_of_named_files_is_not_a_tree_search(tmp_path, command, pat
     assert broad_search_query("", {}, command, tmp_path) == expected
 
 
+@pytest.mark.parametrize(
+    ("command", "pattern"),
+    [
+        # A search fed by a pipe, naming no path, reads the pipe.
+        ('cat log | rg -i "skip|key|push"', None),
+        ('cat log 2>&1 | rg -i "skip|key"', None),
+        ('echo ok && cat log | rg -i "skip|key"', None),
+        ('echo ok; cat log | rg -i "skip|key"', None),
+        ('cat a | sort | rg -i "skip|key"', None),
+        ('cat log | grep -i "skip|key"', None),
+        # A pipe target that names a path still searches that path.
+        ('cat log | rg -i "skip|key" app', "skip|key"),
+        ('cat log | grep -rn "skip|key" app', "skip|key"),
+        # grep -r searches the tree; git grep never reads a pipe.
+        ('cat log | grep -rn "skip|key"', "skip|key"),
+        ('cat log | git grep -i "skip|key"', "skip|key"),
+        # A segment joined by && or ; is not fed by the pipe before it.
+        ('cat log | cat && rg -i "skip|key"', "skip|key"),
+        ('cat log; rg -i "skip|key"', "skip|key"),
+    ],
+)
+def test_search_fed_by_a_pipe_reads_the_pipe_unless_it_names_a_path(tmp_path, command, pattern):
+    (tmp_path / "app").mkdir()
+    assert shell_search_pattern(command, tmp_path) == pattern
+
+
+@pytest.mark.parametrize(
+    ("paths", "counted"),
+    [
+        (["app/one.py"], False),
+        (["app/one.py", "app/two.py"], False),
+        (["app\\one.py", "app\\two.py"], False),
+        (["app/f1.py", "app/f2.py", "app/f3.py", "app/f4.py", "app/f5.py"], False),
+        (["app/f1.py", "app/f2.py", "app/f3.py", "app/f4.py", "app/f5.py", "app/f6.py"], True),
+        (["app/one.py", "app"], True),
+        (["app/*.py"], True),
+        (["app/one.py", "app/missing.py"], True),
+    ],
+)
+def test_a_short_list_of_existing_files_is_a_targeted_lookup(tmp_path, paths, counted):
+    (tmp_path / "app").mkdir()
+    for name in ["one.py", "two.py", *(f"f{n}.py" for n in range(1, 7))]:
+        (tmp_path / "app" / name).write_text("skip = 1\n", encoding="utf-8")
+    command = 'rg -i "skip|key" ' + " ".join(paths)
+    assert shell_search_pattern(command, tmp_path) == ("skip|key" if counted else None)
+
+
 def test_broad_search_query_by_tool_name(tmp_path):
     assert broad_search_query("grep", {"pattern": "auth|session"}, "", tmp_path) == "auth session"
     assert (
@@ -164,29 +211,46 @@ def test_glob_query_leaves_out_file_extensions(tmp_path, pattern, query):
 @pytest.mark.parametrize(
     ("patterns", "names"),
     [
-        (
-            ["def feedback_rank_signals|def apply_feedback_to_rows"],
-            ["feedback_rank_signals", "apply_feedback_to_rows"],
-        ),
+        (["def feedback_rank_signals"], ["feedback_rank_signals"]),
         ([r"\bapply_feedback\b.*x"], []),
-        (["ab|return|self|Foo.bar"], ["bar"]),
-        (["leaf", "leaf|main"], ["leaf", "main"]),
+        (["return"], []),
+        (["Foo.bar"], ["bar"]),
+        (["leaf", "leaf|main"], ["leaf"]),
         (["connection refused"], []),
-        (["a1|xy"], []),
         (["_escape_control_characters"], ["_escape_control_characters"]),
-        (["_private|_x|_x1"], ["_private", "_x1"]),
+        (["_private", "_x1"], ["_private", "_x1"]),
         # Dunder names (__init__) are defined in most files: skipped.
-        (["__init__|__name__|init"], ["init"]),
-        (["(acc|mean|top|n_|scored)"], ["acc", "mean", "top", "scored"]),
+        (["__init__", "__name__", "init"], ["init"]),
+        (["(acc)", "scored"], ["acc", "scored"]),
     ],
 )
 def test_symbol_candidates_drop_keywords_and_short_words(patterns, names):
     assert symbol_candidates(patterns) == names
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "foo|bar_baz",
+        "(foo|bar_baz)",
+        "(?:foo|bar_baz)",
+        "def a_name|def b_name",
+        "leaf|main",
+        "_private|_x|_x1",
+        "__init__|__name__|init",
+        "(acc|mean|top|n_|scored)",
+        "ab|return|self|Foo.bar",
+        "a1|xy",
+    ],
+)
+def test_regex_alternation_names_no_symbol(pattern):
+    # One branch of an alternation is not the symbol being looked up.
+    assert symbol_candidates([pattern]) == []
+
+
 def test_symbol_candidates_are_capped():
-    pattern = "|".join(f"name{i:02d}" for i in range(40))
-    assert len(symbol_candidates([pattern])) == hook.SYMBOL_CANDIDATE_LIMIT
+    patterns = [f"name{i:02d}" for i in range(40)]
+    assert len(symbol_candidates(patterns)) == hook.SYMBOL_CANDIDATE_LIMIT
 
 
 @pytest.mark.parametrize(
@@ -200,9 +264,7 @@ def test_symbol_candidates_are_capped():
         ("apply_feedback(", ["apply_feedback"]),
         ("^apply_feedback$", ["apply_feedback"]),
         ("class Router", ["Router"]),
-        ("foo|bar_baz", ["foo", "bar_baz"]),
-        ("(foo|bar_baz)", ["foo", "bar_baz"]),
-        ("(?:foo|bar_baz)", ["foo", "bar_baz"]),
+        ("(?:bar_baz)", ["bar_baz"]),
     ],
 )
 def test_whole_symbol_patterns_name_their_symbols(pattern, names):
@@ -241,6 +303,8 @@ def test_a_bad_pattern_does_not_hide_a_good_one():
         ("rg leaf app/one.py app/two.py", []),
         ("grep -n leaf app", []),
         ("cat app/one.py", []),
+        ("cat app/one.py | rg leaf", []),
+        ("cat app/one.py | rg leaf app", ["leaf"]),
     ],
 )
 def test_shell_tree_patterns_keep_exact_recursive_searches(tmp_path, command, patterns):

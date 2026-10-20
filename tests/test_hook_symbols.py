@@ -125,7 +125,8 @@ def test_grep_for_a_known_function_gets_its_definition_and_callers(repo, monkeyp
 
 
 def test_shell_rg_with_two_definitions_gets_both_symbols(repo, monkeypatch, capsys):
-    text = _hook(monkeypatch, capsys, repo, _shell('rg -n "def helper|def leaf" app'))
+    command = 'rg -n "def helper" app && rg -n "def leaf" app'
+    text = _hook(monkeypatch, capsys, repo, _shell(command))
 
     assert "MIMRY knows helper: function at app/one.py:1." in text
     assert "Called by main (app/one.py:9), helper2 (app/two.py:4, inferred)." in text
@@ -272,7 +273,7 @@ def test_leading_underscore_name_gets_its_definition(repo, monkeypatch, capsys):
     )
 
 
-def test_dunder_name_is_not_answered_but_a_function_in_the_same_search_is(
+def test_dunder_name_is_not_answered_but_a_function_in_the_same_command_is(
     repo, monkeypatch, capsys
 ):
     (repo / "app" / "klass.py").write_text(
@@ -281,7 +282,7 @@ def test_dunder_name_is_not_answered_but_a_function_in_the_same_search_is(
     _index_again(repo)
 
     assert _hook(monkeypatch, capsys, repo, _grep("__init__")) == ""
-    text = _hook(monkeypatch, capsys, repo, _grep("__init__|leaf"))
+    text = _hook(monkeypatch, capsys, repo, _shell('rg -n "__init__" app && rg -n "leaf" app'))
     assert text.startswith("MIMRY knows leaf: function at app/one.py:5.")
     assert "__init__" not in text
 
@@ -292,7 +293,7 @@ def test_heading_and_sql_table_named_like_a_function_are_not_answered(repo, monk
     _index_again(repo)
 
     assert _hook(monkeypatch, capsys, repo, _grep("files")) == ""
-    text = _hook(monkeypatch, capsys, repo, _grep("leaf|files"))
+    text = _hook(monkeypatch, capsys, repo, _shell('rg -n "leaf" . && rg -n "files" .'))
     assert text == (
         "MIMRY knows leaf: function at app/one.py:5.\nCalled by helper (app/one.py:1)."
     )
@@ -335,6 +336,92 @@ def test_search_of_a_directory_or_the_tree_still_gets_the_nudge(
     text = _hook(monkeypatch, capsys, repo, _shell(command))
 
     assert text.startswith('MIMRY can answer this: run `mimry find "alpha bravo"`')
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'cat app/one.py | rg -i "helper|leaf"',
+        "cat app/one.py | rg -n leaf",
+        'cat app/one.py 2>&1 | rg -i "helper|leaf"',
+        "echo ok && cat app/one.py | rg -n leaf",
+        'rg -n "def leaf" app/one.py | rg -n "set|mode|read|options"',
+    ],
+)
+def test_search_that_reads_a_pipe_gets_no_answer_or_nudge(repo, monkeypatch, capsys, command):
+    assert _hook(monkeypatch, capsys, repo, _shell(command)) == ""
+
+
+@pytest.mark.parametrize(
+    ("command", "start"),
+    [
+        (
+            'cat app/one.py | rg -n "def leaf" app',
+            "MIMRY knows leaf: function at app/one.py:5.",
+        ),
+        (
+            'cat app/one.py | rg -i "helper|leaf" app',
+            'MIMRY can answer this: run `mimry find "helper leaf"`',
+        ),
+        (
+            'cat app/one.py && rg -i "helper|leaf"',
+            'MIMRY can answer this: run `mimry find "helper leaf"`',
+        ),
+    ],
+)
+def test_search_fed_by_a_pipe_still_counts_when_it_names_a_path(
+    repo, monkeypatch, capsys, command, start
+):
+    assert _hook(monkeypatch, capsys, repo, _shell(command)).startswith(start)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [_grep("helper|leaf"), _shell('rg -n "helper|leaf" app')],
+)
+def test_regex_alternation_gets_the_nudge_not_a_symbol(repo, monkeypatch, capsys, payload):
+    text = _hook(monkeypatch, capsys, repo, payload)
+
+    assert text.startswith('MIMRY can answer this: run `mimry find "helper leaf"`')
+    assert "MIMRY knows" not in text
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _shell("rg -w leaf app"),
+        _shell(r'rg -n "\bleaf\b" app'),
+        _shell("rg -n leaf app"),
+        _grep("(leaf)"),
+    ],
+)
+def test_plain_identifier_forms_still_get_the_symbol_answer(repo, monkeypatch, capsys, payload):
+    text = _hook(monkeypatch, capsys, repo, payload)
+
+    assert text == (
+        "MIMRY knows leaf: function at app/one.py:5.\nCalled by helper (app/one.py:1)."
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'rg -i "helper|leaf" app/one.py app/two.py',
+        r'rg -i "helper|leaf" app\one.py app\two.py',
+    ],
+)
+def test_a_few_named_files_get_no_answer_or_nudge(repo, monkeypatch, capsys, command):
+    assert _hook(monkeypatch, capsys, repo, _shell(command)) == ""
+
+
+def test_more_than_five_named_files_is_a_tree_search(repo, monkeypatch, capsys):
+    for n in range(1, 5):
+        (repo / "app" / f"f{n}.py").write_text("x = 1\n", encoding="utf-8")
+    files = " ".join(["app/one.py", "app/two.py", *(f"app/f{n}.py" for n in range(1, 5))])
+
+    text = _hook(monkeypatch, capsys, repo, _shell(f'rg -i "helper|leaf" {files}'))
+
+    assert text.startswith('MIMRY can answer this: run `mimry find "helper leaf"`')
 
 
 def _module(total: int, defs: dict[int, str]) -> str:
