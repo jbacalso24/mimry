@@ -57,7 +57,9 @@ MAX_CHARS_PER_WORD = 100
 UNK_ID = 1
 DOWNLOAD_TIMEOUT = 60
 CHUNK = 1 << 20
-_WHITESPACE = frozenset("\t\n\x0b\x0c\r \x85\xa0     　           ")
+_WHITESPACE = frozenset(
+    "\t\n\x0b\x0c\r \x85\xa0\u1680\u2028\u2029\u202f\u205f\u3000\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+)
 _ASCII_PUNCTUATION = frozenset(string.punctuation)
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),
@@ -189,7 +191,7 @@ def _normalize(text: str) -> str:
     """
     cleaned = []
     for ch in text:
-        if ch in "\0�" or _is_control(ch):
+        if ch in "\0\ufffd" or _is_control(ch):
             continue
         cleaned.append(" " if ch in _WHITESPACE else ch)
     spaced = []
