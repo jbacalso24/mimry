@@ -121,7 +121,12 @@ COMPARED_SECRET_MIN_CHARS = 8
 # identifier (``xpassword=``) is not an assignment.
 # Values stop at the matching config delimiter; quoted values may
 # contain delimiters, and TOML / Python-style triple-quoted values may
-# span lines.
+# span lines. An unquoted value also stops at an escape sequence (a
+# backslash before n, r, t, a quote) that comes before any quote, and at
+# a closing bracket that does not open a group inside the value
+# (``list[str]``). After a quote the value runs as before, so an escape
+# inside a string literal stays in it. A bare backslash is part of the
+# value, so ``ab\cdef`` is one secret.
 ASSIGNMENT_RE = re.compile(
     # A spaced boundary is only the last blank before the label: any
     # earlier blank of the run would rescan the rest of it, which made
@@ -138,7 +143,10 @@ ASSIGNMENT_RE = re.compile(
     r"(?:\r?\n(?=[ \t]+(?:[^\s#:\"'][^:\r\n]*(?:\r?\n|$)|"
     r"\"(?:\\.|[^\"\\\r\n])*\"(?![ \t]*:)|'(?:\\.|[^'\\\r\n])*'(?![ \t]*:)))[ \t]+)?)"
     r"(?P<value>\"\"\".*?\"\"\"|'''.*?'''|\"(?:\\.|[^\"\\\r\n])*\"|"
-    r"'(?:\\.|[^'\\\r\n])*'|[^,{;})\r\n]*)(?P<newline>\r?\n|$)?"
+    r"'(?:\\.|[^'\\\r\n])*'|"
+    r"(?:\[[^\[\]\r\n]*\]|\\(?![nrt\"'])|[^,{;})\]\\\r\n'\"])*"
+    r"(?:(?=[\"'])[^,{;})\r\n]*)?)"
+    r"(?P<newline>\r?\n|$)?"
 )
 MULTILINE_QUOTED_ASSIGNMENT_START_RE = re.compile(
     r"(?im)(?:^|(?<=[{(,;]))[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
@@ -175,9 +183,14 @@ SPACED_SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"access[ \t_-]+token|auth(?:entication|orization)?[ \t_-]+token|"
     r"service[ \t_-]+credentials?))(?P<separator>[ \t]*(?:===|==|[:=])[ \t]*)"
     # A bracketed value is captured whole, so ``<your key here>`` is
-    # judged as one placeholder, not as its first word.
+    # judged as one placeholder, not as its first word. A template
+    # placeholder such as ``{value}`` is captured whole too, and is not
+    # a secret (see _TEMPLATE_VALUE_RE). An unquoted value stops at an
+    # escape sequence or a closing bracket (see ASSIGNMENT_RE).
     r"(?P<value>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|"
-    r"<[^<>\r\n]*>(?=[\s,;})]|\Z)|[^\s,;})]+)"
+    r"<[^<>\r\n]*>(?=[\s,;})]|\Z)|\$?\{[A-Za-z_][A-Za-z0-9_.]*\}|"
+    r"(?=[^\s,;})])(?:\[[^\[\]\s]*\]|\\(?![nrt\"'])|[^\s,;}\)\]\\\"'])*"
+    r"(?:(?=[\"'])[^\s,;})]*)?)"
 )
 
 # Value shapes that are never a literal credential. Without them, any
@@ -269,6 +282,17 @@ _REFERENCE_RE = re.compile(
     r"(?P<braced>\$\{[A-Za-z_][A-Za-z0-9_.]*\}|\$\{\{[^{}\r\n]*\}\}))"
     r"(?=[ \t]*(?:\r|$)|[ \t]+#|(?(braced)[ \t]*[,}\]](?=\s|[,}\]]|$)|(?!)))"
 )
+# A template placeholder, as in ``f"api_key = {value}"`` or
+# ``${value}``. It is filled in at run time, so it is not a literal
+# credential. As a whole value it must end where a value ends (see
+# _VALUE_END_RE).
+_TEMPLATE_PLACEHOLDER_RE = re.compile(r"\$?\{[A-Za-z_][A-Za-z0-9_.]*\}")
+_TEMPLATE_VALUE_RE = re.compile(
+    _TEMPLATE_PLACEHOLDER_RE.pattern + r"(?=[ \t]*(?:[,;)\]}\"'\\\r\n]|\Z))"
+)
+# The trailing escape of a quoted value, as in ``"secret\n"``: a line
+# break in the source, not part of the secret.
+_TRAILING_ESCAPE_RE = re.compile(r"(?:\\[nrt])+\Z")
 # Masks and placeholders: ``"********"``, ``"..."``, ``"<api-key>"``.
 _PLACEHOLDER_RE = re.compile(r"[*.xX]{3,}|<[^<>\r\n]+>")
 # An unquoted angle-bracket placeholder with a space in it, as in
@@ -281,7 +305,7 @@ _ENV_LOOKUP_RE = re.compile(
 )
 # Where a value ends outside parsed source: a separator, the line end,
 # or a comment, which follows whitespace.
-_VALUE_END_RE = re.compile(r"[ \t]*(?:[,;)\]}\r\n]|\Z|(?<=[ \t])(?:#|//))")
+_VALUE_END_RE = re.compile(r"[ \t]*(?:[,;)\]}\r\n]|\\(?=[nrt\"'])|\Z|(?<=[ \t])(?:#|//))")
 _LINE_REST_RE = re.compile(r"[^\r\n]*")
 _LINE_BREAK_RE = re.compile(r"[ \t]*\r?\n")
 _STRING_LITERAL_RE = re.compile(
@@ -507,11 +531,18 @@ def _value_is_credential(
     _code_value_is_credential). Values are scanned with ``scanner``.
     """
     candidate = value.strip().rstrip(",;}").strip()
-    if not candidate or candidate == REDACTED or candidate[0] == "|":
+    # The marker, with the closing quote _redacted_secret writes back.
+    if (
+        not candidate
+        or candidate in {REDACTED, REDACTED + '"', REDACTED + "'"}
+        or candidate[0] == "|"
+    ):
         return False  # nothing assigned, already redacted, or a YAML block (classified above)
     if _is_location(candidate):
         return False
     start = pos + len(value) - len(value.lstrip())
+    if _TEMPLATE_VALUE_RE.match(text, start):
+        return False  # ``{value}`` in an f-string or template is filled in at run time
     if candidate[0] == ">":
         if operator == ":":
             return False  # a YAML folded block
@@ -1013,6 +1044,7 @@ def _string_literal_is_credential(literal: re.Match[str], *, code: bool) -> bool
     lowered = text.lower()
     return bool(text) and not (
         text == REDACTED
+        or _TEMPLATE_PLACEHOLDER_RE.fullmatch(text)
         or lowered in _NON_CREDENTIAL_WORDS
         or lowered in _AUTH_SCHEMES
         # A count or a size, as in ``Secret: "42"``. A PIN-length
@@ -1109,14 +1141,33 @@ def _redacted_value_end(match: re.Match[str], scanner: _Scanner) -> int | None:
     return end
 
 
+def _redacted_secret(value: str) -> str:
+    """The redacted form of a captured value: the secret between its
+    quotes, or the whole value when it is unquoted.
+
+    A trailing ``\\n``, ``\\r`` or ``\\t`` escape stays after the
+    secret, before the closing quote.
+    """
+    quote = ""
+    if len(value) >= 6 and value[:3] == value[-3:] and value[:3] in {'"""', "'''"}:
+        quote = value[:3]
+    elif len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        quote = value[0]
+    if not quote:
+        # An odd quote at the end closes an enclosing string, as in
+        # ``f("token=x")``, so it stays after the marker. A balanced one
+        # is part of the expression, as in ``f"..."``.
+        closing = value[-1:] if value[-1:] in {'"', "'"} and value.count(value[-1]) % 2 else ""
+        return REDACTED + closing
+    escape = _TRAILING_ESCAPE_RE.search(value, len(quote), len(value) - len(quote))
+    return f"{quote}{REDACTED}{escape.group() if escape else ''}{quote}"
+
+
 def _redact_spaced_assignment(match: re.Match[str], scanner: _Scanner) -> str | None:
     if not _spaced_assignment_value_is_sensitive(match, scanner=scanner):
         return None
-    value = match.group("value")
-    quote = (
-        value[0] if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"} else ""
-    )
-    return f"{match.group('label')}{match.group('separator')}{quote}{REDACTED}{quote}"
+    label, separator = match.group("label"), match.group("separator")
+    return f"{label}{separator}{_redacted_secret(match.group('value'))}"
 
 
 def _comparison_is_credential(text: str, start: int, *, code: bool) -> bool:
@@ -1173,12 +1224,7 @@ def _redact_assignment(match: re.Match[str], scanner: _Scanner) -> str | None:
     arrow = ""
     if stripped.startswith(">"):  # ``'key' => 'value'``
         arrow, stripped = "> ", stripped[1:].strip()
-    quote = ""
-    if len(stripped) >= 6 and stripped[:3] == stripped[-3:] and stripped[:3] in {'"""', "'''"}:
-        quote = stripped[:3]
-    elif len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
-        quote = stripped[0]
-    return f"{match.group('prefix')}{arrow}{quote}{REDACTED}{quote}"
+    return f"{match.group('prefix')}{arrow}{_redacted_secret(stripped)}"
 
 
 def _redact_yaml_block(match: re.Match[str]) -> str:

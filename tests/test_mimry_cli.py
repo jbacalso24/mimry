@@ -482,7 +482,8 @@ def test_install_hooks_serializes_windows_exe_for_posix_bash_and_stays_idempoten
 def test_claude_code_hook_matches_the_grep_tool(tmp_path):
     """Claude Code's search tool is named Grep. A matcher of
     Bash|Read|Glob fired only on shelled-out grep/rg, so the tool
-    AGENT_RULES.md targets went unnudged."""
+    AGENT_RULES.md targets went unnudged. Read is matched too, for the
+    outline of a large file."""
     repo = copy_fixture(tmp_path)
     cfg = installer.platforms()["claude-code"]
     installer._install_hooks(repo, cfg)
@@ -490,7 +491,7 @@ def test_claude_code_hook_matches_the_grep_tool(tmp_path):
     settings = json.loads((repo / cfg.hook_path).read_text(encoding="utf-8"))
     entry = next(e for e in settings["hooks"]["PreToolUse"] if installer._is_mimry_hook(e))
     assert "Grep" in entry["matcher"].split("|")
-    assert "Read" not in entry["matcher"].split("|")
+    assert "Read" in entry["matcher"].split("|")
 
 
 def test_agent_guidance_starts_with_mimry_and_keeps_rg_for_exact_strings():

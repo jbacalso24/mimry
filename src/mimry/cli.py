@@ -71,7 +71,7 @@ def build_parser():
         cmd_why,
     )
     from .doctor import cmd_doctor
-    from .hook import cmd_hook_check, cmd_hook_refresh
+    from .hook import cmd_hook_check, cmd_hook_compact, cmd_hook_refresh
     from .installer import cmd_install, cmd_uninstall, platform_help
     from .upgrade import cmd_upgrade
 
@@ -639,6 +639,9 @@ def build_parser():
     sub.add_parser(
         "hook-refresh", help="Internal hook: refresh the index in the background"
     ).set_defaults(func=cmd_hook_refresh)
+    sub.add_parser(
+        "hook-compact", help="Internal hook: restore the working set after a compaction"
+    ).set_defaults(func=cmd_hook_compact)
     # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`:
     # package runners such as uvx only launch the script named after the
     # package.
@@ -675,6 +678,7 @@ def build_parser():
         if name not in {
             "hook-check",
             "hook-refresh",
+            "hook-compact",
             "plan",
             "cache",
             "embed",
@@ -701,26 +705,48 @@ def _cmd_mcp(a) -> int:
     return 0
 
 
-def _hook_check_root(args) -> str | None:
-    """Root if argv is exactly ``[--root R] hook-check``, else None."""
+def _hook_root(args) -> tuple[str, str] | None:
+    """(hook, root) if argv is exactly ``[--root R] hook-check`` or
+    ``hook-compact``, else None.
+
+    These hooks only read, so they skip the command setup and the flush.
+    """
     rest = list(args)
     root = "."
     if len(rest) >= 2 and rest[0] == "--root":
         root, rest = rest[1], rest[2:]
     elif rest and rest[0].startswith("--root="):
         root, rest = rest[0].split("=", 1)[1], rest[1:]
-    return root if rest == ["hook-check"] else None
+    if len(rest) == 1 and rest[0] in {"hook-check", "hook-compact"}:
+        return rest[0], root
+    return None
+
+
+def _run_command(a):
+    """Run a command, then close the session windows it may have closed.
+
+    The command has released its index lock by now.
+    """
+    from pathlib import Path
+
+    from .session import flush_session_feedback
+
+    code = a.func(a)
+    flush_session_feedback(Path(getattr(a, "root", None) or "."))
+    return code
 
 
 def main(argv=None):
-    hook_root = _hook_check_root(sys.argv[1:] if argv is None else argv)
-    if hook_root is not None:
+    hook = _hook_root(sys.argv[1:] if argv is None else argv)
+    if hook is not None:
         from types import SimpleNamespace
 
-        from .hook import cmd_hook_check
+        from .hook import cmd_hook_check, cmd_hook_compact
 
+        name, hook_root = hook
+        run = cmd_hook_check if name == "hook-check" else cmd_hook_compact
         configure_console()
-        return cmd_hook_check(SimpleNamespace(root=hook_root))
+        return run(SimpleNamespace(root=hook_root))
     from pathlib import Path
 
     from .cache_safety import IndexOutsideCacheError, UnsafeCachePathError
@@ -742,14 +768,14 @@ def main(argv=None):
 
     try:
         try:
-            return a.func(a)
+            return _run_command(a)
         except IndexSchemaMigrationError:
             if not hasattr(a, "root"):
                 raise
             # Rebuild once, then retry the command.
             rebuild_outdated_index(Path(a.root).resolve())
             print(INDEX_REBUILT_NOTE, file=sys.stderr)
-            return a.func(a)
+            return _run_command(a)
     except UnsupportedIndexSchemaError as exc:
         ui.fail("This index was built by a newer version of MIMRY", str(exc))
     except IndexSchemaMigrationError as exc:

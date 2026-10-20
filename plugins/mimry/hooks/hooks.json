@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Glob|Grep",
+        "matcher": "Bash|Glob|Grep|Read",
         "hooks": [
           {
             "type": "command",
@@ -31,6 +31,21 @@
               "hook-refresh"
             ],
             "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx",
+            "args": [
+              "--from",
+              "mimry==0.6.4",
+              "mimry",
+              "hook-compact"
+            ]
           }
         ]
       }

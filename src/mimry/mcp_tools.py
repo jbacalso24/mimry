@@ -63,6 +63,7 @@ from mimry.security import (
     sanitize_query,
 )
 from mimry.semantic import semantic_health, semantic_rows
+from mimry.session import flush_session_feedback, record_query
 from mimry.source_snippets import with_source_snippets
 from mimry.state import (
     GENERATION_SCHEMA_VERSION,
@@ -144,6 +145,18 @@ def _root_identity_recommended(exc: RootIdentityError) -> str:
     )
 
 
+def _flush_session(func, args, kwargs) -> None:
+    """Turn the session windows a query just closed into feedback.
+
+    The tool has released its index lock by now. Never raises.
+    """
+    try:
+        root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
+        flush_session_feedback(_root(root if isinstance(root, str) else None))
+    except Exception:
+        pass
+
+
 def _state_guard(func):
     """One structured corruption envelope for direct/protocol calls."""
 
@@ -153,6 +166,7 @@ def _state_guard(func):
                 root = signature(func).bind_partial(*args, **kwargs).arguments.get("root")
                 rebuild_outdated_index(_root(root if isinstance(root, str) else None))
             result = func(*args, **kwargs)
+            _flush_session(func, args, kwargs)
             if rebuild and isinstance(result, dict):
                 result["index_rebuilt"] = INDEX_REBUILT_NOTE
             return sanitize_data(result)
@@ -555,6 +569,7 @@ def mimry_find(
                 "returncode": 2,
                 "error": {"code": "invalid_snippet_limits", "message": str(exc)},
             }
+    record_query(root_path, query, [row["path"] for row in rows])
     payload = {
         "query": redact_sensitive_text(query),
         "root": str(root_path),

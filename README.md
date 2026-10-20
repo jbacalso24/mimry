@@ -175,7 +175,7 @@ mimry install --platform claude-code
 ```
 
 > [!TIP]
-> Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` when it starts a broad search of the repository, at most three times a session, and answers a grep for a known symbol with its definition and callers. The hooks also refresh the index in the background when a session starts and after each file edit.
+> Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` when it starts a broad search of the repository, at most three times a session, answers a grep for a known symbol with its definition and callers, and outlines a large file when the agent reads it whole. The hooks also refresh the index in the background when a session starts and after each file edit, and restore the files it was working on after the context is compacted.
 
 ## Features
 
@@ -328,7 +328,7 @@ See [docs/agents.md](docs/agents.md) for where each agent's files go and how its
 |---|---|
 | `--project` | Install into the current repository only, instead of for every repository |
 | `--always-on` | Add a short rules block to the agent's always-read file, such as `AGENTS.md` |
-| `--hooks` | Suggest `mimry find` when the agent starts a broad search of the repository, at most three times a session, answer a search for a known symbol with its definition and callers, and refresh the index in the background when a session starts and after each file edit. For Codex, project hooks run after you trust them with `/hooks`. |
+| `--hooks` | Suggest `mimry find` when the agent starts a broad search of the repository, at most three times a session, answer a search for a known symbol with its definition and callers, outline a large file when the agent reads it whole, record the files it reads and edits after a find as feedback (`MIMRY_SESSION_FEEDBACK=0` turns that off), and refresh the index in the background when a session starts and after each file edit. In Claude Code they also restore the files it was working on after the context is compacted. For Codex, project hooks run after you trust them with `/hooks`. |
 | `--no-mcp` | Install the skill without registering the MCP server |
 | `--no-global-gitignore` | Do not add `.mimry/` to Git's global ignore file |
 

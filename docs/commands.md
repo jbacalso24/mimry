@@ -30,7 +30,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry doctor` | Read-only install, parser, index, and cache diagnostics (`--json` for tools); common problems and fixes are in [troubleshooting](troubleshooting.md) |
 | `mimry watch` | Poll for changes and refresh when they settle, printing one line per refresh |
 | `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`); the post-commit hook also records feedback from the commit, and re-running `mimry git-hooks` upgrades existing hooks |
-| `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back; `feedback stats` also shows, for the last 30 days, how many preflights ran and how many commits had a preflight first, and, only when at least one commit had one, how many of those held a changed file in the preflight's top five; `--from-json FILE` reads a feedback payload from a JSON file, and `--from-commit [REV]` records a commit's changed files against the last preflight before it, when the commit touches a file that preflight suggested or its message or a changed file name shares a task word with it |
+| `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back; `feedback stats` also shows, for the last 30 days, how many preflights ran and how many commits had a preflight first, and, only when at least one commit had one, how many of those held a changed file in the preflight's top five; `--from-json FILE` reads a feedback payload from a JSON file, and `--from-commit [REV]` records a commit's changed files against the last preflight before it, when the commit touches a file that preflight suggested or its message or a changed file name shares a task word with it; the hooks also record a session's reads and edits after a find, unless `MIMRY_SESSION_FEEDBACK=0` |
 | `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
 | `mimry plan ...` | Store and render explicit plan trees |
 | `mimry mcp` | Run the MCP server (same as `mimry-mcp`) |
@@ -134,7 +134,7 @@ Add `--file <path>` when they are in different files, or `--line N` (or `--file 
 A `--line` that starts no candidate and spans none exits 1 and lists the candidates.
 `path` between two indexed names with no connection also exits 0, because that is an answer.
 `status` keeps its own codes: 1 when MIMRY is not set up, 2 when the index is not current.
-`hook-check` and `hook-refresh` always exit 0, so a hook never fails the agent's tool call.
+`hook-check`, `hook-refresh` and `hook-compact` always exit 0, so a hook never fails the agent's tool call.
 With `--json`, the JSON is printed and the exit code is the same.
 
 ## Inferred edges

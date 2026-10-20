@@ -12,8 +12,17 @@ answers with its definition and top callers instead, read from the
 index. It must stay cheap (stdlib only, nothing from the indexing stack)
 and must never fail the call.
 
+A whole-file Read of a large indexed file gets an outline of its
+symbols with their line numbers, so the agent can read only the part
+it needs.
+
 ``hook-refresh`` is the background hook for session start and file
-edits. It reindexes stale files so the next query does not wait.
+edits. It reindexes stale files so the next query does not wait, and
+it logs the edits and closes the session windows for feedback.
+
+``hook-compact`` runs in the foreground when a session resumes after
+its context was compacted. It adds a note with the session's last
+query and the files it edited and read, so the agent can pick up again.
 """
 
 from __future__ import annotations
@@ -24,10 +33,12 @@ import re
 import shlex
 import sys
 import time
+import unicodedata
 from pathlib import Path
 from typing import NamedTuple
 
 from .constants import HEAVY_IGNORES, NON_CODE_KINDS
+from .session import compact_note, edited_paths, flush_session_feedback, log_file_event
 
 # Regex constructs that make a pattern broad. A plain identifier, an
 # escaped dot or an exact message is not matched by any of these.
@@ -86,6 +97,14 @@ SYMBOL_CANDIDATE_LIMIT = 20
 # callers command instead of listing callers.
 # ponytail: a call-edge table in the index lists callers at any size.
 HOOK_GRAPH_MAX_BYTES = 8_000_000
+# A whole-file Read of a long file with enough symbols gets an outline
+# of them. BIG_READ_LINES and BIG_READ_MIN_SYMBOLS say when, and
+# BIG_READ_SYMBOLS caps the list.
+BIG_READ_LINES = 400
+BIG_READ_MIN_SYMBOLS = 3
+BIG_READ_SYMBOLS = 25
+# Bigger files are not read for their line count.
+BIG_READ_MAX_BYTES = 4_000_000
 _HEAVY_IGNORES_CASEFOLD = frozenset(part.casefold() for part in HEAVY_IGNORES)
 
 
@@ -113,6 +132,15 @@ def cmd_hook_refresh(a) -> int:
     except Exception:
         # The next query reindexes stale files anyway, so a failed
         # background refresh costs nothing but time.
+        pass
+    return 0
+
+
+def cmd_hook_compact(a) -> int:
+    try:
+        _hook_compact(Path(getattr(a, "root", None) or "."))
+    except Exception:
+        # The note is optional; never fail the session over it.
         pass
     return 0
 
@@ -499,6 +527,18 @@ def _ignored_path(rel_path: str) -> bool:
     )
 
 
+def _index_connection(index: Path):
+    """A read-only connection to the ``mimry.sqlite`` of ``index``."""
+    import sqlite3
+
+    # A file:///C:/ URI cost ~80 ms to open on Windows; a file:C:/ URI
+    # built from the absolute path opens in under 1 ms. Only the three
+    # characters that end or change a file: URI need escaping.
+    db = os.path.abspath(index / "mimry.sqlite").replace("\\", "/")
+    db = db.replace("%", "%25").replace("?", "%3F").replace("#", "%23")
+    return sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.2)
+
+
 def _definitions(
     root: Path, index: Path, names: list[str], indexed_at: float
 ) -> dict[str, list[tuple[str, str, int]]]:
@@ -509,17 +549,10 @@ def _definitions(
     index was built, because its line may be wrong by now. Headings and
     SQL tables are not code, so they are never returned.
     """
-    import sqlite3
-
     marks = ",".join("?" * len(names))
     kinds = sorted(NON_CODE_KINDS)
     kind_marks = ",".join("?" * len(kinds))
-    # A file:///C:/ URI cost ~80 ms to open on Windows; a file:C:/ URI
-    # built from the absolute path opens in under 1 ms. Only the three
-    # characters that end or change a file: URI need escaping.
-    db = os.path.abspath(index / "mimry.sqlite").replace("\\", "/")
-    db = db.replace("%", "%25").replace("?", "%3F").replace("#", "%23")
-    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.2)
+    con = _index_connection(index)
     try:
         rows = con.execute(
             "select s.name, s.kind, f.rel_path, s.line_start from symbols s"
@@ -681,6 +714,108 @@ def _symbol_answer(
         return None
 
 
+def _outline_path(root: Path, file_path: str) -> str | None:
+    """Path of ``file_path`` relative to root, POSIX style, or None."""
+    rel = Path(os.path.relpath(os.path.abspath(root / file_path), os.path.abspath(root)))
+    if rel.is_absolute() or rel.parts[:1] == ("..",):
+        return None
+    return unicodedata.normalize("NFC", rel.as_posix())
+
+
+def _file_symbols(index: Path, rel_path: str) -> list[tuple[int, str, str]] | None:
+    """Code symbols of ``rel_path``, in line order.
+
+    None when the index does not know the file.
+    """
+    kinds = sorted(NON_CODE_KINDS)
+    kind_marks = ",".join("?" * len(kinds))
+    con = _index_connection(index)
+    try:
+        rows = con.execute(
+            "select s.line_start, s.kind, s.name from files f"
+            " left join symbols s on s.file_id = f.file_id and s.line_start is not null"
+            f" and (s.kind is null or s.kind not in ({kind_marks}))"
+            " where f.rel_path = ? order by s.line_start, s.name",
+            [*kinds, rel_path],
+        ).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return None
+    return [(int(line), kind or "symbol", name) for line, kind, name in rows if line is not None]
+
+
+def _line_count(data: bytes) -> int:
+    """Newlines in ``data`` plus one for a last line without one."""
+    return data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
+
+
+def _outline_text(rel_path: str, lines: int, symbols: list[tuple[int, str, str]]) -> str:
+    shown = [f"L{line} {kind} {name}" for line, kind, name in symbols[:BIG_READ_SYMBOLS]]
+    more = len(symbols) - len(shown)
+    if more > 0:
+        shown.append(f"and {more} more")
+    return (
+        f"{rel_path} is {lines} lines. Its symbols: {', '.join(shown)}."
+        " Read the part you need with offset and limit."
+    )
+
+
+def _big_read_answer(root: Path, session: str, tool_input: dict) -> str | None:
+    """The outline of a large indexed file that a whole-file Read names.
+
+    None for a Read with a range, a file the index does not know, a file
+    with fewer than BIG_READ_MIN_SYMBOLS symbols, a file over
+    BIG_READ_MAX_BYTES, a file edited since the index was built, a short
+    file, and for any error. The cheap index checks run first, and the
+    file is read only after they pass.
+    """
+    try:
+        if tool_input.get("offset") is not None or tool_input.get("limit") is not None:
+            return None
+        file_path = str(tool_input.get("file_path") or "")
+        rel_path = _outline_path(root, file_path) if file_path else None
+        if rel_path is None or _ignored_path(rel_path):
+            return None
+        from datetime import datetime
+
+        pointer = json.loads((root / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+        index = Path(pointer["indexPath"])
+        indexed_at = datetime.fromisoformat(pointer["lastIndexedAt"]).timestamp()
+        symbols = _file_symbols(index, rel_path)
+        if symbols is None or len(symbols) < BIG_READ_MIN_SYMBOLS:
+            return None
+        path = root / rel_path
+        st = path.stat()
+        # A file edited since the index was built has stale lines.
+        if st.st_mtime > indexed_at or st.st_size > BIG_READ_MAX_BYTES:
+            return None
+        lines = _line_count(path.read_bytes())
+        if lines <= BIG_READ_LINES:
+            return None
+        # Once per file per session. The colon keeps this key apart from
+        # search queries, which are plain words.
+        if session and not _first_for_query(root / ".mimry", session, f"read:{rel_path}"):
+            return None
+        return _outline_text(rel_path, lines, symbols)
+    except Exception:
+        # The outline is optional; never fail the call.
+        return None
+
+
+def _print_context(answer: str, event: str = "PreToolUse") -> None:
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": event,
+                    "additionalContext": answer,
+                }
+            }
+        )
+    )
+
+
 def _hook_check(root: Path) -> None:
     # Hook payloads are UTF-8 JSON. Reading bytes avoids the console
     # code page, which on Windows cannot decode arbitrary command text.
@@ -693,13 +828,18 @@ def _hook_check(root: Path) -> None:
         data = json.loads(raw) if raw.strip() else {}
         tool_name = str(data.get("tool_name") or "").lower()
         session = str(data.get("session_id") or "")
-        # Return early for Read so a path containing "grep" cannot
-        # trigger it.
-        if tool_name == "read":
-            return
         found = data.get("tool_input", data)
         if isinstance(found, dict):
             tool_input = found
+        # A Read only ever gets the outline of a large file, never a
+        # search answer, so a path containing "grep" cannot trigger one.
+        if tool_name == "read":
+            # The session log wants every read, whatever is answered.
+            log_file_event(root, session, "opened", [tool_input.get("file_path")])
+            answer = _big_read_answer(root, session, tool_input)
+            if answer is not None:
+                _print_context(answer)
+            return
         command = str(tool_input.get("command") or "")
     except Exception:
         command = raw
@@ -719,16 +859,7 @@ def _hook_check(root: Path) -> None:
         if session and not _nudge_allowed(mimry_dir, session):
             return
         answer = nudge(query)
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "additionalContext": answer,
-                }
-            }
-        )
-    )
+    _print_context(answer)
 
 
 def _take_refresh_lock(lock: Path) -> bool:
@@ -748,17 +879,41 @@ def _take_refresh_lock(lock: Path) -> bool:
     return False
 
 
+def _hook_compact(root: Path) -> None:
+    # The session id picks this session's files out of the shared log.
+    raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    data = json.loads(raw) if raw.strip() else {}
+    session = str(data.get("session_id") or "") if isinstance(data, dict) else ""
+    note = compact_note(root, session)
+    if note is not None:
+        _print_context(note, event="SessionStart")
+
+
 def _hook_refresh(root: Path) -> None:
     from .lifecycle import indexed_root, refresh_if_stale
     from .paths import mdir, pointer_file
 
-    # The host sends a JSON payload; nothing in it is needed, and a
-    # closed or unreadable stdin must not stop the refresh.
+    # The host sends a JSON payload. A closed or unreadable stdin must
+    # not stop the refresh, so a missing or bad payload counts as empty.
     try:
-        sys.stdin.buffer.read()
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8", errors="replace") or "{}")
     except Exception:
-        pass
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
     root = indexed_root(root.resolve())
+    # An edit is a changed file in the session log. A session start
+    # closes the windows the last session left open.
+    tool_input = payload.get("tool_input")
+    if payload.get("hook_event_name") == "SessionStart":
+        flush_session_feedback(root)
+    elif isinstance(tool_input, dict):
+        log_file_event(
+            root,
+            str(payload.get("session_id") or ""),
+            "changed",
+            edited_paths(tool_input),
+        )
     # The hook never sets MIMRY up; that is what `mimry init` is for.
     if not pointer_file(root).is_file():
         return

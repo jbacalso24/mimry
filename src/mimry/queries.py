@@ -77,6 +77,7 @@ from .scanner import size_limit_text, uncommitted_paths
 from .search import find_rows
 from .security import filter_index_records, markdown_inline, redact_sensitive_text, sanitize_query
 from .semantic import semantic_health
+from .session import record_query
 from .state import (
     atomic_write_text,
     grammar_error_of,
@@ -599,6 +600,7 @@ def write_context_pack(
     atomic_write_text(context_file(root), text)
     _prune_task_packs(root, keep=pack_path)
     log_preflight(root, rows)
+    record_query(root, query, [r["path"] for r in rows], context_path=pack_path)
     return rows, pack_path
 
 

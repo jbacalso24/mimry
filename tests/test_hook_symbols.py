@@ -337,6 +337,111 @@ def test_search_of_a_directory_or_the_tree_still_gets_the_nudge(
     assert text.startswith('MIMRY can answer this: run `mimry find "alpha bravo"`')
 
 
+def _module(total: int, defs: dict[int, str]) -> str:
+    """Python of ``total`` lines, a ``def`` at each line of ``defs``."""
+    lines = ["value = 1"] * total
+    for line, name in defs.items():
+        lines[line - 1] = f"def {name}(): return {line}"
+    return "\n".join(lines) + "\n"
+
+
+BIG_DEFS = {12: "alpha", 40: "beta", 200: "gamma", 499: "delta"}
+
+
+@pytest.fixture
+def outline_repo(tmp_path, monkeypatch):
+    """A git repo with three indexed modules.
+
+    big.py has 500 lines and four functions, short.py has 300 lines and
+    the same four, and sparse.py has 500 lines and two.
+    """
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    root = tmp_path / "repo"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "big.py").write_text(_module(500, BIG_DEFS), encoding="utf-8")
+    short_defs = {12: "alpha", 40: "beta", 200: "gamma", 250: "delta"}
+    (root / "app" / "short.py").write_text(_module(300, short_defs), encoding="utf-8")
+    (root / "app" / "sparse.py").write_text(
+        _module(500, {12: "alpha", 40: "beta"}), encoding="utf-8"
+    )
+    cache = tmp_path / "cache"
+    _git(root, "init", "-q")
+    _git(root, "config", "user.name", "MIMRY Test")
+    _git(root, "config", "user.email", "test@example.com")
+    assert _mimry(root, cache, "init").returncode == 0
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "Initial commit")
+    assert _mimry(root, cache, "index").returncode == 0
+    return root
+
+
+def _read(path: str, session: str = "s1", **tool_input) -> dict:
+    return {
+        "tool_name": "Read",
+        "session_id": session,
+        "tool_input": {"file_path": path, **tool_input},
+    }
+
+
+def test_read_of_a_big_file_outlines_its_symbols(outline_repo, monkeypatch, capsys):
+    path = str(outline_repo / "app" / "big.py")
+
+    text = _hook(monkeypatch, capsys, outline_repo, _read(path))
+
+    assert text == (
+        "app/big.py is 500 lines. Its symbols: L12 function alpha, L40 function beta, "
+        "L200 function gamma, L499 function delta. Read the part you need with offset and limit."
+    )
+
+
+@pytest.mark.parametrize("extra", [{"offset": 100}, {"limit": 50}])
+def test_read_with_a_range_gets_no_outline(outline_repo, monkeypatch, capsys, extra):
+    path = str(outline_repo / "app" / "big.py")
+
+    assert _hook(monkeypatch, capsys, outline_repo, _read(path, **extra)) == ""
+
+
+def test_short_file_and_file_with_few_symbols_get_no_outline(outline_repo, monkeypatch, capsys):
+    short = str(outline_repo / "app" / "short.py")
+    sparse = str(outline_repo / "app" / "sparse.py")
+
+    assert _hook(monkeypatch, capsys, outline_repo, _read(short)) == ""
+    assert _hook(monkeypatch, capsys, outline_repo, _read(sparse)) == ""
+
+
+def test_file_outside_the_index_gets_no_outline(outline_repo, monkeypatch, capsys):
+    late = outline_repo / "app" / "late.py"
+    late.write_text(_module(500, BIG_DEFS), encoding="utf-8")
+
+    assert _hook(monkeypatch, capsys, outline_repo, _read(str(late))) == ""
+    outside = str(outline_repo.parent / "outside.py")
+    assert _hook(monkeypatch, capsys, outline_repo, _read(outside)) == ""
+
+
+def test_outline_is_shown_once_per_file_per_session(outline_repo, monkeypatch, capsys):
+    path = str(outline_repo / "app" / "big.py")
+
+    first = _hook(monkeypatch, capsys, outline_repo, _read(path, session="s1"))
+    second = _hook(monkeypatch, capsys, outline_repo, _read(path, session="s1"))
+    other_session = _hook(monkeypatch, capsys, outline_repo, _read(path, session="s2"))
+
+    assert first.startswith("app/big.py is 500 lines.")
+    assert second == ""
+    assert other_session.startswith("app/big.py is 500 lines.")
+
+
+def test_outline_stops_at_25_symbols_and_counts_the_rest(outline_repo, monkeypatch, capsys):
+    many = {i * 15 + 1: f"fn_{i:02d}" for i in range(30)}
+    (outline_repo / "app" / "many.py").write_text(_module(500, many), encoding="utf-8")
+    _index_again(outline_repo)
+
+    text = _hook(monkeypatch, capsys, outline_repo, _read(str(outline_repo / "app" / "many.py")))
+
+    assert text.startswith("app/many.py is 500 lines. Its symbols: L1 function fn_00, L16 ")
+    assert text.count(" function fn_") == 25
+    assert text.endswith("fn_24, and 5 more. Read the part you need with offset and limit.")
+
+
 def test_generic_nudge_is_capped_per_session(repo, monkeypatch, capsys):
     queries = ["alpha|bravo", "charlie|delta", "echo|foxtrot", "golf|hotel", "india|juliet"]
     texts = [
