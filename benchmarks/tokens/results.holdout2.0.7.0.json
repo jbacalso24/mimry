@@ -1,0 +1,5380 @@
+{
+  "summary": {
+    "tasks": 44,
+    "read_budget": 10,
+    "success": {
+      "grep": 28,
+      "mimry": 33
+    },
+    "tokens_total": {
+      "grep": 2358844,
+      "mimry": 1155568
+    },
+    "savings_vs_grep_pct": 51.0,
+    "both_succeeded": 26,
+    "savings_vs_grep_pct_both_succeeded": 32.5,
+    "median_task_savings_vs_grep_pct": 45.1,
+    "median_x_fewer_than_reading_whole_repo": 24.5,
+    "ranking": {
+      "grep": {
+        "mean_recall_at_5_pct": 58.3,
+        "mean_recall_at_10_pct": 66.7,
+        "median_first_gold_rank": 3,
+        "tasks_with_missed_files": 6
+      },
+      "mimry": {
+        "mean_recall_at_5_pct": 66.3,
+        "mean_recall_at_10_pct": 75.0,
+        "median_first_gold_rank": 2,
+        "tasks_with_missed_files": 14
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "fastapi/typer#1912",
+      "task": "\ud83d\udc1b Fix showing `fast` button as external link in animated terminals in docs",
+      "gold": [
+        "docs/js/termynal.js"
+      ],
+      "repo_tokens": 575902,
+      "grep": {
+        "tokens": 85046,
+        "search_tokens": 3984,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 46966,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/printing.md",
+            "tokens": 2355,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/css/custom.css",
+            "tokens": 1571,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/help-typer.md",
+            "tokens": 789,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/package.md",
+            "tokens": 3980,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "mkdocs.yml",
+            "tokens": 1553,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/features.md",
+            "tokens": 703,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/exceptions.md",
+            "tokens": 6860,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/termui.py",
+            "tokens": 3427,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/params.py",
+            "tokens": 12858,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 33,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F showing",
+            "git grep -c -i -I -F fast",
+            "git grep -c -i -I -F button",
+            "git grep -c -i -I -F external",
+            "git grep -c -i -I -F link",
+            "git grep -c -i -I -F animated",
+            "git grep -c -i -I -F terminals",
+            "git grep -c -i -I -F docs"
+          ],
+          "tokens": 3984
+        }
+      },
+      "mimry": {
+        "tokens": 63169,
+        "search_tokens": 1832,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "scripts/deploy_docs_status.py",
+            "tokens": 835,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "scripts/docs.py",
+            "tokens": 3067,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/termui.py",
+            "tokens": 3427,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/callback/tutorial001_py310.py",
+            "tokens": 167,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/callback/tutorial003_py310.py",
+            "tokens": 70,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/context/tutorial001_py310.py",
+            "tokens": 100,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/context/tutorial002_py310.py",
+            "tokens": 90,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/help/tutorial001_an_py310.py",
+            "tokens": 276,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 46966,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/printing.md",
+            "tokens": 2355,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 3984,
+        "index_ms": 7099,
+        "preflight_ms": 489,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "docs/js/termynal.js"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"\ud83d\udc1b Fix showing `fast` button as external link in animated terminals in docs\""
+          ],
+          "tokens": 1832
+        }
+      }
+    },
+    {
+      "id": "fastapi/typer#1904",
+      "task": "\ud83d\udc1b Prevent scroll-to-top on restart/fast buttons in the documentation",
+      "gold": [
+        "docs/js/termynal.js"
+      ],
+      "repo_tokens": 575111,
+      "grep": {
+        "tokens": 49489,
+        "search_tokens": 827,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 46614,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/js/termynal.js",
+            "tokens": 2048,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F prevent",
+            "git grep -c -i -I -F scroll",
+            "git grep -c -i -I -F top",
+            "git grep -c -i -I -F restart",
+            "git grep -c -i -I -F fast",
+            "git grep -c -i -I -F buttons",
+            "git grep -c -i -I -F documentation"
+          ],
+          "tokens": 827
+        }
+      },
+      "mimry": {
+        "tokens": 71740,
+        "search_tokens": 1813,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "typer/completion.py",
+            "tokens": 1054,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/globals.py",
+            "tokens": 406,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "scripts/docs.py",
+            "tokens": 3067,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/termui.py",
+            "tokens": 3427,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/core.py",
+            "tokens": 9370,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/cli.py",
+            "tokens": 2460,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/assets/cli/extended_app_cli.py",
+            "tokens": 106,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_cli/test_extending_app.py",
+            "tokens": 548,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 46614,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/js/termynal.js",
+            "tokens": 2048,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 827,
+        "index_ms": 2448,
+        "preflight_ms": 455,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "docs/js/termynal.js"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"\ud83d\udc1b Prevent scroll-to-top on restart/fast buttons in the documentation\""
+          ],
+          "tokens": 1813
+        }
+      }
+    },
+    {
+      "id": "fastapi/typer#1843",
+      "task": "\ud83d\udc1b Fix formatting in `NoSuchOption.format_message()`",
+      "gold": [
+        "typer/_click/exceptions.py"
+      ],
+      "repo_tokens": 577721,
+      "grep": {
+        "tokens": 2186,
+        "search_tokens": 344,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "typer/_click/exceptions.py",
+            "tokens": 1842,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F formatting",
+            "git grep -c -i -I -F nosuchoption",
+            "git grep -c -i -I -F format_message"
+          ],
+          "tokens": 344
+        }
+      },
+      "mimry": {
+        "tokens": 3884,
+        "search_tokens": 2042,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "typer/_click/exceptions.py",
+            "tokens": 1842,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 3377,
+        "preflight_ms": 534,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"\ud83d\udc1b Fix formatting in `NoSuchOption.format_message()`\""
+          ],
+          "tokens": 2042
+        }
+      }
+    },
+    {
+      "id": "fastapi/typer#1821",
+      "task": "\ud83d\udc1b Ensure that the default of a list argument is used correctly",
+      "gold": [
+        "typer/_click/parser.py"
+      ],
+      "repo_tokens": 576668,
+      "grep": {
+        "tokens": 99496,
+        "search_tokens": 5108,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "typer/core.py",
+            "tokens": 9301,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 44712,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/params.py",
+            "tokens": 12858,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/core.py",
+            "tokens": 8417,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/rich_utils.py",
+            "tokens": 5785,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/arguments/optional.md",
+            "tokens": 1618,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/types.py",
+            "tokens": 5049,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/multiple-values/arguments-with-multiple-values.md",
+            "tokens": 431,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_type_conversion.py",
+            "tokens": 2692,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/utils.py",
+            "tokens": 3525,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 15,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F ensure",
+            "git grep -c -i -I -F default",
+            "git grep -c -i -I -F list",
+            "git grep -c -i -I -F argument",
+            "git grep -c -i -I -F used",
+            "git grep -c -i -I -F correctly"
+          ],
+          "tokens": 5108
+        }
+      },
+      "mimry": {
+        "tokens": 98561,
+        "search_tokens": 1966,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "docs_src/arguments/default/tutorial002_an_py310.py",
+            "tokens": 81,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/arguments/default/tutorial002_py310.py",
+            "tokens": 72,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/arguments/default/tutorial001_py310.py",
+            "tokens": 46,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/main.py",
+            "tokens": 13491,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/arguments/default/tutorial001_an_py310.py",
+            "tokens": 55,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/core.py",
+            "tokens": 9301,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/cli.py",
+            "tokens": 2454,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/params.py",
+            "tokens": 12858,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 44712,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/core.py",
+            "tokens": 8417,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 5108,
+        "index_ms": 3497,
+        "preflight_ms": 555,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "typer/_click/parser.py"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"\ud83d\udc1b Ensure that the default of a list argument is used correctly\""
+          ],
+          "tokens": 1966
+        }
+      }
+    },
+    {
+      "id": "fastapi/typer#1820",
+      "task": "\ud83d\udc1b Respect wait=False when launching URLs with xdg-open",
+      "gold": [
+        "typer/main.py"
+      ],
+      "repo_tokens": 577063,
+      "grep": {
+        "tokens": 15418,
+        "search_tokens": 1927,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "typer/main.py",
+            "tokens": 13491,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F respect",
+            "git grep -c -i -I -F wait",
+            "git grep -c -i -I -F false",
+            "git grep -c -i -I -F launching",
+            "git grep -c -i -I -F urls",
+            "git grep -c -i -I -F xdg",
+            "git grep -c -i -I -F open"
+          ],
+          "tokens": 1927
+        }
+      },
+      "mimry": {
+        "tokens": 19010,
+        "search_tokens": 1807,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "typer/_click/utils.py",
+            "tokens": 3525,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/launch/tutorial001_py310.py",
+            "tokens": 48,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/launch/tutorial002_py310.py",
+            "tokens": 139,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/main.py",
+            "tokens": 13491,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 2417,
+        "preflight_ms": 543,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 4,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"\ud83d\udc1b Respect wait=False when launching URLs with xdg-open\""
+          ],
+          "tokens": 1807
+        }
+      }
+    },
+    {
+      "id": "fastapi/typer#1812",
+      "task": "\ud83d\udc1b Ensure that hidden commands are not shown when Rich markup is disabled",
+      "gold": [
+        "typer/core.py"
+      ],
+      "repo_tokens": 576276,
+      "grep": {
+        "tokens": 76238,
+        "search_tokens": 3090,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "typer/main.py",
+            "tokens": 13491,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 44583,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/rich_utils.py",
+            "tokens": 5785,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/core.py",
+            "tokens": 9289,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 4,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F ensure",
+            "git grep -c -i -I -F hidden",
+            "git grep -c -i -I -F commands",
+            "git grep -c -i -I -F shown",
+            "git grep -c -i -I -F rich",
+            "git grep -c -i -I -F markup",
+            "git grep -c -i -I -F disabled"
+          ],
+          "tokens": 3090
+        }
+      },
+      "mimry": {
+        "tokens": 81354,
+        "search_tokens": 1906,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "typer/rich_utils.py",
+            "tokens": 5785,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/main.py",
+            "tokens": 13491,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/help/tutorial006_py310.py",
+            "tokens": 292,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/help/tutorial008_py310.py",
+            "tokens": 82,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/help/tutorial004_py310.py",
+            "tokens": 213,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/help/tutorial007_py310.py",
+            "tokens": 243,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs_src/commands/help/tutorial004_an_py310.py",
+            "tokens": 226,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_rich_markup_mode.py",
+            "tokens": 2154,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 44583,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/core.py",
+            "tokens": 9289,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 3090,
+        "index_ms": 2540,
+        "preflight_ms": 514,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "typer/core.py"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"\ud83d\udc1b Ensure that hidden commands are not shown when Rich markup is disabled\""
+          ],
+          "tokens": 1906
+        }
+      }
+    },
+    {
+      "id": "fastapi/typer#1807",
+      "task": "\ud83d\udc77 Add CI to create draft release after merging a `release` PR",
+      "gold": [
+        "scripts/prepare_release.py"
+      ],
+      "repo_tokens": 575765,
+      "grep": {
+        "tokens": 84055,
+        "search_tokens": 2514,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "typer/params.py",
+            "tokens": 12858,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 44408,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_win_console.py",
+            "tokens": 2721,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/commands/help.md",
+            "tokens": 7276,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/virtual-environments.md",
+            "tokens": 5233,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": ".github/workflows/prepare-release.yml",
+            "tokens": 723,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/package.md",
+            "tokens": 4752,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/commands/callback.md",
+            "tokens": 974,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/environment-variables.md",
+            "tokens": 1913,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/subcommands/single-file.md",
+            "tokens": 683,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 28,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F create",
+            "git grep -c -i -I -F draft",
+            "git grep -c -i -I -F release",
+            "git grep -c -i -I -F after",
+            "git grep -c -i -I -F merging"
+          ],
+          "tokens": 2514
+        }
+      },
+      "mimry": {
+        "tokens": 3208,
+        "search_tokens": 1818,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "scripts/add_latest_release_date.py",
+            "tokens": 263,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "scripts/prepare_release.py",
+            "tokens": 1127,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 2543,
+        "preflight_ms": 545,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"\ud83d\udc77 Add CI to create draft release after merging a `release` PR\""
+          ],
+          "tokens": 1818
+        }
+      }
+    },
+    {
+      "id": "fastapi/typer#1792",
+      "task": "\u267b\ufe0f Unify the testing functionality",
+      "gold": [
+        "typer/testing.py"
+      ],
+      "repo_tokens": 572955,
+      "grep": {
+        "tokens": 67189,
+        "search_tokens": 2961,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 44024,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_termui.py",
+            "tokens": 3732,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/testing.py",
+            "tokens": 2642,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_progress_bar.py",
+            "tokens": 3241,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_win_console.py",
+            "tokens": 2721,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/testing.md",
+            "tokens": 1504,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_completion/test_completion_option_colon.py",
+            "tokens": 2911,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/tutorial/click.md",
+            "tokens": 873,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_completion/test_completion.py",
+            "tokens": 1368,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_completion/test_completion_install.py",
+            "tokens": 1212,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 16,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F unify",
+            "git grep -c -i -I -F testing",
+            "git grep -c -i -I -F functionality"
+          ],
+          "tokens": 2961
+        }
+      },
+      "mimry": {
+        "tokens": 14439,
+        "search_tokens": 1897,
+        "reads": 5,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "tests/test_progress_bar.py",
+            "tokens": 3241,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/_click/testing.py",
+            "tokens": 2642,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_termui.py",
+            "tokens": 3732,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_win_console.py",
+            "tokens": 2721,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "typer/testing.py",
+            "tokens": 206,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 2454,
+        "preflight_ms": 483,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 5,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"\u267b\ufe0f Unify the testing functionality\""
+          ],
+          "tokens": 1897
+        }
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3146",
+      "task": "Support HTTP/2 response trailers",
+      "gold": [
+        "uvicorn/protocols/http/zttp_h2_impl.py"
+      ],
+      "repo_tokens": 403144,
+      "grep": {
+        "tokens": 14456,
+        "search_tokens": 1093,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "tests/protocols/test_http2.py",
+            "tokens": 9196,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_h2_impl.py",
+            "tokens": 4167,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F http",
+            "git grep -c -i -I -F response",
+            "git grep -c -i -I -F trailers"
+          ],
+          "tokens": 1093
+        }
+      },
+      "mimry": {
+        "tokens": 8256,
+        "search_tokens": 2163,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "uvicorn/_types.py",
+            "tokens": 1926,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_h2_impl.py",
+            "tokens": 4167,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 2081,
+        "preflight_ms": 273,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Support HTTP/2 response trailers\""
+          ],
+          "tokens": 2163
+        }
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3137",
+      "task": "Add HTTP/2 Early Hints support",
+      "gold": [
+        "uvicorn/_types.py",
+        "uvicorn/protocols/http/zttp_h2_impl.py"
+      ],
+      "repo_tokens": 402524,
+      "grep": {
+        "tokens": 240177,
+        "search_tokens": 725,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "tests/protocols/test_http.py",
+            "tokens": 11422,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/protocols/test_http2.py",
+            "tokens": 8893,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 8030,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/test_server.py",
+            "tokens": 2570,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/installation.md",
+            "tokens": 648,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uv.lock",
+            "tokens": 175405,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/protocols/test_websocket.py",
+            "tokens": 16783,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/middleware/test_proxy_headers.py",
+            "tokens": 8831,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/concepts/http2.md",
+            "tokens": 2123,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/httptools_impl.py",
+            "tokens": 4747,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 13,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F http",
+            "git grep -c -i -I -F early",
+            "git grep -c -i -I -F hints"
+          ],
+          "tokens": 725
+        }
+      },
+      "mimry": {
+        "tokens": 50327,
+        "search_tokens": 2061,
+        "reads": 10,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": false,
+        "read_log": [
+          {
+            "path": "uvicorn/protocols/http/httptools_impl.py",
+            "tokens": 4747,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/h11_impl.py",
+            "tokens": 4223,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_impl.py",
+            "tokens": 4350,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_h2_impl.py",
+            "tokens": 4074,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/auto_zttp_impl.py",
+            "tokens": 743,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/flow_control.py",
+            "tokens": 403,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/server.py",
+            "tokens": 2908,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/config.py",
+            "tokens": 5778,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/protocols/test_http.py",
+            "tokens": 11422,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/protocols/test_http2.py",
+            "tokens": 8893,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 725,
+        "index_ms": 1973,
+        "preflight_ms": 267,
+        "ranking": {
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "first_gold_rank": 4,
+          "missed": [
+            "uvicorn/_types.py"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Add HTTP/2 Early Hints support\""
+          ],
+          "tokens": 2061
+        }
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3119",
+      "task": "Add ::1 to FORWARDED_ALLOW_IPS",
+      "gold": [
+        "uvicorn/config.py",
+        "uvicorn/main.py"
+      ],
+      "repo_tokens": 401862,
+      "grep": {
+        "tokens": 16044,
+        "search_tokens": 43,
+        "reads": 3,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "tests/test_config.py",
+            "tokens": 5562,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/config.py",
+            "tokens": 5775,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/main.py",
+            "tokens": 4664,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F forwarded_allow_ips"
+          ],
+          "tokens": 43
+        }
+      },
+      "mimry": {
+        "tokens": 14102,
+        "search_tokens": 2002,
+        "reads": 3,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "uvicorn/middleware/proxy_headers.py",
+            "tokens": 1661,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/config.py",
+            "tokens": 5775,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/main.py",
+            "tokens": 4664,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 1744,
+        "preflight_ms": 252,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Add ::1 to FORWARDED_ALLOW_IPS\""
+          ],
+          "tokens": 2002
+        }
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3107",
+      "task": "Unset the keep-alive timer when upgrading to WebSocket",
+      "gold": [
+        "uvicorn/protocols/http/h11_impl.py",
+        "uvicorn/protocols/http/zttp_impl.py"
+      ],
+      "repo_tokens": 401898,
+      "grep": {
+        "tokens": 14483,
+        "search_tokens": 1132,
+        "reads": 3,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "uvicorn/protocols/http/httptools_impl.py",
+            "tokens": 4747,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/h11_impl.py",
+            "tokens": 4277,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_impl.py",
+            "tokens": 4327,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F unset",
+            "git grep -c -i -I -F keep",
+            "git grep -c -i -I -F alive",
+            "git grep -c -i -I -F timer",
+            "git grep -c -i -I -F upgrading",
+            "git grep -c -i -I -F websocket"
+          ],
+          "tokens": 1132
+        }
+      },
+      "mimry": {
+        "tokens": 32328,
+        "search_tokens": 2388,
+        "reads": 7,
+        "first_gold_read": 5,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "uvicorn/protocols/websockets/websockets_sansio_impl.py",
+            "tokens": 4928,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/websockets/websockets_impl.py",
+            "tokens": 3276,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/websockets/wsproto_impl.py",
+            "tokens": 4311,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/httptools_impl.py",
+            "tokens": 4747,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/h11_impl.py",
+            "tokens": 4277,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_h2_impl.py",
+            "tokens": 4074,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_impl.py",
+            "tokens": 4327,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 1241,
+        "preflight_ms": 263,
+        "ranking": {
+          "recall_at_5": 0.5,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 5,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Unset the keep-alive timer when upgrading to WebSocket\""
+          ],
+          "tokens": 2388
+        }
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3104",
+      "task": "Add support for zuvloop",
+      "gold": [
+        "uvicorn/config.py"
+      ],
+      "repo_tokens": 399207,
+      "grep": {
+        "tokens": 0,
+        "search_tokens": 0,
+        "reads": 0,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "uvicorn/config.py"
+          ]
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F zuvloop"
+          ],
+          "tokens": 0
+        }
+      },
+      "mimry": {
+        "tokens": 29478,
+        "search_tokens": 2032,
+        "reads": 8,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "uvicorn/protocols/http/zttp_impl.py",
+            "tokens": 4327,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/h11_impl.py",
+            "tokens": 4277,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/httptools_impl.py",
+            "tokens": 4747,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/main.py",
+            "tokens": 4600,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/middleware/proxy_headers.py",
+            "tokens": 1661,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_h2_impl.py",
+            "tokens": 4074,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/utils.py",
+            "tokens": 484,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/websockets/websockets_impl.py",
+            "tokens": 3276,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 0,
+        "index_ms": 1419,
+        "preflight_ms": 252,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "uvicorn/config.py"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Add support for zuvloop\""
+          ],
+          "tokens": 2032
+        }
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3103",
+      "task": "Handle Connection close tokens across HTTP protocols",
+      "gold": [
+        "uvicorn/protocols/http/httptools_impl.py",
+        "uvicorn/protocols/http/zttp_impl.py"
+      ],
+      "repo_tokens": 398591,
+      "grep": {
+        "tokens": 71204,
+        "search_tokens": 1786,
+        "reads": 10,
+        "first_gold_read": 8,
+        "gold_found": 1,
+        "success": false,
+        "read_log": [
+          {
+            "path": "tests/protocols/test_http2.py",
+            "tokens": 8901,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 7766,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/server.py",
+            "tokens": 2908,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/protocols/test_websocket.py",
+            "tokens": 16783,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/protocols/test_http.py",
+            "tokens": 10754,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/websockets/wsproto_impl.py",
+            "tokens": 4311,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/websockets/websockets_sansio_impl.py",
+            "tokens": 4928,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/httptools_impl.py",
+            "tokens": 4716,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/h11_impl.py",
+            "tokens": 4277,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_h2_impl.py",
+            "tokens": 4074,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.5,
+          "first_gold_rank": 8,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F connection",
+            "git grep -c -i -I -F close",
+            "git grep -c -i -I -F tokens",
+            "git grep -c -i -I -F across",
+            "git grep -c -i -I -F http",
+            "git grep -c -i -I -F protocols"
+          ],
+          "tokens": 1786
+        }
+      },
+      "mimry": {
+        "tokens": 19768,
+        "search_tokens": 2344,
+        "reads": 4,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "uvicorn/protocols/http/zttp_h2_impl.py",
+            "tokens": 4074,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/httptools_impl.py",
+            "tokens": 4716,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/h11_impl.py",
+            "tokens": 4277,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_impl.py",
+            "tokens": 4357,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 1614,
+        "preflight_ms": 267,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Handle Connection close tokens across HTTP protocols\""
+          ],
+          "tokens": 2344
+        }
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3101",
+      "task": "Require explicit opt-in for zttp HTTP/2",
+      "gold": [
+        "uvicorn/config.py",
+        "uvicorn/main.py"
+      ],
+      "repo_tokens": 399570,
+      "grep": {
+        "tokens": 198280,
+        "search_tokens": 1363,
+        "reads": 6,
+        "first_gold_read": 4,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "docs/concepts/http2.md",
+            "tokens": 2213,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 7766,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "pyproject.toml",
+            "tokens": 1681,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/config.py",
+            "tokens": 5716,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uv.lock",
+            "tokens": 174941,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/main.py",
+            "tokens": 4600,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.5,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 4,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F require",
+            "git grep -c -i -I -F explicit",
+            "git grep -c -i -I -F opt",
+            "git grep -c -i -I -F zttp",
+            "git grep -c -i -I -F http"
+          ],
+          "tokens": 1363
+        }
+      },
+      "mimry": {
+        "tokens": 40663,
+        "search_tokens": 2126,
+        "reads": 10,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": false,
+        "read_log": [
+          {
+            "path": "uvicorn/protocols/http/zttp_impl.py",
+            "tokens": 4327,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/zttp_h2_impl.py",
+            "tokens": 4074,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/auto_zttp_impl.py",
+            "tokens": 743,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/httptools_impl.py",
+            "tokens": 4747,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/h11_impl.py",
+            "tokens": 4277,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/config.py",
+            "tokens": 5716,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/server.py",
+            "tokens": 2908,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/http/flow_control.py",
+            "tokens": 403,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/concepts/http2.md",
+            "tokens": 2213,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 7766,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 1363,
+        "index_ms": 1454,
+        "preflight_ms": 261,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.5,
+          "first_gold_rank": 6,
+          "missed": [
+            "uvicorn/main.py"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Require explicit opt-in for zttp HTTP/2\""
+          ],
+          "tokens": 2126
+        }
+      }
+    },
+    {
+      "id": "Kludex/uvicorn#3078",
+      "task": "Remove duplicate Date header from SansIO WebSocket handshakes",
+      "gold": [
+        "uvicorn/protocols/websockets/websockets_sansio_impl.py"
+      ],
+      "repo_tokens": 381201,
+      "grep": {
+        "tokens": 41278,
+        "search_tokens": 1127,
+        "reads": 4,
+        "first_gold_read": 4,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "tests/protocols/test_websocket.py",
+            "tokens": 16775,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/release-notes.md",
+            "tokens": 7702,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/protocols/test_http.py",
+            "tokens": 10754,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "uvicorn/protocols/websockets/websockets_sansio_impl.py",
+            "tokens": 4920,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 4,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F duplicate",
+            "git grep -c -i -I -F date",
+            "git grep -c -i -I -F header",
+            "git grep -c -i -I -F sansio",
+            "git grep -c -i -I -F websocket",
+            "git grep -c -i -I -F handshakes"
+          ],
+          "tokens": 1127
+        }
+      },
+      "mimry": {
+        "tokens": 7060,
+        "search_tokens": 2140,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "uvicorn/protocols/websockets/websockets_sansio_impl.py",
+            "tokens": 4920,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 1969,
+        "preflight_ms": 263,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Remove duplicate Date header from SansIO WebSocket handshakes\""
+          ],
+          "tokens": 2140
+        }
+      }
+    },
+    {
+      "id": "spf13/viper#2040",
+      "task": "feat: use maintained yaml library",
+      "gold": [
+        "internal/encoding/yaml/codec.go"
+      ],
+      "repo_tokens": 96369,
+      "grep": {
+        "tokens": 48628,
+        "search_tokens": 172,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "README.md",
+            "tokens": 7527,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "TROUBLESHOOTING.md",
+            "tokens": 450,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "UPGRADE.md",
+            "tokens": 1143,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper_test.go",
+            "tokens": 14563,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "remote/go.sum",
+            "tokens": 23851,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "Makefile",
+            "tokens": 840,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "internal/encoding/yaml/codec.go",
+            "tokens": 82,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 7,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F maintained",
+            "git grep -c -i -I -F yaml",
+            "git grep -c -i -I -F library"
+          ],
+          "tokens": 172
+        }
+      },
+      "mimry": {
+        "tokens": 2566,
+        "search_tokens": 1521,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "encoding.go",
+            "tokens": 963,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "internal/encoding/yaml/codec.go",
+            "tokens": 82,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 1178,
+        "preflight_ms": 196,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"feat: use maintained yaml library\""
+          ],
+          "tokens": 1521
+        }
+      }
+    },
+    {
+      "id": "spf13/viper#2029",
+      "task": "refactor: use the built-in max/min to simplify the code",
+      "gold": [
+        "util.go"
+      ],
+      "repo_tokens": 96335,
+      "grep": {
+        "tokens": 41944,
+        "search_tokens": 235,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "README.md",
+            "tokens": 7526,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper.go",
+            "tokens": 14921,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "encoding.go",
+            "tokens": 963,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "UPGRADE.md",
+            "tokens": 1143,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "encoding_test.go",
+            "tokens": 553,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper_test.go",
+            "tokens": 14563,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "internal/encoding/yaml/codec_test.go",
+            "tokens": 639,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": ".github/workflows/codeql-analysis.yaml",
+            "tokens": 711,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "internal/encoding/dotenv/codec_test.go",
+            "tokens": 258,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "internal/encoding/json/codec_test.go",
+            "tokens": 432,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 16,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F built",
+            "git grep -c -i -I -F max",
+            "git grep -c -i -I -F min",
+            "git grep -c -i -I -F simplify",
+            "git grep -c -i -I -F code"
+          ],
+          "tokens": 235
+        }
+      },
+      "mimry": {
+        "tokens": 19169,
+        "search_tokens": 1638,
+        "reads": 5,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "internal/encoding/json/codec.go",
+            "tokens": 97,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "internal/encoding/toml/codec.go",
+            "tokens": 92,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "encoding.go",
+            "tokens": 963,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper.go",
+            "tokens": 14921,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "util.go",
+            "tokens": 1458,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 939,
+        "preflight_ms": 203,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 5,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"refactor: use the built-in max/min to simplify the code\""
+          ],
+          "tokens": 1638
+        }
+      }
+    },
+    {
+      "id": "spf13/viper#2027",
+      "task": "Return not found error if setting config",
+      "gold": [
+        "file.go",
+        "viper.go"
+      ],
+      "repo_tokens": 89885,
+      "grep": {
+        "tokens": 40772,
+        "search_tokens": 582,
+        "reads": 6,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper.go",
+            "tokens": 14948,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "viper_test.go",
+            "tokens": 14531,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "README.md",
+            "tokens": 7570,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "remote.go",
+            "tokens": 1872,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "errors.go",
+            "tokens": 551,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "file.go",
+            "tokens": 718,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.5,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F return",
+            "git grep -c -i -I -F found",
+            "git grep -c -i -I -F error",
+            "git grep -c -i -I -F setting",
+            "git grep -c -i -I -F config"
+          ],
+          "tokens": 582
+        }
+      },
+      "mimry": {
+        "tokens": 22993,
+        "search_tokens": 1640,
+        "reads": 7,
+        "first_gold_read": 4,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "errors.go",
+            "tokens": 551,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "remote.go",
+            "tokens": 1872,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "util.go",
+            "tokens": 1449,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper.go",
+            "tokens": 14948,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "remote/remote.go",
+            "tokens": 852,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "encoding.go",
+            "tokens": 963,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "file.go",
+            "tokens": 718,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 952,
+        "preflight_ms": 202,
+        "ranking": {
+          "recall_at_5": 0.5,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 4,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Return not found error if setting config\""
+          ],
+          "tokens": 1640
+        }
+      }
+    },
+    {
+      "id": "spf13/viper#2015",
+      "task": "Add support for flags pflag.BoolSlice, pflag.UintSlice and pflag.Float64Slice",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 95878,
+      "grep": {
+        "tokens": 29401,
+        "search_tokens": 101,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper_test.go",
+            "tokens": 14472,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper.go",
+            "tokens": 14828,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F flags",
+            "git grep -c -i -I -F pflag",
+            "git grep -c -i -I -F boolslice",
+            "git grep -c -i -I -F uintslice",
+            "git grep -c -i -I -F float64slice"
+          ],
+          "tokens": 101
+        }
+      },
+      "mimry": {
+        "tokens": 16447,
+        "search_tokens": 1619,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper.go",
+            "tokens": 14828,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 792,
+        "preflight_ms": 216,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Add support for flags pflag.BoolSlice, pflag.UintSlice and pflag.Float64Slice\""
+          ],
+          "tokens": 1619
+        }
+      }
+    },
+    {
+      "id": "spf13/viper#2007",
+      "task": "fix: config type check when loading any config",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 95851,
+      "grep": {
+        "tokens": 29964,
+        "search_tokens": 658,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper_test.go",
+            "tokens": 14472,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper.go",
+            "tokens": 14834,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F config",
+            "git grep -c -i -I -F type",
+            "git grep -c -i -I -F check",
+            "git grep -c -i -I -F loading",
+            "git grep -c -i -I -F any"
+          ],
+          "tokens": 658
+        }
+      },
+      "mimry": {
+        "tokens": 16460,
+        "search_tokens": 1626,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper.go",
+            "tokens": 14834,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 884,
+        "preflight_ms": 207,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix: config type check when loading any config\""
+          ],
+          "tokens": 1626
+        }
+      }
+    },
+    {
+      "id": "spf13/viper#2003",
+      "task": "fix(config): get config type from v.configType or config file ext",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 95453,
+      "grep": {
+        "tokens": 29900,
+        "search_tokens": 643,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper_test.go",
+            "tokens": 14439,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper.go",
+            "tokens": 14818,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F config",
+            "git grep -c -i -I -F get",
+            "git grep -c -i -I -F type",
+            "git grep -c -i -I -F configtype",
+            "git grep -c -i -I -F file",
+            "git grep -c -i -I -F ext"
+          ],
+          "tokens": 643
+        }
+      },
+      "mimry": {
+        "tokens": 16463,
+        "search_tokens": 1645,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper.go",
+            "tokens": 14818,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 827,
+        "preflight_ms": 229,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(config): get config type from v.configType or config file ext\""
+          ],
+          "tokens": 1645
+        }
+      }
+    },
+    {
+      "id": "spf13/viper#1887",
+      "task": "feat: copy keydelim from parent chart in viper.Sub()",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 96598,
+      "grep": {
+        "tokens": 29679,
+        "search_tokens": 492,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper_test.go",
+            "tokens": 14396,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "viper.go",
+            "tokens": 14791,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F copy",
+            "git grep -c -i -I -F keydelim",
+            "git grep -c -i -I -F parent",
+            "git grep -c -i -I -F chart",
+            "git grep -c -i -I -F viper",
+            "git grep -c -i -I -F sub"
+          ],
+          "tokens": 492
+        }
+      },
+      "mimry": {
+        "tokens": 16330,
+        "search_tokens": 1539,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper.go",
+            "tokens": 14791,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 874,
+        "preflight_ms": 221,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"feat: copy keydelim from parent chart in viper.Sub()\""
+          ],
+          "tokens": 1539
+        }
+      }
+    },
+    {
+      "id": "spf13/viper#1872",
+      "task": "Add decoder hook option",
+      "gold": [
+        "viper.go"
+      ],
+      "repo_tokens": 96293,
+      "grep": {
+        "tokens": 15095,
+        "search_tokens": 198,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper.go",
+            "tokens": 14897,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F decoder",
+            "git grep -c -i -I -F hook",
+            "git grep -c -i -I -F option"
+          ],
+          "tokens": 198
+        }
+      },
+      "mimry": {
+        "tokens": 16498,
+        "search_tokens": 1601,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "viper.go",
+            "tokens": 14897,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 837,
+        "preflight_ms": 200,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Add decoder hook option\""
+          ],
+          "tokens": 1601
+        }
+      }
+    },
+    {
+      "id": "honojs/hono#5487",
+      "task": "fix(jsx): add px to numeric gridGap, gridRowGap and gridColumnGap",
+      "gold": [
+        "src/jsx/utils.ts"
+      ],
+      "repo_tokens": 980528,
+      "grep": {
+        "tokens": 55512,
+        "search_tokens": 938,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "src/jsx/index.test.tsx",
+            "tokens": 13678,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/helper/css/index.test.tsx",
+            "tokens": 4928,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/jsx/intrinsic-elements.ts",
+            "tokens": 7530,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/jsx/context-isolation.test.ts",
+            "tokens": 5312,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "package.json",
+            "tokens": 6406,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/jsx/base.ts",
+            "tokens": 3790,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/middleware/jsx-renderer/index.test.tsx",
+            "tokens": 4024,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/jsx/jsx-runtime.test.tsx",
+            "tokens": 774,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/jsx/dom/render.ts",
+            "tokens": 7200,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/jsx/dom/index.ts",
+            "tokens": 932,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "src/jsx/utils.ts"
+          ]
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F jsx",
+            "git grep -c -i -I -F numeric",
+            "git grep -c -i -I -F gridgap",
+            "git grep -c -i -I -F gridrowgap",
+            "git grep -c -i -I -F gridcolumngap"
+          ],
+          "tokens": 938
+        }
+      },
+      "mimry": {
+        "tokens": 7821,
+        "search_tokens": 2049,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/jsx/hooks/index.ts",
+            "tokens": 3524,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/jsx/jsx-runtime.ts",
+            "tokens": 461,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/jsx/utils.ts",
+            "tokens": 1787,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 8471,
+        "preflight_ms": 984,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 3,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(jsx): add px to numeric gridGap, gridRowGap and gridColumnGap\""
+          ],
+          "tokens": 2049
+        }
+      }
+    },
+    {
+      "id": "honojs/hono#5476",
+      "task": "fix(jsx): allow JSXNode function component results",
+      "gold": [
+        "src/jsx/base.ts"
+      ],
+      "repo_tokens": 980501,
+      "grep": {
+        "tokens": 7046,
+        "search_tokens": 3256,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/jsx/base.ts",
+            "tokens": 3790,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F jsx",
+            "git grep -c -i -I -F jsxnode",
+            "git grep -c -i -I -F function",
+            "git grep -c -i -I -F component",
+            "git grep -c -i -I -F results"
+          ],
+          "tokens": 3256
+        }
+      },
+      "mimry": {
+        "tokens": 5871,
+        "search_tokens": 2081,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/jsx/base.ts",
+            "tokens": 3790,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 8243,
+        "preflight_ms": 893,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(jsx): allow JSXNode function component results\""
+          ],
+          "tokens": 2081
+        }
+      }
+    },
+    {
+      "id": "honojs/hono#5475",
+      "task": "fix(etag): correctly match mixed-case header name in retainedHeader option",
+      "gold": [
+        "src/middleware/etag/index.ts"
+      ],
+      "repo_tokens": 980474,
+      "grep": {
+        "tokens": 9077,
+        "search_tokens": 8100,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/middleware/etag/index.ts",
+            "tokens": 977,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F etag",
+            "git grep -c -i -I -F correctly",
+            "git grep -c -i -I -F match",
+            "git grep -c -i -I -F mixed",
+            "git grep -c -i -I -F header",
+            "git grep -c -i -I -F name",
+            "git grep -c -i -I -F retainedheader",
+            "git grep -c -i -I -F option"
+          ],
+          "tokens": 8100
+        }
+      },
+      "mimry": {
+        "tokens": 2826,
+        "search_tokens": 1849,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/middleware/etag/index.ts",
+            "tokens": 977,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 3986,
+        "preflight_ms": 852,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(etag): correctly match mixed-case header name in retainedHeader option\""
+          ],
+          "tokens": 1849
+        }
+      }
+    },
+    {
+      "id": "honojs/hono#5468",
+      "task": "feat(adapters/netlify): publish to JSR",
+      "gold": [
+        "adapters/netlify/src/conninfo.ts",
+        "adapters/netlify/src/index.ts",
+        "adapters/netlify/src/mod.ts"
+      ],
+      "repo_tokens": 977869,
+      "grep": {
+        "tokens": 53873,
+        "search_tokens": 568,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "docs/MAINTAINING.md",
+            "tokens": 949,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": ".github/workflows/release.yml",
+            "tokens": 1221,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "package.json",
+            "tokens": 6406,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "pnpm-lock.yaml",
+            "tokens": 36420,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": ".github/workflows/ci.yml",
+            "tokens": 3457,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/MIGRATION.md",
+            "tokens": 2191,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "jsr.json",
+            "tokens": 1468,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/deno/deno.json",
+            "tokens": 234,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "build/release-adapter.ts",
+            "tokens": 675,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/netlify/package.json",
+            "tokens": 284,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 17,
+          "missed": [
+            "adapters/netlify/src/mod.ts"
+          ]
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F adapters",
+            "git grep -c -i -I -F netlify",
+            "git grep -c -i -I -F publish",
+            "git grep -c -i -I -F jsr"
+          ],
+          "tokens": 568
+        }
+      },
+      "mimry": {
+        "tokens": 11919,
+        "search_tokens": 1820,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": false,
+        "read_log": [
+          {
+            "path": "adapters/netlify/src/conninfo.ts",
+            "tokens": 294,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "adapters/netlify/src/handler.ts",
+            "tokens": 79,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/adapter/netlify/conninfo.ts",
+            "tokens": 325,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "jsr.json",
+            "tokens": 1468,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/adapter/netlify/handler.ts",
+            "tokens": 112,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/netlify/vite.config.ts",
+            "tokens": 100,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/netlify/src/index.ts",
+            "tokens": 20,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "adapters/aws-lambda/src/handler.ts",
+            "tokens": 4963,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/MAINTAINING.md",
+            "tokens": 949,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": ".github/workflows/release.yml",
+            "tokens": 1221,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 568,
+        "index_ms": 3939,
+        "preflight_ms": 732,
+        "ranking": {
+          "recall_at_5": 0.3333333333333333,
+          "recall_at_10": 0.6666666666666666,
+          "first_gold_rank": 1,
+          "missed": [
+            "adapters/netlify/src/mod.ts"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"feat(adapters/netlify): publish to JSR\""
+          ],
+          "tokens": 1820
+        }
+      }
+    },
+    {
+      "id": "honojs/hono#5465",
+      "task": "feat(adapters/deno): publish to JSR",
+      "gold": [
+        "adapters/deno/src/index.ts"
+      ],
+      "repo_tokens": 977883,
+      "grep": {
+        "tokens": 54489,
+        "search_tokens": 993,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": ".github/workflows/ci.yml",
+            "tokens": 3918,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": ".github/workflows/release.yml",
+            "tokens": 1048,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/MIGRATION.md",
+            "tokens": 2191,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "package.json",
+            "tokens": 6438,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "pnpm-lock.yaml",
+            "tokens": 36610,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "jsr.json",
+            "tokens": 1468,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "docs/MAINTAINING.md",
+            "tokens": 720,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "build/release-adapter.ts",
+            "tokens": 675,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/deno/package.json",
+            "tokens": 286,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "runtime-tests/deno/deno.json",
+            "tokens": 142,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 37,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F adapters",
+            "git grep -c -i -I -F deno",
+            "git grep -c -i -I -F publish",
+            "git grep -c -i -I -F jsr"
+          ],
+          "tokens": 993
+        }
+      },
+      "mimry": {
+        "tokens": 11378,
+        "search_tokens": 1881,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "jsr.json",
+            "tokens": 1468,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/deno/src/ssg.ts",
+            "tokens": 225,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/adapter/deno/ssg.ts",
+            "tokens": 289,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/deno/src/deno.d.ts",
+            "tokens": 534,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/deno/src/serve-static.ts",
+            "tokens": 262,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/deno/src/websocket.ts",
+            "tokens": 372,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "adapters/deno/src/conninfo.ts",
+            "tokens": 96,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/adapter/deno/serve-static.ts",
+            "tokens": 292,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": ".github/workflows/ci.yml",
+            "tokens": 3918,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": ".github/workflows/release.yml",
+            "tokens": 1048,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 993,
+        "index_ms": 4025,
+        "preflight_ms": 923,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "adapters/deno/src/index.ts"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"feat(adapters/deno): publish to JSR\""
+          ],
+          "tokens": 1881
+        }
+      }
+    },
+    {
+      "id": "honojs/hono#5446",
+      "task": "fix(types): allow returning a Blob as a response body",
+      "gold": [
+        "src/context.ts"
+      ],
+      "repo_tokens": 939434,
+      "grep": {
+        "tokens": 18776,
+        "search_tokens": 4380,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "runtime-tests/lambda/index.test.ts",
+            "tokens": 8580,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/context.ts",
+            "tokens": 5816,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F types",
+            "git grep -c -i -I -F returning",
+            "git grep -c -i -I -F blob",
+            "git grep -c -i -I -F response",
+            "git grep -c -i -I -F body"
+          ],
+          "tokens": 4380
+        }
+      },
+      "mimry": {
+        "tokens": 41386,
+        "search_tokens": 1889,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/client/fetch-result-please.ts",
+            "tokens": 688,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/middleware/body-limit/index.ts",
+            "tokens": 784,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/request.ts",
+            "tokens": 3890,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/client/types.ts",
+            "tokens": 3283,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/types.ts",
+            "tokens": 22936,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/utils/body.ts",
+            "tokens": 2100,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/context.ts",
+            "tokens": 5816,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 3834,
+        "preflight_ms": 778,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 7,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(types): allow returning a Blob as a response body\""
+          ],
+          "tokens": 1889
+        }
+      }
+    },
+    {
+      "id": "honojs/hono#5426",
+      "task": "fix(lambda-edge): sync content type detection with aws-lambda",
+      "gold": [
+        "src/adapter/lambda-edge/handler.ts"
+      ],
+      "repo_tokens": 909301,
+      "grep": {
+        "tokens": 13444,
+        "search_tokens": 6962,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/adapter/aws-lambda/handler.ts",
+            "tokens": 4967,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/adapter/lambda-edge/handler.ts",
+            "tokens": 1515,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F lambda",
+            "git grep -c -i -I -F edge",
+            "git grep -c -i -I -F sync",
+            "git grep -c -i -I -F content",
+            "git grep -c -i -I -F type",
+            "git grep -c -i -I -F detection",
+            "git grep -c -i -I -F aws"
+          ],
+          "tokens": 6962
+        }
+      },
+      "mimry": {
+        "tokens": 3583,
+        "search_tokens": 2068,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/adapter/lambda-edge/handler.ts",
+            "tokens": 1515,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 5106,
+        "preflight_ms": 901,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(lambda-edge): sync content type detection with aws-lambda\""
+          ],
+          "tokens": 2068
+        }
+      }
+    },
+    {
+      "id": "honojs/hono#5424",
+      "task": "fix(aws-lambda): treat binary +xml archive media types as binary",
+      "gold": [
+        "src/adapter/aws-lambda/handler.ts"
+      ],
+      "repo_tokens": 908932,
+      "grep": {
+        "tokens": 13402,
+        "search_tokens": 3060,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/adapter/aws-lambda/handler.test.ts",
+            "tokens": 5420,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/adapter/aws-lambda/handler.ts",
+            "tokens": 4922,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F aws",
+            "git grep -c -i -I -F lambda",
+            "git grep -c -i -I -F treat",
+            "git grep -c -i -I -F binary",
+            "git grep -c -i -I -F xml",
+            "git grep -c -i -I -F archive",
+            "git grep -c -i -I -F media",
+            "git grep -c -i -I -F types"
+          ],
+          "tokens": 3060
+        }
+      },
+      "mimry": {
+        "tokens": 6959,
+        "search_tokens": 2037,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/adapter/aws-lambda/handler.ts",
+            "tokens": 4922,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 4994,
+        "preflight_ms": 752,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(aws-lambda): treat binary +xml archive media types as binary\""
+          ],
+          "tokens": 2037
+        }
+      }
+    },
+    {
+      "id": "hyperium/hyper#4224",
+      "task": "fix(http1): remove invalid content-length if transfer-encoding is auto-added",
+      "gold": [
+        "src/proto/h1/role.rs"
+      ],
+      "repo_tokens": 368165,
+      "grep": {
+        "tokens": 70494,
+        "search_tokens": 1759,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "tests/server.rs",
+            "tokens": 14119,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 39238,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15378,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 3,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F http1",
+            "git grep -c -i -I -F invalid",
+            "git grep -c -i -I -F content",
+            "git grep -c -i -I -F length",
+            "git grep -c -i -I -F transfer",
+            "git grep -c -i -I -F encoding",
+            "git grep -c -i -I -F auto",
+            "git grep -c -i -I -F added"
+          ],
+          "tokens": 1759
+        }
+      },
+      "mimry": {
+        "tokens": 17307,
+        "search_tokens": 1929,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15378,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 2871,
+        "preflight_ms": 312,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(http1): remove invalid content-length if transfer-encoding is auto-added\""
+          ],
+          "tokens": 1929
+        }
+      }
+    },
+    {
+      "id": "hyperium/hyper#4223",
+      "task": "fix(http1): always remove content-length if transfer-encoding is sent",
+      "gold": [
+        "src/proto/h1/role.rs"
+      ],
+      "repo_tokens": 367762,
+      "grep": {
+        "tokens": 17348,
+        "search_tokens": 1963,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15385,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F http1",
+            "git grep -c -i -I -F always",
+            "git grep -c -i -I -F content",
+            "git grep -c -i -I -F length",
+            "git grep -c -i -I -F transfer",
+            "git grep -c -i -I -F encoding",
+            "git grep -c -i -I -F sent"
+          ],
+          "tokens": 1963
+        }
+      },
+      "mimry": {
+        "tokens": 31695,
+        "search_tokens": 1874,
+        "reads": 5,
+        "first_gold_read": 5,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/headers.rs",
+            "tokens": 1680,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/error.rs",
+            "tokens": 6494,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/encode.rs",
+            "tokens": 5187,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/body/length.rs",
+            "tokens": 1075,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15385,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 2816,
+        "preflight_ms": 308,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 5,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(http1): always remove content-length if transfer-encoding is sent\""
+          ],
+          "tokens": 1874
+        }
+      }
+    },
+    {
+      "id": "hyperium/hyper#4201",
+      "task": "fix(http1): let a Connection close token win over a later keep-alive",
+      "gold": [
+        "src/proto/h1/role.rs"
+      ],
+      "repo_tokens": 366768,
+      "grep": {
+        "tokens": 72204,
+        "search_tokens": 3511,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "tests/server.rs",
+            "tokens": 14119,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 39238,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15336,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 3,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F http1",
+            "git grep -c -i -I -F let",
+            "git grep -c -i -I -F connection",
+            "git grep -c -i -I -F close",
+            "git grep -c -i -I -F token",
+            "git grep -c -i -I -F win",
+            "git grep -c -i -I -F over",
+            "git grep -c -i -I -F later",
+            "git grep -c -i -I -F keep",
+            "git grep -c -i -I -F alive"
+          ],
+          "tokens": 3511
+        }
+      },
+      "mimry": {
+        "tokens": 50463,
+        "search_tokens": 1844,
+        "reads": 7,
+        "first_gold_read": 7,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/proto/h1/conn.rs",
+            "tokens": 11138,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/headers.rs",
+            "tokens": 1680,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/server/conn/http1.rs",
+            "tokens": 4862,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/client/conn/http1.rs",
+            "tokens": 5716,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/ping.rs",
+            "tokens": 3597,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/client/conn/http2.rs",
+            "tokens": 6290,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15336,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 1412,
+        "preflight_ms": 324,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 7,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(http1): let a Connection close token win over a later keep-alive\""
+          ],
+          "tokens": 1844
+        }
+      }
+    },
+    {
+      "id": "hyperium/hyper#4198",
+      "task": "fix(http2): do not reserve capacity for idle Upgraded streams",
+      "gold": [
+        "src/proto/h2/upgrade.rs"
+      ],
+      "repo_tokens": 363291,
+      "grep": {
+        "tokens": 119215,
+        "search_tokens": 982,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 39238,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/client.rs",
+            "tokens": 13104,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/server.rs",
+            "tokens": 14119,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/client.rs",
+            "tokens": 6060,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/client/conn/http2.rs",
+            "tokens": 6290,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/server.rs",
+            "tokens": 4072,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/mod.rs",
+            "tokens": 2513,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15260,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/error.rs",
+            "tokens": 6494,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/conn.rs",
+            "tokens": 11083,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 11,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F http2",
+            "git grep -c -i -I -F reserve",
+            "git grep -c -i -I -F capacity",
+            "git grep -c -i -I -F idle",
+            "git grep -c -i -I -F upgraded",
+            "git grep -c -i -I -F streams"
+          ],
+          "tokens": 982
+        }
+      },
+      "mimry": {
+        "tokens": 13847,
+        "search_tokens": 2129,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/client/conn/http2.rs",
+            "tokens": 6290,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/server/conn/http2.rs",
+            "tokens": 2772,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/upgrade.rs",
+            "tokens": 2656,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 2632,
+        "preflight_ms": 318,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 3,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(http2): do not reserve capacity for idle Upgraded streams\""
+          ],
+          "tokens": 2129
+        }
+      }
+    },
+    {
+      "id": "hyperium/hyper#4196",
+      "task": "Preserve hop-by-hop when setting close or keep-alive",
+      "gold": [
+        "src/proto/h1/conn.rs"
+      ],
+      "repo_tokens": 363030,
+      "grep": {
+        "tokens": 51383,
+        "search_tokens": 1167,
+        "reads": 2,
+        "first_gold_read": 2,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 39238,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/conn.rs",
+            "tokens": 10978,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F preserve",
+            "git grep -c -i -I -F hop",
+            "git grep -c -i -I -F setting",
+            "git grep -c -i -I -F close",
+            "git grep -c -i -I -F keep",
+            "git grep -c -i -I -F alive"
+          ],
+          "tokens": 1167
+        }
+      },
+      "mimry": {
+        "tokens": 12829,
+        "search_tokens": 1851,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/proto/h1/conn.rs",
+            "tokens": 10978,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 2637,
+        "preflight_ms": 300,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Preserve hop-by-hop when setting close or keep-alive\""
+          ],
+          "tokens": 1851
+        }
+      }
+    },
+    {
+      "id": "hyperium/hyper#4188",
+      "task": "fix(ext): remove broken `OriginalHeaderOrder` doctest",
+      "gold": [
+        "src/ext/mod.rs"
+      ],
+      "repo_tokens": 363350,
+      "grep": {
+        "tokens": 25842,
+        "search_tokens": 871,
+        "reads": 3,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15260,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/io.rs",
+            "tokens": 7136,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/ext/mod.rs",
+            "tokens": 2575,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 3,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F ext",
+            "git grep -c -i -I -F broken",
+            "git grep -c -i -I -F originalheaderorder",
+            "git grep -c -i -I -F doctest"
+          ],
+          "tokens": 871
+        }
+      },
+      "mimry": {
+        "tokens": 4435,
+        "search_tokens": 1860,
+        "reads": 1,
+        "first_gold_read": 1,
+        "gold_found": 1,
+        "success": true,
+        "read_log": [
+          {
+            "path": "src/ext/mod.rs",
+            "tokens": 2575,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 1645,
+        "preflight_ms": 302,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"fix(ext): remove broken `OriginalHeaderOrder` doctest\""
+          ],
+          "tokens": 1860
+        }
+      }
+    },
+    {
+      "id": "hyperium/hyper#4168",
+      "task": "perf(body): simpler custom Incoming channel",
+      "gold": [
+        "src/body/incoming.rs",
+        "src/body/mod.rs",
+        "src/common/mod.rs"
+      ],
+      "repo_tokens": 362866,
+      "grep": {
+        "tokens": 118349,
+        "search_tokens": 1315,
+        "reads": 10,
+        "first_gold_read": 6,
+        "gold_found": 1,
+        "success": false,
+        "read_log": [
+          {
+            "path": "tests/server.rs",
+            "tokens": 14119,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/client.rs",
+            "tokens": 13196,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 39238,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/client/dispatch.rs",
+            "tokens": 3995,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/dispatch.rs",
+            "tokens": 6746,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/body/incoming.rs",
+            "tokens": 5088,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15260,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "benches/end_to_end.rs",
+            "tokens": 3252,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/client.rs",
+            "tokens": 6060,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/decode.rs",
+            "tokens": 10080,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.3333333333333333,
+          "first_gold_rank": 6,
+          "missed": [
+            "src/common/mod.rs"
+          ]
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F body",
+            "git grep -c -i -I -F simpler",
+            "git grep -c -i -I -F custom",
+            "git grep -c -i -I -F incoming",
+            "git grep -c -i -I -F channel"
+          ],
+          "tokens": 1315
+        }
+      },
+      "mimry": {
+        "tokens": 66929,
+        "search_tokens": 1761,
+        "reads": 10,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": false,
+        "read_log": [
+          {
+            "path": "src/body/incoming.rs",
+            "tokens": 5088,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "src/client/dispatch.rs",
+            "tokens": 3995,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/ffi/body.rs",
+            "tokens": 2724,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/body/mod.rs",
+            "tokens": 759,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/role.rs",
+            "tokens": 15260,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/ping.rs",
+            "tokens": 3565,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/server.rs",
+            "tokens": 4072,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/body/length.rs",
+            "tokens": 1075,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/server.rs",
+            "tokens": 14119,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/client.rs",
+            "tokens": 13196,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 1315,
+        "index_ms": 1428,
+        "preflight_ms": 300,
+        "ranking": {
+          "recall_at_5": 0.6666666666666666,
+          "recall_at_10": 0.6666666666666666,
+          "first_gold_rank": 1,
+          "missed": [
+            "src/common/mod.rs"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"perf(body): simpler custom Incoming channel\""
+          ],
+          "tokens": 1761
+        }
+      }
+    },
+    {
+      "id": "hyperium/hyper#4157",
+      "task": "refactor: drop redundant `continue` and remove needless_continue allow",
+      "gold": [
+        "src/proto/h1/dispatch.rs",
+        "src/proto/h2/client.rs",
+        "src/proto/h2/upgrade.rs"
+      ],
+      "repo_tokens": 359847,
+      "grep": {
+        "tokens": 96405,
+        "search_tokens": 493,
+        "reads": 8,
+        "first_gold_read": 3,
+        "gold_found": 3,
+        "success": true,
+        "read_log": [
+          {
+            "path": "Cargo.toml",
+            "tokens": 2819,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/server.rs",
+            "tokens": 14119,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/client.rs",
+            "tokens": 6063,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/dispatch.rs",
+            "tokens": 6749,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 39323,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/client.rs",
+            "tokens": 13196,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/conn.rs",
+            "tokens": 10982,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/upgrade.rs",
+            "tokens": 2661,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.6666666666666666,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 3,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F drop",
+            "git grep -c -i -I -F redundant",
+            "git grep -c -i -I -F continue",
+            "git grep -c -i -I -F needless_continue"
+          ],
+          "tokens": 493
+        }
+      },
+      "mimry": {
+        "tokens": 50010,
+        "search_tokens": 2003,
+        "reads": 10,
+        "first_gold_read": 2,
+        "gold_found": 3,
+        "success": true,
+        "read_log": [
+          {
+            "path": "Cargo.toml",
+            "tokens": 2819,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h1/dispatch.rs",
+            "tokens": 6749,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "src/client/dispatch.rs",
+            "tokens": 3993,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/mod.rs",
+            "tokens": 2513,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/upgrade.rs",
+            "tokens": 2661,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "src/body/incoming.rs",
+            "tokens": 5077,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/upgrade.rs",
+            "tokens": 3141,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/common/watch.rs",
+            "tokens": 379,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "tests/server.rs",
+            "tokens": 14119,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "src/proto/h2/client.rs",
+            "tokens": 6063,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 493,
+        "index_ms": 2934,
+        "preflight_ms": 301,
+        "ranking": {
+          "recall_at_5": 0.6666666666666666,
+          "recall_at_10": 0.6666666666666666,
+          "first_gold_rank": 2,
+          "missed": [
+            "src/proto/h2/client.rs"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"refactor: drop redundant `continue` and remove needless_continue allow\""
+          ],
+          "tokens": 2003
+        }
+      }
+    },
+    {
+      "id": "lysine-dev/retrofit#4764",
+      "task": "Remove use of JVM toolchain for main compilation",
+      "gold": [
+        "retrofit/src/main/java/retrofit2/HttpServiceMethod.java",
+        "retrofit/src/main/java/retrofit2/Utils.java"
+      ],
+      "repo_tokens": 1834716,
+      "grep": {
+        "tokens": 28882,
+        "search_tokens": 1300,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "retrofit/build.gradle",
+            "tokens": 370,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/kotlinx-serialization/retrofit2.converter.kotlinx.serialization/index.html",
+            "tokens": 2668,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/index.html",
+            "tokens": 1788,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/kotlinx-serialization/retrofit2.converter.kotlinx.serialization/as-converter-factory.html",
+            "tokens": 2417,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "gradlew",
+            "tokens": 2317,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/styles/main.css",
+            "tokens": 4962,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 11203,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "gradlew.bat",
+            "tokens": 795,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/java-test/build.gradle",
+            "tokens": 270,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "build.gradle",
+            "tokens": 792,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": 44,
+          "missed": [
+            "retrofit/src/main/java/retrofit2/HttpServiceMethod.java"
+          ]
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F jvm",
+            "git grep -c -i -I -F toolchain",
+            "git grep -c -i -I -F main",
+            "git grep -c -i -I -F compilation"
+          ],
+          "tokens": 1300
+        }
+      },
+      "mimry": {
+        "tokens": 17904,
+        "search_tokens": 1938,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "retrofit-converters/kotlinx-serialization/src/main/java/retrofit2/converter/kotlinx/serialization/Factory.kt",
+            "tokens": 477,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/KotlinExtensions.kt",
+            "tokens": 865,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/Callback.java",
+            "tokens": 388,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/Reflection.java",
+            "tokens": 638,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/Retrofit.java",
+            "tokens": 6262,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/OptionalConverterFactory.java",
+            "tokens": 547,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/OkHttpCall.java",
+            "tokens": 2044,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/DefaultMethodSupport.java",
+            "tokens": 407,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/build.gradle",
+            "tokens": 370,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/kotlinx-serialization/retrofit2.converter.kotlinx.serialization/index.html",
+            "tokens": 2668,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 1300,
+        "index_ms": 13988,
+        "preflight_ms": 952,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "retrofit/src/main/java/retrofit2/HttpServiceMethod.java",
+            "retrofit/src/main/java/retrofit2/Utils.java"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Remove use of JVM toolchain for main compilation\""
+          ],
+          "tokens": 1938
+        }
+      }
+    },
+    {
+      "id": "lysine-dev/retrofit#4704",
+      "task": "Fix broken/outdated links",
+      "gold": [
+        "retrofit/src/main/java/retrofit2/Retrofit.java",
+        "website/src/content.config.ts"
+      ],
+      "repo_tokens": 1833712,
+      "grep": {
+        "tokens": 67755,
+        "search_tokens": 5064,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 11103,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/java-test/src/test/java/retrofit2/CallTest.java",
+            "tokens": 9698,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "samples/src/main/java/com/example/retrofit/Crawler.java",
+            "tokens": 1081,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/java-test/src/test/java/retrofit2/ResponseTest.java",
+            "tokens": 1684,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/package-lock.json",
+            "tokens": 27405,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/converter-jackson/help-doc.html",
+            "tokens": 2328,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/converter-protobuf/help-doc.html",
+            "tokens": 2332,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/converter-simplexml/help-doc.html",
+            "tokens": 2330,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/converter-wire/help-doc.html",
+            "tokens": 2334,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/retrofit-mock/help-doc.html",
+            "tokens": 2396,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "retrofit/src/main/java/retrofit2/Retrofit.java",
+            "website/src/content.config.ts"
+          ]
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F broken",
+            "git grep -c -i -I -F outdated",
+            "git grep -c -i -I -F links"
+          ],
+          "tokens": 5064
+        }
+      },
+      "mimry": {
+        "tokens": 69199,
+        "search_tokens": 1672,
+        "reads": 10,
+        "first_gold_read": null,
+        "gold_found": 0,
+        "success": false,
+        "read_log": [
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/scripts/clipboard.js",
+            "tokens": 396,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/styles/main.css",
+            "tokens": 4962,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/styles/style.css",
+            "tokens": 5308,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/retrofit/index-all.html",
+            "tokens": 21558,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/converter-kotlinx-serialization/images/footer-go-to-link.svg",
+            "tokens": 105,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/retrofit/retrofit/Endpoints.html",
+            "tokens": 3416,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/retrofit/retrofit/class-use/Endpoint.html",
+            "tokens": 2227,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/converter-jackson/stylesheet.css",
+            "tokens": 3690,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 11103,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/java-test/src/test/java/retrofit2/CallTest.java",
+            "tokens": 9698,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 5064,
+        "index_ms": 14031,
+        "preflight_ms": 886,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "retrofit/src/main/java/retrofit2/Retrofit.java",
+            "website/src/content.config.ts"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Fix broken/outdated links\""
+          ],
+          "tokens": 1672
+        }
+      }
+    },
+    {
+      "id": "lysine-dev/retrofit#4595",
+      "task": "Support QUERY method",
+      "gold": [
+        "retrofit/src/main/java/retrofit2/RequestFactory.java",
+        "retrofit/src/main/java/retrofit2/Retrofit.java"
+      ],
+      "repo_tokens": 1834019,
+      "grep": {
+        "tokens": 82698,
+        "search_tokens": 6115,
+        "reads": 7,
+        "first_gold_read": 2,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "retrofit/java-test/src/test/java/retrofit2/RequestFactoryTest.java",
+            "tokens": 14583,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/RequestFactory.java",
+            "tokens": 7254,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "website/public/1.x/retrofit/index-all.html",
+            "tokens": 21558,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 11203,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/java-test/src/test/java/retrofit2/RetrofitTest.java",
+            "tokens": 12534,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/ParameterHandler.java",
+            "tokens": 3189,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/Retrofit.java",
+            "tokens": 6262,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.5,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 2,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F query",
+            "git grep -c -i -I -F method"
+          ],
+          "tokens": 6115
+        }
+      },
+      "mimry": {
+        "tokens": 35053,
+        "search_tokens": 1849,
+        "reads": 10,
+        "first_gold_read": 10,
+        "gold_found": 1,
+        "success": false,
+        "read_log": [
+          {
+            "path": "retrofit/src/main/java16/retrofit2/DefaultMethodSupport.java",
+            "tokens": 233,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java14/retrofit2/DefaultMethodSupport.java",
+            "tokens": 278,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/DefaultMethodSupport.java",
+            "tokens": 407,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/HttpServiceMethod.java",
+            "tokens": 2259,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/http/Query.java",
+            "tokens": 683,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/http/QueryMap.java",
+            "tokens": 545,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/http/QueryName.java",
+            "tokens": 524,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/ServiceMethod.java",
+            "tokens": 323,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/java-test/src/test/java/retrofit2/RequestFactoryTest.java",
+            "tokens": 14583,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/RequestFactory.java",
+            "tokens": 7254,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "fallback_tokens": 6115,
+        "index_ms": 4063,
+        "preflight_ms": 857,
+        "ranking": {
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "first_gold_rank": null,
+          "missed": [
+            "retrofit/src/main/java/retrofit2/RequestFactory.java",
+            "retrofit/src/main/java/retrofit2/Retrofit.java"
+          ]
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Support QUERY method\""
+          ],
+          "tokens": 1849
+        }
+      }
+    },
+    {
+      "id": "lysine-dev/retrofit#4542",
+      "task": "Add Invocation.annotationUrl",
+      "gold": [
+        "retrofit/src/main/java/retrofit2/Invocation.java",
+        "retrofit/src/main/java/retrofit2/RequestFactory.java"
+      ],
+      "repo_tokens": 1826474,
+      "grep": {
+        "tokens": 42228,
+        "search_tokens": 435,
+        "reads": 10,
+        "first_gold_read": 3,
+        "gold_found": 1,
+        "success": false,
+        "read_log": [
+          {
+            "path": "website/public/2.x/retrofit/retrofit2/Invocation.html",
+            "tokens": 3750,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/java-test/src/test/java/retrofit2/InvocationTest.java",
+            "tokens": 1176,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/Invocation.java",
+            "tokens": 814,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/retrofit/index-all.html",
+            "tokens": 13974,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "samples/src/main/java/com/example/retrofit/InvocationMetrics.java",
+            "tokens": 562,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "CHANGELOG.md",
+            "tokens": 11086,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/KotlinExtensions.kt",
+            "tokens": 859,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/Retrofit.java",
+            "tokens": 6254,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "samples/src/main/java/com/example/retrofit/ConditionalLoggingInterceptor.kt",
+            "tokens": 506,
+            "gold": false,
+            "shown": true
+          },
+          {
+            "path": "website/public/2.x/retrofit/retrofit2/package-summary.html",
+            "tokens": 2812,
+            "gold": false,
+            "shown": true
+          }
+        ],
+        "ranking": {
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "first_gold_rank": 3,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "git grep -c -i -I -F invocation",
+            "git grep -c -i -I -F annotationurl"
+          ],
+          "tokens": 435
+        }
+      },
+      "mimry": {
+        "tokens": 9881,
+        "search_tokens": 1816,
+        "reads": 2,
+        "first_gold_read": 1,
+        "gold_found": 2,
+        "success": true,
+        "read_log": [
+          {
+            "path": "retrofit/src/main/java/retrofit2/Invocation.java",
+            "tokens": 814,
+            "gold": true,
+            "shown": true
+          },
+          {
+            "path": "retrofit/src/main/java/retrofit2/RequestFactory.java",
+            "tokens": 7251,
+            "gold": true,
+            "shown": true
+          }
+        ],
+        "index_ms": 4364,
+        "preflight_ms": 866,
+        "ranking": {
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "first_gold_rank": 1,
+          "missed": []
+        },
+        "search": {
+          "commands": [
+            "mimry preflight \"Add Invocation.annotationUrl\""
+          ],
+          "tokens": 1816
+        }
+      }
+    }
+  ]
+}
