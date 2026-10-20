@@ -557,35 +557,58 @@ def _alternative_name(alternative: str) -> str | None:
 
 
 def _pattern_names(pattern: str) -> list[str]:
-    """The one name ``pattern`` spells, or [] when it spells none.
-
-    An alternation is never a name. One branch of ``a|b`` is not the
-    symbol being looked up, so none of its branches is answered.
-    """
-    alternatives = _alternatives(pattern)
-    if alternatives is None or len(alternatives) != 1:
-        return []
-    name = _alternative_name(alternatives[0])
-    return [] if name is None else [name]
+    """Names ``pattern`` spells, or [] when a part is not a name."""
+    names: list[str] = []
+    for alternative in _alternatives(pattern) or []:
+        name = _alternative_name(alternative)
+        if name is None:
+            return []
+        names.append(name)
+    return names
 
 
-def symbol_candidates(patterns: list[str]) -> list[str]:
-    """Identifiers that ``patterns`` search for as whole symbols.
+def symbol_lookup_names(patterns: list[str]) -> list[str]:
+    """Every whole name the patterns spell, to look up in the index.
 
-    A pattern names a symbol only when all of it is one whole name, such
-    as ``foo``, ``def foo`` or ``\\bfoo\\b``. An alternation, a phrase,
-    a wildcard or a glued group gives nothing for that pattern, and the
-    caller falls back to the nudge.
+    Each branch of an alternation is included, so the caller can check
+    that all of them are symbols.
     """
     names: list[str] = []
     for pattern in patterns:
         for raw in _pattern_names(pattern):
+            if raw not in names:
+                names.append(raw)
+    return names[:SYMBOL_CANDIDATE_LIMIT]
+
+
+def symbol_candidates(patterns: list[str], known: set[str] | None = None) -> list[str]:
+    """Identifiers that ``patterns`` search for as whole symbols.
+
+    A pattern names symbols only when all of it is whole names, such as
+    ``foo``, ``def foo`` or ``\\bfoo\\b``. A phrase, a wildcard or a
+    glued group gives nothing for that pattern, and the caller falls
+    back to the nudge.
+
+    ``known`` is the set of names the index defines. When it is given,
+    an alternation names its branches only if every branch is known, so
+    ``def a|def b`` names both and ``skip|key|push`` names nothing when
+    ``push`` is not a symbol. Without it, every branch of a whole-name
+    alternation is named.
+    """
+    names: list[str] = []
+    for pattern in patterns:
+        raws = _pattern_names(pattern)
+        if known is not None and len(raws) > 1 and not all(raw in known for raw in raws):
+            continue
+        for raw in raws:
             word = usable_word(raw)
             # Dunder names such as __init__ are defined in nearly every
             # file, so an answer naming one would be noise.
             if word is None or word in DECLARATION_WORDS or word in names:
                 continue
             if word.startswith("__") and word.endswith("__"):
+                continue
+            if known is not None and raw not in known:
                 continue
             names.append(word)
     return names[:SYMBOL_CANDIDATE_LIMIT]
@@ -890,21 +913,28 @@ def _symbol_answer(
     wrong, so the caller falls back to the reminder.
     """
     try:
-        names = symbol_candidates(tree_search_patterns(tool_name, tool_input, command, root))
-        if not names:
+        patterns = tree_search_patterns(tool_name, tool_input, command, root)
+        lookup = symbol_lookup_names(patterns)
+        if not lookup:
             return None
         from datetime import datetime
 
         pointer = json.loads((root / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
         index = Path(pointer["indexPath"])
         indexed_at = datetime.fromisoformat(pointer["lastIndexedAt"]).timestamp()
-        defs = _definitions(root, index, names, indexed_at)
+        defs = _definitions(root, index, lookup, indexed_at)
         if not defs:
             return None
+        # Only names the index defines are answered, and an alternation
+        # only when every one of its branches is defined.
+        names = symbol_candidates(patterns, known=set(defs))
         graph = _load_graph(index)
         mimry_dir = root / ".mimry"
         texts = []
-        for name, found in defs.items():
+        for name in names:
+            found = defs.get(name)
+            if found is None:
+                continue
             if len(texts) == SYMBOL_LIMIT:
                 break
             # Once per session, like the reminder: a symbol answered

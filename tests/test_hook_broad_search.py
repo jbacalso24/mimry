@@ -211,46 +211,47 @@ def test_glob_query_leaves_out_file_extensions(tmp_path, pattern, query):
 @pytest.mark.parametrize(
     ("patterns", "names"),
     [
-        (["def feedback_rank_signals"], ["feedback_rank_signals"]),
+        (
+            ["def feedback_rank_signals|def apply_feedback_to_rows"],
+            ["feedback_rank_signals", "apply_feedback_to_rows"],
+        ),
         ([r"\bapply_feedback\b.*x"], []),
-        (["return"], []),
-        (["Foo.bar"], ["bar"]),
-        (["leaf", "leaf|main"], ["leaf"]),
+        (["ab|return|self|Foo.bar"], ["bar"]),
+        (["leaf", "leaf|main"], ["leaf", "main"]),
         (["connection refused"], []),
+        (["a1|xy"], []),
         (["_escape_control_characters"], ["_escape_control_characters"]),
-        (["_private", "_x1"], ["_private", "_x1"]),
+        (["_private|_x|_x1"], ["_private", "_x1"]),
         # Dunder names (__init__) are defined in most files: skipped.
-        (["__init__", "__name__", "init"], ["init"]),
-        (["(acc)", "scored"], ["acc", "scored"]),
+        (["__init__|__name__|init"], ["init"]),
+        (["(acc|mean|top|n_|scored)"], ["acc", "mean", "top", "scored"]),
     ],
 )
 def test_symbol_candidates_drop_keywords_and_short_words(patterns, names):
     assert symbol_candidates(patterns) == names
 
 
+def test_symbol_candidates_are_capped():
+    pattern = "|".join(f"name{i:02d}" for i in range(40))
+    assert len(symbol_candidates([pattern])) == hook.SYMBOL_CANDIDATE_LIMIT
+
+
 @pytest.mark.parametrize(
-    "pattern",
+    ("patterns", "known", "names"),
     [
-        "foo|bar_baz",
-        "(foo|bar_baz)",
-        "(?:foo|bar_baz)",
-        "def a_name|def b_name",
-        "leaf|main",
-        "_private|_x|_x1",
-        "__init__|__name__|init",
-        "(acc|mean|top|n_|scored)",
-        "ab|return|self|Foo.bar",
-        "a1|xy",
+        # Every branch of an alternation must be a known symbol.
+        (["def abc_one|def xyz_two"], {"abc_one", "xyz_two"}, ["abc_one", "xyz_two"]),
+        (["leaf|zzz"], {"leaf"}, []),
+        (["skip|key|push"], {"skip", "key"}, []),
+        (["leaf|main", "leaf"], {"leaf"}, ["leaf"]),
+        (["leaf"], {"leaf"}, ["leaf"]),
+        (["leaf"], set(), []),
     ],
 )
-def test_regex_alternation_names_no_symbol(pattern):
-    # One branch of an alternation is not the symbol being looked up.
-    assert symbol_candidates([pattern]) == []
-
-
-def test_symbol_candidates_are_capped():
-    patterns = [f"name{i:02d}" for i in range(40)]
-    assert len(symbol_candidates(patterns)) == hook.SYMBOL_CANDIDATE_LIMIT
+def test_symbol_candidates_name_an_alternation_only_when_all_branches_are_known(
+    patterns, known, names
+):
+    assert symbol_candidates(patterns, known=known) == names
 
 
 @pytest.mark.parametrize(
@@ -264,7 +265,9 @@ def test_symbol_candidates_are_capped():
         ("apply_feedback(", ["apply_feedback"]),
         ("^apply_feedback$", ["apply_feedback"]),
         ("class Router", ["Router"]),
-        ("(?:bar_baz)", ["bar_baz"]),
+        ("foo|bar_baz", ["foo", "bar_baz"]),
+        ("(foo|bar_baz)", ["foo", "bar_baz"]),
+        ("(?:foo|bar_baz)", ["foo", "bar_baz"]),
     ],
 )
 def test_whole_symbol_patterns_name_their_symbols(pattern, names):
