@@ -19,6 +19,10 @@ it needs.
 ``hook-refresh`` is the background hook for session start and file
 edits. It reindexes stale files so the next query does not wait, and
 it logs the edits and closes the session windows for feedback.
+
+``hook-compact`` runs in the foreground when a session resumes after
+its context was compacted. It adds a note with the session's last
+query and the files it edited and read, so the agent can pick up again.
 """
 
 from __future__ import annotations
@@ -34,7 +38,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .constants import HEAVY_IGNORES, NON_CODE_KINDS
-from .session import edited_paths, flush_session_feedback, log_file_event
+from .session import compact_note, edited_paths, flush_session_feedback, log_file_event
 
 # Regex constructs that make a pattern broad. A plain identifier, an
 # escaped dot or an exact message is not matched by any of these.
@@ -128,6 +132,15 @@ def cmd_hook_refresh(a) -> int:
     except Exception:
         # The next query reindexes stale files anyway, so a failed
         # background refresh costs nothing but time.
+        pass
+    return 0
+
+
+def cmd_hook_compact(a) -> int:
+    try:
+        _hook_compact(Path(getattr(a, "root", None) or "."))
+    except Exception:
+        # The note is optional; never fail the session over it.
         pass
     return 0
 
@@ -790,12 +803,12 @@ def _big_read_answer(root: Path, session: str, tool_input: dict) -> str | None:
         return None
 
 
-def _print_context(answer: str) -> None:
+def _print_context(answer: str, event: str = "PreToolUse") -> None:
     print(
         json.dumps(
             {
                 "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
+                    "hookEventName": event,
                     "additionalContext": answer,
                 }
             }
@@ -864,6 +877,16 @@ def _take_refresh_lock(lock: Path) -> bool:
                 return False
             lock.unlink(missing_ok=True)
     return False
+
+
+def _hook_compact(root: Path) -> None:
+    # The session id picks this session's files out of the shared log.
+    raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    data = json.loads(raw) if raw.strip() else {}
+    session = str(data.get("session_id") or "") if isinstance(data, dict) else ""
+    note = compact_note(root, session)
+    if note is not None:
+        _print_context(note, event="SessionStart")
 
 
 def _hook_refresh(root: Path) -> None:

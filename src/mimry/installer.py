@@ -997,14 +997,15 @@ def _always_on_current(root: Path, cfg: MimryPlatform) -> bool:
     return _same_text("\n".join(lines[start:end]), always_on_body())
 
 
-def hook_table(platform_key: str) -> dict[str, tuple[str, str, bool]]:
-    """Each MIMRY hook event -> (matcher, subcommand, in background).
+def hook_table(platform_key: str) -> dict[str, list[tuple[str, str, bool]]]:
+    """Each MIMRY hook event -> a list of (matcher, subcommand, async).
 
     The reminder runs before search tools. The refresh runs in the
     background when a session starts and after each file edit, so the
-    index is current before the agent's next query. The installed hooks
-    and the Claude Code plugin's hooks.json are both built from this
-    table, so they cannot drift apart.
+    index is current before the agent's next query. After a compaction
+    the restore runs in the foreground: only a foreground hook can add
+    context. The installed hooks and the Claude Code plugin's hooks.json
+    are both built from this table, so they cannot drift apart.
     """
     if platform_key == "codex":
         search, edit = "Bash", "apply_patch|Edit|Write"
@@ -1013,12 +1014,15 @@ def hook_table(platform_key: str) -> dict[str, tuple[str, str, bool]]:
         # shelled-out grep/rg. Read gets only the outline of a large
         # file, never the search reminder.
         search, edit = "Bash|Glob|Grep|Read", "Edit|Write|MultiEdit|NotebookEdit"
+    session_start = [("startup|resume", "hook-refresh", True)]
+    if platform_key != "codex":
+        session_start.append(("compact", "hook-compact", False))
     return {
-        # Status checks all three events, so an install from before the
-        # refresh hooks needs repair.
-        "PreToolUse": (search, "hook-check", False),
-        "SessionStart": ("startup|resume", "hook-refresh", True),
-        "PostToolUse": (edit, "hook-refresh", True),
+        # Status checks every event and matcher, so an install from
+        # before the refresh and restore hooks needs repair.
+        "PreToolUse": [(search, "hook-check", False)],
+        "SessionStart": session_start,
+        "PostToolUse": [(edit, "hook-refresh", True)],
     }
 
 
@@ -1069,7 +1073,8 @@ def _has_hook(root: Path, cfg: MimryPlatform) -> bool | None:
             _is_mimry_hook(entry) and sub in str(entry).lower()
             for entry in _event_entries(hooks, event)
         )
-        for event, (_, sub, _) in hook_table(cfg.key).items()
+        for event, rows in hook_table(cfg.key).items()
+        for _, sub, _ in rows
     )
 
 
@@ -1174,14 +1179,17 @@ def _hook_command(subcommand: str = "hook-check") -> str:
     return f"{_hook_executable()} {subcommand}"
 
 
-def _mimry_hook_entries(cfg: MimryPlatform) -> dict[str, dict]:
-    """The MIMRY entry for each hook event, keyed by event name."""
-    entries = {}
-    for event, (matcher, sub, background) in hook_table(cfg.key).items():
-        handler = {"type": "command", "command": _hook_command(sub)}
-        if background:
-            handler["async"] = True
-        entries[event] = {"matcher": matcher, "hooks": [handler]}
+def _mimry_hook_entries(cfg: MimryPlatform) -> dict[str, list[dict]]:
+    """The MIMRY entries for each hook event, keyed by event name."""
+    entries: dict[str, list[dict]] = {}
+    for event, rows in hook_table(cfg.key).items():
+        groups = []
+        for matcher, sub, background in rows:
+            handler = {"type": "command", "command": _hook_command(sub)}
+            if background:
+                handler["async"] = True
+            groups.append({"matcher": matcher, "hooks": [handler]})
+        entries[event] = groups
     return entries
 
 
@@ -1233,10 +1241,10 @@ def _merged_hooks_text(dst: Path, cfg: MimryPlatform) -> str:
     """The hooks file with MIMRY's entries set, everything else kept."""
     existing = _read_hooks_file(dst)
     hooks = existing.setdefault("hooks", {})
-    for event, entry in _mimry_hook_entries(cfg).items():
+    for event, groups in _mimry_hook_entries(cfg).items():
         # Replace, never append: a reinstall must not duplicate entries.
         kept = [h for h in _event_entries(hooks, event) if not _is_mimry_hook(h)]
-        hooks[event] = [*kept, entry]
+        hooks[event] = [*kept, *groups]
     return json.dumps(existing, indent=2) + "\n"
 
 
@@ -1257,8 +1265,7 @@ def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Pat
 
 
 def _is_mimry_hook(entry: object) -> bool:
-    """Identify a MIMRY PreToolUse hook regardless of how the launcher
-    resolved.
+    """Identify a MIMRY hook regardless of how the launcher resolved.
 
     The stored command embeds the resolved executable, which on Windows
     is `mimry.EXE`. Matching the literal "mimry hook-check" therefore
@@ -1266,7 +1273,8 @@ def _is_mimry_hook(entry: object) -> bool:
     never removed them, and status always reported them missing.
     """
     text = str(entry).lower()
-    return ("hook-check" in text or "hook-refresh" in text) and "mimry" in text
+    subcommands = ("hook-check", "hook-refresh", "hook-compact")
+    return any(sub in text for sub in subcommands) and "mimry" in text
 
 
 def _remove_hooks(
@@ -1746,8 +1754,7 @@ def install_skill(
     if hooks_problem:
         ui.warn(f"Skipped the MIMRY hooks: {hooks_problem}")
         ui.detail('Add them by hand under "hooks" in that file:')
-        entries = {event: [entry] for event, entry in _mimry_hook_entries(cfg).items()}
-        print(json.dumps({"hooks": entries}, indent=2))
+        print(json.dumps({"hooks": _mimry_hook_entries(cfg)}, indent=2))
         hooks = False
     extras = []
     if always_on and cfg.always_on_file:

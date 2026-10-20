@@ -28,6 +28,9 @@ SESSION_QUERY_LIMIT = 200
 SESSION_FILE_LIMIT = 2000
 SESSION_IGNORED_LIMIT = 5
 SESSION_NOTE = "recorded from session"
+COMPACT_FILES = 10
+COMPACT_QUERY_LIMIT = 300
+COMPACT_NOTE_LIMIT = 1500
 QUERY_LOG = "session-queries.jsonl"
 FILE_LOG = "session-files.jsonl"
 PATCH_PATH_RE = re.compile(r"^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+?)\s*$")
@@ -270,3 +273,91 @@ def flush_session_feedback(root: Path) -> None:
         # ponytail: two agent sessions in one repo share windows by
         # time. Per-session windows need the session id on each query.
         pass
+
+
+def _shell_quoted(text: str) -> str:
+    """``text`` in double quotes for a POSIX shell.
+
+    A backslash escapes the characters that stay live inside double
+    quotes, so the query cannot close them or run a command.
+    """
+    return '"' + re.sub(r'(["\\$`])', r"\\\1", text) + '"'
+
+
+def _compact_text(query: str, edited: list[str], read: list[str]) -> str:
+    if query:
+        lead = f'Before the context was compacted you were working on: "{query}".'
+    else:
+        lead = "Before the context was compacted you were working on these files."
+    parts = [lead]
+    if edited:
+        parts.append(f"Edited: {', '.join(edited)}.")
+    if read:
+        parts.append(f"Read: {', '.join(read)}.")
+    if query:
+        parts.append(f"Run mimry find {_shell_quoted(query)} to get the ranked files back.")
+    return " ".join(parts)
+
+
+def compact_note(root: Path, session: str) -> str | None:
+    """The note a compacted session gets back: its last query and files.
+
+    Query lines carry no session id, so the query is the newest one from
+    the point where the session's work began. Reads the logs only and
+    returns None when there is nothing to say. Never raises.
+    """
+    try:
+        if not session or not session_feedback_enabled():
+            return None
+        state = _state_dir(root)
+        if state is None:
+            return None
+        events = [
+            (t, e)
+            for t, e in ((_stamp(r), r) for r in _read_rows(state / FILE_LOG))
+            if t is not None
+        ]
+        events = [(t, e) for t, e in events if e.get("session") == session]
+        if not events:
+            return None
+        events.sort(key=lambda item: item[0])
+        first = events[0][0]
+        queries = [
+            (t, q)
+            for t, q in ((_stamp(r), r) for r in _read_rows(state / QUERY_LOG))
+            if t is not None
+        ]
+        queries.sort(key=lambda item: item[0])
+        # A find runs before the reads it leads to, so the work starts
+        # at the query in effect when the first file event happened.
+        # Queries carry no session id: the newest from there on is last.
+        earlier = [t for t, _ in queries if t <= first]
+        start = max(earlier) if earlier else first
+        later = [q for t, q in queries if t >= start]
+        query = ""
+        if later:
+            query = " ".join(str(later[-1].get("query") or "").split())[:COMPACT_QUERY_LIMIT]
+        # Newest first, so the lists below keep the latest files.
+        touched = [
+            (e.get("action"), e["path"])
+            for _, e in reversed(events)
+            if isinstance(e.get("path"), str)
+        ]
+        changed = _unique(path for action, path in touched if action == "changed")
+        opened = _unique(path for action, path in touched if action == "opened")
+        if not changed and not opened:
+            return None
+        edited = changed[:COMPACT_FILES]
+        read = [path for path in opened if path not in changed][:COMPACT_FILES]
+        note = _compact_text(query, edited, read)
+        # Capped query: dropping trailing paths always fits the limit.
+        while len(note) > COMPACT_NOTE_LIMIT and (read or edited):
+            if read:
+                read = read[:-1]
+            else:
+                edited = edited[:-1]
+            note = _compact_text(query, edited, read)
+        return note
+    except Exception:
+        # The note is optional; a session that restarts still works.
+        return None

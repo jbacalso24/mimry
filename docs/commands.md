@@ -133,7 +133,7 @@ Add `--file <path>` when they are in different files, or `--line N` (or `--file 
 A `--line` that starts no candidate and spans none exits 1 and lists the candidates.
 `path` between two indexed names with no connection also exits 0, because that is an answer.
 `status` keeps its own codes: 1 when MIMRY is not set up, 2 when the index is not current.
-`hook-check` and `hook-refresh` always exit 0, so a hook never fails the agent's tool call.
+`hook-check`, `hook-refresh` and `hook-compact` always exit 0, so a hook never fails the agent's tool call.
 With `--json`, the JSON is printed and the exit code is the same.
 
 ## Inferred edges

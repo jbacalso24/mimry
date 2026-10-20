@@ -9,18 +9,22 @@ from __future__ import annotations
 import io
 import json
 import re
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
+from mimry.cli import main
 from mimry.feedback import feedback_payload_from_args, list_feedback, parse_context_suggested_paths
-from mimry.hook import cmd_hook_check, cmd_hook_refresh
+from mimry.hook import cmd_hook_check, cmd_hook_compact, cmd_hook_refresh
 from mimry.paths import TASK_PACK_PATTERN
 from mimry.search import find_rows
-from mimry.session import flush_session_feedback, record_query
+from mimry.session import FILE_LOG, QUERY_LOG, flush_session_feedback, record_query
 from mimry.storage import load_pointer
 
 QUERY = "login session timeout"
@@ -64,11 +68,11 @@ def _feed(monkeypatch, payload: dict) -> None:
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(raw)))
 
 
-def _read(monkeypatch, repo: Path, path: Path) -> int:
+def _read(monkeypatch, repo: Path, path: Path, session: str = SESSION) -> int:
     _feed(
         monkeypatch,
         {
-            "session_id": SESSION,
+            "session_id": session,
             "tool_name": "Read",
             "tool_input": {"file_path": str(path)},
         },
@@ -270,3 +274,189 @@ def test_preflight_window_records_its_context_pack(tmp_path, monkeypatch):
     assert record["context_path"] == pack.resolve().relative_to(repo.resolve()).as_posix()
     assert record["suggested_paths"] == suggested
     assert record["opened_paths"] == [suggested[0]]
+
+
+def _restored(monkeypatch, capsys, repo: Path, session: str = SESSION) -> str:
+    """The compact note for ``session``, or "" when there is none."""
+    capsys.readouterr()
+    _feed(
+        monkeypatch,
+        {"hook_event_name": "SessionStart", "source": "compact", "session_id": session},
+    )
+    assert cmd_hook_compact(SimpleNamespace(root=str(repo))) == 0
+    out = capsys.readouterr().out
+    if not out:
+        return ""
+    hook = json.loads(out)["hookSpecificOutput"]
+    assert hook["hookEventName"] == "SessionStart"
+    return hook["additionalContext"]
+
+
+def _append_rows(repo: Path, log: str, rows: list[dict]) -> None:
+    with (repo / ".mimry" / log).open("a", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+
+
+def test_compact_note_names_the_query_the_edits_and_the_reads(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find(repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[2]) == 0
+    assert _read(monkeypatch, repo, repo / shown[3]) == 0
+    _edit(monkeypatch, repo, shown[1])
+
+    assert _restored(monkeypatch, capsys, repo) == (
+        f'Before the context was compacted you were working on: "{QUERY}". '
+        f"Edited: {shown[1]}. Read: {shown[3]}, {shown[2]}. "
+        f'Run mimry find "{QUERY}" to get the ranked files back.'
+    )
+
+
+def test_compact_note_uses_the_query_whose_window_holds_the_files(tmp_path, monkeypatch, capsys):
+    # Each find closes the window before it; the logs keep the open one.
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find(repo, QUERY)
+    _find(repo, FOLLOW_UP)
+    assert _read(monkeypatch, repo, repo / shown[2]) == 0
+
+    note = _restored(monkeypatch, capsys, repo)
+    assert f'you were working on: "{FOLLOW_UP}".' in note
+    assert f'"{QUERY}"' not in note
+    assert f'Run mimry find "{FOLLOW_UP}"' in note
+    assert f"Read: {shown[2]}." in note
+
+
+def test_compact_note_leaves_out_other_sessions(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find(repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[0]) == 0
+    assert _read(monkeypatch, repo, repo / shown[1], session="other-session") == 0
+
+    note = _restored(monkeypatch, capsys, repo)
+    assert f"Read: {shown[0]}." in note
+    assert shown[1] not in note
+    other = _restored(monkeypatch, capsys, repo, session="other-session")
+    assert f"Read: {shown[1]}." in other
+    assert shown[0] not in other
+
+
+def test_compact_note_is_silent_without_session_data(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    assert _restored(monkeypatch, capsys, repo) == ""
+
+    # A query alone says nothing about what the session worked on.
+    _find(repo, QUERY)
+    assert _restored(monkeypatch, capsys, repo) == ""
+
+
+def test_compact_note_caps_each_list_at_ten_files(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    base = datetime.now().astimezone()
+    _append_rows(
+        repo,
+        QUERY_LOG,
+        [{"time": (base - timedelta(seconds=1)).isoformat(), "query": QUERY, "shown": []}],
+    )
+    rows = []
+    for i in range(12):
+        when = base + timedelta(seconds=2 * i)
+        rows.append(
+            {
+                "time": when.isoformat(),
+                "session": SESSION,
+                "action": "opened",
+                "path": f"read{i}.py",
+            }
+        )
+        later = when + timedelta(seconds=1)
+        rows.append(
+            {
+                "time": later.isoformat(),
+                "session": SESSION,
+                "action": "changed",
+                "path": f"edit{i}.py",
+            }
+        )
+    _append_rows(repo, FILE_LOG, rows)
+
+    note = _restored(monkeypatch, capsys, repo)
+    newest = range(11, 1, -1)
+    assert f"Edited: {', '.join(f'edit{i}.py' for i in newest)}." in note
+    assert f"Read: {', '.join(f'read{i}.py' for i in newest)}." in note
+    assert "edit1.py" not in note and "read0.py" not in note
+    assert len(note) <= 1500
+
+
+def test_compact_note_quotes_the_query_for_a_shell(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    tricky = 'fix "login" $(touch pwned) `id` \\ end'
+    base = datetime.now().astimezone()
+    _append_rows(
+        repo,
+        QUERY_LOG,
+        [{"time": (base - timedelta(seconds=1)).isoformat(), "query": tricky, "shown": []}],
+    )
+    _append_rows(
+        repo,
+        FILE_LOG,
+        [{"time": base.isoformat(), "session": SESSION, "action": "opened", "path": "src/app.ts"}],
+    )
+
+    note = _restored(monkeypatch, capsys, repo)
+    command = note.rsplit("Run mimry find ", 1)[1].rsplit(" to get", 1)[0]
+    assert command == '"fix \\"login\\" \\$(touch pwned) \\`id\\` \\\\ end"'
+    if shutil.which("sh") is None:
+        pytest.skip("needs a POSIX sh to run the quoted command")
+    printed = subprocess.run(
+        ["sh", "-c", f"printf '%s' {command}"], capture_output=True, text=True, check=True
+    ).stdout
+    assert printed == tricky
+
+
+def test_compact_note_respects_the_off_switch(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find(repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[0]) == 0
+    monkeypatch.setenv("MIMRY_SESSION_FEEDBACK", "0")
+
+    assert _restored(monkeypatch, capsys, repo) == ""
+
+
+def test_broken_logs_give_no_compact_note_and_exit_zero(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    (repo / ".mimry" / QUERY_LOG).mkdir()
+    (repo / ".mimry" / FILE_LOG).mkdir()
+
+    assert _restored(monkeypatch, capsys, repo) == ""
+
+
+def test_installed_claude_code_config_restores_context_in_the_foreground(tmp_path):
+    repo = copy_fixture(tmp_path)
+    cache = tmp_path / "cache"
+    res = run_cli(repo, cache, "install", "--project", "--platform", "claude-code", "--hooks")
+    assert res.returncode == 0, res.stderr
+
+    settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    [group] = [g for g in settings["hooks"]["SessionStart"] if g["matcher"] == "compact"]
+    [handler] = group["hooks"]
+    assert handler["command"].endswith(" hook-compact")
+    assert "async" not in handler
+
+
+def test_compact_hook_reads_the_logs_and_writes_nothing(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find(repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[0]) == 0
+    # The window is idle, so a flush would close it.
+    _age_queries(repo, hours=3)
+    logs = [repo / ".mimry" / QUERY_LOG, repo / ".mimry" / FILE_LOG]
+    before = [path.read_bytes() for path in logs]
+    _feed(monkeypatch, {"hook_event_name": "SessionStart", "session_id": SESSION})
+    capsys.readouterr()
+
+    assert main(["--root", str(repo), "hook-compact"]) == 0
+
+    out = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert out["additionalContext"].startswith("Before the context was compacted")
+    assert [path.read_bytes() for path in logs] == before
+    assert _rows(repo) == []

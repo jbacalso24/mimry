@@ -31,15 +31,17 @@ def _uvx(*args: str) -> list[str]:
 
 def _hooks() -> dict:
     hooks = {}
-    for event, (matcher, subcommand, background) in hook_table("claude-code").items():
-        handler: dict[str, object] = {
-            "type": "command",
-            "command": "uvx",
-            "args": _uvx(NAME, subcommand),
-        }
-        if background:
-            handler["async"] = True
-        hooks[event] = [{"matcher": matcher, "hooks": [handler]}]
+    for event, rows in hook_table("claude-code").items():
+        hooks[event] = []
+        for matcher, subcommand, background in rows:
+            handler: dict[str, object] = {
+                "type": "command",
+                "command": "uvx",
+                "args": _uvx(NAME, subcommand),
+            }
+            if background:
+                handler["async"] = True
+            hooks[event].append({"matcher": matcher, "hooks": [handler]})
     return {"hooks": hooks}
 
 

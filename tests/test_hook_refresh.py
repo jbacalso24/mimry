@@ -27,6 +27,10 @@ EDIT_MATCHER = {
     "codex": "apply_patch|Edit|Write",
 }
 REFRESH_EVENTS = ("SessionStart", "PostToolUse")
+SESSION_START_MATCHERS = {
+    "claude-code": ["startup|resume", "compact"],
+    "codex": ["startup|resume"],
+}
 
 
 def _indexed_repo(tmp_path, monkeypatch) -> Path:
@@ -160,7 +164,9 @@ def test_install_writes_three_mimry_hooks_and_reinstall_does_not_duplicate(tmp_p
     assert [e["matcher"] for e in _mimry_entries(settings, "PreToolUse")] == [
         SEARCH_MATCHER[platform]
     ]
-    assert [e["matcher"] for e in _mimry_entries(settings, "SessionStart")] == ["startup|resume"]
+    assert [e["matcher"] for e in _mimry_entries(settings, "SessionStart")] == (
+        SESSION_START_MATCHERS[platform]
+    )
     assert [e["matcher"] for e in _mimry_entries(settings, "PostToolUse")] == [
         EDIT_MATCHER[platform]
     ]
@@ -175,7 +181,7 @@ def test_install_writes_three_mimry_hooks_and_reinstall_does_not_duplicate(tmp_p
         len(_mimry_entries(settings, event))
         for event in ("PreToolUse", "SessionStart", "PostToolUse")
     )
-    assert total == 3
+    assert total == len(SESSION_START_MATCHERS[platform]) + 2
 
 
 @pytest.mark.parametrize("platform", ["claude-code", "codex"])
@@ -193,9 +199,14 @@ def test_user_hooks_survive_install_and_uninstall(tmp_path, platform):
         == 0
     )
     settings = _settings(repo, platform)
+    mimry_groups = {
+        "PreToolUse": 1,
+        "SessionStart": len(SESSION_START_MATCHERS[platform]),
+        "PostToolUse": 1,
+    }
     for event in events:
         assert settings["hooks"][event][0] == user_entry
-        assert len(settings["hooks"][event]) == 2
+        assert len(settings["hooks"][event]) == 1 + mimry_groups[event]
 
     res = run_cli(repo, cache, "uninstall", "--project", "--platform", platform, "--hooks")
     assert res.returncode == 0, res.stderr
@@ -287,7 +298,9 @@ def test_install_replaces_a_non_list_event_value_with_the_mimry_entry(tmp_path):
     installer._install_hooks(repo, cfg)
 
     settings = _settings(repo, "claude-code")
-    assert [e["matcher"] for e in settings["hooks"]["SessionStart"]] == ["startup|resume"]
+    assert [e["matcher"] for e in settings["hooks"]["SessionStart"]] == (
+        SESSION_START_MATCHERS["claude-code"]
+    )
     assert [e["matcher"] for e in settings["hooks"]["PostToolUse"]] == [
         EDIT_MATCHER["claude-code"]
     ]

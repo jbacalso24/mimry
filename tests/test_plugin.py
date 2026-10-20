@@ -76,15 +76,15 @@ def test_plugin_hooks_match_the_installed_claude_code_hooks():
     installed = installer._mimry_hook_entries(installer.platforms()["claude-code"])
     hooks = _plugin_hooks()
     assert set(hooks) == set(installed)
-    for event, entry in installed.items():
-        (group,) = hooks[event]
-        assert group["matcher"] == entry["matcher"], event
-        plugin_handler = group["hooks"][0]
-        installed_handler = entry["hooks"][0]
-        # The installed command ends in the subcommand, and the plugin
-        # passes it as its last argument.
-        assert plugin_handler["args"][-1] == installed_handler["command"].split()[-1], event
-        assert plugin_handler.get("async") == installed_handler.get("async"), event
+    for event, groups in installed.items():
+        assert [g["matcher"] for g in hooks[event]] == [g["matcher"] for g in groups], event
+        for group, entry in zip(hooks[event], groups, strict=True):
+            plugin_handler = group["hooks"][0]
+            installed_handler = entry["hooks"][0]
+            # The installed command ends in the subcommand. The plugin
+            # passes it as its last argument.
+            assert plugin_handler["args"][-1] == installed_handler["command"].split()[-1], event
+            assert plugin_handler.get("async") == installed_handler.get("async"), event
 
 
 @pytest.mark.skipif(shutil.which("claude") is None, reason="needs the claude CLI")
