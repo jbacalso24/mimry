@@ -379,7 +379,19 @@ def test_install_lists_expanded_platforms(tmp_path):
         assert any(line.split()[:1] == [name] for line in res.stdout.splitlines()), name
 
 
-def test_expanded_project_platform_paths(tmp_path):
+def test_expanded_project_platform_paths(tmp_path, monkeypatch):
+    # A project install still reaches some agents' user config (Zed's
+    # settings live in the user folder), so every home variable points
+    # at the test's own folder, never at the machine running the suite.
+    home = tmp_path / "home"
+    for name, sub in (
+        ("HOME", ""),
+        ("USERPROFILE", ""),
+        ("APPDATA", "AppData/Roaming"),
+        ("LOCALAPPDATA", "AppData/Local"),
+        ("XDG_CONFIG_HOME", ".config"),
+    ):
+        monkeypatch.setenv(name, str(home / sub))
     repo = copy_fixture(tmp_path)
     cases = {
         "opencode": ".opencode/skills/mimry/SKILL.md",

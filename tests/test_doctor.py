@@ -92,6 +92,10 @@ def _isolate(monkeypatch, home: Path) -> None:
     monkeypatch.setenv("PATH", "")
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.delenv("CODEX_HOME", raising=False)
+    # Zed and VS Code read their config from these on Windows and Linux;
+    # unset, the paths fall back to the fake home.
+    for name in ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME"):
+        monkeypatch.delenv(name, raising=False)
     _fake_dist(monkeypatch, {})
     monkeypatch.setattr(doctor.subprocess, "run", _no_subprocess)
 
