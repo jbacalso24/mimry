@@ -326,6 +326,20 @@ def test_compact_note_uses_the_query_whose_window_holds_the_files(tmp_path, monk
     assert f"Read: {shown[2]}." in note
 
 
+def test_compact_note_keeps_files_from_flushed_windows(tmp_path, monkeypatch, capsys):
+    # A later find flushes the first window, but its reads stay in the
+    # working set, and the flushed window is recorded only once.
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find(repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[2]) == 0
+    _find(repo, FOLLOW_UP)
+    assert _read(monkeypatch, repo, repo / shown[3]) == 0
+    _find(repo, FOLLOW_UP)
+
+    assert f"Read: {shown[3]}, {shown[2]}." in _restored(monkeypatch, capsys, repo)
+    assert sorted(row["opened_paths"] for row in _rows(repo)) == sorted([[shown[2]], [shown[3]]])
+
+
 def test_compact_note_leaves_out_other_sessions(tmp_path, monkeypatch, capsys):
     repo = _repo(tmp_path, monkeypatch)
     shown = _find(repo, QUERY)

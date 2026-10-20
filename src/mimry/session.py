@@ -26,6 +26,8 @@ from typing import Any
 SESSION_WINDOW_IDLE = 2 * 60 * 60
 SESSION_QUERY_LIMIT = 200
 SESSION_FILE_LIMIT = 2000
+# File events older than this are dropped at the next flush.
+SESSION_FILE_KEEP = 24 * 60 * 60
 SESSION_IGNORED_LIMIT = 5
 SESSION_NOTE = "recorded from session"
 COMPACT_FILES = 10
@@ -226,12 +228,13 @@ def _flush_plan(root: Path, state: Path, now: float) -> dict[str, Any] | None:
             )
         )
 
-    # Windows already flushed, or before the first query, belong to no
-    # open window, so their file events go.
+    # File events are kept by age, not by window: a window only counts
+    # events after its own query, so a flushed one is never counted
+    # twice, and the compaction note still sees the files read earlier.
     kept_queries = queries[closed:][-SESSION_QUERY_LIMIT:]
-    kept_events = (
-        [e for t, e in timed_events if t >= starts[-1]][-SESSION_FILE_LIMIT:] if last_open else []
-    )
+    kept_events = [e for t, e in timed_events if now - t <= SESSION_FILE_KEEP][
+        -SESSION_FILE_LIMIT:
+    ]
     if not records and len(kept_queries) == len(queries) and len(kept_events) == len(timed_events):
         return None
     return {"records": records, "queries": kept_queries, "events": kept_events}
