@@ -108,8 +108,9 @@ SENSITIVE_LABEL_TOKENS = {
     "secrets",
     "token",
 }
-# A comparison is judged by its right-hand side, not as an assignment.
-COMPARISON_OPERATORS = frozenset({"==", "==="})
+# A comparison is judged by its literal, not as an assignment. Both
+# senses of equality and inequality count (#500).
+COMPARISON_OPERATORS = frozenset({"==", "===", "!=", "!=="})
 # Shortest literal a comparison may hold and still be a credential.
 COMPARED_SECRET_MIN_CHARS = 8
 # Assignment boundaries are deliberately structural rather than
@@ -133,13 +134,17 @@ ASSIGNMENT_RE = re.compile(
     # long runs of spaces quadratic.
     r"(?ims)(?P<boundary>^|(?<=[{(,;])|(?P<spaced>(?<=[ \t])(?![ \t])))"
     # A PHP or Perl variable keeps its sigil in front of the label.
-    r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?\$?(?P<label_quote>['\"]?)"
+    # A quoted shell variable (``"$password"``) has its quote in front
+    # of the ``$``.
+    r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)\$?"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
     # A comparison is an operator of its own, so the first ``=`` of
-    # ``==`` never reads as an assignment (#473).
+    # ``==`` never reads as an assignment (#473). ``!=`` and ``!==``
+    # are comparisons too (#500).
     # ``:=`` (Go, Python's walrus) is one operator too, so its ``=``
-    # is not read as the value.
-    r"[ \t]*(?P<operator>===|==|(?(spaced)=|(?::=|[=:])))[ \t]*"
+    # is not read as the value. A hash arrow (``'key' => "..."``) reads
+    # as ``=`` with a value that starts at ``>``; see HASH_ENTRY_RE.
+    r"[ \t]*(?P<operator>===|==|!==|!=|(?(spaced)=|(?::=|[=:])))[ \t]*"
     # A value may start on the next line when that line is an indented
     # scalar (``password:\n  hunter2``); a nested ``key: value`` is its
     # own assignment.
@@ -150,6 +155,22 @@ ASSIGNMENT_RE = re.compile(
     r"(?:\[[^\[\]\r\n]*\]|\\(?![nrt\"'])|[^,{;})\]\\\r\n'\"])*"
     r"(?:(?=[\"'])[^,{;})\r\n]*)?)"
     r"(?P<newline>\r?\n|$)?"
+)
+# A literal on the left of a comparison, as in ``if "..." == password``
+# or ``[ "..." != "$password" ]`` (#500).
+LITERAL_COMPARED_RE = re.compile(
+    r"(?P<literal>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*')"
+    r"[ \t]*(?P<operator>===|==|!==|!=)[ \t]*"
+    r"(?P<label_quote>['\"]?)\$?(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
+)
+# A PHP or Ruby hash entry with a fat arrow, ``'password' => "..."`` or
+# ``:password => "..."``, with its value on the same line. ASSIGNMENT_RE
+# reads a bracketed value whole, so the entry inside ``$a = ['password'
+# => "..."]`` is never seen there; this pattern finds it (#500).
+HASH_ENTRY_RE = re.compile(
+    r"(?m)(?P<prefix>(?:^|(?<=[{(\[,;]))[ \t]*:?(?P<label_quote>['\"]?)"
+    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)[ \t]*=>[ \t]*)"
+    r"(?P<value>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*')"
 )
 MULTILINE_QUOTED_ASSIGNMENT_START_RE = re.compile(
     r"(?im)(?:^|(?<=[{(,;]))[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
@@ -461,6 +482,16 @@ def contains_sensitive_text(text: str, *, code: bool = False) -> bool:
         for match in MULTILINE_QUOTED_ASSIGNMENT_START_RE.finditer(text)
     ):
         return True
+    if any(
+        _literal_comparison_is_sensitive(match, code=code)
+        for match in LITERAL_COMPARED_RE.finditer(text)
+    ):
+        return True
+    if any(
+        _hash_entry_is_sensitive(match, code=code, scanner=scanner)
+        for match in HASH_ENTRY_RE.finditer(text)
+    ):
+        return True
     return any(
         _assignment_match_is_sensitive(match, code=code, scanner=scanner)
         for match in ASSIGNMENT_RE.finditer(text)
@@ -488,7 +519,9 @@ def redact_sensitive_text(text: str) -> str:
     redacted = _redact_values(redacted, SPACED_SENSITIVE_ASSIGNMENT_RE, _redact_spaced_assignment)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
     redacted = _redact_yaml_quoted_multiline(redacted)
+    redacted = _redact_hash_entries(redacted)
     redacted = _redact_values(redacted, ASSIGNMENT_RE, _redact_assignment)
+    redacted = LITERAL_COMPARED_RE.sub(_redact_literal_comparison, redacted)
     redacted = UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE.sub(
         _redact_unclosed_multiline_assignment, redacted
     )
@@ -543,6 +576,18 @@ def is_code_path(path: str | Path) -> bool:
     return ext in EXTENSION_LANGUAGE and EXTENSION_LANGUAGE[ext] not in _LITERAL_VALUE_LANGUAGES
 
 
+def _closes_on_a_later_line(text: str, start: int) -> bool:
+    """Whether the quote at ``text[start]`` opens a string that its
+    line does not close but a later line does.
+
+    Such a value is a multi-line one, judged by
+    _sensitive_unclosed_quoted_values.
+    """
+    if text[start : start + 1] not in ('"', "'") or _STRING_LITERAL_RE.match(text, start):
+        return False
+    return _quote_close(text, start + 1, text[start]) is not None
+
+
 def _value_is_credential(
     text: str, pos: int, value: str, operator: str, label: str, *, code: bool, scanner: _Scanner
 ) -> bool:
@@ -575,11 +620,15 @@ def _value_is_credential(
         # PHP's and Ruby's ``'key' => 'value'``; anything else after
         # ``=>`` is an arrow function.
         start = _skip_blanks(text, start + 1)
+        if _closes_on_a_later_line(text, start):
+            return False
         if code:
             return _code_value_is_credential(text, start, "=", label, scanner)
         return _STRING_LITERAL_RE.match(text, start) is not None and _expression_is_credential(
             text, start, scanner
         )
+    if _closes_on_a_later_line(text, start):
+        return False  # judged as a whole by _sensitive_unclosed_quoted_values
     if candidate[0] == "=":
         # ``:=`` binds: judge the right-hand side. A comparison's value
         # never starts with ``=``; see _comparison_is_credential.
@@ -1271,6 +1320,47 @@ def _redact_assignment(match: re.Match[str], scanner: _Scanner) -> str | None:
     return f"{match.group('prefix')}{arrow}{_redacted_secret(stripped)}"
 
 
+def _literal_comparison_is_sensitive(match: re.Match[str], *, code: bool = False) -> bool:
+    if not _is_sensitive_label(match.group("label")):
+        return False
+    return _comparison_is_credential(match.string, match.start("literal"), code=code)
+
+
+def _redact_literal_comparison(match: re.Match[str]) -> str:
+    if not _literal_comparison_is_sensitive(match):
+        return match.group(0)
+    literal = match.group("literal")
+    return _redacted_secret(literal) + match.group(0)[len(literal) :]
+
+
+def _hash_entry_is_sensitive(
+    match: re.Match[str], *, code: bool = False, scanner: _Scanner
+) -> bool:
+    label = match.group("label")
+    if not _is_sensitive_label(label, match.group("value")):
+        return False
+    return _value_is_credential(
+        match.string,
+        match.start("value"),
+        match.group("value"),
+        "=>",
+        label,
+        code=code,
+        scanner=scanner,
+    )
+
+
+def _redact_hash_entries(text: str) -> str:
+    scanner = _Scanner(text, redaction=True)
+
+    def render(match: re.Match[str]) -> str:
+        if not _hash_entry_is_sensitive(match, scanner=scanner):
+            return match.group(0)
+        return match.group("prefix") + _redacted_secret(match.group("value"))
+
+    return HASH_ENTRY_RE.sub(render, text)
+
+
 def _redact_yaml_block(match: re.Match[str]) -> str:
     if not _is_sensitive_label(match.group("label"), match.group("body")):
         return match.group(0)
@@ -1421,9 +1511,35 @@ def _sensitive_unclosed_quoted_values(text: str):
             ):
                 continue
             close = None
-        end = len(text) if close is None else close + 1
-        if _is_sensitive_label(match.group("label"), text[quote_at:end]):
+        if close is None:
+            # The value's end is unknown, so the label alone decides.
+            end = len(text)
+            sensitive = _is_sensitive_label(match.group("label"), text[quote_at:end])
+        else:
+            # Under a sensitive label the whole value is redacted line
+            # by line, as a single-line value is. A value already
+            # redacted that way is not judged again.
+            end = close + 1
+            value = text[quote_at + 1 : close]
+            sensitive = _is_sensitive_label(match.group("label"), value) and _holds_text(value)
+        if sensitive:
             yield quote_at, close, end
+
+
+_MARKER_OR_BLANK_RE = re.compile(rf"{re.escape(REDACTED)}|\s")
+
+
+def _holds_text(value: str) -> bool:
+    """Whether a value holds anything besides the marker and blanks."""
+    return _MARKER_OR_BLANK_RE.sub("", value) != ""
+
+
+def _redacted_lines(value: str) -> str:
+    """The value with each run of text on a line replaced by the marker.
+
+    Every line break stays, so the line count does not change.
+    """
+    return re.sub(r"[^\r\n]+", REDACTED, value)
 
 
 def _quote_close(text: str, start: int, quote: str) -> tuple[int, bool] | None:
@@ -1448,17 +1564,22 @@ def _quote_close(text: str, start: int, quote: str) -> tuple[int, bool] | None:
 
 def _redact_unclosed_quoted_values(text: str) -> str:
     """Redact a sensitive quoted value through its closing quote on a
-    later line.
+    later line, line by line.
 
-    The line breaks inside it go with it, so the redacted text has fewer
-    lines than the source and indexable_bytes refuses the file.
+    Each line of the value becomes the marker and every line break
+    stays, so the redacted text has the source's line count and
+    indexable_bytes keeps it. A value that never closes is cut at the
+    end of the text, which fails closed.
     """
     pieces: list[str] = []
     cursor = 0
     for quote_at, close, end in _sensitive_unclosed_quoted_values(text):
         quote = text[quote_at]
-        closing = quote if close is not None else ""
-        pieces.extend((text[cursor:quote_at], quote + REDACTED + closing))
+        if close is None:
+            body, closing = REDACTED, ""
+        else:
+            body, closing = _redacted_lines(text[quote_at + 1 : close]), quote
+        pieces.extend((text[cursor:quote_at], quote + body + closing))
         cursor = end
     pieces.append(text[cursor:])
     return "".join(pieces)

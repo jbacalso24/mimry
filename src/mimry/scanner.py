@@ -973,8 +973,9 @@ def indexable_bytes(path, data: bytes) -> bytes:
     Raises SensitiveContentError when the file holds a secret it may not
     keep. A file without secret-looking content keeps its own bytes. A
     code file whose secret-looking lines redact cleanly keeps its
-    redacted text, so ordinary lines such as
-    ``TOKEN = 'CSRF token missing.'`` stay searchable. Redaction must
+    redacted text, so the rest of the file stays searchable. A line such
+    as ``TOKEN = 'CSRF token missing.'`` is kept as
+    ``TOKEN = '[REDACTED]'``. Redaction must
     keep the line count, so line numbers still match the file, and the
     redacted text must pass the same check. Anything else with a secret
     is refused, as before.

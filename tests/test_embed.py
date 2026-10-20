@@ -155,7 +155,9 @@ def test_download_sha_mismatch_leaves_no_file_behind(tmp_path, monkeypatch):
 
 def test_available_needs_numpy_files_and_no_override(tmp_path, monkeypatch):
     pytest.importorskip("numpy")
-    monkeypatch.setattr(embed, "MODEL_FILES", {"config.json": (2, "x")})
+    monkeypatch.setattr(
+        embed, "MODEL_FILES", {"config.json": (2, hashlib.sha256(b"ab").hexdigest())}
+    )
     monkeypatch.setattr(embed, "model_dir", lambda: tmp_path)
     monkeypatch.delenv("MIMRY_EMBED", raising=False)
     assert embed.available() is False
@@ -424,3 +426,26 @@ def test_download_replaces_a_broken_model_file(tmp_path, monkeypatch):
     embed.download()
     assert (tmp_path / "config.json").read_bytes() == good
     assert embed.status()["state"] == "ready"
+
+
+def test_available_needs_a_model_whose_bytes_match_not_only_its_sizes(tmp_path, monkeypatch):
+    pytest.importorskip("numpy")
+    body = b'{"a": 1}'
+    _model_folder(tmp_path, monkeypatch, b"x" * len(body), digest_of=body)
+    monkeypatch.delenv("MIMRY_EMBED", raising=False)
+
+    def must_not_load(directory):
+        raise AssertionError("a broken model must not be loaded")
+
+    monkeypatch.setattr(embed, "_load", must_not_load)
+    assert embed.available() is False
+
+    # The same folder with the right bytes is ready, and a second check
+    # does not hash the file again.
+    _model_folder(tmp_path, monkeypatch, body)
+    hashed: list[str] = []
+    real = embed._sha256
+    monkeypatch.setattr(embed, "_sha256", lambda path: hashed.append(path.name) or real(path))
+    assert embed.available() is True
+    assert embed.available() is True
+    assert hashed == ["config.json"]

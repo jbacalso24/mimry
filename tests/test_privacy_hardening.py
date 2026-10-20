@@ -1795,5 +1795,179 @@ def test_a_quoted_secret_split_by_a_line_break_is_refused_without_its_tail(name:
     assert contains_sensitive_text(source, code=True)
     redacted = redact_sensitive_text(source)
     assert "privacy-canary" not in redacted and "value-123456789" not in redacted
+    kept = indexable_bytes(Path(name), source.encode()).decode()
+    assert kept == redacted
+    assert kept.count("\n") == source.count("\n")
+    assert "privacy" not in kept and "value-123456789" not in kept
+
+
+# A quoted value under a credential label that spans lines is redacted
+# line by line (#499): every line break stays, so the file is kept with
+# its line count, and no part of the value is left. Prose wrapped across
+# lines is redacted the same way, as a single-line value is.
+MULTILINE_REDACTIONS = [
+    (
+        "msg.php",
+        "<?php\n$a = ['password' => 'Your password is wrong.\n'];\necho $a['password'];\n",
+        "<?php\n$a = ['password' => '[REDACTED]\n'];\necho $a['password'];\n",
+    ),
+    (
+        "msg.php",
+        "<?php\n$a = ['password' => \"Wrong\npassword given\"];\n",
+        "<?php\n$a = ['password' => \"[REDACTED]\n[REDACTED]\"];\n",
+    ),
+    (
+        "msg.php",
+        "<?php\n$password_help = 'Choose a password\nwith care';\n",
+        "<?php\n$password_help = '[REDACTED]\n[REDACTED]';\n",
+    ),
+]
+
+
+@pytest.mark.parametrize("name, source, redacted", MULTILINE_REDACTIONS)
+def test_prose_wrapped_across_lines_under_a_password_label_is_redacted_and_kept(
+    tmp_path: Path, name: str, source: str, redacted: str
+):
+    assert has_sensitive_content(Path(name), data=source.encode("utf-8"))
+    kept = indexable_bytes(tmp_path / name, source.encode("utf-8")).decode("utf-8")
+    assert kept == redacted
+    assert kept.count("\n") == source.count("\n")
+    for word in ("Your", "password is", "wrong", "Wrong", "given", "Choose", "with care"):
+        assert word not in kept
+
+
+SPLIT_HEAD, SPLIT_TAIL = VALUE_CANARY[:17], VALUE_CANARY[17:]
+
+
+@pytest.mark.parametrize(
+    "name, source, redacted",
+    [
+        (
+            "a.rb",
+            f'password = "{SPLIT_HEAD}\n{SPLIT_TAIL}"\n',
+            'password = "[REDACTED]\n[REDACTED]"\n',
+        ),
+        (
+            "b.php",
+            f'<?php\n$password = "{SPLIT_HEAD}\n{SPLIT_TAIL}";\n',
+            '<?php\n$password = "[REDACTED]\n[REDACTED]";\n',
+        ),
+        (
+            "c.rs",
+            f'let password = "{SPLIT_HEAD}\n{SPLIT_TAIL}";\n',
+            'let password = "[REDACTED]\n[REDACTED]";\n',
+        ),
+        (
+            "e.php",
+            f"<?php\n$a = ['password' => \"{SPLIT_HEAD}\n{SPLIT_TAIL}\"];\n",
+            "<?php\n$a = ['password' => \"[REDACTED]\n[REDACTED]\"];\n",
+        ),
+    ],
+)
+def test_secret_split_across_lines_is_redacted_and_kept(
+    tmp_path: Path, name: str, source: str, redacted: str
+):
+    kept = indexable_bytes(tmp_path / name, source.encode("utf-8")).decode("utf-8")
+    assert kept == redacted
+    assert kept.count("\n") == source.count("\n")
+    assert SPLIT_HEAD not in kept and SPLIT_TAIL not in kept
+    assert "privacy" not in kept and "canary" not in kept
+
+
+# A literal on the left of ==, !=, === or !==, a fat-arrow hash entry
+# and a shell comparison are redacted, and only the secret changes
+# (#500). Shell is not parsed source, so a shell file is refused
+# instead; its redacted line is checked on its own.
+REDACTED_LINES = [
+    (
+        "a.py",
+        f'if "{VALUE_CANARY}" == password:\n    pass\n',
+        'if "[REDACTED]" == password:\n    pass\n',
+    ),
+    (
+        "a.py",
+        f'if password != "{VALUE_CANARY}":\n    pass\n',
+        'if password != "[REDACTED]":\n    pass\n',
+    ),
+    (
+        "a.js",
+        f'if ("{VALUE_CANARY}" === password) {{\n  go();\n}}\n',
+        'if ("[REDACTED]" === password) {\n  go();\n}\n',
+    ),
+    (
+        "a.js",
+        f'if (password !== "{VALUE_CANARY}") {{\n  go();\n}}\n',
+        'if (password !== "[REDACTED]") {\n  go();\n}\n',
+    ),
+    (
+        "a.go",
+        f'if password != "{VALUE_CANARY}" {{\n\treturn\n}}\n',
+        'if password != "[REDACTED]" {\n\treturn\n}\n',
+    ),
+    (
+        "a.rb",
+        f'if "{VALUE_CANARY}" == password\n  go\nend\n',
+        'if "[REDACTED]" == password\n  go\nend\n',
+    ),
+    (
+        "d.php",
+        f"<?php\n$a = ['password' => \"{VALUE_CANARY}\"];\n",
+        "<?php\n$a = ['password' => \"[REDACTED]\"];\n",
+    ),
+    ("f.rb", f'h = {{ :password => "{VALUE_CANARY}" }}\n', 'h = { :password => "[REDACTED]" }\n'),
+]
+SHELL_LINES = [
+    (
+        f'if [ "$password" == "{VALUE_CANARY}" ]; then exit 0; fi\n',
+        'if [ "$password" == "[REDACTED]" ]; then exit 0; fi\n',
+    ),
+    (
+        f'if [ "$password" = "{VALUE_CANARY}" ]; then exit 0; fi\n',
+        'if [ "$password" = "[REDACTED]" ]; then exit 0; fi\n',
+    ),
+    (
+        f'if [ "$password" != "{VALUE_CANARY}" ]; then exit 0; fi\n',
+        'if [ "$password" != "[REDACTED]" ]; then exit 0; fi\n',
+    ),
+]
+CLEAN_LINES = [
+    ("a.py", 'if token != "":\n    pass\n'),
+    ("a.js", 'if (token === "") {\n  go();\n}\n'),
+    ("a.go", 'if token != "" {\n\treturn\n}\n'),
+    ("a.php", '<?php\nif ($token == "x") {\n  go();\n}\n'),
+    ("a.sh", 'if [ "$password" = "" ]; then exit 0; fi\n'),
+    ("a.py", "ok = token == compute()\n"),
+]
+
+
+@pytest.mark.parametrize("name, source, redacted", REDACTED_LINES)
+def test_comparison_and_hash_arrow_secrets_are_redacted_in_place(
+    tmp_path: Path, name: str, source: str, redacted: str
+):
+    assert redact_sensitive_text(source) == redacted
+    kept = indexable_bytes(tmp_path / name, source.encode("utf-8")).decode("utf-8")
+    assert kept == redacted
+    assert VALUE_CANARY not in kept
+    if name.endswith(".py"):
+        ast.parse(kept)
+
+
+@pytest.mark.parametrize("source, redacted", SHELL_LINES)
+def test_shell_comparison_secrets_are_redacted_and_the_file_is_refused(
+    tmp_path: Path, source: str, redacted: str
+):
+    assert redact_sensitive_text(source) == redacted
     with pytest.raises(SensitiveContentError):
-        indexable_bytes(Path(name), source.encode())
+        indexable_bytes(tmp_path / "deploy.sh", source.encode("utf-8"))
+
+
+@pytest.mark.parametrize("name, source", CLEAN_LINES)
+def test_clean_comparisons_and_empty_checks_stay_unchanged(tmp_path: Path, name: str, source: str):
+    assert redact_sensitive_text(source) == source
+    data = source.encode("utf-8")
+    assert indexable_bytes(tmp_path / name, data) == data
+
+
+def test_redacted_comment_example_in_the_indexer_docstring_is_true(tmp_path: Path):
+    data = b"TOKEN = 'CSRF token missing.'\n"
+    assert indexable_bytes(tmp_path / "config.py", data) == b"TOKEN = '[REDACTED]'\n"

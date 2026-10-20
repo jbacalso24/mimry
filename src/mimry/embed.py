@@ -213,13 +213,18 @@ def download() -> Path:
 
 
 def available() -> bool:
-    """True when numpy is installed, the model files are present, and
-    MIMRY_EMBED is not 0."""
+    """True when numpy is installed, the model is ready, and MIMRY_EMBED
+    is not 0.
+
+    Ready is the memoized check (see _model_state), so a file whose size
+    and mtime are unchanged is not hashed again. A broken model is not
+    loaded on every query (#501).
+    """
     if os.environ.get("MIMRY_EMBED") == "0":
         return False
     if importlib.util.find_spec("numpy") is None:
         return False
-    return _files_present(model_dir())
+    return _model_state(model_dir()) == "ready"
 
 
 def status() -> dict[str, Any]:
