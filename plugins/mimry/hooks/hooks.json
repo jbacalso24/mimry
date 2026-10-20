@@ -67,6 +67,23 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx",
+            "args": [
+              "--from",
+              "mimry==0.7.0",
+              "mimry",
+              "hook-stop"
+            ],
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }

@@ -77,7 +77,10 @@ def test_plugin_hooks_match_the_installed_claude_code_hooks():
     hooks = _plugin_hooks()
     assert set(hooks) == set(installed)
     for event, groups in installed.items():
-        assert [g["matcher"] for g in hooks[event]] == [g["matcher"] for g in groups], event
+        # The Stop group has no matcher, so the key is read with get.
+        assert [g.get("matcher") for g in hooks[event]] == [g.get("matcher") for g in groups], (
+            event
+        )
         for group, entry in zip(hooks[event], groups, strict=True):
             plugin_handler = group["hooks"][0]
             installed_handler = entry["hooks"][0]

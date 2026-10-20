@@ -41,7 +41,8 @@ def _hooks() -> dict:
             }
             if background:
                 handler["async"] = True
-            hooks[event].append({"matcher": matcher, "hooks": [handler]})
+            group: dict[str, object] = {"matcher": matcher} if matcher else {}
+            hooks[event].append({**group, "hooks": [handler]})
     return {"hooks": hooks}
 
 

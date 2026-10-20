@@ -23,10 +23,18 @@ it logs the edits and closes the session windows for feedback.
 ``hook-compact`` runs in the foreground when a session resumes after
 its context was compacted. It adds a note with the session's last
 query and the files it edited and read, so the agent can pick up again.
+
+``hook-prompt`` is the opt-in UserPromptSubmit hook. It ranks the
+submitted prompt with the index as it stands and adds a note naming the
+files to read first. It prints nothing for a slash command, a chat
+prompt, a repeated prompt, or a prompt no file matches. ``hook-stop`` is
+the Stop hook: it marks the end of the turn and flushes the session
+feedback.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -43,7 +51,9 @@ from .session import (
     log_file_event,
     log_hook_command,
     log_session_start,
+    log_session_stop,
     named_in_session,
+    record_query,
     session_feedback_enabled,
 )
 
@@ -91,6 +101,37 @@ DECLARATION_WORDS = frozenset(
         "def class function fn func const let var type interface struct impl enum trait "
         "async export public private static return import from self this"
     ).split()
+)
+# The prompt note: the files a task ranks first, with their read-first
+# lines, in at most PROMPT_NOTE_LIMIT characters (about 200 tokens).
+# A prompt under PROMPT_WORD_MIN words is chat, not a code task.
+PROMPT_FILE_LIMIT = 5
+PROMPT_NOTE_LIMIT = 800
+PROMPT_WORD_MIN = 5
+PROMPT_QUERY_CHARS = 1000
+# Past these sizes a search takes over a second, mostly in the graph,
+# so the note prints nothing.
+PROMPT_MAX_FILES = 3000
+PROMPT_GRAPH_MAX_BYTES = 8_000_000
+PROMPT_FENCE = re.compile(r"```.*?```", re.DOTALL)
+PROMPT_URL = re.compile(r"https?://\S+")
+# A word of three or more characters, as a file or module name has them.
+PROMPT_WORD = re.compile(r"[a-z][a-z0-9_]{2,}")
+# An identifier (snake_case or camelCase) or a source file name.
+PROMPT_CODE_TOKEN = re.compile(
+    r"\b[a-z]+(?:_[a-z0-9]+)+\b"
+    r"|\b[a-z]+[A-Z][A-Za-z0-9]*\b"
+    r"|\b[\w/.-]+\.(?:py|tsx?|jsx?|go|rs|java|kt|rb|cs|cpp|h|md|json|toml|ya?ml|sql|sh)\b"
+)
+# Words too common in prompts to show that a task names code.
+PROMPT_COMMON_WORDS = frozenset(
+    """
+    about after also and any are but can code could does file files for
+    from fix get have help here how into its just like make more need
+    not our out please show some than thanks that the their them then
+    there they this want was what when where which why will with would
+    you your
+    """.split()
 )
 # Generic reminders shown per session; symbol answers are not capped.
 NUDGE_LIMIT = 3
@@ -153,6 +194,24 @@ def cmd_hook_compact(a) -> int:
         _hook_compact(Path(getattr(a, "root", None) or "."))
     except Exception:
         # The note is optional; never fail the session over it.
+        pass
+    return 0
+
+
+def cmd_hook_prompt(a) -> int:
+    try:
+        _hook_prompt(Path(getattr(a, "root", None) or "."))
+    except Exception:
+        # The note is optional; never fail the user's prompt over it.
+        pass
+    return 0
+
+
+def cmd_hook_stop(a) -> int:
+    try:
+        _hook_stop(Path(getattr(a, "root", None) or "."))
+    except Exception:
+        # The window waits for the next flush; never fail the turn.
         pass
     return 0
 
@@ -1065,3 +1124,146 @@ def _hook_refresh(root: Path) -> None:
             refresh_if_stale(root)
     finally:
         lock.unlink(missing_ok=True)
+
+
+def _prompt_note(rows: list[dict]) -> str | None:
+    """The note that names the files a task ranks first, or None.
+
+    One line says what the list is, then each file with its read-first
+    lines, then the preflight command for the full pack. The note stays
+    within PROMPT_NOTE_LIMIT. Files past the limit are dropped, never
+    cut mid-line.
+    """
+    if not rows or rows[0]["score"] <= 0:
+        return None
+    head = "These are the files MIMRY ranks first for this task. Read the lines it names first."
+    foot = 'Run `mimry preflight "<task>"` for the full context pack.'
+    body: list[str] = []
+    for row in rows[:PROMPT_FILE_LIMIT]:
+        path = str(row["path"]).replace("\r", " ").replace("\n", " ")
+        ranges = row.get("ranges") or []
+        entry = f"- {path}"
+        # A document's ranges name its parts, not lines: code only.
+        if ranges and not ranges[0].get("unit"):
+            entry += ": lines " + ", ".join(f"{r['start']}-{r['end']}" for r in ranges)
+        if len("\n".join([head, *body, entry, foot])) > PROMPT_NOTE_LIMIT:
+            break
+        body.append(entry)
+    if not body:
+        return None
+    return "\n".join([head, *body, foot])
+
+
+def _indexed_paths_for_prompt(root: Path, index: Path) -> list[str] | None:
+    """The indexed paths, or None when the index is past the limits.
+
+    Checks the graph's size first and then the number of lines of
+    files.jsonl. Never raises: an unreadable index is left to the search
+    to report, so this returns the empty list.
+    """
+    from .core.artifacts import graph_path
+
+    try:
+        graph = graph_path(root)
+        if graph.is_file() and graph.stat().st_size > PROMPT_GRAPH_MAX_BYTES:
+            return None
+        lines: list[bytes] = []
+        with (index / "files.jsonl").open("rb") as handle:
+            for line in handle:
+                if len(lines) == PROMPT_MAX_FILES:
+                    return None
+                lines.append(line)
+    except OSError:
+        return []
+    paths = []
+    for line in lines:
+        try:
+            rel_path = json.loads(line).get("rel_path")
+        except ValueError:
+            continue
+        if isinstance(rel_path, str):
+            paths.append(rel_path)
+    return paths
+
+
+def _task_names_code(text: str, paths: list[str]) -> bool:
+    """True when the task names code: an identifier, a file, or a word
+    of an indexed path.
+
+    Chat shares no such word with the code base, so it gets no note.
+    """
+    if PROMPT_CODE_TOKEN.search(text):
+        return True
+    words = set(PROMPT_WORD.findall(text.lower())) - PROMPT_COMMON_WORDS
+    path_words: set[str] = set()
+    for path in paths:
+        path_words.update(PROMPT_WORD.findall(path.lower()))
+    return bool(words & path_words)
+
+
+def _hook_prompt(root: Path) -> None:
+    if os.environ.get("MIMRY_PROMPT_HOOK", "1").strip() == "0":
+        return
+    raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    data = json.loads(raw) if raw.strip() else {}
+    if not isinstance(data, dict):
+        return
+    prompt = data.get("prompt")
+    # A slash command names a command, not a code task.
+    if not isinstance(prompt, str) or prompt.lstrip().startswith("/"):
+        return
+    session = str(data.get("session_id") or "")
+    cwd = data.get("cwd")
+    from .lifecycle import indexed_root
+
+    root = indexed_root((Path(cwd) if isinstance(cwd, str) and cwd else root).resolve())
+    mimry_dir = root / ".mimry"
+    pointer_path = mimry_dir / "pointer.json"
+    if not pointer_path.is_file():
+        return
+    # Code blocks and links are not words the task is about.
+    text = " ".join(PROMPT_URL.sub(" ", PROMPT_FENCE.sub(" ", prompt)).split())
+    if len(text.split()) < PROMPT_WORD_MIN:
+        return
+    ptr = json.loads(pointer_path.read_text(encoding="utf-8"))
+    paths = _indexed_paths_for_prompt(root, Path(ptr["indexPath"]))
+    if paths is None or not _task_names_code(text, paths):
+        return
+    if session:
+        # A prompt with the same word set gets no second note.
+        words = " ".join(sorted(set(re.findall(r"\w+", text.lower()))))
+        key = "prompt:" + hashlib.sha1(words.encode("utf-8")).hexdigest()[:16]
+        if not _first_for_query(mimry_dir, session, key):
+            return
+    from .search import find_rows
+    from .security import sanitize_query
+
+    query = text[:PROMPT_QUERY_CHARS]
+    # No index refresh and no freshness walk here: the note reads the
+    # index as it stands, as the search hooks do.
+    rows = find_rows(
+        Path(ptr["indexPath"]),
+        sanitize_query(query),
+        PROMPT_FILE_LIMIT,
+        root=root,
+        root_id=ptr.get("rootId"),
+        excluded_paths=(),
+    )
+    record_query(root, query, [r["path"] for r in rows], session=session)
+    note = _prompt_note(rows)
+    if note is not None:
+        _print_context(note, event="UserPromptSubmit")
+
+
+def _hook_stop(root: Path) -> None:
+    from .lifecycle import indexed_root
+
+    raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        data = {}
+    session = str(data.get("session_id") or "") if isinstance(data, dict) else ""
+    root = indexed_root(root.resolve())
+    log_session_stop(root, session)
+    flush_session_feedback(root)

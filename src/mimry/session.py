@@ -3,10 +3,11 @@
 Each find, preflight and context run appends one line to
 ``.mimry/session-queries.jsonl``. The hooks append what the agent read
 (``opened``) and edited (``changed``) to ``.mimry/session-files.jsonl``.
-A query's window runs from its time to the next query's time. A closed
-window with file events becomes one feedback record, the same record
-``mimry feedback`` stores. Nothing here may fail the command or the
-hook.
+A query's window runs from its time to the next query's time, or to the
+session's turn-end mark (``session-stops.jsonl``, written by the Stop
+hook) when that comes first. A closed window with file events becomes
+one feedback record, the same record ``mimry feedback`` stores. Nothing
+here may fail the command or the hook.
 
 This module imports only the standard library at top level, because the
 hooks load it on every tool call. The feedback and index modules are
@@ -55,6 +56,9 @@ COMPACT_NOTE_LIMIT = 1500
 QUERY_LOG = "session-queries.jsonl"
 FILE_LOG = "session-files.jsonl"
 START_LOG = "session-starts.jsonl"
+# The Stop hook's marks: the turn ended, so the open window closes.
+STOP_LOG = "session-stops.jsonl"
+SESSION_STOP_LIMIT = 500
 PATCH_PATH_RE = re.compile(r"^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+?)\s*$")
 
 
@@ -238,6 +242,25 @@ def log_session_start(root: Path, session: str) -> None:
         pass
 
 
+def log_session_stop(root: Path, session: str) -> None:
+    """Mark the end of the session's turn, so its open window can close.
+
+    The window of the session's newest query then ends here, and the
+    next flush records it instead of waiting for the next query. Never
+    raises.
+    """
+    try:
+        state = _state_dir(root)
+        if state is None or not session or not session_feedback_enabled():
+            return
+        row = {"time": datetime.now(UTC).isoformat(), "session": session}
+        # Under the append lock, so a flush rewrite keeps the row.
+        with _append_lock(state):
+            _append(state / STOP_LOG, row)
+    except Exception:
+        pass
+
+
 def session_started(state: Path, session: str) -> float | None:
     """When the session's first logged hook call happened, or None."""
     stamps = [
@@ -323,13 +346,16 @@ def _query_session(state: Path, query: str) -> str:
     return ""
 
 
-def record_query(root: Path, query: str, shown: list[Any], context_path: Any = None) -> None:
+def record_query(
+    root: Path, query: str, shown: list[Any], context_path: Any = None, session: str = ""
+) -> None:
     """Append the query, the paths shown and the context path.
 
-    The row names the session when a hook saw the shell command that ran
-    it. Never raises. The command may hold the shared index lock here,
-    and an append is safe under it. The flush that needs the exclusive
-    lock runs after the command returns.
+    The row names ``session`` when a hook passes it, else the session of
+    the hook that saw the shell command that ran it. Never raises. The
+    command may hold the shared index lock here, and an append is safe
+    under it. The flush that needs the exclusive lock runs after the
+    command returns.
     """
     try:
         state = _state_dir(root)
@@ -345,9 +371,9 @@ def record_query(root: Path, query: str, shown: list[Any], context_path: Any = N
             "shown": [rel for rel in (_tracked(root, p) for p in shown) if rel is not None],
             "context": _relative(root, context_path),
         }
-        session = _query_session(state, raw)
-        if session:
-            row["session"] = session
+        tag = session or _query_session(state, raw)
+        if tag:
+            row["session"] = tag
         _append(state / QUERY_LOG, row)
     except Exception:
         pass
@@ -358,18 +384,31 @@ def _session_of(row: dict[str, Any]) -> str:
 
 
 def _window_end(
-    timed: list[tuple[float, dict[str, Any]]], index: int, session: str
+    timed: list[tuple[float, dict[str, Any]]],
+    index: int,
+    session: str,
+    stops: list[float],
 ) -> float | None:
     """When the query at ``index`` stops owning events, or None if open.
 
-    A query with a session id ends at that session's next query. One
-    without ends at the next query of any session, as before sessions
-    were recorded.
+    A query with a session id ends at that session's next query, or at
+    the first turn-end mark of the session after it, whichever comes
+    first. One without ends at the next query of any session, as before
+    sessions were recorded. ``stops`` are the session's mark times,
+    oldest first.
     """
-    for begin, query in timed[index + 1 :]:
+    begin = timed[index][0]
+    end = None
+    for next_begin, query in timed[index + 1 :]:
         if not session or _session_of(query) == session:
-            return begin
-    return None
+            end = next_begin
+            break
+    for stop in stops:
+        if stop > begin:
+            if end is None or stop < end:
+                end = stop
+            break
+    return end
 
 
 def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
@@ -388,12 +427,25 @@ def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
     ]
     raw_events = _read_rows(state / FILE_LOG)
     timed_events = [(t, e) for t, e in ((_stamp(r), r) for r in raw_events) if t is not None]
+    # A mark older than the idle window cannot close an open window: the
+    # window's query is that recent, and the mark follows it.
+    raw_stops = _read_rows(state / STOP_LOG)
+    kept_stops: list[dict[str, Any]] = []
+    stops_by_session: dict[str, list[float]] = {}
+    for row in raw_stops:
+        stamp = _stamp(row)
+        if stamp is not None and now - stamp <= SESSION_WINDOW_IDLE:
+            kept_stops.append(row)
+            stops_by_session.setdefault(_session_of(row), []).append(stamp)
+    kept_stops = kept_stops[-SESSION_STOP_LIMIT:]
+    for stamps in stops_by_session.values():
+        stamps.sort()
 
     windows: list[dict[str, Any]] = []
     kept_queries: list[dict[str, Any]] = []
     for index, (begin, query) in enumerate(timed_queries):
         session = _session_of(query)
-        end = _window_end(timed_queries, index, session)
+        end = _window_end(timed_queries, index, session, stops_by_session.get(session, []))
         if end is None and now - begin <= SESSION_WINDOW_IDLE:
             kept_queries.append(query)
             continue
@@ -438,6 +490,7 @@ def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
         not windows
         and len(kept_queries) == len(timed_queries)
         and len(kept_events) == len(timed_events)
+        and len(kept_stops) == len(raw_stops)
     ):
         return None
     return {
@@ -445,6 +498,8 @@ def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
         "queries": kept_queries,
         "events": kept_events,
         "events_seen": len(raw_events),
+        "stops": kept_stops,
+        "stops_seen": len(raw_stops),
     }
 
 
@@ -488,6 +543,12 @@ def flush_session_feedback(root: Path) -> None:
                 plan["events"],
                 seen=plan["events_seen"],
                 limit=SESSION_FILE_LIMIT,
+            )
+            _write_rows(
+                state / STOP_LOG,
+                plan["stops"],
+                seen=plan["stops_seen"],
+                limit=SESSION_STOP_LIMIT,
             )
             from .feedback import feedback_payload, record_feedback
 

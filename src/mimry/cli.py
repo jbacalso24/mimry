@@ -72,7 +72,13 @@ def build_parser():
         cmd_why,
     )
     from .doctor import cmd_doctor
-    from .hook import cmd_hook_check, cmd_hook_compact, cmd_hook_refresh
+    from .hook import (
+        cmd_hook_check,
+        cmd_hook_compact,
+        cmd_hook_prompt,
+        cmd_hook_refresh,
+        cmd_hook_stop,
+    )
     from .installer import cmd_install, cmd_uninstall, platform_help
     from .upgrade import cmd_upgrade
 
@@ -580,6 +586,14 @@ def build_parser():
         help="With --project, also install the supported hooks",
     )
     i.add_argument(
+        "--prompt-hook",
+        action="store_true",
+        help=(
+            "With --hooks on Claude Code, also add the prompt hook that names the files to read"
+            " first for each task"
+        ),
+    )
+    i.add_argument(
         "--status", action="store_true", help="Check install health for the target platform/scope"
     )
     i.add_argument(
@@ -658,6 +672,12 @@ def build_parser():
     sub.add_parser(
         "hook-compact", help="Internal hook: restore the working set after a compaction"
     ).set_defaults(func=cmd_hook_compact)
+    sub.add_parser(
+        "hook-prompt", help="Internal hook: name the files to read first for a prompt"
+    ).set_defaults(func=cmd_hook_prompt)
+    sub.add_parser(
+        "hook-stop", help="Internal hook: mark the end of a turn and flush session feedback"
+    ).set_defaults(func=cmd_hook_stop)
     # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`:
     # package runners such as uvx only launch the script named after the
     # package.
@@ -695,6 +715,8 @@ def build_parser():
             "hook-check",
             "hook-refresh",
             "hook-compact",
+            "hook-prompt",
+            "hook-stop",
             "plan",
             "cache",
             "embed",
@@ -721,11 +743,15 @@ def _cmd_mcp(a) -> int:
     return 0
 
 
-def _hook_root(args) -> tuple[str, str] | None:
-    """(hook, root) if argv is exactly ``[--root R] hook-check`` or
-    ``hook-compact``, else None.
+HOOK_FAST_PATH = ("hook-check", "hook-compact", "hook-prompt", "hook-stop")
 
-    These hooks only read, so they skip the command setup and the flush.
+
+def _hook_root(args) -> tuple[str, str] | None:
+    """(hook, root) if argv is exactly ``[--root R]`` and one of
+    HOOK_FAST_PATH, else None.
+
+    These hooks skip the command setup and the flush. hook-stop runs its
+    own flush, and hook-prompt never refreshes the index.
     """
     rest = list(args)
     root = "."
@@ -733,7 +759,7 @@ def _hook_root(args) -> tuple[str, str] | None:
         root, rest = rest[1], rest[2:]
     elif rest and rest[0].startswith("--root="):
         root, rest = rest[0].split("=", 1)[1], rest[1:]
-    if len(rest) == 1 and rest[0] in {"hook-check", "hook-compact"}:
+    if len(rest) == 1 and rest[0] in HOOK_FAST_PATH:
         return rest[0], root
     return None
 
@@ -771,10 +797,15 @@ def main(argv=None):
     if hook is not None:
         from types import SimpleNamespace
 
-        from .hook import cmd_hook_check, cmd_hook_compact
+        from .hook import cmd_hook_check, cmd_hook_compact, cmd_hook_prompt, cmd_hook_stop
 
         name, hook_root = hook
-        run = cmd_hook_check if name == "hook-check" else cmd_hook_compact
+        run = {
+            "hook-check": cmd_hook_check,
+            "hook-compact": cmd_hook_compact,
+            "hook-prompt": cmd_hook_prompt,
+            "hook-stop": cmd_hook_stop,
+        }[name]
         configure_console()
         return run(SimpleNamespace(root=hook_root))
     from pathlib import Path

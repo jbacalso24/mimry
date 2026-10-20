@@ -177,6 +177,25 @@ mimry install --platform claude-code
 > [!TIP]
 > Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` when it starts a broad search of the repository, at most three times a session, answers a grep for a known symbol with its definition and callers, and outlines a large file when the agent reads it whole. The hooks also refresh the index in the background when a session starts and after each file edit, and restore the files it was working on after the context is compacted.
 
+### Name the files for each task (opt-in)
+
+`--prompt-hook` adds a prompt hook next to `--hooks` in Claude Code.
+When you submit a task, the hook ranks it against the index and adds a short note naming the files MIMRY ranks first, with the lines to read.
+The note stays under 800 characters, and the hook prints nothing for a slash command, a prompt under five words, a chat prompt that names no code, a prompt repeated in the same session, or a repo over 3000 indexed files or with a graph over 8 MB.
+A prompt names code when it has an identifier, a source file name, or a word that appears in an indexed file path.
+It is off unless you add it:
+
+```bash
+mimry install --platform claude-code --project --hooks --prompt-hook
+```
+
+On a small repo it adds about half a second to each prompt, most of it loading the search code.
+Set `MIMRY_PROMPT_HOOK=0` in the environment Claude Code starts in to turn it off without removing it.
+Running `mimry install --platform claude-code --project --hooks` again without `--prompt-hook` removes it.
+
+The `--hooks` install also adds a Stop hook.
+When a turn ends it closes that turn's feedback window and writes the session's feedback, so the record does not wait for your next command.
+
 ### See the tokens MIMRY saved
 
 `mimry stats` shows the tokens MIMRY saved in this session and across the repo.
@@ -340,7 +359,8 @@ See [docs/agents.md](docs/agents.md) for where each agent's files go and how its
 |---|---|
 | `--project` | Install into the current repository only, instead of for every repository |
 | `--always-on` | Add a short rules block to the agent's always-read file, such as `AGENTS.md` |
-| `--hooks` | Suggest `mimry find` when the agent starts a broad search of the repository, at most three times a session, answer a search for a known symbol with its definition and callers, outline a large file when the agent reads it whole, record the files it reads and edits after a find as feedback (`MIMRY_SESSION_FEEDBACK=0` turns that off), and refresh the index in the background when a session starts and after each file edit. In Claude Code they also restore the files it was working on after the context is compacted. For Codex, project hooks run after you trust them with `/hooks`. |
+| `--hooks` | Suggest `mimry find` when the agent starts a broad search of the repository, at most three times a session, answer a search for a known symbol with its definition and callers, outline a large file when the agent reads it whole, record the files it reads and edits after a find as feedback (`MIMRY_SESSION_FEEDBACK=0` turns that off), and refresh the index in the background when a session starts and after each file edit. In Claude Code they also restore the files it was working on after the context is compacted, and close each turn's feedback window when the turn ends (a Stop hook). For Codex, project hooks run after you trust them with `/hooks`. |
+| `--prompt-hook` | With `--hooks` in Claude Code, also name the files MIMRY ranks first for each submitted task, in a note of under 800 characters (opt-in; `MIMRY_PROMPT_HOOK=0` turns it off). |
 | `--no-mcp` | Install the skill without registering the MCP server |
 | `--no-global-gitignore` | Do not add `.mimry/` to Git's global ignore file |
 

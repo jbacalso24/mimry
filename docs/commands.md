@@ -110,6 +110,21 @@ Query commands check the index first.
 When files changed since the last index, `find`, `explain`, `path`, `why` and the other lookups update it before they answer, and print `Reindexed first`.
 `mimry reindex` is for updating the index ahead of time, not a step you must run after each change.
 
+## Prompt hook and turn-end hook
+
+`mimry install --platform claude-code --project --hooks --prompt-hook` adds a `UserPromptSubmit` hook that runs `mimry hook-prompt`.
+For each submitted task it ranks the prompt against the index, as `find` does, and adds a note naming the files MIMRY ranks first, with the lines to read, and the `mimry preflight` command for the full pack.
+The note is at most 800 characters and names at most five files.
+It prints nothing for a slash command, for a prompt under five words once code blocks and links are removed, for a chat prompt that names no code, for a prompt with the same words as an earlier one in the session, for a repo with no index, and for an index past 3000 files or with a graph over 8 MB, where a search takes over a second.
+A prompt names code when it has an identifier, a source file name, or a word that appears in an indexed file path.
+The hook never refreshes the index, and it logs each query with the session id, so session feedback and `mimry stats` see it.
+`MIMRY_PROMPT_HOOK=0` turns it off, and running `mimry install --platform claude-code --project --hooks` without `--prompt-hook` removes it.
+It is opt-in and is not part of the Claude Code plugin, which ships the default hooks only.
+
+The `--hooks` install also adds a `Stop` hook that runs `mimry hook-stop` in the background when a turn ends.
+It closes the turn's open feedback window and flushes the session feedback, so the record is written without waiting for the next command.
+`mimry install --refresh`, which `mimry upgrade` runs, adds it to installs made before it existed.
+
 ## Output
 
 Every command answers the same way: one line that says what happened, a few indented details, and a next step only when something needs doing.
@@ -135,7 +150,7 @@ Add `--file <path>` when they are in different files, or `--line N` (or `--file 
 A `--line` that starts no candidate and spans none exits 1 and lists the candidates.
 `path` between two indexed names with no connection also exits 0, because that is an answer.
 `status` keeps its own codes: 1 when MIMRY is not set up, 2 when the index is not current.
-`hook-check`, `hook-refresh` and `hook-compact` always exit 0, so a hook never fails the agent's tool call.
+`hook-check`, `hook-refresh`, `hook-compact`, `hook-prompt` and `hook-stop` always exit 0, so a hook never fails the agent's tool call or prompt.
 With `--json`, the JSON is printed and the exit code is the same.
 
 ## Inferred edges

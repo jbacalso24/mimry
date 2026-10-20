@@ -8,7 +8,7 @@ from functools import cache
 from pathlib import Path
 
 from . import embed
-from .core.artifacts import graph_available, graph_rows
+from .core.artifacts import graph_rows, load_graph
 from .core.documents import DOCUMENT_UNITS
 from .core.languages import (
     EXTENSION_LANGUAGE,
@@ -806,11 +806,12 @@ def find_rows(
             fallback_rows.append(row)
     fallback_rows = sorted(fallback_rows, key=lambda r: (-r["score"], r["path"]))
     fallback_by_path = {r["path"]: r for r in fallback_rows if "config-manifest" in r["reason"]}
-    if root is not None and graph_available(root):
+    graph_data = load_graph(root) if root is not None else {}
+    if graph_data.get("nodes"):
         # Every graph match, not just the top `limit`: a file the graph
         # ranks lower can lead once its content match is added below,
         # and the cut to `limit` comes after that merge.
-        rows = graph_rows(root, q, None, minified_paths=minified_paths)
+        rows = graph_rows(root, q, None, minified_paths=minified_paths, graph=graph_data)
         if rows:
             rows = _without_excluded(
                 [

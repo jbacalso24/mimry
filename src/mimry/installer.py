@@ -1029,15 +1029,27 @@ def hook_table(platform_key: str) -> dict[str, list[tuple[str, str, bool]]]:
         # file, never the search reminder.
         search, edit = "Bash|Glob|Grep|Read", "Edit|Write|MultiEdit|NotebookEdit"
     session_start = [("startup|resume", "hook-refresh", True)]
+    table = {}
     if platform_key != "codex":
         session_start.append(("compact", "hook-compact", False))
+        # The turn-end mark closes the session's feedback window. Only
+        # Claude Code has been checked to run it.
+        table["Stop"] = [("", "hook-stop", True)]
     return {
         # Status checks every event and matcher, so an install from
-        # before the refresh and restore hooks needs repair.
+        # before the refresh, restore and turn-end hooks needs repair.
         "PreToolUse": [(search, "hook-check", False)],
         "SessionStart": session_start,
         "PostToolUse": [(edit, "hook-refresh", True)],
+        **table,
     }
+
+
+# The opt-in prompt hook is not in hook_table: status does not require
+# it, and the plugin does not ship it. It runs in the foreground, so its
+# note reaches the prompt.
+PROMPT_HOOK_EVENT = "UserPromptSubmit"
+PROMPT_HOOK_SUB = "hook-prompt"
 
 
 def _event_entries(hooks: dict, event: str) -> list:
@@ -1264,8 +1276,11 @@ def _hook_command(subcommand: str = "hook-check") -> str:
     return f"{_hook_executable()} {subcommand}"
 
 
-def _mimry_hook_entries(cfg: MimryPlatform) -> dict[str, list[dict]]:
-    """The MIMRY entries for each hook event, keyed by event name."""
+def _mimry_hook_entries(cfg: MimryPlatform, prompt: bool = False) -> dict[str, list[dict]]:
+    """The MIMRY entries for each hook event, keyed by event name.
+
+    ``prompt`` adds the opt-in prompt hook, on Claude Code only.
+    """
     entries: dict[str, list[dict]] = {}
     for event, rows in hook_table(cfg.key).items():
         groups = []
@@ -1273,8 +1288,12 @@ def _mimry_hook_entries(cfg: MimryPlatform) -> dict[str, list[dict]]:
             handler = {"type": "command", "command": _hook_command(sub)}
             if background:
                 handler["async"] = True
-            groups.append({"matcher": matcher, "hooks": [handler]})
+            group: dict = {"matcher": matcher} if matcher else {}
+            groups.append({**group, "hooks": [handler]})
         entries[event] = groups
+    if prompt and cfg.key == "claude-code":
+        handler = {"type": "command", "command": _hook_command(PROMPT_HOOK_SUB)}
+        entries[PROMPT_HOOK_EVENT] = [{"hooks": [handler]}]
     return entries
 
 
@@ -1322,30 +1341,59 @@ def _read_json_config(path: Path) -> dict | None:
         return None
 
 
-def _merged_hooks_text(dst: Path, cfg: MimryPlatform) -> str:
-    """The hooks file with MIMRY's entries set, everything else kept."""
+def _merged_hooks_text(dst: Path, cfg: MimryPlatform, prompt: bool = False) -> str:
+    """The hooks file with MIMRY's entries set, everything else kept.
+
+    The prompt hook is set only when ``prompt`` is true, and removed
+    otherwise, since the entries follow the flags of this install.
+    """
     existing = _read_hooks_file(dst)
     hooks = existing.setdefault("hooks", {})
-    for event, groups in _mimry_hook_entries(cfg).items():
+    entries = _mimry_hook_entries(cfg, prompt=prompt)
+    for event in dict.fromkeys([*entries, PROMPT_HOOK_EVENT]):
+        groups = entries.get(event, [])
+        current = _event_entries(hooks, event)
         # Replace, never append: a reinstall must not duplicate entries.
-        kept = [h for h in _event_entries(hooks, event) if not _is_mimry_hook(h)]
-        hooks[event] = [*kept, *groups]
+        kept = [h for h in current if not _is_mimry_hook(h)]
+        if not groups and len(kept) == len(current):
+            continue  # no MIMRY entry here, so the event is left alone
+        if kept or groups:
+            hooks[event] = [*kept, *groups]
+        else:
+            del hooks[event]
     return json.dumps(existing, indent=2) + "\n"
 
 
-def _hooks_current(root: Path, cfg: MimryPlatform) -> bool:
+def _has_prompt_hook(root: Path, cfg: MimryPlatform) -> bool:
+    """True when the hooks file names the opt-in prompt hook."""
+    path = root / cfg.hook_path if cfg.hook_path else None
+    if not (path and path.exists()):
+        return False
+    try:
+        hooks = _read_hooks_file(path).get("hooks", {})
+    except (OSError, ValueError):
+        return False
+    return any(
+        _is_mimry_hook(entry) and PROMPT_HOOK_SUB in str(entry).lower()
+        for entry in _event_entries(hooks, PROMPT_HOOK_EVENT)
+    )
+
+
+def _hooks_current(root: Path, cfg: MimryPlatform, prompt: bool = False) -> bool:
     """True when rewriting the hooks file would change nothing."""
     dst = (root / cfg.hook_path).resolve()
-    return _read_text_or_none(dst) == _merged_hooks_text(dst, cfg)
+    return _read_text_or_none(dst) == _merged_hooks_text(dst, cfg, prompt=prompt)
 
 
-def _install_hooks(root: Path, cfg: MimryPlatform, dry_run: bool = False) -> Path | None:
+def _install_hooks(
+    root: Path, cfg: MimryPlatform, dry_run: bool = False, prompt: bool = False
+) -> Path | None:
     if cfg.key not in {"claude-code", "codex"} or cfg.hook_path is None:
         return None
     dst = (root / cfg.hook_path).resolve()
     if dry_run:
         return dst
-    _atomic_write(dst, _merged_hooks_text(dst, cfg))
+    _atomic_write(dst, _merged_hooks_text(dst, cfg, prompt=prompt))
     return dst
 
 
@@ -1358,7 +1406,7 @@ def _is_mimry_hook(entry: object) -> bool:
     never removed them, and status always reported them missing.
     """
     text = str(entry).lower()
-    subcommands = ("hook-check", "hook-refresh", "hook-compact")
+    subcommands = ("hook-check", "hook-refresh", "hook-compact", "hook-prompt", "hook-stop")
     return any(sub in text for sub in subcommands) and "mimry" in text
 
 
@@ -1695,6 +1743,10 @@ def install_status_with_code(
                 "incomplete" if hooks_partial else "not added (optional, --hooks)",
             )
         )
+        # The opt-in prompt hook shows only once it is added, so an
+        # install without it reads as it did before.
+        if result["hooks"] and _has_prompt_hook(root, cfg):
+            rows.append(_status_row(True, "Prompt hook", cfg.hook_path.as_posix(), ""))
     if "mcp" in result:
         rows.append(_status_row(result["mcp"], "MCP server", "registered", "not registered"))
     elif mcp_off:
@@ -1822,6 +1874,7 @@ def install_skill(
     always_on: bool = False,
     hooks: bool = False,
     mcp: bool = True,
+    prompt_hook: bool = False,
 ) -> Path:
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
@@ -1832,6 +1885,10 @@ def install_skill(
         raise SystemExit(ui.error_text("--always-on only works with --project"))
     if hooks and not project:
         raise SystemExit(ui.error_text("--hooks only works with --project"))
+    if prompt_hook and not hooks:
+        raise SystemExit(ui.error_text("--prompt-hook only works with --hooks"))
+    if prompt_hook and key != "claude-code":
+        raise SystemExit(ui.error_text("--prompt-hook only works with Claude Code"))
     dst = (root / cfg.project_path if project else cfg.global_path).resolve()
     # Never merge into a hooks file that cannot be parsed: that would
     # replace everything in it. Skip the hooks, show them, exit 1.
@@ -1848,7 +1905,13 @@ def install_skill(
     if hook_target:
         extras.append(
             f"hooks in {cfg.hook_path.as_posix()} that name `mimry find` for broad searches,"
-            " answer searches for known symbols, and refresh the index in the background"
+            " answer searches for known symbols, refresh the index in the background,"
+            " and close the session's feedback window when a turn ends"
+        )
+    if hook_target and prompt_hook:
+        extras.append(
+            f"a prompt hook in {cfg.hook_path.as_posix()} that names the files to read first"
+            " for each task"
         )
     _warn_if_path_differs()
     if dry_run:
@@ -1892,7 +1955,7 @@ def install_skill(
             git_paths.append(ao)
     machine_hooks = None
     if hooks:
-        hp = _install_hooks(root, cfg, dry_run=False)
+        hp = _install_hooks(root, cfg, dry_run=False, prompt=prompt_hook)
         if hp:
             if _hook_executable() == "mimry":
                 git_paths.append(hp)
@@ -2278,8 +2341,10 @@ def _refresh_one(key: str, cfg: MimryPlatform, root: Path, project: bool) -> Ins
             if not _always_on_current(root, cfg):
                 written.append(_install_always_on(root, cfg, dry_run=False))
         if cfg.hook_path and _has_any_hook(root, cfg) is True:
-            if not _hooks_current(root, cfg):
-                written.append(_install_hooks(root, cfg))
+            # An install that has the prompt hook keeps it.
+            prompt = _has_prompt_hook(root, cfg)
+            if not _hooks_current(root, cfg, prompt=prompt):
+                written.append(_install_hooks(root, cfg, prompt=prompt))
     name = f"{cfg.label} (this project)" if project else cfg.label
     return InstallRefresh(name, root, project, tuple(p for p in written if p is not None))
 
@@ -2324,6 +2389,7 @@ def _refresh_command(a) -> int:
             ("--list-platforms", getattr(a, "list_platforms", False)),
             ("--always-on", a.always_on),
             ("--hooks", a.hooks),
+            ("--prompt-hook", getattr(a, "prompt_hook", False)),
         )
         if given
     ]
@@ -2384,6 +2450,7 @@ def cmd_install(a) -> int:
         always_on=a.always_on,
         hooks=a.hooks,
         mcp=not a.no_mcp,
+        prompt_hook=getattr(a, "prompt_hook", False),
     )
     # Once per run, after the install itself, so a refused install
     # leaves the machine's git ignore file alone.

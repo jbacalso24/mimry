@@ -852,8 +852,11 @@ def graph_rows(
     query: str,
     limit: int | None = 10,
     minified_paths: frozenset[str] = frozenset(),
+    graph: dict | None = None,
 ) -> list[dict]:
-    g = load_graph(root)
+    # A caller that already loaded the graph passes it, so the file is
+    # parsed once per search rather than once per check.
+    g = load_graph(root) if graph is None else graph
     nodes = g.get("nodes") or []
     links = g.get("links") or g.get("edges") or []
     terms = query_terms(query)
