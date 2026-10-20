@@ -25,6 +25,8 @@ from typing import Any
 
 SESSION_WINDOW_IDLE = 2 * 60 * 60
 SESSION_QUERY_LIMIT = 200
+# Session start lines kept; one is written per session.
+SESSION_START_LIMIT = 500
 SESSION_FILE_LIMIT = 2000
 # File events older than this are dropped at the next flush.
 SESSION_FILE_KEEP = 24 * 60 * 60
@@ -150,7 +152,8 @@ def log_session_start(root: Path, session: str) -> None:
         if state is None or not session_feedback_enabled():
             return
         when = datetime.now(UTC).isoformat()
-        _append(state / START_LOG, {"time": when, "session": session})
+        rows = [*_read_rows(state / START_LOG), {"time": when, "session": session}]
+        _write_rows(state / START_LOG, rows[-SESSION_START_LIMIT:])
     except Exception:
         pass
 
