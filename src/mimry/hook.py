@@ -17,7 +17,8 @@ symbols with their line numbers, so the agent can read only the part
 it needs.
 
 ``hook-refresh`` is the background hook for session start and file
-edits. It reindexes stale files so the next query does not wait.
+edits. It reindexes stale files so the next query does not wait, and
+it logs the edits and closes the session windows for feedback.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .constants import HEAVY_IGNORES, NON_CODE_KINDS
+from .session import edited_paths, flush_session_feedback, log_file_event
 
 # Regex constructs that make a pattern broad. A plain identifier, an
 # escaped dot or an exact message is not matched by any of these.
@@ -819,6 +821,8 @@ def _hook_check(root: Path) -> None:
         # A Read only ever gets the outline of a large file, never a
         # search answer, so a path containing "grep" cannot trigger one.
         if tool_name == "read":
+            # The session log wants every read, whatever is answered.
+            log_file_event(root, session, "opened", [tool_input.get("file_path")])
             answer = _big_read_answer(root, session, tool_input)
             if answer is not None:
                 _print_context(answer)
@@ -866,13 +870,27 @@ def _hook_refresh(root: Path) -> None:
     from .lifecycle import indexed_root, refresh_if_stale
     from .paths import mdir, pointer_file
 
-    # The host sends a JSON payload; nothing in it is needed, and a
-    # closed or unreadable stdin must not stop the refresh.
+    # The host sends a JSON payload. A closed or unreadable stdin must
+    # not stop the refresh, so a missing or bad payload counts as empty.
     try:
-        sys.stdin.buffer.read()
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8", errors="replace") or "{}")
     except Exception:
-        pass
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
     root = indexed_root(root.resolve())
+    # An edit is a changed file in the session log. A session start
+    # closes the windows the last session left open.
+    tool_input = payload.get("tool_input")
+    if payload.get("hook_event_name") == "SessionStart":
+        flush_session_feedback(root)
+    elif isinstance(tool_input, dict):
+        log_file_event(
+            root,
+            str(payload.get("session_id") or ""),
+            "changed",
+            edited_paths(tool_input),
+        )
     # The hook never sets MIMRY up; that is what `mimry init` is for.
     if not pointer_file(root).is_file():
         return

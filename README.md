@@ -313,7 +313,7 @@ See [docs/agents.md](docs/agents.md) for where each agent's files go and how its
 |---|---|
 | `--project` | Install into the current repository only, instead of for every repository |
 | `--always-on` | Add a short rules block to the agent's always-read file, such as `AGENTS.md` |
-| `--hooks` | Suggest `mimry find` when the agent starts a broad search of the repository, at most three times a session, answer a search for a known symbol with its definition and callers, outline a large file when the agent reads it whole, and refresh the index in the background when a session starts and after each file edit. For Codex, project hooks run after you trust them with `/hooks`. |
+| `--hooks` | Suggest `mimry find` when the agent starts a broad search of the repository, at most three times a session, answer a search for a known symbol with its definition and callers, outline a large file when the agent reads it whole, record the files it reads and edits after a find as feedback (`MIMRY_SESSION_FEEDBACK=0` turns that off), and refresh the index in the background when a session starts and after each file edit. For Codex, project hooks run after you trust them with `/hooks`. |
 | `--no-mcp` | Install the skill without registering the MCP server |
 | `--no-global-gitignore` | Do not add `.mimry/` to Git's global ignore file |
 

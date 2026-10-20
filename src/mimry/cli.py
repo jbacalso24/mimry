@@ -692,6 +692,20 @@ def _hook_check_root(args) -> str | None:
     return root if rest == ["hook-check"] else None
 
 
+def _run_command(a):
+    """Run a command, then close the session windows it may have closed.
+
+    The command has released its index lock by now.
+    """
+    from pathlib import Path
+
+    from .session import flush_session_feedback
+
+    code = a.func(a)
+    flush_session_feedback(Path(getattr(a, "root", None) or "."))
+    return code
+
+
 def main(argv=None):
     hook_root = _hook_check_root(sys.argv[1:] if argv is None else argv)
     if hook_root is not None:
@@ -722,14 +736,14 @@ def main(argv=None):
 
     try:
         try:
-            return a.func(a)
+            return _run_command(a)
         except IndexSchemaMigrationError:
             if not hasattr(a, "root"):
                 raise
             # Rebuild once, then retry the command.
             rebuild_outdated_index(Path(a.root).resolve())
             print(INDEX_REBUILT_NOTE, file=sys.stderr)
-            return a.func(a)
+            return _run_command(a)
     except UnsupportedIndexSchemaError as exc:
         ui.fail("This index was built by a newer version of MIMRY", str(exc))
     except IndexSchemaMigrationError as exc:
