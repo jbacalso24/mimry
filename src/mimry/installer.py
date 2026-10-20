@@ -1136,16 +1136,52 @@ def _settings_line(path: Path, root: Path, project: bool, what: str) -> str:
     return f"Removed {shown}" if not path.exists() else f"Removed MIMRY's {what} from {shown}"
 
 
-def _resolve_executable(name: str) -> str:
-    found = which(name)
-    if found:
-        return found
+# uv's cache buckets for the environments `uvx` and `uv run --with` make
+# (checked against uv 0.11 on Windows, where `uv cache dir` is
+# %LOCALAPPDATA%\uv\cache). uv may delete them at any time.
+_THROWAWAY_ENV_BUCKETS = frozenset({"archive-v0", "builds-v0"})
+
+
+def _in_throwaway_env() -> bool:
+    """True when the running interpreter sits in a uv cache environment.
+
+    The script beside such an interpreter can vanish with the cache, so
+    PATH is preferred there.
+    """
+    return any(part in _THROWAWAY_ENV_BUCKETS for part in Path(sys.executable).parts)
+
+
+def _script_beside_interpreter(name: str) -> str | None:
     scripts_dir = Path(sys.executable).parent
     for suffix in (".exe", ""):
         candidate = scripts_dir / (name + suffix)
         if candidate.exists():
             return str(candidate)
-    return name
+    return None
+
+
+def _resolve_executable(name: str) -> str:
+    """The `name` script to register.
+
+    The one beside the running interpreter, so an install registers its
+    own version, then PATH, then the bare name.
+    """
+    beside = _script_beside_interpreter(name)
+    if _in_throwaway_env():
+        return which(name) or beside or name
+    return beside or which(name) or name
+
+
+def _warn_if_path_differs() -> None:
+    """Warn when the mimry on PATH is another file than this install's.
+
+    Hooks and the MCP server then run this install's mimry, not the one
+    a shell finds first.
+    """
+    on_path = which("mimry")
+    own = _resolve_mimry_exe()
+    if on_path and not _same_file(on_path, own):
+        ui.warn(f"`mimry` on PATH is {on_path}, but hooks and the MCP server use {own}")
 
 
 def _resolve_mimry_exe() -> str:
@@ -1779,6 +1815,7 @@ def install_skill(
             f"hooks in {cfg.hook_path.as_posix()} that name `mimry find` for broad searches,"
             " answer searches for known symbols, and refresh the index in the background"
         )
+    _warn_if_path_differs()
     if dry_run:
         print("Dry run - nothing was written")
         ui.detail(
