@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,7 +22,7 @@ from types import SimpleNamespace
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
-from mimry import session
+from mimry import feedback, session
 from mimry.cli import main
 from mimry.feedback import feedback_payload_from_args, list_feedback, parse_context_suggested_paths
 from mimry.hook import cmd_hook_check, cmd_hook_compact, cmd_hook_refresh
@@ -70,6 +72,23 @@ def _find(repo: Path, query: str) -> list[str]:
     res = _cli(repo, "find", query)
     assert res.returncode == 0, res.stderr
     return re.findall(r"^\s*\d+\s{2}(\S+)$", res.stdout, flags=re.MULTILINE)
+
+
+def _find_in_session(monkeypatch, repo: Path, query: str, session: str = SESSION) -> list[str]:
+    """A find run the way the agent runs it.
+
+    The Bash hook sees the command first, so the query has the session.
+    """
+    _feed(
+        monkeypatch,
+        {
+            "session_id": session,
+            "tool_name": "Bash",
+            "tool_input": {"command": f'mimry find "{query}"'},
+        },
+    )
+    assert cmd_hook_check(SimpleNamespace(root=str(repo))) == 0
+    return _find(repo, query)
 
 
 def _feed(monkeypatch, payload: dict) -> None:
@@ -309,7 +328,7 @@ def _append_rows(repo: Path, log: str, rows: list[dict]) -> None:
 
 def test_compact_note_names_the_query_the_edits_and_the_reads(tmp_path, monkeypatch, capsys):
     repo = _repo(tmp_path, monkeypatch)
-    shown = _find(repo, QUERY)
+    shown = _find_in_session(monkeypatch, repo, QUERY)
     assert _read(monkeypatch, repo, repo / shown[2]) == 0
     assert _read(monkeypatch, repo, repo / shown[3]) == 0
     _edit(monkeypatch, repo, shown[1])
@@ -324,8 +343,8 @@ def test_compact_note_names_the_query_the_edits_and_the_reads(tmp_path, monkeypa
 def test_compact_note_uses_the_query_whose_window_holds_the_files(tmp_path, monkeypatch, capsys):
     # Each find closes the window before it; the logs keep the open one.
     repo = _repo(tmp_path, monkeypatch)
-    shown = _find(repo, QUERY)
-    _find(repo, FOLLOW_UP)
+    shown = _find_in_session(monkeypatch, repo, QUERY)
+    _find_in_session(monkeypatch, repo, FOLLOW_UP)
     assert _read(monkeypatch, repo, repo / shown[2]) == 0
 
     note = _restored(monkeypatch, capsys, repo)
@@ -417,7 +436,14 @@ def test_compact_note_quotes_the_query_for_a_shell(tmp_path, monkeypatch, capsys
     _append_rows(
         repo,
         QUERY_LOG,
-        [{"time": (base - timedelta(seconds=1)).isoformat(), "query": tricky, "shown": []}],
+        [
+            {
+                "time": (base - timedelta(seconds=1)).isoformat(),
+                "query": tricky,
+                "shown": [],
+                "session": SESSION,
+            }
+        ],
     )
     _append_rows(
         repo,
@@ -532,3 +558,119 @@ def test_flush_keeps_a_hook_event_appended_after_its_snapshot(tmp_path, monkeypa
         for line in (repo / ".mimry" / FILE_LOG).read_text(encoding="utf-8").splitlines()
     ]
     assert ("changed", "src/app.ts") in [(e["action"], e["path"]) for e in events]
+
+
+def test_a_query_from_another_process_is_not_named_in_a_hooked_session(
+    tmp_path, monkeypatch, capsys
+):
+    # The session's own find is tagged by its Bash hook. Another process
+    # then runs a find with no session id, and the note for the session
+    # must not name that query.
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find_in_session(monkeypatch, repo, QUERY)
+    assert _query_lines(repo)[-1]["session"] == SESSION
+    _edit(monkeypatch, repo, shown[1])
+    record_query(repo, "billing invoice total card", [shown[0]])
+
+    note = _restored(monkeypatch, capsys, repo)
+    assert f'you were working on: "{QUERY}".' in note
+    assert "billing" not in note
+
+
+def test_flush_keeps_a_hook_event_appended_while_the_log_is_replaced(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    record_query(repo, "race one", [])
+    time.sleep(0.01)
+    log_file_event(repo, SESSION, "opened", [repo / "src" / "auth" / "session.py"])
+    time.sleep(0.01)
+    record_query(repo, "race two", [])
+    time.sleep(0.01)
+
+    real_replace = os.replace
+    appends: list[threading.Thread] = []
+
+    def replace_while_a_hook_appends(src, dst):
+        # The hook's append starts after the flush read its snapshot, in
+        # the window where it used to be lost. It has to wait for the
+        # replace and then land in the new file.
+        if Path(dst).name == FILE_LOG:
+            hook = threading.Thread(
+                target=log_file_event,
+                args=(repo, SESSION, "changed", [repo / "src" / "app.ts"]),
+            )
+            hook.start()
+            appends.append(hook)
+            time.sleep(0.05)
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(session.os, "replace", replace_while_a_hook_appends)
+    flush_session_feedback(repo)
+    assert appends
+    for hook in appends:
+        hook.join(5)
+
+    [record] = _rows(repo)
+    assert record["opened_paths"] == ["src/auth/session.py"]
+    events = [
+        json.loads(line)
+        for line in (repo / ".mimry" / FILE_LOG).read_text(encoding="utf-8").splitlines()
+    ]
+    assert ("changed", "src/app.ts") in [(e["action"], e["path"]) for e in events]
+
+
+def test_a_busy_flush_builds_no_feedback_record(tmp_path, monkeypatch):
+    # The busy path returns before any feedback work. Payloads are built
+    # only after the lock is taken.
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find(repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[0]) == 0
+    _age_queries(repo, hours=3)
+    lock = cache_home() / "indexes" / load_pointer(repo)["rootId"] / "operation.lock"
+
+    built: list[tuple] = []
+    real_payload = feedback.feedback_payload
+
+    def spy(*args, **kwargs):
+        built.append(args)
+        return real_payload(*args, **kwargs)
+
+    monkeypatch.setattr(feedback, "feedback_payload", spy)
+    with file_lock(lock):
+        flush_session_feedback(repo)
+    assert built == []
+    assert _rows(repo) == []
+
+
+def test_a_held_append_lock_costs_the_event_not_the_hook(tmp_path, monkeypatch, capsys):
+    # A lock another process holds past the wait drops the event. The
+    # hook still exits 0 and prints nothing that is not JSON, and leaves
+    # the other process's lock alone.
+    repo = _repo(tmp_path, monkeypatch)
+    lock = repo / ".mimry" / session.APPEND_LOCK
+    lock.write_text("", encoding="utf-8")
+    monkeypatch.setattr(session, "APPEND_WAIT", 0.05)
+    capsys.readouterr()
+
+    assert _read(monkeypatch, repo, repo / "src" / "auth" / "session.py") == 0
+    out = capsys.readouterr().out
+    assert out == "" or isinstance(json.loads(out), dict)
+    assert lock.exists()
+    log = repo / ".mimry" / FILE_LOG
+    assert not log.exists() or "src/auth/session.py" not in log.read_text(encoding="utf-8")
+
+
+def test_each_flushed_window_holds_only_its_own_sessions_events(tmp_path, monkeypatch):
+    # Two sessions run interleaved finds. A file that one session opens
+    # comes after the other session's find, so only its own window
+    # may count it.
+    repo = _repo(tmp_path, monkeypatch)
+    mine = _find_in_session(monkeypatch, repo, QUERY, session="sessA")
+    _find_in_session(monkeypatch, repo, FOLLOW_UP, session="sessB")
+    log_file_event(repo, "sessA", "opened", [repo / mine[0]])
+    _age_queries(repo, hours=3)
+
+    flush_session_feedback(repo)
+
+    [record] = _rows(repo)
+    assert record["query"] == QUERY
+    assert record["opened_paths"] == [mine[0]]

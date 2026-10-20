@@ -10,11 +10,7 @@ from typing import Any
 
 from . import ui
 from .cache_safety import UnsafeCachePathError, validated_current_root_cache_path
-from .feedback import ensure_feedback_schema
-from .history import ensure_history_schema
 from .paths import idx_path, mdir, pointer_file, roots_file
-from .security import sanitize_data
-from .semantic import ensure_semantic_schema
 from .state import (
     StateCorruptionError,
     atomic_write_json,
@@ -321,6 +317,13 @@ def connect(idx):
     generation_columns = {row[1] for row in con.execute("pragma table_info(index_generation)")}
     if "semantic_checksum" not in generation_columns:
         con.execute("alter table index_generation add column semantic_checksum text")
+    # Imported here: the feedback, history and semantic modules pull in
+    # the whole intent stack, which a flush that only takes the lock
+    # never needs.
+    from .feedback import ensure_feedback_schema
+    from .history import ensure_history_schema
+    from .semantic import ensure_semantic_schema
+
     ensure_feedback_schema(con)
     ensure_history_schema(con)
     ensure_semantic_schema(con)
@@ -328,6 +331,8 @@ def connect(idx):
 
 
 def write_jsonl(path, rows):
+    from .security import sanitize_data
+
     redacted: dict[str, str] = {}
     atomic_write_text(
         path,

@@ -19,6 +19,8 @@ import json
 import os
 import re
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -35,6 +37,17 @@ SESSION_IGNORED_LIMIT = 5
 # must not wait on feedback bookkeeping, so the flush only tries. This
 # is the smallest positive wait, since the lock helper rejects zero.
 SESSION_LOCK_WAIT = 0.001
+# The file log's append lock. A hook waits for it up to APPEND_WAIT, so
+# an event is never appended without it; a lock older than APPEND_STALE
+# came from a process that died holding it.
+APPEND_LOCK = "session-files.lock"
+APPEND_WAIT = 2.0
+APPEND_STALE = 10.0
+# The last shell commands that named mimry, with the session that ran
+# them. A find run from such a command is tagged with that session.
+HOOK_COMMAND_LOG = "session-commands.jsonl"
+HOOK_COMMAND_LIMIT = 20
+HOOK_COMMAND_WINDOW = 2 * 60
 SESSION_NOTE = "recorded from session"
 COMPACT_FILES = 10
 COMPACT_QUERY_LIMIT = 300
@@ -104,6 +117,42 @@ def _read_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _rows_text(rows: list[dict[str, Any]]) -> str:
+    return "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+
+
+@contextmanager
+def _append_lock(state: Path) -> Iterator[None]:
+    """Hold the file log's append lock.
+
+    Hooks take it for each append. A rewrite takes it only to re-read
+    the rows appended since its snapshot and to replace the file, so
+    neither waits long. Raises TimeoutError when another process holds
+    it past APPEND_WAIT; the caller then treats the event as lost.
+    """
+    lock = state / APPEND_LOCK
+    deadline = time.monotonic() + APPEND_WAIT
+    while True:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                stale = time.time() - lock.stat().st_mtime > APPEND_STALE
+            except FileNotFoundError:
+                continue  # released between the two calls
+            if stale:
+                lock.unlink(missing_ok=True)
+            elif time.monotonic() >= deadline:
+                raise TimeoutError(f"{APPEND_LOCK} is held by another process") from None
+            else:
+                time.sleep(0.002)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
 def _write_rows(
     path: Path,
     rows: list[dict[str, Any]],
@@ -113,18 +162,26 @@ def _write_rows(
 ) -> None:
     """Replace the log with ``rows``.
 
-    With ``seen``, the rows past its first ``seen`` are read at the
-    write and kept, so a row a hook appended after the caller's snapshot
-    is not lost. ``limit`` then keeps the newest rows.
+    With ``seen``, the rows past its first ``seen`` are read again under
+    the append lock and kept, so a row a hook appended after the
+    caller's snapshot is not lost. ``limit`` then keeps the newest
+    rows. The snapshot is written before the lock is taken.
     """
-    if seen is not None:
-        rows = [*rows, *_read_rows(path)[seen:]]
     if limit is not None:
         rows = rows[-limit:]
-    text = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    tmp.write_text(_rows_text(rows), encoding="utf-8")
+    if seen is None:
+        os.replace(tmp, path)
+        return
+    with _append_lock(path.parent):
+        tail = _read_rows(path)[seen:]
+        if tail and limit is not None and len(rows) + len(tail) > limit:
+            tmp.write_text(_rows_text([*rows, *tail][-limit:]), encoding="utf-8")
+        elif tail:
+            with tmp.open("a", encoding="utf-8") as handle:
+                handle.write(_rows_text(tail))
+        os.replace(tmp, path)
 
 
 def _unique(values) -> list[str]:
@@ -149,9 +206,12 @@ def log_file_event(root: Path, session: str, action: str, raw_paths: list[Any]) 
         if state is None or not session_feedback_enabled():
             return
         when = datetime.now(UTC).isoformat()
-        for raw in raw_paths:
-            rel = _tracked(root, raw)
-            if rel is not None:
+        rels = [rel for rel in (_tracked(root, raw) for raw in raw_paths) if rel is not None]
+        if not rels:
+            return
+        # Under the append lock: a rewrite of this log cannot drop it.
+        with _append_lock(state):
+            for rel in rels:
                 _append(
                     state / FILE_LOG,
                     {"time": when, "session": session, "action": action, "path": rel},
@@ -225,12 +285,51 @@ def edited_paths(tool_input: dict[str, Any]) -> list[str]:
     return paths
 
 
+def log_hook_command(root: Path, session: str, command: str) -> None:
+    """Remember a shell command that names mimry, with its session.
+
+    The PreToolUse hook calls this before the command runs, so the find
+    it starts can be tagged with the session. Never raises.
+    """
+    try:
+        state = _state_dir(root)
+        if state is None or not session or not session_feedback_enabled():
+            return
+        rows = [
+            *_read_rows(state / HOOK_COMMAND_LOG),
+            {"time": datetime.now(UTC).isoformat(), "session": session, "command": command[:2000]},
+        ]
+        _write_rows(state / HOOK_COMMAND_LOG, rows[-HOOK_COMMAND_LIMIT:])
+    except Exception:
+        pass
+
+
+def _query_session(state: Path, query: str) -> str:
+    """The session of a recent hook command naming ``query``, or "".
+
+    A command counts when it ran within HOOK_COMMAND_WINDOW and names
+    the query. Other processes' queries stay untagged.
+    """
+    text = query.strip()
+    if not text:
+        return ""
+    now = time.time()
+    for row in reversed(_read_rows(state / HOOK_COMMAND_LOG)):
+        stamp = _stamp(row)
+        if stamp is None or now - stamp > HOOK_COMMAND_WINDOW:
+            continue
+        if text in str(row.get("command") or ""):
+            return str(row.get("session") or "")
+    return ""
+
+
 def record_query(root: Path, query: str, shown: list[Any], context_path: Any = None) -> None:
     """Append the query, the paths shown and the context path.
 
-    Never raises. The command may hold the shared index lock here, and
-    an append is safe under it. The flush that needs the exclusive lock
-    runs after the command returns.
+    The row names the session when a hook saw the shell command that ran
+    it. Never raises. The command may hold the shared index lock here,
+    and an append is safe under it. The flush that needs the exclusive
+    lock runs after the command returns.
     """
     try:
         state = _state_dir(root)
@@ -238,83 +337,111 @@ def record_query(root: Path, query: str, shown: list[Any], context_path: Any = N
             return
         from .feedback import _redact_feedback_string
 
-        text, _ = _redact_feedback_string(str(query or "").strip())
-        _append(
-            state / QUERY_LOG,
-            {
-                "time": datetime.now(UTC).isoformat(),
-                "query": text[:2000],
-                "shown": [rel for rel in (_tracked(root, p) for p in shown) if rel is not None],
-                "context": _relative(root, context_path),
-            },
-        )
+        raw = str(query or "")
+        text, _ = _redact_feedback_string(raw.strip())
+        row: dict[str, Any] = {
+            "time": datetime.now(UTC).isoformat(),
+            "query": text[:2000],
+            "shown": [rel for rel in (_tracked(root, p) for p in shown) if rel is not None],
+            "context": _relative(root, context_path),
+        }
+        session = _query_session(state, raw)
+        if session:
+            row["session"] = session
+        _append(state / QUERY_LOG, row)
     except Exception:
         pass
 
 
-def _flush_plan(root: Path, state: Path, now: float) -> dict[str, Any] | None:
+def _session_of(row: dict[str, Any]) -> str:
+    return str(row.get("session") or "")
+
+
+def _window_end(
+    timed: list[tuple[float, dict[str, Any]]], index: int, session: str
+) -> float | None:
+    """When the query at ``index`` stops owning events, or None if open.
+
+    A query with a session id ends at that session's next query. One
+    without ends at the next query of any session, as before sessions
+    were recorded.
+    """
+    for begin, query in timed[index + 1 :]:
+        if not session or _session_of(query) == session:
+            return begin
+    return None
+
+
+def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
     """What a flush would do now, or None if it would change nothing.
 
-    ``events_seen`` counts the file-event rows read, so the rewrite can
-    keep the rows a hook appends after this snapshot.
+    Reads the logs only and imports nothing beyond the standard library,
+    so a flush that finds the lock busy costs no more than this. Each
+    closed window with file events becomes one entry of ``windows``: the
+    query and what it was followed by. With a session id on the query,
+    only that session's events count. ``events_seen`` counts the file
+    event rows read, so the rewrite can keep the rows a hook appends
+    after this snapshot.
     """
-    from .feedback import feedback_payload
-
-    timed_queries = [(_stamp(q), q) for q in _read_rows(state / QUERY_LOG)]
+    timed_queries = [
+        (t, q) for t, q in ((_stamp(r), r) for r in _read_rows(state / QUERY_LOG)) if t is not None
+    ]
     raw_events = _read_rows(state / FILE_LOG)
-    timed_events = [(_stamp(e), e) for e in raw_events]
-    timed_queries = [(t, q) for t, q in timed_queries if t is not None]
-    timed_events = [(t, e) for t, e in timed_events if t is not None]
-    starts = [t for t, _ in timed_queries]
-    queries = [q for _, q in timed_queries]
-    # Only the last query can still be open; each earlier one has a
-    # later query, which closes it.
-    last_open = bool(queries) and now - starts[-1] <= SESSION_WINDOW_IDLE
-    closed = len(queries) - 1 if last_open else len(queries)
+    timed_events = [(t, e) for t, e in ((_stamp(r), r) for r in raw_events) if t is not None]
 
-    records: list[dict[str, Any]] = []
-    for i in range(closed):
-        begin = starts[i]
-        end = starts[i + 1] if i + 1 < len(queries) else None
-        window = [e for t, e in timed_events if t >= begin and (end is None or t < end)]
+    windows: list[dict[str, Any]] = []
+    kept_queries: list[dict[str, Any]] = []
+    for index, (begin, query) in enumerate(timed_queries):
+        session = _session_of(query)
+        end = _window_end(timed_queries, index, session)
+        if end is None and now - begin <= SESSION_WINDOW_IDLE:
+            kept_queries.append(query)
+            continue
+        window = [
+            e
+            for t, e in timed_events
+            if t >= begin
+            and (end is None or t < end)
+            and (not session or _session_of(e) == session)
+        ]
         opened = _unique(e["path"] for e in window if e.get("action") == "opened")
         changed = _unique(e["path"] for e in window if e.get("action") == "changed")
         if not opened and not changed:
             continue
-        query = queries[i]
         shown = [str(p) for p in query.get("shown") or []]
         # Ignored only means something when the agent changed a file.
         ignored: list[str] = []
         if changed:
             fresh = [p for p in shown if p not in opened and p not in changed]
             ignored = fresh[:SESSION_IGNORED_LIMIT]
-        records.append(
-            feedback_payload(
-                root,
-                {
-                    "query": query.get("query") or "",
-                    "context_path": query.get("context"),
-                    "suggested": shown,
-                    "opened": opened,
-                    "changed": changed,
-                    "ignored": ignored,
-                    "outcome": "unknown",
-                    "notes": SESSION_NOTE,
-                },
-            )
+        windows.append(
+            {
+                "query": query.get("query") or "",
+                "context_path": query.get("context"),
+                "suggested": shown,
+                "opened": opened,
+                "changed": changed,
+                "ignored": ignored,
+                "outcome": "unknown",
+                "notes": SESSION_NOTE,
+            }
         )
 
     # File events are kept by age, not by window: a window only counts
     # events after its own query, so a flushed one is never counted
     # twice, and the compaction note still sees the files read earlier.
-    kept_queries = queries[closed:][-SESSION_QUERY_LIMIT:]
+    kept_queries = kept_queries[-SESSION_QUERY_LIMIT:]
     kept_events = [e for t, e in timed_events if now - t <= SESSION_FILE_KEEP][
         -SESSION_FILE_LIMIT:
     ]
-    if not records and len(kept_queries) == len(queries) and len(kept_events) == len(timed_events):
+    if (
+        not windows
+        and len(kept_queries) == len(timed_queries)
+        and len(kept_events) == len(timed_events)
+    ):
         return None
     return {
-        "records": records,
+        "windows": windows,
         "queries": kept_queries,
         "events": kept_events,
         "events_seen": len(raw_events),
@@ -333,13 +460,14 @@ def flush_session_feedback(root: Path) -> None:
     try:
         if not session_feedback_enabled():
             return
-        from .lifecycle import indexed_root
+        root = Path(root).resolve()
+        if not (root / ".mimry" / "pointer.json").is_file():
+            from .lifecycle import indexed_root
 
-        root = indexed_root(Path(root).resolve())
+            root = indexed_root(root)
         state = _state_dir(root)
-        if state is None or _flush_plan(root, state, time.time()) is None:
+        if state is None or _flush_plan(state, time.time()) is None:
             return
-        from .feedback import record_feedback
         from .storage import active_index_pointer
 
         # Only try the lock: when a refresh holds it, the windows stay
@@ -347,13 +475,13 @@ def flush_session_feedback(root: Path) -> None:
         with active_index_pointer(root, exclusive=True, lock_timeout=SESSION_LOCK_WAIT) as ptr:
             if not ptr:
                 return
-            plan = _flush_plan(root, state, time.time())
+            plan = _flush_plan(state, time.time())
             if plan is None:
                 return
             # Logs first: if a rewrite fails, a window is lost rather
             # than recorded twice on the next flush. Hooks append to the
-            # file log without the lock, so its rewrite keeps the rows
-            # appended after the snapshot.
+            # file log under its append lock, so its rewrite keeps the
+            # rows appended after the snapshot.
             _write_rows(state / QUERY_LOG, plan["queries"])
             _write_rows(
                 state / FILE_LOG,
@@ -361,11 +489,14 @@ def flush_session_feedback(root: Path) -> None:
                 seen=plan["events_seen"],
                 limit=SESSION_FILE_LIMIT,
             )
-            for payload in plan["records"]:
+            from .feedback import feedback_payload, record_feedback
+
+            for window in plan["windows"]:
+                payload = feedback_payload(root, window)
                 record_feedback(Path(ptr["indexPath"]), ptr["rootId"], payload, lock=False)
     except Exception:
-        # ponytail: two agent sessions in one repo share windows by
-        # time. Per-session windows need the session id on each query.
+        # Two sessions in one repo can still share a window when a query
+        # has no session id; those windows are matched by time.
         pass
 
 
@@ -396,9 +527,10 @@ def _compact_text(query: str, edited: list[str], read: list[str]) -> str:
 def compact_note(root: Path, session: str) -> str | None:
     """The note a compacted session gets back: its last query and files.
 
-    Query lines carry no session id, so the query is the newest one from
-    the point where the session's work began. Reads the logs only and
-    returns None when there is nothing to say. Never raises.
+    The query is the newest one this session ran, from the point where
+    its work began. A query without this session's id is left out.
+    Reads the logs only and returns None when there is nothing to say.
+    Never raises.
     """
     try:
         if not session or not session_feedback_enabled():
@@ -416,15 +548,17 @@ def compact_note(root: Path, session: str) -> str | None:
             return None
         events.sort(key=lambda item: item[0])
         first = events[0][0]
+        # Only this session's queries: another process's query has no
+        # session id and is never named here.
         queries = [
             (t, q)
             for t, q in ((_stamp(r), r) for r in _read_rows(state / QUERY_LOG))
-            if t is not None
+            if t is not None and _session_of(q) == session
         ]
         queries.sort(key=lambda item: item[0])
         # A find runs before the reads it leads to, so the work starts
         # at the query in effect when the first file event happened.
-        # Queries carry no session id: the newest from there on is last.
+        # The newest of this session's queries from there on is last.
         earlier = [t for t, _ in queries if t <= first]
         start = max(earlier) if earlier else first
         later = [q for t, q in queries if t >= start]

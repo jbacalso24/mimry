@@ -30,20 +30,18 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import sys
 import time
-import unicodedata
 from pathlib import Path
 from typing import NamedTuple
 
 from .constants import HEAVY_IGNORES, NON_CODE_KINDS
-from .savings import record_answered_search, record_ranged_read
 from .session import (
     compact_note,
     edited_paths,
     flush_session_feedback,
     log_file_event,
+    log_hook_command,
     log_session_start,
     named_in_session,
     session_feedback_enabled,
@@ -96,6 +94,11 @@ DECLARATION_WORDS = frozenset(
 )
 # Generic reminders shown per session; symbol answers are not capped.
 NUDGE_LIMIT = 3
+# hook-sessions keeps every key of the HOOK_SESSION_LIMIT most recently
+# active sessions, up to HOOK_KEYS_PER_SESSION keys each. A key past
+# that limit is forgotten, and the oldest session goes first.
+HOOK_SESSION_LIMIT = 20
+HOOK_KEYS_PER_SESSION = 500
 SYMBOL_LIMIT = 3
 DEFINITION_LIMIT = 3
 CALLER_LIMIT = 5
@@ -267,14 +270,51 @@ def _parse_search(words: list[str]) -> _Search | None:
     return _Search(explicit, ignore_case, recursive, paths)
 
 
+def _keep_backslashes(command: str) -> str:
+    """Keep a backslash before a plain character as written.
+
+    POSIX reads a backslash before a letter as that letter alone,
+    outside quotes, so a Windows path written with backslashes
+    would lose its separators. Such a backslash is doubled, so the
+    shell reads it back as one. Other escapes and single-quoted
+    text are left alone.
+    """
+    if "\\" not in command:
+        return command
+    out: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        nxt = command[i + 1] if i + 1 < len(command) else ""
+        if ch == "\\" and quote != "'":
+            if re.fullmatch(r"[A-Za-z0-9_.-]", nxt):
+                out.append("\\\\")
+                i += 1
+            else:
+                out.append(ch + nxt)
+                i += 2
+            continue
+        if ch in "'\"":
+            if not quote:
+                quote = ch
+            elif quote == ch:
+                quote = ""
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _shell_searches(command: str) -> list[_Search]:
     """Every grep, rg, ag, ack or git grep segment of a shell command.
 
     Every ``|``, ``&&``, ``;`` segment is checked. Returns [] when the
     command does not parse.
     """
+    import shlex
+
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;<>")
+        lexer = shlex.shlex(_keep_backslashes(command), posix=True, punctuation_chars="|&;<>")
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
@@ -308,8 +348,10 @@ def shell_search_pattern(command: str, root: Path) -> str | None:
 
 def _is_one_file(paths: list[str], root: Path) -> bool:
     """Whether every path a search names is a regular file, so the
-    search covers no tree. A search with no path covers the tree."""
-    return bool(paths) and all((root / path).is_file() for path in paths)
+    search covers no tree. A search with no path covers the tree.
+
+    A backslash is a separator here, as a Windows shell writes paths."""
+    return bool(paths) and all((root / path.replace("\\", "/")).is_file() for path in paths)
 
 
 def shell_tree_patterns(command: str, root: Path) -> list[str]:
@@ -475,21 +517,40 @@ def nudge(query: str) -> str:
     )
 
 
+def _session_keys(mimry_dir: Path) -> dict[str, list[str]]:
+    """The keys each session has seen, most recently active last."""
+    try:
+        lines = (mimry_dir / "hook-sessions").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    keys: dict[str, list[str]] = {}
+    for line in lines:
+        session, sep, key = line.partition("\t")
+        if sep:
+            keys.setdefault(session, []).append(key)
+    return keys
+
+
 def _first_for_query(mimry_dir: Path, session: str, query: str) -> bool:
     """Record the session and query pair; say whether it was new.
 
-    Keeps the last 50 pairs, so parallel sessions in one repo stay quiet
-    too.
+    Each session keeps its own keys, so a long session does not repeat
+    an answer or an outline. Parallel sessions stay quiet too.
     """
-    seen_file = mimry_dir / "hook-sessions"
-    try:
-        seen = seen_file.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        seen = []
-    key = f"{session}\t{query}"
-    if key in seen:
+    keys = _session_keys(mimry_dir)
+    mine = keys.pop(session, [])
+    if query in mine:
         return False
-    seen_file.write_text("\n".join([*seen, key][-50:]) + "\n", encoding="utf-8")
+    keys[session] = [*mine, query][-HOOK_KEYS_PER_SESSION:]
+    lines = [
+        f"{name}\t{key}\n"
+        for name, name_keys in list(keys.items())[-HOOK_SESSION_LIMIT:]
+        for key in name_keys
+    ]
+    try:
+        (mimry_dir / "hook-sessions").write_text("".join(lines), encoding="utf-8")
+    except OSError:
+        pass
     return True
 
 
@@ -530,6 +591,8 @@ def _count_ranged_read(root: Path, session: str, tool_input: dict) -> None:
             root / ".mimry", session, rel_path
         )
         if named:
+            from .savings import record_ranged_read
+
             record_ranged_read(
                 root, session, rel_path, tool_input.get("offset"), tool_input.get("limit")
             )
@@ -769,6 +832,8 @@ def _symbol_answer(
 
 def _outline_path(root: Path, file_path: str) -> str | None:
     """Path of ``file_path`` relative to root, POSIX style, or None."""
+    import unicodedata
+
     rel = Path(os.path.relpath(os.path.abspath(root / file_path), os.path.abspath(root)))
     if rel.is_absolute() or rel.parts[:1] == ("..",):
         return None
@@ -829,6 +894,10 @@ def _big_read_answer(root: Path, session: str, tool_input: dict) -> str | None:
         file_path = str(tool_input.get("file_path") or "")
         rel_path = _outline_path(root, file_path) if file_path else None
         if rel_path is None or _ignored_path(rel_path):
+            return None
+        # A file of at most BIG_READ_LINES bytes has at most that many
+        # lines, so a small file needs no index lookup.
+        if (root / rel_path).stat().st_size <= BIG_READ_LINES:
             return None
         from datetime import datetime
 
@@ -896,6 +965,9 @@ def _hook_check(root: Path) -> None:
             _count_ranged_read(root, session, tool_input)
             return
         command = str(tool_input.get("command") or "")
+        if "mimry" in command:
+            # The find this command starts is tagged with the session.
+            log_hook_command(root, session, command)
     except Exception:
         command = raw
     mimry_dir = root / ".mimry"
@@ -907,6 +979,8 @@ def _hook_check(root: Path) -> None:
     answer = _symbol_answer(root, session, tool_name, tool_input, command)
     if answer is not None:
         # A symbol answer counts as one search, never as tokens.
+        from .savings import record_answered_search
+
         record_answered_search(root, session)
     else:
         query = broad_search_query(tool_name, tool_input, command, root)

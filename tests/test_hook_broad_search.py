@@ -270,3 +270,54 @@ def test_grep_tool_patterns_skip_one_named_file(tmp_path):
 )
 def test_ignored_paths_match_the_index_policy(path, ignored):
     assert hook._ignored_path(path) is ignored
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        r"rg -i password app\auth.py",
+        r'rg -i password "app\auth.py"',
+        "rg -i password app/auth.py",
+        r"rg -i password app/my\ file.py",
+        r"rg -i password 'app\auth.py'",
+    ],
+)
+def test_a_windows_path_names_one_file(tmp_path, command):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "auth.py").write_text("password = 1\n", encoding="utf-8")
+    (tmp_path / "app" / "my file.py").write_text("password = 2\n", encoding="utf-8")
+    assert shell_search_pattern(command, tmp_path) is None
+    assert shell_tree_patterns(command, tmp_path) == []
+
+
+def test_a_windows_path_to_a_missing_file_is_still_a_tree_search(tmp_path):
+    (tmp_path / "app").mkdir()
+    command = r"rg -i password app\missing.py"
+    assert shell_search_pattern(command, tmp_path) == "password"
+
+
+def test_a_session_keeps_its_keys_past_fifty_other_keys(tmp_path):
+    mimry_dir = tmp_path / ".mimry"
+    mimry_dir.mkdir()
+    assert hook._first_for_query(mimry_dir, "S1", "q0")
+    assert hook._first_for_query(mimry_dir, "S1", "read:app/auth.py")
+    for n in range(60):
+        hook._first_for_query(mimry_dir, "S2", f"other{n}")
+    assert not hook._first_for_query(mimry_dir, "S1", "q0")
+    assert hook._outlined_this_session(mimry_dir, "S1", "app/auth.py")
+
+
+def test_hook_sessions_keep_the_newest_sessions_and_a_bounded_key_list(tmp_path):
+    mimry_dir = tmp_path / ".mimry"
+    mimry_dir.mkdir()
+    for n in range(hook.HOOK_SESSION_LIMIT + 5):
+        hook._first_for_query(mimry_dir, f"s{n}", "q")
+    lines = (mimry_dir / "hook-sessions").read_text(encoding="utf-8").splitlines()
+    names = {line.split("\t")[0] for line in lines}
+    assert names == {f"s{n}" for n in range(5, hook.HOOK_SESSION_LIMIT + 5)}
+
+    for n in range(hook.HOOK_KEYS_PER_SESSION + 3):
+        hook._first_for_query(mimry_dir, "long", f"k{n}")
+    assert hook._first_for_query(mimry_dir, "long", "k0")  # the oldest key is dropped
+    last = hook.HOOK_KEYS_PER_SESSION + 2
+    assert not hook._first_for_query(mimry_dir, "long", f"k{last}")

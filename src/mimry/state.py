@@ -6,7 +6,6 @@ import json
 import os
 import random
 import sqlite3
-import tempfile
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -242,6 +241,8 @@ def replace_path(source: Path, target: Path, *, attempts: int = 12, delay: float
 def atomic_write_bytes(path: Path, data: bytes) -> None:
     """Replace *path* atomically, never exposing a partial file."""
     path = Path(path)
+    import tempfile
+
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp_path = Path(temp_name)
