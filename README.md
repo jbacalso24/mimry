@@ -480,7 +480,11 @@ See [docs/how-it-works.md](docs/how-it-works.md) for details.
 ## Privacy
 
 Indexing and search run locally.
-Credential files are skipped, secret-looking values are redacted before they reach the index or feedback, and untracked files named in `.gitignore` are not indexed.
+Credential files are skipped.
+In code files, secret-looking assignments and comparisons, such as `password = "..."` or `token == "..."`, are redacted before they reach the index.
+A file is skipped when its secret cannot be redacted cleanly.
+Feedback text is redacted too.
+Untracked files named in `.gitignore` are not indexed.
 
 ## Contributing
 

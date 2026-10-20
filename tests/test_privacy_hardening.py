@@ -26,7 +26,7 @@ from mimry.mcp_tools import (
     mimry_symbol,
     mimry_why,
 )
-from mimry.scanner import scan
+from mimry.scanner import SensitiveContentError, indexable_bytes, scan
 from mimry.security import (
     STREAM_CHUNK_BYTES,
     contains_sensitive_text,
@@ -1754,3 +1754,45 @@ def test_a_closing_quote_after_an_unquoted_secret_is_written_back():
 def test_a_balanced_quote_in_an_expression_is_redacted_as_before():
     line = f'token = process.env.TOKEN || "{CONFIG_VALUE}"' + "\n"
     assert redact_sensitive_text(line) == "token = [REDACTED]" + "\n"
+
+
+@pytest.mark.parametrize(
+    ("condition", "kept"),
+    (
+        (f'password == "{VALUE_CANARY}"', 'password == "[REDACTED]"'),
+        (f'token == "{VALUE_CANARY}" and ok', 'token == "[REDACTED]" and ok'),
+        (f'(password := "{VALUE_CANARY}")', '(password := "[REDACTED]")'),
+    ),
+)
+def test_a_redacted_python_condition_parses_and_keeps_its_code(condition: str, kept: str):
+    header = "def check(password, token, ok):\n"
+    source = f"{header}    if {condition}:\n        return ok\n    return None\n"
+    redacted = redact_sensitive_text(source)
+    ast.parse(redacted)
+    assert f"if {kept}:" in redacted
+    assert "privacy-canary" not in redacted and "value-123456789" not in redacted
+    assert indexable_bytes(Path("app/auth.py"), source.encode()).decode() == redacted
+
+
+def test_a_redacted_go_short_declaration_keeps_its_operator_and_quotes():
+    source = f'package main\n\nfunc check() {{\n\ttoken := "{VALUE_CANARY}"\n\t_ = token\n}}\n'
+    redacted = redact_sensitive_text(source)
+    assert '\ttoken := "[REDACTED]"\n' in redacted
+    assert "privacy-canary" not in redacted and "value-123456789" not in redacted
+    assert indexable_bytes(Path("app/cmp.go"), source.encode()).decode() == redacted
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    (
+        ("a.rb", 'password = "privacy-canary-\nvalue-123456789"\nputs password\n'),
+        ("a.php", '<?php\n$password = "privacy-canary-\nvalue-123456789";\necho $password;\n'),
+        ("a.rs", 'fn main() {\n    let password = "privacy-canary-\nvalue-123456789";\n}\n'),
+    ),
+)
+def test_a_quoted_secret_split_by_a_line_break_is_refused_without_its_tail(name: str, source: str):
+    assert contains_sensitive_text(source, code=True)
+    redacted = redact_sensitive_text(source)
+    assert "privacy-canary" not in redacted and "value-123456789" not in redacted
+    with pytest.raises(SensitiveContentError):
+        indexable_bytes(Path(name), source.encode())

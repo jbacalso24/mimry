@@ -132,11 +132,14 @@ ASSIGNMENT_RE = re.compile(
     # earlier blank of the run would rescan the rest of it, which made
     # long runs of spaces quadratic.
     r"(?ims)(?P<boundary>^|(?<=[{(,;])|(?P<spaced>(?<=[ \t])(?![ \t])))"
-    r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)"
+    # A PHP or Perl variable keeps its sigil in front of the label.
+    r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?\$?(?P<label_quote>['\"]?)"
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
     # A comparison is an operator of its own, so the first ``=`` of
     # ``==`` never reads as an assignment (#473).
-    r"[ \t]*(?P<operator>===|==|(?(spaced)=|[=:]))[ \t]*"
+    # ``:=`` (Go, Python's walrus) is one operator too, so its ``=``
+    # is not read as the value.
+    r"[ \t]*(?P<operator>===|==|(?(spaced)=|(?::=|[=:])))[ \t]*"
     # A value may start on the next line when that line is an indented
     # scalar (``password:\n  hunter2``); a nested ``key: value`` is its
     # own assignment.
@@ -158,6 +161,20 @@ UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE = re.compile(
     r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)\s*(?:=|:)\s*)"
     r"(?P<quote>\"\"\"|''')(?P<body>.*)$"
 )
+# A quoted value whose quote does not close on its line, as a Ruby,
+# PHP or Rust string may run on to a later line. Triple quotes and
+# empty strings are left to the patterns above.
+UNCLOSED_QUOTED_ASSIGNMENT_START_RE = re.compile(
+    # Only the last blank before the label is a boundary, as in
+    # ASSIGNMENT_RE.
+    r"(?im)(?:^|(?<=[{(,;])|(?<=[ \t])(?![ \t]))"
+    r"[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?\$?"
+    r"(?P<label_quote>['\"]?)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)"
+    r"[ \t]*(?:===|==|[=:])[ \t]*(?P<quote>[\"'])(?![\"'])"
+)
+# How far a value may run on to find its closing quote. It stays within
+# the overlap of a streamed scan, so a value is judged whole.
+UNCLOSED_QUOTED_SPAN_LIMIT = 4096
 YAML_BLOCK_ASSIGNMENT_RE = re.compile(
     r"(?m)^(?P<indent>[ \t]*)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)"
     r"(?P<header>\s*:\s*[|>][+-]?[^\r\n]*\r?\n)"
@@ -308,6 +325,9 @@ _ENV_LOOKUP_RE = re.compile(
 _VALUE_END_RE = re.compile(r"[ \t]*(?:[,;)\]}\r\n]|\\(?=[nrt\"'])|\Z|(?<=[ \t])(?:#|//))")
 _LINE_REST_RE = re.compile(r"[^\r\n]*")
 _LINE_BREAK_RE = re.compile(r"[ \t]*\r?\n")
+# An operator that binds tighter than a comparison, so the literal
+# before it is only part of a larger operand (``== "a" + "b"``).
+_OPERAND_CONTINUES_RE = re.compile(r"[ \t]*[-+*/%.\[(&|^<>=!~@]")
 _STRING_LITERAL_RE = re.compile(
     r"(?P<prefix>[rRbBuUfF]{0,2})(?P<literal>\"\"\"[\s\S]*?\"\"\"|'''[\s\S]*?'''|"
     r"\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|`(?:\\.|[^`\\])*`)"
@@ -428,6 +448,10 @@ def contains_sensitive_text(text: str, *, code: bool = False) -> bool:
         for start, end, label, _replacement in _yaml_quoted_multiline_assignments(text)
     ):
         return True
+    if ("\n" in text or "\r" in text) and next(
+        _sensitive_unclosed_quoted_values(text), None
+    ) is not None:
+        return True
     # That pattern requires a triple quote; skipping the scan without
     # one is exact, and the scan is one of the costliest over large
     # sources.
@@ -459,6 +483,7 @@ def redact_sensitive_text(text: str) -> str:
     """Remove high-confidence credentials from user and adapter text."""
 
     redacted = redact_standalone_secrets(text)
+    redacted = _redact_unclosed_quoted_values(redacted)
     redacted = _redact_values(redacted, SPACED_SENSITIVE_ASSIGNMENT_RE, _redact_spaced_assignment)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
     redacted = _redact_yaml_quoted_multiline(redacted)
@@ -1083,6 +1108,12 @@ def _spaced_assignment_value_is_sensitive(
     )
 
 
+def _is_comparison(match: re.Match[str]) -> bool:
+    if "operator" in match.re.groupindex:
+        return match.group("operator") in COMPARISON_OPERATORS
+    return match.group("separator").strip(" \t") in COMPARISON_OPERATORS
+
+
 def _redact_values(text: str, pattern: re.Pattern[str], render) -> str:
     """Replace each match ``render`` redacts, through the end of its
     value.
@@ -1122,6 +1153,11 @@ def _redacted_value_end(match: re.Match[str], scanner: _Scanner) -> int | None:
     scanned as source.
     """
     text, value, end = match.string, match.group("value"), match.end("value")
+    comparison = _is_comparison(match)
+    if comparison and not _OPERAND_CONTINUES_RE.match(text, end):
+        # The value of a comparison is its literal. What follows it is
+        # code of its own (``and ok:``), kept for later matches.
+        return end
     quoted = value.strip().lstrip(">").lstrip()[:1] in ('"', "'")  # after ``=>`` too
     if (
         value.count("(") + value.count("[") > value.count(")") + value.count("]")
@@ -1129,7 +1165,14 @@ def _redacted_value_end(match: re.Match[str], scanner: _Scanner) -> int | None:
         or _LINE_BREAK_RE.match(text, end)
     ):
         scanned = scanner.scan(match.start("value"))
-        return None if scanned is None else max(end, scanned.end)
+        if scanned is None:
+            return None
+        if comparison:
+            # A comparison's operand may go on (``== "a" + "b"``). It is
+            # redacted through its last literal, so the code after it
+            # (the colon of ``if``) stays in place.
+            return max([end, *(literal.end() for literal in scanned.literals)])
+        return max(end, scanned.end)
     if (
         not quoted
         and text.startswith(",", end)
@@ -1349,6 +1392,75 @@ def _redact_yaml_quoted_multiline(text: str) -> str:
         cursor = end
     parts.append(text[cursor:])
     return "".join(parts)
+
+
+def _sensitive_unclosed_quoted_values(text: str):
+    """Yield (quote, close, end) for each sensitive quoted value whose
+    quote does not close on its line.
+
+    ``quote`` is where the value opens and ``end`` is past its closing
+    quote on a later line. When no closing quote follows within the
+    span limit, ``close`` is None and ``end`` is the end of the text,
+    which fails closed. A value that closes on its own line is left to
+    ASSIGNMENT_RE.
+    """
+    for match in UNCLOSED_QUOTED_ASSIGNMENT_START_RE.finditer(text):
+        quote_at = match.end() - 1
+        found = _quote_close(text, quote_at + 1, text[quote_at])
+        if found is not None:
+            close, crossed = found
+            if not crossed:
+                continue  # closes on its own line, which ASSIGNMENT_RE judges
+        else:
+            # Not closed within the span limit. A last line with no line
+            # break after it is left to ASSIGNMENT_RE.
+            rest = text[quote_at + 1 : quote_at + 1 + UNCLOSED_QUOTED_SPAN_LIMIT]
+            if len(text) - quote_at - 1 <= UNCLOSED_QUOTED_SPAN_LIMIT and not (
+                "\n" in rest or "\r" in rest
+            ):
+                continue
+            close = None
+        end = len(text) if close is None else close + 1
+        if _is_sensitive_label(match.group("label"), text[quote_at:end]):
+            yield quote_at, close, end
+
+
+def _quote_close(text: str, start: int, quote: str) -> tuple[int, bool] | None:
+    """The quote that closes a string opened before ``start``, as its
+    index and whether a line break comes before it. None when no such
+    quote is within the span limit."""
+    index = start
+    limit = min(len(text), start + UNCLOSED_QUOTED_SPAN_LIMIT)
+    crossed = False
+    while index < limit:
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char in "\r\n":
+            crossed = True
+        elif char == quote:
+            return index, crossed
+        index += 1
+    return None
+
+
+def _redact_unclosed_quoted_values(text: str) -> str:
+    """Redact a sensitive quoted value through its closing quote on a
+    later line.
+
+    The line breaks inside it go with it, so the redacted text has fewer
+    lines than the source and indexable_bytes refuses the file.
+    """
+    pieces: list[str] = []
+    cursor = 0
+    for quote_at, close, end in _sensitive_unclosed_quoted_values(text):
+        quote = text[quote_at]
+        closing = quote if close is not None else ""
+        pieces.extend((text[cursor:quote_at], quote + REDACTED + closing))
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
 
 
 def _redact_unclosed_multiline_assignment(match: re.Match[str]) -> str:
