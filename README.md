@@ -127,6 +127,21 @@ It installs the skill only; for the MCP server and hooks, run `mimry install --p
 npx skills add jbacalso24/mimry
 ```
 
+### Embeddings (optional)
+
+`find` can also match on meaning, so a task that describes a behaviour in other words still reaches the file that names it differently.
+It is off until you install the extra and download the model:
+
+```bash
+uv tool install "mimry[embed]"
+mimry embed download
+```
+
+`mimry embed download` fetches a 64 MB MIT-licensed model (`minishlab/potion-code-16M`) from Hugging Face once, checks it, and keeps it in MIMRY's cache.
+Every search after that runs locally, with no network calls.
+It applies to long task descriptions (20 or more distinct words), where it raised SWE-bench Verified Acc@10 from 81.4% to 83.2%; short queries rank as before.
+Set `MIMRY_EMBED=0` to turn the signal off, and run `mimry embed status` to see whether it is ready.
+
 ## Quick start
 
 Run `mimry preflight` in your repository with a task description.
@@ -416,6 +431,7 @@ Measured with MIMRY 0.6.4 on 44 merged pull requests from 6 open-source projects
 See [benchmarks/tokens](benchmarks/tokens/README.md) for the method, per-project results and how to reproduce them.
 
 On the 500 issues of SWE-bench Verified, one `mimry find` with the issue text puts every file the fix changes in the top 10 for 81.4% of issues, in the top 5 for 71.8%, and first for 44.8%.
+With the optional embeddings, those are 83.2%, 75.6% and 48.0%.
 See [benchmarks/localization](benchmarks/localization/README.md) for the protocol and per-repository results.
 
 To measure MIMRY on your own repository's merged pull requests, run `mimry bench`; see [Benchmark your repository](docs/commands.md#benchmark-your-repository).

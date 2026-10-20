@@ -127,7 +127,8 @@ The full per-instance output of the latest run, with each result's score line, i
 | 0.6.4 (main before #42's lift) | 35.2% | 64.0% | 74.6% | 67.8% | 77.9% |
 | Named-identifier lift (#42) | 37.6% | 65.4% | 77.2% | 69.5% | 80.2% |
 | Learned ranker (#42) | 42.8% | 70.0% | 79.0% | 74.0% | 81.7% |
-| Keyword fusion (#42) | **44.8%** | **71.8%** | **81.4%** | **75.6%** | **84.0%** |
+| Keyword fusion (#42) | 44.8% | 71.8% | 81.4% | 75.6% | 84.0% |
+| With the optional embeddings (#250) | **48.0%** | **75.6%** | **83.2%** | **79.2%** | **85.6%** |
 
 The three changes were chosen and measured on the dev set first, one at a time, and Verified was run once with all three:
 
@@ -153,6 +154,12 @@ For queries with at least 20 distinct terms, `find` also ranks files by a keywor
 That list is fused into the learned order by reciprocal rank (k = 5, weight 0.75, its top 30 files), chosen on the train set.
 Shorter queries skip it, since on them it moved no dev result and lost token-benchmark tasks.
 On the dev set it moved Acc@1 from 32.4% to 35.5% and Acc@10 from 67.9% to 69.2%.
+
+With the optional `mimry[embed]` extra and its model, `find` also ranks files by meaning for queries with at least 20 distinct terms (#250).
+It embeds the task's first line with a static code model and each file's path and symbol names, scores a file by its closest name, and fuses the top 30 into the order (k = 5, weight 0.5).
+On the dev set it moved Acc@1 from 35.1% to 38.8%, Acc@5 from 61.5% to 64.9% and Acc@10 from 69.2% to 71.9%, and on the train set Acc@10 from 70.3% to 73.5%.
+On short queries it lost two dev token-benchmark tasks, so they skip it; with that gate, dev token savings went from 33.9% to 35.0% with full reads, with the same 36 tasks located.
+The table's last row is a separate Verified run with the extra installed; without it, `find` gives the keyword fusion row.
 
 Acc@10 by repository:
 

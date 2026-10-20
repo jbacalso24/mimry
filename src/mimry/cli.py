@@ -40,6 +40,8 @@ def build_parser():
         cmd_callers,
         cmd_context,
         cmd_digest,
+        cmd_embed_download,
+        cmd_embed_status,
         cmd_explain,
         cmd_export,
         cmd_feedback,
@@ -662,6 +664,15 @@ def build_parser():
     sub.add_parser("mcp", help="Run the MIMRY MCP stdio server (same as mimry-mcp)").set_defaults(
         func=_cmd_mcp
     )
+    emb = sub.add_parser("embed", help="Manage the optional static-embedding model for find")
+    emb_sub = emb.add_subparsers(dest="embed_command", required=True)
+    emb_sub.add_parser(
+        "download",
+        help="Download the pinned embedding model once (64 MB, MIT, from Hugging Face)",
+    ).set_defaults(func=cmd_embed_download)
+    emb_sub.add_parser("status", help="Show whether embeddings are ready").set_defaults(
+        func=cmd_embed_status
+    )
     cache = sub.add_parser("cache", help="Manage MIMRY's index cache")
     cs = cache.add_subparsers(required=True)
     w = cs.add_parser("wipe", help="Delete this repo's cached index")
@@ -686,6 +697,7 @@ def build_parser():
             "hook-compact",
             "plan",
             "cache",
+            "embed",
             "mcp",
             "upgrade",
             "update",

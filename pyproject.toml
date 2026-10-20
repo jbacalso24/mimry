@@ -39,6 +39,11 @@ dependencies = [
     "tree-sitter-language-pack==1.12.2",
 ]
 
+[project.optional-dependencies]
+# The static-embedding signal for find (`mimry embed download`). Optional,
+# so a plain install stays numpy-free.
+embed = ["numpy>=1.26"]
+
 [project.urls]
 Homepage = "https://jbacalso24.github.io/mimry/"
 Repository = "https://github.com/jbacalso24/mimry"
@@ -53,6 +58,7 @@ mimry-integration-smoke = "mimry.agent_integration:main"
 [dependency-groups]
 dev = [
     "fastmcp>=4.1,<5",
+    "numpy>=1.26",
     "pre-commit>=4.6.0",
     "pytest>=8",
     "pytest-xdist>=3.6",

@@ -34,6 +34,7 @@ from .core.resolve import (
     resolve_table_refs,
 )
 from .core.tsconfig import build_ts_paths
+from .embed import build_title_cache
 from .history import update_history
 from .paths import graph_output_dir, idx_path, now, pointer_file
 from .pieces import (
@@ -1311,6 +1312,9 @@ def write_index(root, ptr, *, full: bool = False):
             semantic = build_semantic_index(
                 staging, ptr["rootId"], generation_id, precomputed=record["chunks"]
             )
+            # Title vectors for the optional embedding signal (#250); a
+            # failure only skips that signal.
+            build_title_cache(staging)
             _fault("after-sidecars")
             if upgraded:
                 # Deleted rows and dropped FTS tables keep their text in

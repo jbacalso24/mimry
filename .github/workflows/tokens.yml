@@ -18,6 +18,10 @@ on:
         description: "Run MIMRY with --semantic (results get a .semantic part)"
         type: boolean
         default: false
+      embed:
+        description: "Install mimry[embed] and download the embedding model, so find uses it"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,7 +49,14 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Sync locked environment
-        run: uv sync --locked --python "3.14"
+        run: uv sync --locked --python "3.14" ${{ inputs.embed && '--extra embed' || '' }}
+
+      # The runs use /tmp/tokens/cache as MIMRY_CACHE_HOME (see run.py main).
+      - name: Download the embedding model
+        if: inputs.embed
+        env:
+          MIMRY_CACHE_HOME: /tmp/tokens/cache
+        run: uv run mimry embed download
 
       - name: Run benchmark
         run: >-

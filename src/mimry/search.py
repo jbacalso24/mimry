@@ -7,6 +7,7 @@ import re
 from functools import cache
 from pathlib import Path
 
+from . import embed
 from .core.artifacts import graph_available, graph_rows
 from .core.documents import DOCUMENT_UNITS
 from .core.languages import (
@@ -15,6 +16,7 @@ from .core.languages import (
     file_language,
     grammars_named,
 )
+from .embed import EMBED_FUSE_LIST, embed_positions
 from .feedback import apply_feedback_to_rows
 from .intent import (
     CJK_RUN_RE,
@@ -59,6 +61,13 @@ KEYWORD_FUSE_WEIGHT = 0.75
 KEYWORD_FUSE_LIST = 30
 # Distinct query terms before fusion; short queries are name-like.
 KEYWORD_FUSE_MIN_TERMS = 20
+# Rank offset in the fusion of the embedding file list (#250).
+EMBED_FUSE_K = 5
+# Weight of the embedding file list against MIMRY's own order.
+EMBED_FUSE_WEIGHT = 0.5
+# Distinct query terms before the embedding fusion. On short tasks it
+# displaced gold files in the token benchmark, as keyword fusion did.
+EMBED_FUSE_MIN_TERMS = 20
 # Pairwise logistic regression over these parts, fitted on the SWE-bench
 # train set (tasks.train.json); refit when signals change.
 LEARNED_WEIGHTS = {
@@ -532,23 +541,54 @@ def _learned_rerank(rows, size_by_path):
 
 
 def _keyword_fuse(rows, piece_by_path, allowed):
-    """Fuse the keyword file list into the learned pool (#42).
+    """Fuse the keyword file list into the learned pool (#42)."""
+    return _fuse_list(
+        rows,
+        {path: (parts.get("kw_pos"), parts) for path, parts in piece_by_path.items()},
+        allowed,
+        k=KEYWORD_FUSE_K,
+        weight=KEYWORD_FUSE_WEIGHT,
+        list_len=KEYWORD_FUSE_LIST,
+        reason="keyword match",
+        part="keyword_fused",
+    )
 
-    A pool row scores by its place in MIMRY's order. Each keyword file
-    within KEYWORD_FUSE_LIST adds its own reciprocal-rank term. A
-    keyword file outside the pool joins only if ``allowed`` accepts its
-    path. The pool keeps its own scores, handed out in the new order.
+
+def _embed_fuse(rows, idx, q, allowed):
+    """Fuse the embedding file list into the learned pool (#250)."""
+    places = embed_positions(idx, q, allowed)
+    return _fuse_list(
+        rows,
+        {path: (place, {}) for path, place in places.items()},
+        allowed,
+        k=EMBED_FUSE_K,
+        weight=EMBED_FUSE_WEIGHT,
+        list_len=EMBED_FUSE_LIST,
+        reason="similar name",
+        part="embed_fused",
+    )
+
+
+def _fuse_list(rows, places, allowed, *, k, weight, list_len, reason, part):
+    """Fuse one ranked file list into the learned pool.
+
+    ``places`` maps a path to its 1-based place in the list, or None
+    when the path is not in it, and the parts a row joining from the
+    list starts with. A pool row scores by its place in MIMRY's order.
+    Each listed file within ``list_len`` adds its own reciprocal-rank
+    term, ``weight / (k + place)``. A listed file outside the pool joins
+    only if ``allowed`` accepts its path. The pool keeps its own scores,
+    handed out in the new order.
     """
-    if not piece_by_path:
+    if not places:
         return rows
     head, tail = rows[:LEARNED_POOL], rows[LEARNED_POOL:]
-    fused = {row["path"]: 1 / (KEYWORD_FUSE_K + rank) for rank, row in enumerate(head, start=1)}
+    fused = {row["path"]: 1 / (k + rank) for rank, row in enumerate(head, start=1)}
     members = {row["path"]: row for row in head}
     tail_by_path = {row["path"]: row for row in tail}
     floor = head[-1]["score"] if head else 0
-    for path, parts in piece_by_path.items():
-        kw_pos = parts.get("kw_pos")
-        if kw_pos is None or kw_pos > KEYWORD_FUSE_LIST:
+    for path, (place, parts) in places.items():
+        if place is None or place > list_len:
             continue
         if path not in members:
             if not allowed(path):
@@ -556,17 +596,17 @@ def _keyword_fuse(rows, piece_by_path, allowed):
             members[path] = tail_by_path.get(path) or {
                 "path": path,
                 "score": floor,
-                "reason": "keyword match",
+                "reason": reason,
                 "parts": dict(parts),
             }
-        fused[path] = fused.get(path, 0) + KEYWORD_FUSE_WEIGHT / (KEYWORD_FUSE_K + kw_pos)
+        fused[path] = fused.get(path, 0) + weight / (k + place)
     pool = sorted(members.values(), key=lambda row: (-fused[row["path"]], row["path"]))
     scores = sorted((row["score"] for row in pool), reverse=True)
     pool = [
         {
             **row,
             "score": score,
-            "parts": {**row.get("parts", {}), "keyword_fused": round(fused[row["path"]], 6)},
+            "parts": {**row.get("parts", {}), part: round(fused[row["path"]], 6)},
         }
         for row, score in zip(pool, scores, strict=True)
     ]
@@ -702,6 +742,7 @@ def find_rows(
         clusters = json.loads((idx / "graph.json").read_text()).get("clusters", {})
     terms = query_terms(q)
     fuse_keywords = len(set(terms)) >= KEYWORD_FUSE_MIN_TERMS
+    fuse_embeddings = len(set(terms)) >= EMBED_FUSE_MIN_TERMS and embed.available()
     # The keyword ranking only feeds the fusion and the kw_*/piece_*
     # parts, so a short query skips its cost.
     piece_by_path = _piece_parts(idx, q, file_paths) if fuse_keywords else {}
@@ -829,6 +870,8 @@ def find_rows(
             ranked = _learned_rerank(ranked, size_by_path)
             if fuse_keywords:
                 ranked = _keyword_fuse(ranked, piece_by_path, keyword_allowed)
+            if fuse_embeddings:
+                ranked = _embed_fuse(ranked, idx, q, keyword_allowed)
             ranked = apply_feedback_to_rows(ranked, idx, root_id, q, known_paths=known_paths)
             ranked = _with_semantic(
                 ranked,
@@ -851,6 +894,8 @@ def find_rows(
     fallback_rows = _learned_rerank(fallback_rows, size_by_path)
     if fuse_keywords:
         fallback_rows = _keyword_fuse(fallback_rows, piece_by_path, keyword_allowed)
+    if fuse_embeddings:
+        fallback_rows = _embed_fuse(fallback_rows, idx, q, keyword_allowed)
     ranked = apply_feedback_to_rows(fallback_rows, idx, root_id, q, known_paths=known_paths)
     ranked = _with_semantic(
         ranked,
