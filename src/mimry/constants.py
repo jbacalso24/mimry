@@ -181,3 +181,20 @@ REQUIRE_RE = re.compile(r"require\(\s*['\"]([^'\"]+)['\"]\s*\)")
 EXPORT_RE = re.compile(
     r"export\s+(?:default\s+)?(?:function|class|const|let|var)?\s*([A-Za-z_$][\w$]*)?"
 )
+# The MIMRY MCP tools whose `query` argument is free text. Claude Code
+# names an MCP tool mcp__<server>__<tool>, and a plugin's server
+# mcp__plugin_<plugin>_<server>__<tool>; the plugin and the user install
+# both name the server mimry.
+MCP_QUERY_TOOLS = (
+    "brief",
+    "context",
+    "explain",
+    "find",
+    "history",
+    "preflight",
+    "related",
+    "route",
+    "semantic",
+    "why",
+)
+MCP_QUERY_NAME = r"mcp__(?:plugin_mimry_)?mimry__mimry_(?:" + "|".join(MCP_QUERY_TOOLS) + r")"

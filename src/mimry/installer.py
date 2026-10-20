@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from shutil import which
 
 from . import __version__, ui
+from .constants import MCP_QUERY_NAME
 from .state import replace_path
 
 
@@ -1026,8 +1027,12 @@ def hook_table(platform_key: str) -> dict[str, list[tuple[str, str, bool]]]:
     else:
         # Grep and Glob are Claude Code's search tools; Bash covers
         # shelled-out grep/rg. Read gets only the outline of a large
-        # file, never the search reminder.
-        search, edit = "Bash|Glob|Grep|Read", "Edit|Write|MultiEdit|NotebookEdit"
+        # file, never the search reminder. MIMRY's own MCP query tools
+        # are matched too, so the hook logs their query with the
+        # session. A matcher with regex characters is tested unanchored,
+        # hence the anchors.
+        search = f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$"
+        edit = "Edit|Write|MultiEdit|NotebookEdit"
     session_start = [("startup|resume", "hook-refresh", True)]
     table = {}
     if platform_key != "codex":
@@ -1084,6 +1089,12 @@ def _hooks_problem(root: Path, cfg: MimryPlatform) -> str | None:
     return None
 
 
+def _matcher_of(entry: object) -> str:
+    """The matcher of a hook group, or "" when it has none (Stop)."""
+    matcher = entry.get("matcher") if isinstance(entry, dict) else None
+    return matcher if isinstance(matcher, str) else ""
+
+
 def _has_hook(root: Path, cfg: MimryPlatform) -> bool | None:
     """True when every MIMRY hook event is present; None when the hooks
     file cannot be read."""
@@ -1094,13 +1105,15 @@ def _has_hook(root: Path, cfg: MimryPlatform) -> bool | None:
         hooks = _read_hooks_file(path).get("hooks", {})
     except (OSError, ValueError):
         return None
+    # A row also needs its matcher: an install from before a matcher
+    # changed has the subcommand but not the row that now runs it.
     return all(
         any(
-            _is_mimry_hook(entry) and sub in str(entry).lower()
+            _is_mimry_hook(entry) and sub in str(entry).lower() and (_matcher_of(entry) == matcher)
             for entry in _event_entries(hooks, event)
         )
         for event, rows in hook_table(cfg.key).items()
-        for _, sub, _ in rows
+        for matcher, sub, _ in rows
     )
 
 

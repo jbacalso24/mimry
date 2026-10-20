@@ -16,8 +16,10 @@ import pytest
 import mimry.installer as installer
 from mimry import __version__
 from mimry.cli import main
+from mimry.constants import MCP_QUERY_NAME
 
 NO_MCP = ["--no-mcp", "--no-global-gitignore"]
+SEARCH_MATCHER = f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$"
 
 
 @pytest.fixture
@@ -113,7 +115,7 @@ def test_refresh_rewrites_only_the_always_on_rules_and_hooks_that_were_added(hom
     assert _status("claude-code", repo, True) == 0
     assert _status("codex", repo, True) == 0
     data = json.loads(settings.read_text(encoding="utf-8"))
-    assert data["hooks"]["PreToolUse"][0]["matcher"] == "Bash|Glob|Grep|Read"
+    assert data["hooks"]["PreToolUse"][0]["matcher"] == SEARCH_MATCHER
     # Codex never had always-on rules or hooks, and refresh adds none.
     assert not (repo / "AGENTS.md").exists()
     assert not (repo / ".codex" / "hooks.json").exists()
@@ -174,3 +176,22 @@ def test_refresh_rejects_flags_it_cannot_combine_with(home, flags):
 
     assert "--refresh only updates the installs that are already there" in str(refused.value)
     assert not any(home.rglob("*"))
+
+
+def test_old_search_matcher_needs_repair_until_refresh_rewrites_it(home, repo):
+    base = ["--root", str(repo)]
+    install = ["install", "--platform", "claude-code", "--project", "--always-on", "--hooks"]
+    assert main([*base, *install]) == 0
+    assert _status("claude-code", repo, True) == 0
+    settings = repo / ".claude" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    # The subcommand is still there, only the matcher is the old one.
+    data["hooks"]["PreToolUse"][0]["matcher"] = "Bash|Glob|Grep|Read"
+    settings.write_text(json.dumps(data), encoding="utf-8")
+    assert _status("claude-code", repo, True) == 2
+
+    assert main([*base, "install", "--refresh"]) == 0
+
+    assert _status("claude-code", repo, True) == 0
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    assert data["hooks"]["PreToolUse"][0]["matcher"] == SEARCH_MATCHER

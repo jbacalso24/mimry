@@ -44,8 +44,9 @@ SESSION_LOCK_WAIT = 0.001
 APPEND_LOCK = "session-files.lock"
 APPEND_WAIT = 0.25
 APPEND_STALE = 5.0
-# The last shell commands that named mimry, with the session that ran
-# them. A find run from such a command is tagged with that session.
+# The last shell commands that named mimry, and the last MCP queries,
+# each with the session that ran it. A find run from such a command, or
+# a query that equals a logged one, is tagged with that session.
 HOOK_COMMAND_LOG = "session-commands.jsonl"
 HOOK_COMMAND_LIMIT = 20
 HOOK_COMMAND_WINDOW = 2 * 60
@@ -309,10 +310,13 @@ def edited_paths(tool_input: dict[str, Any]) -> list[str]:
 
 
 def log_hook_command(root: Path, session: str, command: str) -> None:
-    """Remember a shell command that names mimry, with its session.
+    """Remember a shell command that names mimry, or an MCP query, with
+    its session.
 
-    The PreToolUse hook calls this before the command runs, so the find
-    it starts can be tagged with the session. Never raises.
+    The PreToolUse hook calls this before the command runs, or before an
+    MCP tool answers, so the find it starts can be tagged with the
+    session. An MCP query is stored in the ``command`` field as it was
+    sent. Never raises.
     """
     try:
         state = _state_dir(root)
@@ -609,9 +613,12 @@ def compact_note(root: Path, session: str) -> str | None:
             return None
         events.sort(key=lambda item: item[0])
         first = events[0][0]
-        # A query the session's hook tagged is its own. Without any, the
-        # query came from an MCP tool, which no hook sees, so the
-        # untagged queries recorded since the session began count.
+        # A query the session's hooks tagged is its own. A session with
+        # none is not tagging its queries at all (an agent without
+        # hooks, or the CLI run outside a hooked session), so the
+        # untagged queries recorded since the session began count. A
+        # session that has any tagged query never takes another
+        # session's untagged ones.
         all_queries = [
             (t, q)
             for t, q in ((_stamp(r), r) for r in _read_rows(state / QUERY_LOG))

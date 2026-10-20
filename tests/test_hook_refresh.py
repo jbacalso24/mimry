@@ -16,12 +16,16 @@ from test_mimry_cli import copy_fixture, run_cli
 
 from mimry import installer, lifecycle
 from mimry.cli import main
+from mimry.constants import MCP_QUERY_NAME
 from mimry.freshness import index_freshness
 from mimry.hook import cmd_hook_refresh
 from mimry.storage import load_pointer
 
 EDITED = Path("src") / "auth" / "session.py"
-SEARCH_MATCHER = {"claude-code": "Bash|Glob|Grep|Read", "codex": "Bash"}
+SEARCH_MATCHER = {
+    "claude-code": f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$",
+    "codex": "Bash",
+}
 EDIT_MATCHER = {
     "claude-code": "Edit|Write|MultiEdit|NotebookEdit",
     "codex": "apply_patch|Edit|Write",

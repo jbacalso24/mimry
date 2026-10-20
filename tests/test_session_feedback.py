@@ -698,3 +698,68 @@ def test_a_hooked_session_without_a_tagged_query_names_its_mcp_query(
     note = _restored(monkeypatch, capsys, repo)
     assert f'you were working on: "{QUERY}".' in note
     assert "old query" not in note
+
+
+def _mcp_query(monkeypatch, repo: Path, query: str, session: str = SESSION) -> None:
+    """An MCP find the way the agent runs it.
+
+    The hook sees the call, then the tool records the query it got.
+    """
+    _feed(
+        monkeypatch,
+        {
+            "session_id": session,
+            "tool_name": "mcp__mimry__mimry_find",
+            "tool_input": {"query": query},
+        },
+    )
+    assert cmd_hook_check(SimpleNamespace(root=str(repo))) == 0
+    record_query(repo, query, [])
+
+
+def test_compact_note_names_its_own_mcp_query_not_another_sessions(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    assert _read(monkeypatch, repo, repo / "src" / "auth" / "session.py") == 0
+    time.sleep(0.01)
+    _mcp_query(monkeypatch, repo, QUERY)
+    time.sleep(0.01)
+    assert _read(monkeypatch, repo, repo / "src" / "auth" / "session.py") == 0
+    other = "other-session"
+    assert _read(monkeypatch, repo, repo / "src" / "app.ts", session=other) == 0
+    _mcp_query(monkeypatch, repo, "app shell render", session=other)
+    time.sleep(0.01)
+    target = repo / "src" / "app.ts"
+    target.write_text(target.read_text(encoding="utf-8") + "\n// other edit\n", encoding="utf-8")
+    _feed(
+        monkeypatch,
+        {
+            "hook_event_name": "PostToolUse",
+            "session_id": other,
+            "tool_name": "Edit",
+            "tool_input": {"file_path": str(target)},
+        },
+    )
+    assert cmd_hook_refresh(SimpleNamespace(root=str(repo))) == 0
+
+    note = _restored(monkeypatch, capsys, repo)
+    assert f'you were working on: "{QUERY}".' in note
+    assert "app shell" not in note
+    assert "src/app.ts" not in note
+
+
+def test_a_session_with_a_tagged_mcp_query_never_takes_an_untagged_one(
+    tmp_path, monkeypatch, capsys
+):
+    repo = _repo(tmp_path, monkeypatch)
+    assert _read(monkeypatch, repo, repo / "src" / "auth" / "session.py") == 0
+    time.sleep(0.01)
+    _mcp_query(monkeypatch, repo, QUERY)
+    time.sleep(0.01)
+    # A query no hook saw: a CLI run outside a hooked session, untagged.
+    record_query(repo, "untagged cli query", [])
+    time.sleep(0.01)
+    _edit(monkeypatch, repo, "src/auth/session.py")
+
+    note = _restored(monkeypatch, capsys, repo)
+    assert f'you were working on: "{QUERY}".' in note
+    assert "untagged cli query" not in note

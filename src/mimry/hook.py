@@ -44,7 +44,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from .constants import HEAVY_IGNORES, NON_CODE_KINDS
+from .constants import HEAVY_IGNORES, MCP_QUERY_NAME, NON_CODE_KINDS
 from .session import (
     compact_note,
     edited_paths,
@@ -167,6 +167,8 @@ BIG_READ_SYMBOLS = 25
 # Bigger files are not read for their line count.
 BIG_READ_MAX_BYTES = 4_000_000
 _HEAVY_IGNORES_CASEFOLD = frozenset(part.casefold() for part in HEAVY_IGNORES)
+# The MIMRY MCP tools whose query argument is logged with the session.
+MCP_QUERY_RE = re.compile(MCP_QUERY_NAME)
 
 
 class _Search(NamedTuple):
@@ -1075,6 +1077,14 @@ def _hook_check(root: Path) -> None:
         found = data.get("tool_input", data)
         if isinstance(found, dict):
             tool_input = found
+        if MCP_QUERY_RE.fullmatch(tool_name):
+            # No hook sees an MCP call's query except this one. Its
+            # session goes on the query, which record_query then tags.
+            # Nothing is printed, and nothing heavy is imported.
+            query = tool_input.get("query")
+            if isinstance(query, str) and query.strip():
+                log_hook_command(root, session, query)
+            return
         # A Read only ever gets the outline of a large file, never a
         # search answer, so a path containing "grep" cannot trigger one.
         if tool_name == "read":
