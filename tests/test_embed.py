@@ -278,6 +278,9 @@ def test_fusion_adds_an_outside_file_and_keeps_tests_out(tmp_path, monkeypatch):
     positions = {"net/retry.py": 1, "tests/test_backoff.py": 2}
     monkeypatch.setattr(embed, "available", lambda: True)
     monkeypatch.setattr(search, "embed_positions", lambda idx, q, allowed: positions)
+    # A three-word query is below the gate, so nothing is fused.
+    assert [r["path"] for r in search.find_rows(idx, query, 10, root=repo)] == baseline
+    monkeypatch.setattr(search, "EMBED_FUSE_MIN_TERMS", 0)
     fused = [r["path"] for r in search.find_rows(idx, query, 10, root=repo)]
     assert "net/retry.py" in fused
     assert "tests/test_backoff.py" not in fused

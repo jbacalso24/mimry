@@ -65,9 +65,9 @@ KEYWORD_FUSE_MIN_TERMS = 20
 EMBED_FUSE_K = 5
 # Weight of the embedding file list against MIMRY's own order.
 EMBED_FUSE_WEIGHT = 0.5
-# Distinct query terms before the embedding fusion. 0 keeps it on
-# always, so it can be tuned later like KEYWORD_FUSE_MIN_TERMS.
-EMBED_FUSE_MIN_TERMS = 0
+# Distinct query terms before the embedding fusion. On short tasks it
+# displaced gold files in the token benchmark, as keyword fusion did.
+EMBED_FUSE_MIN_TERMS = 20
 # Pairwise logistic regression over these parts, fitted on the SWE-bench
 # train set (tasks.train.json); refit when signals change.
 LEARNED_WEIGHTS = {
