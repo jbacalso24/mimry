@@ -594,9 +594,9 @@ def scan_stats(
     # them: .git, .venv and node_modules routinely hold 95%+ of the
     # paths on disk. Only heavy-ignore names and MIMRY's install folders
     # prune: every other path policy applies per file, exactly as when
-    # each file was checked
-    # against its full relative path. followlinks=False matches rglob,
-    # which never descended into symlinked dirs.
+    # each file was checked against its full relative path.
+    # followlinks=False matches rglob, which never descended into
+    # symlinked dirs.
     for dirpath, dirnames, filenames in os.walk(root_str, followlinks=False):
         # The explicit root may itself be a worktree. Only nested
         # worktrees are separate checkouts, not part of this index.
