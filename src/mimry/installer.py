@@ -1137,14 +1137,28 @@ def _settings_line(path: Path, root: Path, project: bool, what: str) -> str:
 
 
 def _resolve_executable(name: str) -> str:
-    found = which(name)
-    if found:
-        return found
+    """Resolve `name` to the copy installed with the running environment.
+
+    The sibling of the running interpreter wins over PATH: an install from a
+    venv must register the `mimry-mcp` it installed, not whichever older copy
+    happens to be first on PATH. When a PATH entry exists but names a different
+    file, say so — that is the situation that silently wires another version's
+    MCP server and hooks into the agent.
+    """
     scripts_dir = Path(sys.executable).parent
     for suffix in (".exe", ""):
         candidate = scripts_dir / (name + suffix)
         if candidate.exists():
+            on_path = which(name)
+            if on_path and not _same_file(on_path, str(candidate)):
+                ui.warn(
+                    f"a different '{name}' is first on PATH ({on_path}); "
+                    f"using the one installed with this environment ({candidate})"
+                )
             return str(candidate)
+    found = which(name)
+    if found:
+        return found
     return name
 
 
