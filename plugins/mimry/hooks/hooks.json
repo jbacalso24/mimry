@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Glob|Grep",
+        "matcher": "Bash|Glob|Grep|Read",
         "hooks": [
           {
             "type": "command",

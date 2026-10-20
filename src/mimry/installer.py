@@ -1010,8 +1010,9 @@ def hook_table(platform_key: str) -> dict[str, tuple[str, str, bool]]:
         search, edit = "Bash", "apply_patch|Edit|Write"
     else:
         # Grep and Glob are Claude Code's search tools; Bash covers
-        # shelled-out grep/rg. Reads never trigger the reminder.
-        search, edit = "Bash|Glob|Grep", "Edit|Write|MultiEdit|NotebookEdit"
+        # shelled-out grep/rg. Read gets only the outline of a large
+        # file, never the search reminder.
+        search, edit = "Bash|Glob|Grep|Read", "Edit|Write|MultiEdit|NotebookEdit"
     return {
         # Status checks all three events, so an install from before the
         # refresh hooks needs repair.

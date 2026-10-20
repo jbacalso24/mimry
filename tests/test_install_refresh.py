@@ -113,7 +113,7 @@ def test_refresh_rewrites_only_the_always_on_rules_and_hooks_that_were_added(hom
     assert _status("claude-code", repo, True) == 0
     assert _status("codex", repo, True) == 0
     data = json.loads(settings.read_text(encoding="utf-8"))
-    assert data["hooks"]["PreToolUse"][0]["matcher"] == "Bash|Glob|Grep"
+    assert data["hooks"]["PreToolUse"][0]["matcher"] == "Bash|Glob|Grep|Read"
     # Codex never had always-on rules or hooks, and refresh adds none.
     assert not (repo / "AGENTS.md").exists()
     assert not (repo / ".codex" / "hooks.json").exists()

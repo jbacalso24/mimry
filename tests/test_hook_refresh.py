@@ -21,7 +21,7 @@ from mimry.hook import cmd_hook_refresh
 from mimry.storage import load_pointer
 
 EDITED = Path("src") / "auth" / "session.py"
-SEARCH_MATCHER = {"claude-code": "Bash|Glob|Grep", "codex": "Bash"}
+SEARCH_MATCHER = {"claude-code": "Bash|Glob|Grep|Read", "codex": "Bash"}
 EDIT_MATCHER = {
     "claude-code": "Edit|Write|MultiEdit|NotebookEdit",
     "codex": "apply_patch|Edit|Write",
