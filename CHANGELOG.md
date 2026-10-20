@@ -28,13 +28,13 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 
 ### Fixes
 
-- Redaction no longer reads a `==` comparison as a secret assignment, keeps the quotes, escapes and brackets of a redacted value, keeps `:=` intact, and refuses a quoted secret that a line break splits ([#474](https://github.com/jbacalso24/mimry/pull/474), [#485](https://github.com/jbacalso24/mimry/pull/485), [#498](https://github.com/jbacalso24/mimry/pull/498)).
-  More comparison and `=>` forms are caught, and redacted code stays parseable ([#502](https://github.com/jbacalso24/mimry/pull/502)).
+- Redaction no longer reads a `==` comparison as a secret assignment, keeps the quotes, escapes and brackets of a redacted value, and keeps `:=` intact ([#474](https://github.com/jbacalso24/mimry/pull/474), [#485](https://github.com/jbacalso24/mimry/pull/485), [#498](https://github.com/jbacalso24/mimry/pull/498)).
+  A quoted value that a line break splits is redacted line by line, more comparison and `=>` forms are caught, and redacted code stays parseable ([#502](https://github.com/jbacalso24/mimry/pull/502)).
 - The search hook is quiet on a search of a single file, and it is capped per session ([#480](https://github.com/jbacalso24/mimry/pull/480)).
 - A tsconfig whose `extends` bases share a base reads that shared base once, so indexing does not repeat the work ([#466](https://github.com/jbacalso24/mimry/pull/466)).
 - An unreadable embedding title cache is rebuilt, and `embed status`, `status` and `doctor` report a broken model ([#496](https://github.com/jbacalso24/mimry/pull/496)).
   A broken embedding model is skipped instead of being loaded on every search ([#502](https://github.com/jbacalso24/mimry/pull/502)).
-  Session feedback written during a flush is kept ([#496](https://github.com/jbacalso24/mimry/pull/496)).
+  Recording session feedback no longer makes a finished command wait for a busy index, and keeps the files the agent opened meanwhile ([#496](https://github.com/jbacalso24/mimry/pull/496)).
 - The README and site figures match the benchmarks, and the line-range saving is described first ([#481](https://github.com/jbacalso24/mimry/pull/481), [#482](https://github.com/jbacalso24/mimry/pull/482)).
 
 ## 0.6.4 - 2026-10-18
