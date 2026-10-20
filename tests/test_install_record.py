@@ -211,6 +211,44 @@ def test_an_install_without_a_record_still_uninstalls(repo):
     assert (repo / ".claude").is_dir()
 
 
+def test_a_later_hooks_uninstall_deletes_a_file_the_plain_one_kept(repo, capsys):
+    installer.install_skill(
+        "claude-code", project=True, root=repo, always_on=True, hooks=True, mcp=False
+    )
+    installer.uninstall_skill("claude-code", project=True, root=repo, mcp=False)
+    capsys.readouterr()
+
+    installer.uninstall_skill(
+        "claude-code", project=True, root=repo, always_on=True, hooks=True, mcp=False
+    )
+    lines = [line.strip() for line in capsys.readouterr().out.splitlines()]
+
+    assert not (repo / ".claude").exists()
+    assert not (repo / "CLAUDE.md").exists()
+    assert "Removed .claude/settings.json" in lines
+    assert "Removed CLAUDE.md" in lines
+
+
+def test_later_hooks_uninstall_keeps_a_settings_file_with_a_user_key(repo):
+    installer.install_skill("claude-code", project=True, root=repo, hooks=True, mcp=False)
+    installer.uninstall_skill("claude-code", project=True, root=repo, mcp=False)
+    settings = repo / ".claude" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    settings.write_text(json.dumps({**data, "theme": "dark"}), encoding="utf-8")
+
+    installer.uninstall_skill("claude-code", project=True, root=repo, hooks=True, mcp=False)
+
+    assert json.loads(settings.read_text(encoding="utf-8")) == {"theme": "dark"}
+
+
+def test_a_plain_uninstall_with_nothing_to_keep_leaves_no_record(repo):
+    installer.install_skill("claude-code", project=True, root=repo, mcp=False)
+
+    installer.uninstall_skill("claude-code", project=True, root=repo, mcp=False)
+
+    assert not (repo / ".claude").exists()
+
+
 # The record: relative paths only, and it survives a move
 
 
@@ -307,6 +345,17 @@ def test_without_the_flag_the_block_stays_and_a_line_says_how(ignore_file, user,
     assert "--git-ignore" in capsys.readouterr().out
 
 
+def test_git_ignore_flag_with_no_skill_prints_only_the_removal(ignore_file, capsys):
+    ignore_file.write_text("node_modules/\n" + GLOBAL_LINES, encoding="utf-8")
+
+    assert main(["uninstall", "--platform", "claude-code", "--git-ignore"]) == 0
+
+    out = capsys.readouterr().out
+    assert "Nothing to remove" not in out
+    assert "Removed MIMRY from the global git ignore" in out
+    assert ignore_file.read_text(encoding="utf-8") == "node_modules/\n"
+
+
 def test_nothing_installed_prints_only_nothing_to_remove(ignore_file, capsys):
     ignore_file.write_text(GLOBAL_LINES, encoding="utf-8")
 
@@ -360,3 +409,36 @@ def test_repair_hint_after_a_no_mcp_install_keeps_no_mcp(user, capsys):
 
     assert code == 2
     assert "Run `mimry install --platform claude-code --no-mcp` to repair it." in out
+
+
+# Hooks are per project: a user-scope install says how to get them
+
+
+def test_user_scope_claude_code_install_says_hooks_are_per_project(user, capsys):
+    installer.install_skill("claude-code", project=False, root=user, mcp=False)
+
+    hint = [line.strip() for line in capsys.readouterr().out.splitlines() if "per project" in line]
+
+    assert hint == [
+        "Hooks are per project: run mimry install --platform claude-code --project --hooks"
+        " in a repo"
+    ]
+
+
+def test_user_scope_dry_run_says_hooks_are_per_project(user, capsys):
+    installer.install_skill("claude-code", project=False, root=user, dry_run=True, mcp=False)
+
+    assert "Hooks are per project" in capsys.readouterr().out
+    assert not _global_skill(user).exists()
+
+
+def test_project_install_with_hooks_does_not_say_hooks_are_per_project(repo, capsys):
+    installer.install_skill("claude-code", project=True, root=repo, hooks=True, mcp=False)
+
+    assert "per project" not in capsys.readouterr().out
+
+
+def test_platform_without_hooks_does_not_say_hooks_are_per_project(user, capsys):
+    installer.install_skill("cursor", project=False, root=user, mcp=False)
+
+    assert "per project" not in capsys.readouterr().out

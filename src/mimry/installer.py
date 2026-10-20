@@ -1861,6 +1861,8 @@ def install_skill(
             ui.detail(f"Would add {extra}")
         if hooks and not hook_target:
             ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
+        if not project and cfg.hook_path is not None:
+            ui.detail(_hooks_hint(key))
         if not _mcp_disabled(not mcp):
             register_mcp(cfg, dry_run=True)
         if hooks_problem:
@@ -1902,6 +1904,8 @@ def install_skill(
         ui.detail(f"Added {extra}")
     if hooks and not hook_target:
         ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
+    if not project and cfg.hook_path is not None:
+        ui.detail(_hooks_hint(key))
     if not _mcp_disabled(not mcp):
         register_mcp(cfg, dry_run=False)
     if project:
@@ -1916,6 +1920,11 @@ def install_skill(
     if hooks_problem:
         raise SystemExit(1)
     return dst
+
+
+def _hooks_hint(key: str) -> str:
+    """Hooks live in project files, so user scope has none."""
+    return f"Hooks are per project: run mimry install --platform {key} --project --hooks in a repo"
 
 
 def _skill_path(cfg: MimryPlatform, root: Path, project: bool) -> Path:
@@ -1950,10 +1959,11 @@ def _forget_platform(dst: Path, key: str) -> None:
         _atomic_write(dst.parent / _STATE_FILE, json.dumps(state, indent=2) + "\n")
 
 
-def _remove_skill_files(dst: Path) -> list[Path]:
+def _remove_skill_files(dst: Path, *, keep_record: bool = False) -> list[Path]:
     """Remove the skill, version marker, state and references.
 
-    Returns what was removed.
+    The state file stays when keep_record is set, so a later uninstall
+    still knows what MIMRY created. Returns what was removed.
     """
     removed: list[Path] = []
     for path in (dst, dst.parent / ".mimry_version"):
@@ -1961,12 +1971,33 @@ def _remove_skill_files(dst: Path) -> list[Path]:
             path.unlink()
             removed.append(path)
     # Gone before the folders are checked, or the folder is never empty.
-    (dst.parent / _STATE_FILE).unlink(missing_ok=True)
+    if not keep_record:
+        (dst.parent / _STATE_FILE).unlink(missing_ok=True)
     refs = dst.parent / "references"
     if refs.exists():
         _remove_tree(refs)
         removed.append(refs)
     return removed
+
+
+def _record_still_needed(root: Path, cfg: MimryPlatform, created: frozenset[Path]) -> bool:
+    """True while a file MIMRY made still holds its hooks or block.
+
+    The state file then stays, so a later --hooks or --always-on
+    uninstall can still delete that file.
+    """
+    hook_file = (root / cfg.hook_path).resolve() if cfg.hook_path else None
+    if hook_file in created and _has_any_hook(root, cfg) is not False:
+        return True
+    always_file = (root / cfg.always_on_file).resolve() if cfg.always_on_file else None
+    return always_file in created and _has_always_on(root, cfg)
+
+
+def _nothing_to_remove(platform_name: str, *, project: bool) -> str:
+    cfg = platforms()[canonical_platform(platform_name)]
+    return (
+        f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label} ({_scope(project)})."
+    )
 
 
 def uninstall_skill(
@@ -1977,6 +2008,7 @@ def uninstall_skill(
     always_on: bool = False,
     hooks: bool = False,
     mcp: bool = True,
+    say_nothing: bool = True,
 ) -> bool:
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
@@ -1986,16 +2018,18 @@ def uninstall_skill(
     # Zed and Agent Skills install the same SKILL.md. While another
     # platform still uses it, the file and its companions stay.
     shared_with = _shared_skill_user(key, root, project)
-    removed: list[Path] = []
-    if shared_with:
-        _forget_platform(dst, key)
-    else:
-        removed = _remove_skill_files(dst)
+    # Files go first; the state file records what MIMRY created.
     settings: list[str] = []
     if always_on and project and (path := _remove_always_on(root, cfg, created)):
         settings.append(_settings_line(path, root, project, "always-on block"))
     if hooks and project and (path := _remove_hooks(root, cfg, created)):
         settings.append(_settings_line(path, root, project, "hooks"))
+    keep_record = project and not shared_with and _record_still_needed(root, cfg, created)
+    removed: list[Path] = []
+    if shared_with:
+        _forget_platform(dst, key)
+    else:
+        removed = _remove_skill_files(dst, keep_record=keep_record)
     mcp_removed = not project and not _mcp_disabled(not mcp) and unregister_mcp(cfg)
     # The skill's own folder is MIMRY's and goes when empty. A folder
     # above it goes only when this install created it, never a user's.
@@ -2007,10 +2041,8 @@ def uninstall_skill(
         except OSError:
             break
     if not removed and not settings and not mcp_removed and not shared_with:
-        print(
-            f"Nothing to remove - the MIMRY skill isn't installed for {cfg.label}"
-            f" ({_scope(project)})."
-        )
+        if say_nothing:
+            print(_nothing_to_remove(platform_name, project=project))
         return False
     ui.ok(f"Removed MIMRY for {cfg.label} ({_scope(project)})")
     for path in removed:
@@ -2145,30 +2177,31 @@ def _without_mimry_block(lines: list[str]) -> list[str]:
     return kept
 
 
-def _uninstall_global_ignore(*, remove: bool) -> None:
+def _uninstall_global_ignore(*, remove: bool) -> bool:
     """Take MIMRY's block out of Git's global ignore file.
 
     Only when `remove` is set; otherwise say how to, if it is there.
+    Returns True when the block was removed.
     """
     path = _global_ignore_path()
     if path is None:
-        return
+        return False
     shown = ui.display_path(path)
     try:
         raw = path.read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError):
-        return
+        return False
     # Line endings are kept as they are, so only MIMRY's lines change.
     lines = raw.splitlines(keepends=True)
     kept = _without_mimry_block(lines)
     if kept == lines:
-        return
+        return False
     if not remove:
         ui.detail(
             f"Left MIMRY's lines in the global git ignore ({shown}); add"
             " --git-ignore to remove them"
         )
-        return
+        return False
     tmp = path.with_name(path.name + ".tmp")
     try:
         tmp.write_bytes("".join(kept).encode("utf-8"))
@@ -2177,8 +2210,9 @@ def _uninstall_global_ignore(*, remove: bool) -> None:
         with contextlib.suppress(OSError):
             tmp.unlink()
         ui.warn(f"Could not update {shown}: {exc.strerror or exc}")
-        return
+        return False
     ui.ok(f"Removed MIMRY from the global git ignore: {shown}")
+    return True
 
 
 def _skill_current(dst: Path, key: str) -> bool:
@@ -2369,11 +2403,16 @@ def cmd_uninstall(a) -> int:
         always_on=a.always_on,
         hooks=a.hooks,
         mcp=not a.no_mcp,
+        say_nothing=False,
     )
     # Git's global ignore is per machine and shared by every install, so
     # it is only touched when asked for. Its "left in place" note only
     # follows an uninstall that removed something.
     remove_ignore = getattr(a, "git_ignore", False)
+    ignore_removed = False
     if removed or remove_ignore:
-        _uninstall_global_ignore(remove=remove_ignore)
+        ignore_removed = _uninstall_global_ignore(remove=remove_ignore)
+    # "Nothing to remove" only when nothing at all was removed.
+    if not removed and not ignore_removed:
+        print(_nothing_to_remove(a.platform, project=a.project))
     return 0
