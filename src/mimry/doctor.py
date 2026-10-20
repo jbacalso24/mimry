@@ -16,7 +16,7 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-from . import __version__, installer, ui
+from . import __version__, embed, installer, ui
 from .cache_safety import IndexOutsideCacheError, validated_current_index_path
 from .core.languages import grammar_error_reason, is_grammar_download_failure, is_network_failure
 from .install_info import (
@@ -445,6 +445,46 @@ def _registrations_check(root: Path) -> dict[str, Any]:
     )
 
 
+def _embeddings_check() -> dict[str, Any]:
+    """The optional embedding signal (#250).
+
+    Missing is the default, so only a broken model is a warning.
+    """
+    state = embed.status()
+    if state["override"]:
+        return _check(
+            "embeddings.model",
+            "ok",
+            "embeddings are off (MIMRY_EMBED=0)",
+            state="off",
+        )
+    if not state["numpy"]:
+        return _check(
+            "embeddings.model",
+            "ok",
+            "embeddings are not installed",
+            'Run `pip install "mimry[embed]"` to turn them on.',
+            state="not_installed",
+        )
+    if state["state"] == "ready":
+        return _check("embeddings.model", "ok", "embeddings are ready", state="ready")
+    if state["state"] == "missing":
+        return _check(
+            "embeddings.model",
+            "ok",
+            "embedding model is missing",
+            "Run `mimry embed download` to turn embeddings on.",
+            state="model_missing",
+        )
+    return _check(
+        "embeddings.model",
+        "warning",
+        "embedding model is broken",
+        "Run `mimry embed download` to replace the damaged file.",
+        state="model_broken",
+    )
+
+
 def _parser_check() -> dict[str, Any]:
     try:
         from tree_sitter_language_pack import get_parser
@@ -663,6 +703,7 @@ def doctor_report(root: Path, *, verify: bool = False) -> dict[str, Any]:
         _servers_check(),
         _registrations_check(root),
         _parser_check(),
+        _embeddings_check(),
         *_root_checks(root, verify=verify),
     ]
     # Install-only warnings (two mimry executables on PATH) are listed

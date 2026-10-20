@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import mimry.doctor as doctor
 from mimry.cli import main
 from mimry.commands import cmd_init
@@ -28,8 +30,16 @@ def _stub_metadata(monkeypatch) -> None:
     )
 
 
+_REAL_EMBEDDINGS_CHECK = doctor._embeddings_check
+
+
 def _stub_host_checks(monkeypatch) -> None:
     """Stub the checks that read this machine's state."""
+    monkeypatch.setattr(
+        doctor,
+        "_embeddings_check",
+        lambda: doctor._check("embeddings.model", "ok", "embeddings are ready", state="ready"),
+    )
     monkeypatch.setattr(
         doctor,
         "_source_check",
@@ -735,3 +745,24 @@ def test_path_warning_is_shown_but_keeps_condition_healthy(tmp_path, monkeypatch
     text = capsys.readouterr().out
     assert text.startswith("MIMRY doctor: healthy (ok)\n")
     assert f"[WARNING] {checks['installation.path']['summary']}" in text
+
+
+def test_doctor_prints_the_embedding_model_state(tmp_path, monkeypatch, capsys):
+    pytest.importorskip("numpy")
+    _install_ok(monkeypatch)
+    monkeypatch.setattr(doctor, "_embeddings_check", _REAL_EMBEDDINGS_CHECK)
+    monkeypatch.setattr(doctor.embed, "model_dir", lambda: tmp_path)
+    monkeypatch.setattr(doctor.embed, "MODEL_FILES", {"config.json": (2, _sha("ok"))})
+    (tmp_path / "config.json").write_bytes(b"no")
+
+    doctor.cmd_doctor(SimpleNamespace(root=tmp_path, json=False, verify=False))
+    output = capsys.readouterr().out
+
+    assert "[WARNING] embedding model is broken\n" in output
+    assert "  Run `mimry embed download` to replace the damaged file.\n" in output
+
+
+def _sha(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()

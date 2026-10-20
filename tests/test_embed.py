@@ -347,3 +347,80 @@ def test_encode_matches_model2vec(monkeypatch):
     theirs = model.encode(texts)
     assert ours.shape == theirs.shape
     assert float(abs(ours.astype("float64") - theirs.astype("float64")).max()) < 1e-5
+
+
+def test_truncated_title_cache_is_rebuilt_on_the_next_query(tmp_path, monkeypatch):
+    sqlite3 = pytest.importorskip("sqlite3")
+    np = pytest.importorskip("numpy")
+    con = sqlite3.connect(tmp_path / "mimry.sqlite")
+    con.execute("create table files (file_id text, rel_path text)")
+    con.execute("create virtual table pieces_fts using fts5(file_id unindexed, name, body)")
+    con.execute("insert into files values ('1', 'billing/invoice.py')")
+    con.commit()
+    con.close()
+
+    def fake_encode(texts):
+        out = np.ones((len(texts), 4), dtype=np.float32)
+        return out / np.linalg.norm(out, axis=1, keepdims=True)
+
+    monkeypatch.setattr(embed, "available", lambda: True)
+    monkeypatch.setattr(embed, "encode", fake_encode)
+    query = "invoice tax calculation"
+    assert embed.embed_positions(tmp_path, query, lambda p: True) == {"billing/invoice.py": 1}
+
+    cache = tmp_path / embed._cache_name()
+    cache.write_bytes(cache.read_bytes()[:300])
+    # The truncated cache is no cache: the next query rebuilds it.
+    assert embed.embed_positions(tmp_path, query, lambda p: True) == {"billing/invoice.py": 1}
+    assert np.load(cache)["vectors"].shape == (1, 4)
+
+
+def _model_folder(tmp_path, monkeypatch, body: bytes, digest_of: bytes | None = None):
+    """A one-file model at tmp_path, pinned to ``digest_of``.
+
+    ``digest_of`` defaults to the body, so the file is intact.
+    """
+    pinned = hashlib.sha256(digest_of if digest_of is not None else body).hexdigest()
+    monkeypatch.setattr(embed, "MODEL_FILES", {"config.json": (len(body), pinned)})
+    monkeypatch.setattr(embed, "model_dir", lambda: tmp_path)
+    (tmp_path / "config.json").write_bytes(body)
+
+
+def test_status_reports_a_model_with_the_right_size_and_wrong_bytes_as_broken(
+    tmp_path, monkeypatch
+):
+    _model_folder(tmp_path, monkeypatch, b"x" * 8, digest_of=b"{}      ")
+    state = embed.status()
+    assert state["state"] == "broken"
+    assert state["model"] is False
+
+
+def test_status_checks_a_model_file_once_until_its_size_or_mtime_changes(tmp_path, monkeypatch):
+    good = b'{"a": 1}'
+    _model_folder(tmp_path, monkeypatch, good)
+    target = tmp_path / "config.json"
+    hashed: list[str] = []
+    real = embed._sha256
+    monkeypatch.setattr(embed, "_sha256", lambda path: hashed.append(path.name) or real(path))
+
+    assert embed.status()["state"] == "ready"
+    assert embed.status()["state"] == "ready"
+    assert hashed == ["config.json"]
+
+    # Same size, new bytes and a new mtime: the file is hashed again.
+    target.write_bytes(b"x" * len(good))
+    stat = target.stat()
+    os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
+    assert embed.status()["state"] == "broken"
+    assert embed.status()["state"] == "broken"
+    assert hashed == ["config.json", "config.json"]
+
+
+def test_download_replaces_a_broken_model_file(tmp_path, monkeypatch):
+    good = b'{"a": 1}'
+    _model_folder(tmp_path, monkeypatch, b"x" * len(good), digest_of=good)
+    monkeypatch.setattr(embed.urllib.request, "urlopen", lambda url, timeout: io.BytesIO(good))
+    assert embed.status()["state"] == "broken"
+    embed.download()
+    assert (tmp_path / "config.json").read_bytes() == good
+    assert embed.status()["state"] == "ready"

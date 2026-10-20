@@ -31,6 +31,10 @@ SESSION_FILE_LIMIT = 2000
 # File events older than this are dropped at the next flush.
 SESSION_FILE_KEEP = 24 * 60 * 60
 SESSION_IGNORED_LIMIT = 5
+# How long a flush waits for the operation lock. A finished command
+# must not wait on feedback bookkeeping, so the flush only tries. This
+# is the smallest positive wait, since the lock helper rejects zero.
+SESSION_LOCK_WAIT = 0.001
 SESSION_NOTE = "recorded from session"
 COMPACT_FILES = 10
 COMPACT_QUERY_LIMIT = 300
@@ -100,7 +104,23 @@ def _read_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
+def _write_rows(
+    path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    seen: int | None = None,
+    limit: int | None = None,
+) -> None:
+    """Replace the log with ``rows``.
+
+    With ``seen``, the rows past its first ``seen`` are read at the
+    write and kept, so a row a hook appended after the caller's snapshot
+    is not lost. ``limit`` then keeps the newest rows.
+    """
+    if seen is not None:
+        rows = [*rows, *_read_rows(path)[seen:]]
+    if limit is not None:
+        rows = rows[-limit:]
     text = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -233,11 +253,16 @@ def record_query(root: Path, query: str, shown: list[Any], context_path: Any = N
 
 
 def _flush_plan(root: Path, state: Path, now: float) -> dict[str, Any] | None:
-    """What a flush would do now, or None if it would change nothing."""
+    """What a flush would do now, or None if it would change nothing.
+
+    ``events_seen`` counts the file-event rows read, so the rewrite can
+    keep the rows a hook appends after this snapshot.
+    """
     from .feedback import feedback_payload
 
     timed_queries = [(_stamp(q), q) for q in _read_rows(state / QUERY_LOG)]
-    timed_events = [(_stamp(e), e) for e in _read_rows(state / FILE_LOG)]
+    raw_events = _read_rows(state / FILE_LOG)
+    timed_events = [(_stamp(e), e) for e in raw_events]
     timed_queries = [(t, q) for t, q in timed_queries if t is not None]
     timed_events = [(t, e) for t, e in timed_events if t is not None]
     starts = [t for t, _ in timed_queries]
@@ -288,7 +313,12 @@ def _flush_plan(root: Path, state: Path, now: float) -> dict[str, Any] | None:
     ]
     if not records and len(kept_queries) == len(queries) and len(kept_events) == len(timed_events):
         return None
-    return {"records": records, "queries": kept_queries, "events": kept_events}
+    return {
+        "records": records,
+        "queries": kept_queries,
+        "events": kept_events,
+        "events_seen": len(raw_events),
+    }
 
 
 def flush_session_feedback(root: Path) -> None:
@@ -296,8 +326,9 @@ def flush_session_feedback(root: Path) -> None:
 
     Runs after a command that may have closed a window, and when a
     session starts. It takes the operation lock feedback uses, so no
-    index lock may be held by this process. Does nothing without an
-    index. Never raises.
+    index lock may be held by this process. A busy lock means the flush
+    does nothing and the windows wait for the next one. Does nothing
+    without an index. Never raises.
     """
     try:
         if not session_feedback_enabled():
@@ -311,16 +342,25 @@ def flush_session_feedback(root: Path) -> None:
         from .feedback import record_feedback
         from .storage import active_index_pointer
 
-        with active_index_pointer(root, exclusive=True) as ptr:
+        # Only try the lock: when a refresh holds it, the windows stay
+        # for the next flush and this command has already printed.
+        with active_index_pointer(root, exclusive=True, lock_timeout=SESSION_LOCK_WAIT) as ptr:
             if not ptr:
                 return
             plan = _flush_plan(root, state, time.time())
             if plan is None:
                 return
             # Logs first: if a rewrite fails, a window is lost rather
-            # than recorded twice on the next flush.
+            # than recorded twice on the next flush. Hooks append to the
+            # file log without the lock, so its rewrite keeps the rows
+            # appended after the snapshot.
             _write_rows(state / QUERY_LOG, plan["queries"])
-            _write_rows(state / FILE_LOG, plan["events"])
+            _write_rows(
+                state / FILE_LOG,
+                plan["events"],
+                seen=plan["events_seen"],
+                limit=SESSION_FILE_LIMIT,
+            )
             for payload in plan["records"]:
                 record_feedback(Path(ptr["indexPath"]), ptr["rootId"], payload, lock=False)
     except Exception:

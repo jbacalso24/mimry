@@ -135,9 +135,11 @@ def active_index_pointer(
     exclusive: bool = False,
     validate: bool = True,
     normalize_stale_index_path: bool = False,
+    lock_timeout: float | None = None,
 ):
     """Resolve and retain the active generation for one complete
-    operation.
+    operation. ``lock_timeout`` bounds the wait for the operation lock;
+    None uses the MIMRY default.
 
     The pointer is sampled once to locate the stable per-root lock, then
     loaded again under that lock. Publications, GC, feedback writes, and
@@ -171,7 +173,10 @@ def active_index_pointer(
     # Readers memoize generation validation and freshness from the
     # moment the shared lock is held; writers change the generation and
     # never memoize.
-    with lock(base / "operation.lock"), nullcontext() if exclusive else read_scope():
+    with (
+        lock(base / "operation.lock", timeout=lock_timeout),
+        nullcontext() if exclusive else read_scope(),
+    ):
         current = load_pointer(root, validate_active_generation=validate)
         if not current:
             raise UnsafeCachePathError(

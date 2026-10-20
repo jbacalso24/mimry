@@ -33,6 +33,11 @@ if TYPE_CHECKING:
     import numpy as np
 
 MODEL_REPO = "minishlab/potion-code-16M"
+# The folder under models/ that holds the pinned model; the cache guard
+# looks for it too.
+MODEL_FOLDER_PREFIX = "potion-code-16M-"
+# Per-file sha256 results, kept beside the model files.
+VERIFIED_NAME = "verified.json"
 MODEL_REVISION = "1b0ff71095656b23306542bbad34a09109673720"
 MODEL_URL = f"https://huggingface.co/{MODEL_REPO}/resolve/{MODEL_REVISION}/"
 # Name -> (size in bytes, sha256), as published at MODEL_REVISION.
@@ -88,7 +93,7 @@ class EmbedError(RuntimeError):
 
 
 def model_dir() -> Path:
-    return cache_home() / "models" / f"potion-code-16M-{MODEL_REVISION[:12]}"
+    return cache_home() / "models" / f"{MODEL_FOLDER_PREFIX}{MODEL_REVISION[:12]}"
 
 
 def _sha256(path: Path) -> str:
@@ -108,6 +113,63 @@ def _files_present(directory: Path) -> bool:
         (directory / name).is_file() and (directory / name).stat().st_size == size
         for name, (size, _) in MODEL_FILES.items()
     )
+
+
+def _model_intact(directory: Path) -> bool:
+    """True when every model file matches its pinned sha256.
+
+    Each file's result is remembered in verified.json beside the model,
+    keyed by its size and mtime, so a later call hashes only a file that
+    changed. The stat is taken before the hash, so a file replaced
+    mid-hash is hashed again next time.
+    """
+    memo_path = directory / VERIFIED_NAME
+    try:
+        memo = json.loads(memo_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        memo = {}
+    if not isinstance(memo, dict):
+        memo = {}
+    intact = True
+    dirty = False
+    for name, (_, digest) in MODEL_FILES.items():
+        target = directory / name
+        stat = target.stat()
+        known = memo.get(name)
+        if not (
+            isinstance(known, dict)
+            and known.get("size") == stat.st_size
+            and known.get("mtime_ns") == stat.st_mtime_ns
+            and known.get("sha256") == digest
+        ):
+            known = {
+                "size": stat.st_size,
+                "mtime_ns": stat.st_mtime_ns,
+                "sha256": digest,
+                "ok": _sha256(target) == digest,
+            }
+            memo[name] = known
+            dirty = True
+        intact = intact and known.get("ok") is True
+    if dirty:
+        try:
+            memo_path.write_text(json.dumps(memo, sort_keys=True), encoding="utf-8")
+        except OSError:
+            # Without the memo, the next call hashes again.
+            pass
+    return intact
+
+
+def _model_state(directory: Path) -> str:
+    """Whether the model is ready, broken or missing.
+
+    Broken means a file is present but has the wrong size or bytes.
+    """
+    if not all((directory / name).is_file() for name in MODEL_FILES):
+        return "missing"
+    if not _files_present(directory):
+        return "broken"
+    return "ready" if _model_intact(directory) else "broken"
 
 
 def _fetch(url: str, target: Path, size: int, digest: str) -> None:
@@ -161,9 +223,11 @@ def available() -> bool:
 
 
 def status() -> dict[str, Any]:
+    state = _model_state(model_dir())
     return {
         "numpy": importlib.util.find_spec("numpy") is not None,
-        "model": _files_present(model_dir()),
+        "state": state,
+        "model": state == "ready",
         "revision": MODEL_REVISION,
         "directory": str(model_dir()),
         "override": os.environ.get("MIMRY_EMBED") == "0",
@@ -451,7 +515,9 @@ def _read_title_cache(path: Path, key: str, count: int) -> np.ndarray | None:
             if str(data["key"]) != key or data["vectors"].shape[0] != count:
                 return None
             return data["vectors"]
-    except (OSError, ValueError, KeyError):
+    except Exception:
+        # A truncated file raises zipfile.BadZipFile and more. Any
+        # failure means no usable cache, so it is rebuilt (#491).
         return None
 
 

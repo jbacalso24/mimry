@@ -136,3 +136,26 @@ def test_mcp_refused_cache_home_is_a_tool_error(repo_with_refused_cache, monkeyp
     assert result["returncode"] == 2
     assert result["error"]["code"] == "unsafe_cache_path"
     assert "Point MIMRY_CACHE_HOME at an empty folder" in result["error"]["message"]
+
+
+def test_cache_guard_refuses_a_folder_whose_models_dir_is_not_mimrys(tmp_path, monkeypatch):
+    from mimry.cache_safety import validated_cache_home
+
+    userdocs = tmp_path / "userdocs"
+    (userdocs / "models" / "llama").mkdir(parents=True)
+    (userdocs / "notes.txt").write_text("my notes", encoding="utf-8")
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(userdocs))
+    with pytest.raises(UnsafeCachePathError, match="holds files that are not a MIMRY cache"):
+        validated_cache_home()
+    assert sorted(p.name for p in userdocs.iterdir()) == ["models", "notes.txt"]
+
+
+def test_cache_guard_accepts_a_folder_with_only_mimrys_model_folder(tmp_path, monkeypatch):
+    from mimry import embed
+    from mimry.cache_safety import validated_cache_home
+
+    cache = tmp_path / "cache"
+    model = f"{embed.MODEL_FOLDER_PREFIX}{embed.MODEL_REVISION[:12]}"
+    (cache / "models" / model).mkdir(parents=True)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    assert validated_cache_home() == cache.resolve()

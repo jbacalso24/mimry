@@ -390,7 +390,9 @@ def _embedding_text() -> str:
         return "Embeddings: off (MIMRY_EMBED=0)"
     if not state["numpy"]:
         return 'Embeddings: numpy not installed (pip install "mimry[embed]")'
-    if not state["model"]:
+    if state["state"] == "broken":
+        return "Embeddings: model broken (run `mimry embed download`)"
+    if state["state"] == "missing":
         return "Embeddings: model not downloaded (run `mimry embed download`)"
     return "Embeddings: ready"
 
@@ -419,7 +421,9 @@ def cmd_embed_status(a):
             (
                 "model",
                 f"downloaded ({state['directory']})"
-                if state["model"]
+                if state["state"] == "ready"
+                else "broken (run `mimry embed download`)"
+                if state["state"] == "broken"
                 else "not downloaded (run `mimry embed download`)",
             ),
             ("revision", state["revision"]),

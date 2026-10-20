@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,12 +20,20 @@ from types import SimpleNamespace
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
+from mimry import session
 from mimry.cli import main
 from mimry.feedback import feedback_payload_from_args, list_feedback, parse_context_suggested_paths
 from mimry.hook import cmd_hook_check, cmd_hook_compact, cmd_hook_refresh
-from mimry.paths import TASK_PACK_PATTERN
+from mimry.paths import TASK_PACK_PATTERN, cache_home
 from mimry.search import find_rows
-from mimry.session import FILE_LOG, QUERY_LOG, flush_session_feedback, record_query
+from mimry.session import (
+    FILE_LOG,
+    QUERY_LOG,
+    flush_session_feedback,
+    log_file_event,
+    record_query,
+)
+from mimry.state import file_lock
 from mimry.storage import load_pointer
 
 QUERY = "login session timeout"
@@ -474,3 +483,52 @@ def test_compact_hook_reads_the_logs_and_writes_nothing(tmp_path, monkeypatch, c
     assert out["additionalContext"].startswith("Before the context was compacted")
     assert [path.read_bytes() for path in logs] == before
     assert _rows(repo) == []
+
+
+def test_flush_gives_up_on_a_busy_operation_lock_and_records_later(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find(repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[0]) == 0
+    _age_queries(repo, hours=3)
+    lock = cache_home() / "indexes" / load_pointer(repo)["rootId"] / "operation.lock"
+
+    with file_lock(lock):
+        started = time.monotonic()
+        flush_session_feedback(repo)
+        assert time.monotonic() - started < 1
+        assert _rows(repo) == []
+
+    flush_session_feedback(repo)
+    [record] = _rows(repo)
+    assert record["opened_paths"] == [shown[0]]
+
+
+def test_flush_keeps_a_hook_event_appended_after_its_snapshot(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    # Two queries with an opened event between them. The first window
+    # is closed; the second stays open.
+    record_query(repo, "race one", [])
+    time.sleep(0.01)
+    log_file_event(repo, SESSION, "opened", [repo / "src" / "auth" / "session.py"])
+    time.sleep(0.01)
+    record_query(repo, "race two", [])
+    time.sleep(0.01)
+
+    real_write_rows = session._write_rows
+
+    def write_after_a_hook_append(path, rows, **kwargs):
+        # A hook appends between the flush's snapshot and its rewrite.
+        if path.name == FILE_LOG:
+            log_file_event(repo, SESSION, "changed", [repo / "src" / "app.ts"])
+        return real_write_rows(path, rows, **kwargs)
+
+    monkeypatch.setattr(session, "_write_rows", write_after_a_hook_append)
+    flush_session_feedback(repo)
+
+    [record] = _rows(repo)
+    assert record["opened_paths"] == ["src/auth/session.py"]
+    events = [
+        json.loads(line)
+        for line in (repo / ".mimry" / FILE_LOG).read_text(encoding="utf-8").splitlines()
+    ]
+    assert ("changed", "src/app.ts") in [(e["action"], e["path"]) for e in events]

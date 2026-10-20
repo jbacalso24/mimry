@@ -29,6 +29,21 @@ def _is_empty_dir(path: Path) -> bool:
     return path.is_dir() and next(path.iterdir(), None) is None
 
 
+def _holds_model_folder(resolved: Path) -> bool:
+    """Whether the folder holds MIMRY's own embedding model folder.
+
+    `mimry embed download` makes it before any index exists (#250). A
+    models/ folder of another tool does not count (#492).
+    """
+    # Imported here: embed imports this module.
+    from .embed import MODEL_FOLDER_PREFIX
+
+    models = resolved / "models"
+    return models.is_dir() and any(
+        child.is_dir() for child in models.glob(f"{MODEL_FOLDER_PREFIX}*")
+    )
+
+
 def _is_relative_to(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
@@ -72,9 +87,7 @@ def validated_cache_home(current_root: Path | None = None) -> Path:
         or (resolved / "roots.json.lock").exists()
         or (resolved / "indexes").exists()
         or _is_empty_dir(resolved)
-        # The embedding model folder, which `mimry embed download` makes
-        # before any index exists (#250).
-        or (resolved / "models").is_dir()
+        or _holds_model_folder(resolved)
     )
     if resolved.exists() and not mimry_looking:
         raise UnsafeCachePathError(
