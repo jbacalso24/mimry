@@ -1971,3 +1971,18 @@ def test_clean_comparisons_and_empty_checks_stay_unchanged(tmp_path: Path, name:
 def test_redacted_comment_example_in_the_indexer_docstring_is_true(tmp_path: Path):
     data = b"TOKEN = 'CSRF token missing.'\n"
     assert indexable_bytes(tmp_path / "config.py", data) == b"TOKEN = '[REDACTED]'\n"
+
+
+# A quoted value under a credential label that never closes is refused,
+# as it cannot be redacted without losing a line (#499).
+@pytest.mark.parametrize(
+    "source",
+    [
+        'password = "abc\n',
+        'password = "abc\nfoo = 1\n',
+        'password = "abc\nfoo = 1',
+    ],
+)
+def test_a_credential_value_that_never_closes_is_refused(tmp_path: Path, source: str):
+    with pytest.raises(SensitiveContentError):
+        indexable_bytes(tmp_path / "config.py", source.encode("utf-8"))

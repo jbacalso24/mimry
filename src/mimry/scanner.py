@@ -992,8 +992,12 @@ def indexable_bytes(path, data: bytes) -> bytes:
         raise refused from exc
     redacted = redact_sensitive_text(text)
     redacted_bytes = redacted.encode("utf-8")
-    if len(redacted.splitlines()) != len(text.splitlines()) or has_sensitive_content(
-        path, data=redacted_bytes
+    # A value that never closes is cut to the end of the text, which may
+    # drop only the final line break. The newline count catches that.
+    if (
+        len(redacted.splitlines()) != len(text.splitlines())
+        or redacted.count("\n") != text.count("\n")
+        or has_sensitive_content(path, data=redacted_bytes)
     ):
         raise refused
     return redacted_bytes
