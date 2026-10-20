@@ -229,6 +229,9 @@ Per-task numbers are in [results.holdout2.0.6.4.json](results.holdout2.0.6.4.jso
 0.7.0 was run once in each read mode at release, on commit 85648eb, by the Token benchmark workflow on Linux.
 It locates as many tasks as 0.6.4 in every read mode: it now locates hyper#4201 and no longer locates hono#5468.
 With line-range reads it saves 71.3% against 70.8%; with whole-file and `grep -n` reads it saves 51.0% and 48.9% against 53.2% and 49.5%, mostly because viper#2029 and hono#5446 read more before their last gold file.
+The ranking itself improves: recall@5 goes from 62.9% to 66.3% and recall@10 from 72.3% to 75.0%.
+In viper#2029 the gold file moves up from sixth to fifth, but `viper.go`, a large file, now comes before it; in hono#5446 `src/types.ts` does the same, so whole-file reads pay for one big file more.
+In hono#5468 `adapters/netlify/src/mod.ts` falls out of the top 10.
 A run with the optional embeddings gives the same numbers: no holdout2 task text has the 20 distinct words that turn them on.
 Per-task numbers are in [results.holdout2.0.7.0.json](results.holdout2.0.7.0.json), [results.holdout2.sed.0.7.0.json](results.holdout2.sed.0.7.0.json) and [results.holdout2.ranges.0.7.0.json](results.holdout2.ranges.0.7.0.json).
 
