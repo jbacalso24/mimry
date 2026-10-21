@@ -35,8 +35,6 @@ feedback.
 
 from __future__ import annotations
 
-import argparse
-import functools
 import hashlib
 import heapq
 import json
@@ -180,41 +178,19 @@ MCP_QUERY_RE = re.compile(MCP_QUERY_NAME)
 # The mimry commands whose argument is query text. A shell command that
 # runs one is logged with that text, so the find it starts is tagged.
 MIMRY_QUERY_COMMANDS = frozenset(
-    {
-        "find",
-        "preflight",
-        "context",
-        "related",
-        "route",
-        "explain",
-        "brief",
-        "history",
-        "semantic",
-        "symbol",
-    }
+    {"find", "preflight", "context", "related", "route", "explain", "brief", "history", "semantic"}
 )
-
-
-@functools.cache
-def _mimry_cli_words() -> tuple[frozenset[str], frozenset[str]]:
-    """The subcommands of the mimry CLI, and its top-level options that
-    take a value. Read from the parser, so the lists never drift."""
-    from .cli import build_parser
-
-    parser = build_parser()
-    commands = frozenset(
-        name
-        for action in parser._actions
-        if isinstance(action, argparse._SubParsersAction)
-        for name in action.choices
-    )
-    valued = frozenset(
-        option
-        for action in parser._actions
-        if action.nargs != 0
-        for option in action.option_strings
-    )
-    return commands, valued
+# Every mimry subcommand, and the top-level options that take a value.
+# Written out because building the CLI parser in the hook costs half a
+# second; a test keeps them equal to the parser's.
+MIMRY_SUBCOMMANDS = frozenset(
+    """adapters bench brief cache callees callers context digest doctor embed
+    explain export feedback find git-hooks history hook-check hook-compact
+    hook-prompt hook-refresh hook-stop impact index init install mcp path plan
+    preflight refresh reindex related report roots route semantic stats status
+    symbol uninstall update upgrade watch why""".split()
+)
+MIMRY_VALUED_OPTIONS = frozenset({"--root"})
 
 
 def _starts_command(words: list[str], i: int) -> bool:
@@ -223,15 +199,14 @@ def _starts_command(words: list[str], i: int) -> bool:
 
     Scans stop at the first such word, so each word is read once.
     """
-    commands, valued = _mimry_cli_words()
     j = i + 1
     while j < len(words):
-        if words[j] in valued:
+        if words[j] in MIMRY_VALUED_OPTIONS:
             j += 2  # the option's value
         elif words[j].startswith("-"):
             j += 1
         else:
-            return words[j] in commands
+            return words[j] in MIMRY_SUBCOMMANDS
     return False
 
 
