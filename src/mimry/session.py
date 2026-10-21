@@ -429,14 +429,20 @@ def _window_end(
     index: int,
     session: str,
     stops: list[float],
-) -> float | None:
-    """When the query at ``index`` stops owning events, or None if open.
+) -> tuple[float | None, bool]:
+    """When the query at ``index`` stops owning events, and whether that
+    end is included in the window.
 
     A query with a session id ends at that session's next query, or at
-    the first turn-end mark of the session after it, whichever comes
-    first. One without ends at the next query of any session, as before
-    sessions were recorded. ``stops`` are the session's mark times,
-    oldest first.
+    the first turn-end mark of the session at or after its own stamp,
+    whichever comes first. One without ends at the next query of any
+    session, as before sessions were recorded. ``stops`` are the
+    session's mark times, oldest first.
+
+    A turn-end mark is included: the Stop hook runs after the turn's
+    tool calls, and on a clock that advances in steps (before Python
+    3.13 on Windows, about 15.6 ms) a file event can carry the mark's
+    own stamp. A next query is excluded, so its own events stay with it.
     """
     begin = timed[index][0]
     end = None
@@ -445,11 +451,11 @@ def _window_end(
             end = next_begin
             break
     for stop in stops:
-        if stop > begin:
+        if stop >= begin:
             if end is None or stop < end:
-                end = stop
+                return stop, True
             break
-    return end
+    return end, False
 
 
 def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
@@ -499,7 +505,9 @@ def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
             if keep:
                 kept_queries.append(query)
             continue
-        end = _window_end(timed_queries, index, session, stops_by_session.get(session, []))
+        end, inclusive = _window_end(
+            timed_queries, index, session, stops_by_session.get(session, [])
+        )
         if end is None and now - begin <= SESSION_WINDOW_IDLE:
             kept_queries.append(query)
             continue
@@ -507,7 +515,7 @@ def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
             e
             for t, e in timed_events
             if t >= begin
-            and (end is None or t < end)
+            and (end is None or (t <= end if inclusive else t < end))
             and (not session or _session_of(e) == session)
         ]
         opened = _unique(e["path"] for e in window if e.get("action") == "opened")

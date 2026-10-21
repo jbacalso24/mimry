@@ -808,6 +808,92 @@ def test_a_later_turn_records_its_own_window_once_after_a_stop(tmp_path, monkeyp
     assert recorded == {QUERY: [shown[0]], FOLLOW_UP: [later[0]]}
 
 
+def _at(ts: float) -> str:
+    return datetime.fromtimestamp(ts).astimezone().isoformat()
+
+
+def _query(ts: float, text: str, shown: list[str] | None = None) -> dict:
+    row = {"time": _at(ts), "query": text, "shown": shown or [], "context": None}
+    return {**row, "session": SESSION}
+
+
+def _opened(ts: float, path: str) -> dict:
+    return {"time": _at(ts), "session": SESSION, "action": "opened", "path": path}
+
+
+def _stop_row(ts: float) -> dict:
+    return {"time": _at(ts), "session": SESSION}
+
+
+def _plan(tmp_path: Path, queries: list[dict], events: list[dict], stops: list[dict], now: float):
+    """A flush plan from logs written with exact stamps.
+
+    Before Python 3.13 the Windows clock advances only every ~15.6 ms,
+    so a file event and a turn-end mark can carry one stamp. These tests
+    write that tie directly, since the wall clock cannot be made to do
+    it.
+    """
+    state = tmp_path / ".mimry"
+    state.mkdir()
+    for name, rows in ((QUERY_LOG, queries), (FILE_LOG, events), (session.STOP_LOG, stops)):
+        text = "".join(json.dumps(row, sort_keys=True) + chr(10) for row in rows)
+        (state / name).write_text(text, encoding="utf-8")
+    return session._flush_plan(state, now)
+
+
+def test_an_event_in_the_same_clock_tick_as_the_stop_belongs_to_its_window(tmp_path):
+    # The Read and the Stop hook run back to back, so the Read's stamp
+    # can equal the Stop mark's. The Stop runs after the turn's tool
+    # calls, so the event belongs to the window and must be recorded.
+    t0 = 1_800_000_000.0
+    plan = _plan(
+        tmp_path,
+        [_query(t0, QUERY, ["a.py"])],
+        [_opened(t0 + 0.5, "a.py")],
+        [_stop_row(t0 + 0.5)],
+        now=t0 + 1,
+    )
+    assert plan is not None
+    assert [w["query"] for w in plan["windows"]] == [QUERY]
+    assert plan["windows"][0]["opened"] == ["a.py"]
+
+
+def test_a_stop_in_the_same_clock_tick_as_its_query_closes_that_window(tmp_path):
+    # Query, read and stop share one stamp. The stop still ends the
+    # query's window, so the query is recorded now, not left open.
+    t0 = 1_800_000_000.0
+    plan = _plan(
+        tmp_path,
+        [_query(t0, QUERY, ["a.py"])],
+        [_opened(t0, "a.py")],
+        [_stop_row(t0)],
+        now=t0 + 1,
+    )
+    assert plan is not None
+    assert [w["query"] for w in plan["windows"]] == [QUERY]
+    assert plan["windows"][0]["opened"] == ["a.py"]
+
+
+def test_an_event_in_the_tick_of_the_next_query_belongs_to_the_next_query(tmp_path):
+    # A window ends at the next query exclusively, so a read stamped
+    # with that query's own stamp belongs to the next query, not to the
+    # earlier one.
+    t0 = 1_800_000_000.0
+    plan = _plan(
+        tmp_path,
+        [
+            _query(t0, QUERY),
+            _query(t0 + 1, FOLLOW_UP),
+            _query(t0 + 2, "third query"),
+        ],
+        [_opened(t0 + 1, "a.py")],
+        [],
+        now=t0 + 3,
+    )
+    assert plan is not None
+    assert [w["query"] for w in plan["windows"]] == [FOLLOW_UP]
+
+
 def test_a_session_is_tagged_only_by_a_query_equal_to_its_own(tmp_path, monkeypatch, capsys):
     # AA's find is logged first. BB's MCP query only contains the same
     # words. AA's find stays AA's, and BB's note does not name it.
