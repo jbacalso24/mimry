@@ -21,7 +21,6 @@ import hmac
 import json
 import os
 import re
-import secrets
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -344,8 +343,8 @@ def _session_key(state: Path, create: bool = True) -> bytes | None:
                 return None
             if key is not None:
                 path.unlink(missing_ok=True)
-            fresh = secrets.token_bytes(SESSION_KEY_BYTES)
-            spare = state / f"{SESSION_KEY}.{secrets.token_hex(8)}.part"
+            fresh = os.urandom(SESSION_KEY_BYTES)
+            spare = state / f"{SESSION_KEY}.{os.urandom(8).hex()}.part"
             fd = os.open(spare, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             try:
                 with os.fdopen(fd, "wb") as handle:
