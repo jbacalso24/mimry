@@ -227,10 +227,11 @@ _TUPLE_TAIL_RE = re.compile(r"[ \t]*(?:\r?\n|;|#|//|\Z)")
 # not close within it is not read as a tuple, and is judged as before.
 _TUPLE_VALUES_LIMIT = 4096
 # An Authorization header written into a string literal, as in
-# ``"Authorization: Bearer <token>"``. The scheme stays and the value is
-# judged as a credential. A placeholder, a reference or a template
-# (``<token>``, ``$TOKEN``, ``{token}``) is kept (#519). The scheme may
-# be any word, or none (#540); see _auth_value_is_credential.
+# ``"Authorization: Bearer <token>"``, or written out in Markdown or
+# prose, as in ``- Authorization: Bearer <token>`` (#586). The scheme
+# stays and the value is judged as a credential. A placeholder, a
+# reference or a template (``<token>``, ``$TOKEN``, ``{token}``) is kept
+# (#519). See _auth_value_is_credential for the scheme and the value.
 _AUTH_HEADER_HINT_RE = re.compile(r"(?i)authorization")
 # The joined pieces of a value are separated by a NUL, which a header's
 # blanks and value may run across, but which is not a letter, so it
@@ -239,14 +240,64 @@ _AUTH_HEADER_HINT_RE = re.compile(r"(?i)authorization")
 # A header may also follow an escaped line break, as written in source
 # (backslash r or n), so it is read as starting a line too (#573).
 _LITERAL_SEPARATOR = "\0"
+# The Authorization schemes read as a scheme (#586), matched without
+# case. Any other first word after the colon is the value, or a custom
+# scheme when a token-shaped word follows it (#540). Keep this to real
+# schemes: a word listed here is never read as a value.
+_KNOWN_AUTH_SCHEMES = frozenset(
+    {
+        "AWS4-HMAC-SHA256",
+        "ApiKey",
+        "Basic",
+        "Bearer",
+        "Digest",
+        "HOBA",
+        "Key",
+        "Mutual",
+        "NTLM",
+        "Negotiate",
+        "OAuth",
+        "SSO-Key",
+        "Token",
+    }
+)
+_KNOWN_AUTH_SCHEME_RE = "|".join(
+    re.escape(scheme) for scheme in sorted(_KNOWN_AUTH_SCHEMES, key=len, reverse=True)
+)
+_AUTH_HEADER_START = r"(?:Proxy-)?Authorization[ \t\x00]*:"
+# A header's value is one word. It stops at a blank, a line break, a NUL
+# (the join between string literals), a quote or bracket, or a vertical
+# bar (#586). It does not start with a known scheme word, since a scheme
+# with nothing after it is no header, nor with ``=``, as in
+# ``authorization: Token = None``.
+_AUTH_VALUE = (
+    rf"(?!{_AUTH_HEADER_START})(?!(?:{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-]))"
+    r"[^\s\x00\"'`{}<>,;()\[\]\\$|=]"
+    rf"(?:(?!{_AUTH_HEADER_START})[^\s\"'`{{}}<>,;()\[\]\\$|])*"
+)
 _AUTH_HEADER_VALUE_RE = re.compile(
     r"(?i)(?:(?<![A-Za-z0-9-])|(?<=\\(?-i:[rn])))(?:Proxy-)?Authorization[ \t\x00]*:[ \t\x00]*"
-    r"(?:(?P<scheme>[A-Za-z][A-Za-z0-9-]*)(?=[ \t\x00]*[ \t])[ \t\x00]+)?"
-    r"(?P<value>(?!(?:Proxy-)?Authorization[ \t\x00]*:)[^\s\x00\"'`{}<>,;()\[\]\\$]"
-    r"(?:(?!(?:Proxy-)?Authorization[ \t\x00]*:)[^\s\"'`{}<>,;()\[\]\\$])*)"
+    rf"(?:(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])(?=[ \t\x00]*[ \t])[ \t\x00]+"
+    # Any other word is a custom scheme only before a token-shaped value
+    # (#540).
+    r"|(?P<custom>[A-Za-z][A-Za-z0-9-]*)(?=[ \t\x00]*[ \t])[ \t\x00]+"
+    r"(?=[^\s\x00\"'`{}<>,;()\[\]\\$|]*[0-9_.~+/=-]))?"
+    rf"(?P<value>{_AUTH_VALUE})"
+)
+# Outside string literals (#586), a header is read only when a known
+# scheme follows its colon, so ``authorization: str`` in code is not
+# one. It may follow a line start, a blank, a list marker, a quote or
+# a sentence word, and the emphasis may open before it or close right
+# after its colon, as in ``**Authorization:** Bearer <token>``.
+_PLAIN_AUTH_HEADER_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9-])(?<![A-Za-z0-9]_)(?:Proxy-)?Authorization[ \t]*:"
+    r"(?:\*\*|__|[*_])?[ \t]*"
+    rf"(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+"
+    rf"(?P<value>{_AUTH_VALUE})"
 )
 # The schemes whose value is a credential unless it is a prose word
-# (#540, #573).
+# (#540, #573). After one of them, a word of letters alone that more
+# text follows is a credential only with at least 8 letters (#586).
 _BEARER_LIKE_AUTH_SCHEMES = frozenset({"basic", "bearer", "token"})
 # Prose after an Authorization header, never its value (#561, #573): a
 # word here is not a credential, even as a Bearer value or the last word
@@ -262,10 +313,14 @@ _AUTH_PROSE_WORDS = frozenset(
     unknown unset user value via yes""".split()
 )
 # What may follow the last word of an Authorization value (#561, #573):
-# blanks, then the end of the joined literal, a comma, a semicolon, or a
-# line break, real or escaped as in source. Other text there means the
-# value is not the last word of its header.
-_AUTH_VALUE_TAIL_RE = re.compile(r"[ \t\x00]*(?:\Z|[,;\r\n]|\\[rn])")
+# blanks, then the end of the joined literal, a comma, a semicolon, a
+# vertical bar (#586), or a line break, real or escaped as in source.
+# Other text there means the value is not the last word of its header.
+_AUTH_VALUE_TAIL_RE = re.compile(r"[ \t\x00]*(?:\Z|[,;|\r\n]|\\[rn])")
+# A parameter name and its ``=``, as in ``OAuth realm="Photos"``.
+# After a scheme other than Basic, Bearer or Token it is prose, not a
+# value (#586).
+_AUTH_PARAMETER_RE = re.compile(r"[A-Za-z][A-Za-z_-]*=")
 # What joins two string literals of one value: blanks, line breaks or a
 # backslash-newline (implicit concatenation, as ``"a" "b"``, or a value
 # split over lines), or a ``+``. A line break joins pieces across lines
@@ -2073,38 +2128,56 @@ def _literal_chains(text: str) -> Iterator[list[re.Match[str]]]:
 
 
 def _auth_value_is_credential(scheme: str | None, value: str, *, last: bool) -> bool:
-    """Whether an Authorization value is a credential (#540, #573).
+    """Whether an Authorization value is a credential (#540, #586).
 
-    With Bearer, Basic or Token, the value is one unless it is a prose
-    word, so ``Authorization: Basic tomatocanary, X-Id`` is redacted and
-    ``Authorization: basic auth is required`` is kept. With another
-    scheme, or none, it is one when it reads as a token: a digit or one
-    of ``-_.~+/=``. It is also one when it is letters alone, not a prose
-    word, and the last word of its header, so ``Authorization:
-    tomatocanary`` and ``Digest tomatocanary`` are credentials.
+    ``scheme`` is the scheme before the value, or None when the value
+    is the first word after the colon. A placeholder, a reference, or a
+    prose word is never one (_text_is_credential, _AUTH_PROSE_WORDS).
+
+    A value that reads as a token (a digit or one of ``-_.~+/=``) is
+    one, after any scheme. A word of letters alone is one when it ends
+    its header (``last``). The exceptions need at least 8 letters: with
+    no scheme, or after Basic, Bearer or Token, the word may be followed
+    by more text, so ``Authorization: tomatocanary extra`` and
+    ``Authorization: Bearer tomatocanary extra`` redact the word, while
+    ``Authorization: Bearer is required`` keeps it. After any other
+    scheme the word must end its header, as in
+    ``Authorization: Digest tomatocanary``, and a parameter such as
+    ``realm="Photos"`` is kept.
     """
-    if not _text_is_credential(value):
+    if not _text_is_credential(value) or value.lower() in _AUTH_PROSE_WORDS:
         return False
-    if scheme is not None and scheme.lower() in _BEARER_LIKE_AUTH_SCHEMES:
-        return value.lower() not in _AUTH_PROSE_WORDS
-    if any(char.isdigit() or char in "-_.~+/=" for char in value):
-        return True
-    return last and value.isascii() and value.isalpha() and value.lower() not in _AUTH_PROSE_WORDS
+    token = any(char.isdigit() or char in "-_.~+/=" for char in value)
+    letters = value.isascii() and value.isalpha()
+    if scheme is None:
+        return token or (letters and (last or len(value) >= 8))
+    if scheme.lower() in _BEARER_LIKE_AUTH_SCHEMES:
+        return last or not letters or len(value) >= 8
+    if _AUTH_PARAMETER_RE.fullmatch(value) is not None:
+        return False
+    return token or (letters and last)
 
 
 def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
-    """The spans of credential values in Authorization headers written
-    inside string literals (#519).
+    """The spans of credential values in Authorization headers (#586).
 
-    The literals of one value are read together (#540): in
-    ``"Authorization: Bearer " "tok"`` or ``"Authorization: Bearer tok-"
-    + "en"`` a value runs across the pieces, and each piece it covers
-    gives one span.
+    Inside string literals the literals of one value are read together
+    (#540): in ``"Authorization: Bearer " "tok"`` or
+    ``"Authorization: Bearer tok-" + "en"`` a value runs across the
+    pieces, and each piece it covers gives one span.
+
+    Outside them a header is read only with a known scheme after its
+    colon (_PLAIN_AUTH_HEADER_RE, #586). A header inside a literal is
+    left to the literal pass, so each header is judged once.
     """
     if _AUTH_HEADER_HINT_RE.search(text) is None:
         return []
     spans: list[tuple[int, int]] = []
+    literal_starts: list[int] = []
+    literal_ends: list[int] = []
     for chain in _literal_chains(text):
+        literal_starts.append(chain[0].start())
+        literal_ends.append(chain[-1].end())
         # Each piece as (start, end) in the joined text, and where its
         # body starts in the source.
         pieces: list[tuple[int, int, int]] = []
@@ -2124,7 +2197,8 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
             value = header.group("value").replace(_LITERAL_SEPARATOR, "")
             low, high = header.span("value")
             last = _AUTH_VALUE_TAIL_RE.match(joined, high) is not None
-            if not _auth_value_is_credential(header.group("scheme"), value, last=last):
+            scheme = header.group("scheme") or header.group("custom")
+            if not _auth_value_is_credential(scheme, value, last=last):
                 continue
             index = bisect.bisect_right(starts, low) - 1
             while index < len(pieces) and pieces[index][0] < high:
@@ -2133,6 +2207,15 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
                 if lo < hi:
                     spans.append((source + lo - piece_start, source + hi - piece_start))
                 index += 1
+    for header in _PLAIN_AUTH_HEADER_RE.finditer(text):
+        index = bisect.bisect_right(literal_starts, header.start()) - 1
+        if index >= 0 and header.start() < literal_ends[index]:
+            continue
+        low, high = header.span("value")
+        last = _AUTH_VALUE_TAIL_RE.match(text, high) is not None
+        if _auth_value_is_credential(header.group("scheme"), header.group("value"), last=last):
+            spans.append((low, high))
+    spans.sort()
     return spans
 
 

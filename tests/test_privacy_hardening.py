@@ -2633,6 +2633,108 @@ def test_authorization_values_ending_a_header_are_redacted(
     assert "tomatocanary" not in kept
 
 
+# #586: a header in Markdown or prose is redacted with its scheme kept,
+# and prose after a known scheme is kept, as is a header whose value
+# reads as a word.
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        ("- Authorization: Bearer tomatocanary\n", "- Authorization: Bearer [REDACTED]\n"),
+        ("* Authorization: Bearer tomatocanary\n", "* Authorization: Bearer [REDACTED]\n"),
+        ("> Authorization: Bearer tomatocanary\n", "> Authorization: Bearer [REDACTED]\n"),
+        ("**Authorization:** Bearer tomatocanary\n", "**Authorization:** Bearer [REDACTED]\n"),
+        ("__Authorization:__ Basic tomatocanary\n", "__Authorization:__ Basic [REDACTED]\n"),
+        (
+            "Use the Authorization: Bearer tomatocanary header.\n",
+            "Use the Authorization: Bearer [REDACTED] header.\n",
+        ),
+    ),
+)
+def test_authorization_headers_in_markdown_and_prose_are_redacted(
+    tmp_path: Path, source: str, expected: str
+):
+    assert contains_sensitive_text(source), source
+    assert redact_sensitive_text(source) == expected
+    # Markdown is not code, so a file holding the secret is refused.
+    with pytest.raises(SensitiveContentError):
+        indexable_bytes(tmp_path / "notes.md", source.encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        ('h = "Authorization: tomatocanary extra"\n', 'h = "Authorization: [REDACTED] extra"\n'),
+        (
+            'h = "Authorization: tomatocanary # dev key"\n',
+            'h = "Authorization: [REDACTED] # dev key"\n',
+        ),
+        ('h = "Authorization: tomatocanary|x"\n', 'h = "Authorization: [REDACTED]|x"\n'),
+        (
+            'h = "Authorization: Custom tomato-canary-1"\n',
+            'h = "Authorization: Custom [REDACTED]"\n',
+        ),
+        (
+            'h = "Authorization: Bearer tomatocanary extra"\n',
+            'h = "Authorization: Bearer [REDACTED] extra"\n',
+        ),
+    ),
+)
+def test_authorization_values_in_literals_end_at_prose_and_separators(
+    tmp_path: Path, source: str, expected: str
+):
+    assert contains_sensitive_text(source, code=True), source
+    assert redact_sensitive_text(source) == expected
+    kept = indexable_bytes(tmp_path / "literal.py", source.encode("utf-8")).decode("utf-8")
+    assert kept == expected
+    assert "tomatocanary" not in kept and "tomato-canary-1" not in kept
+
+
+@pytest.mark.parametrize(
+    "line",
+    (
+        'print("Authorization: Bearer is required")\n',
+        'print("Authorization: Bearer tokens are required")\n',
+        'msg = "Authorization: Basic is not supported"\n',
+        'msg = "Authorization: Token from the env"\n',
+        'msg = "Authorization: Bearer must be set"\n',
+        "def f(authorization: str = Header(None)):\n",
+        "authorization: Optional[str] = None\n",
+        "authorization: Token = None\n",
+        "The Authorization: header carries the token.\n",
+        "The Authorization: Bearer is required, see the docs.\n",
+        "Set the Authorization: Bearer is required.\n",
+        "Authorization: Token from the env\n",
+        'Authorization: OAuth realm="Photos",\n',
+    ),
+)
+def test_authorization_prose_and_shapes_after_a_known_scheme_are_kept(tmp_path: Path, line: str):
+    assert redact_sensitive_text(line) == line, line
+    assert not contains_sensitive_text(line, code=True), line
+    data = line.encode("utf-8")
+    assert indexable_bytes(tmp_path / "prose.py", data) == data
+
+
+@pytest.mark.parametrize(
+    "unit",
+    (
+        "- Authorization: Bearer tomatocanary\n",
+        'h = "Authorization: tomatocanary extra"\n',
+        "Authorization: ",
+    ),
+)
+def test_authorization_headers_are_judged_in_linear_time(unit: str):
+    import time
+
+    # About 64k characters of each shape, each call bounded at 5 s.
+    text = unit * (64 * 1024 // len(unit)) + "\n"
+    started = time.perf_counter()
+    contains_sensitive_text(text)
+    assert time.perf_counter() - started < 5.0, unit
+    started = time.perf_counter()
+    redact_sensitive_text(text)
+    assert time.perf_counter() - started < 5.0, unit
+
+
 # #520: a quoted word after a redacted value was cut with it, and a
 # secret over several lines collapsed to one, so the file was refused.
 # Each value keeps its line count, and the file stays indexed.
