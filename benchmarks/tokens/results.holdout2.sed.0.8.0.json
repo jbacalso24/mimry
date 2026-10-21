@@ -341,8 +341,8 @@
         ],
         "fallback_tokens": 3984,
         "gold_missed": 0,
-        "index_ms": 11746,
-        "preflight_ms": 926,
+        "index_ms": 11251,
+        "preflight_ms": 850,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -554,8 +554,8 @@
         ],
         "fallback_tokens": 827,
         "gold_missed": 0,
-        "index_ms": 11320,
-        "preflight_ms": 727,
+        "index_ms": 10071,
+        "preflight_ms": 709,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -638,8 +638,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 7500,
-        "preflight_ms": 860,
+        "index_ms": 6673,
+        "preflight_ms": 809,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -948,8 +948,8 @@
         ],
         "fallback_tokens": 5108,
         "gold_missed": 0,
-        "index_ms": 7161,
-        "preflight_ms": 797,
+        "index_ms": 6559,
+        "preflight_ms": 762,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -1088,8 +1088,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 4873,
-        "preflight_ms": 807,
+        "index_ms": 4138,
+        "preflight_ms": 773,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -1335,8 +1335,8 @@
         ],
         "fallback_tokens": 3090,
         "gold_missed": 0,
-        "index_ms": 5197,
-        "preflight_ms": 784,
+        "index_ms": 4415,
+        "preflight_ms": 763,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -1561,8 +1561,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 5356,
-        "preflight_ms": 820,
+        "index_ms": 4560,
+        "preflight_ms": 800,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -1815,8 +1815,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 5026,
-        "preflight_ms": 781,
+        "index_ms": 4295,
+        "preflight_ms": 765,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -1921,8 +1921,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 4528,
-        "preflight_ms": 430,
+        "index_ms": 4317,
+        "preflight_ms": 419,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2225,8 +2225,8 @@
         ],
         "fallback_tokens": 725,
         "gold_missed": 0,
-        "index_ms": 4536,
-        "preflight_ms": 419,
+        "index_ms": 4310,
+        "preflight_ms": 414,
         "ranking": {
           "recall_at_5": 0.5,
           "recall_at_10": 0.5,
@@ -2356,8 +2356,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 3909,
-        "preflight_ms": 435,
+        "index_ms": 3277,
+        "preflight_ms": 397,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2538,8 +2538,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 2605,
-        "preflight_ms": 416,
+        "index_ms": 2228,
+        "preflight_ms": 408,
         "ranking": {
           "recall_at_5": 0.5,
           "recall_at_10": 1.0,
@@ -2692,8 +2692,8 @@
         ],
         "fallback_tokens": 0,
         "gold_missed": 0,
-        "index_ms": 3072,
-        "preflight_ms": 403,
+        "index_ms": 2613,
+        "preflight_ms": 401,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -2924,7 +2924,7 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 3622,
+        "index_ms": 3050,
         "preflight_ms": 421,
         "ranking": {
           "recall_at_5": 1.0,
@@ -3178,8 +3178,8 @@
         ],
         "fallback_tokens": 1363,
         "gold_missed": 0,
-        "index_ms": 2559,
-        "preflight_ms": 413,
+        "index_ms": 2201,
+        "preflight_ms": 427,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.5,
@@ -3305,8 +3305,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 4464,
-        "preflight_ms": 412,
+        "index_ms": 3729,
+        "preflight_ms": 411,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -3475,8 +3475,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 2571,
-        "preflight_ms": 328,
+        "index_ms": 2231,
+        "preflight_ms": 318,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -3808,8 +3808,8 @@
         ],
         "fallback_tokens": 235,
         "gold_missed": 1,
-        "index_ms": 2154,
-        "preflight_ms": 325,
+        "index_ms": 1834,
+        "preflight_ms": 314,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4025,8 +4025,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 1821,
-        "preflight_ms": 337,
+        "index_ms": 1606,
+        "preflight_ms": 319,
         "ranking": {
           "recall_at_5": 0.5,
           "recall_at_10": 1.0,
@@ -4145,8 +4145,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 1786,
-        "preflight_ms": 331,
+        "index_ms": 1524,
+        "preflight_ms": 321,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4241,8 +4241,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 1771,
-        "preflight_ms": 305,
+        "index_ms": 1518,
+        "preflight_ms": 295,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4543,8 +4543,8 @@
         ],
         "fallback_tokens": 643,
         "gold_missed": 1,
-        "index_ms": 1631,
-        "preflight_ms": 305,
+        "index_ms": 1392,
+        "preflight_ms": 294,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4652,8 +4652,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 1747,
-        "preflight_ms": 338,
+        "index_ms": 1500,
+        "preflight_ms": 323,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4750,8 +4750,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 1832,
-        "preflight_ms": 300,
+        "index_ms": 1562,
+        "preflight_ms": 294,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4992,8 +4992,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 18954,
-        "preflight_ms": 1589,
+        "index_ms": 18423,
+        "preflight_ms": 1491,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -5076,8 +5076,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 18359,
-        "preflight_ms": 1467,
+        "index_ms": 17541,
+        "preflight_ms": 1410,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -5163,8 +5163,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 7216,
-        "preflight_ms": 1486,
+        "index_ms": 6887,
+        "preflight_ms": 1416,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -5491,8 +5491,8 @@
         ],
         "fallback_tokens": 568,
         "gold_missed": 0,
-        "index_ms": 7301,
-        "preflight_ms": 1237,
+        "index_ms": 6996,
+        "preflight_ms": 1212,
         "ranking": {
           "recall_at_5": 0.3333333333333333,
           "recall_at_10": 0.6666666666666666,
@@ -5817,8 +5817,8 @@
         ],
         "fallback_tokens": 993,
         "gold_missed": 0,
-        "index_ms": 7546,
-        "preflight_ms": 1437,
+        "index_ms": 7197,
+        "preflight_ms": 1390,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -5987,8 +5987,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 7392,
-        "preflight_ms": 1383,
+        "index_ms": 7043,
+        "preflight_ms": 1319,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 1.0,
@@ -6109,8 +6109,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 10276,
-        "preflight_ms": 1331,
+        "index_ms": 9821,
+        "preflight_ms": 1280,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -6208,8 +6208,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 10259,
-        "preflight_ms": 1161,
+        "index_ms": 9711,
+        "preflight_ms": 1129,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -6339,8 +6339,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 6572,
-        "preflight_ms": 509,
+        "index_ms": 6185,
+        "preflight_ms": 482,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -6481,8 +6481,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 6430,
-        "preflight_ms": 485,
+        "index_ms": 6099,
+        "preflight_ms": 477,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -6666,8 +6666,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 2822,
-        "preflight_ms": 504,
+        "index_ms": 2439,
+        "preflight_ms": 482,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 1.0,
@@ -6951,8 +6951,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 5921,
-        "preflight_ms": 509,
+        "index_ms": 4934,
+        "preflight_ms": 474,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -7052,8 +7052,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 5881,
-        "preflight_ms": 476,
+        "index_ms": 4961,
+        "preflight_ms": 466,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -7171,8 +7171,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 3496,
-        "preflight_ms": 488,
+        "index_ms": 3045,
+        "preflight_ms": 476,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -7520,8 +7520,8 @@
         ],
         "fallback_tokens": 1315,
         "gold_missed": 0,
-        "index_ms": 2883,
-        "preflight_ms": 494,
+        "index_ms": 2525,
+        "preflight_ms": 467,
         "ranking": {
           "recall_at_5": 0.6666666666666666,
           "recall_at_10": 0.6666666666666666,
@@ -7884,8 +7884,8 @@
         ],
         "fallback_tokens": 493,
         "gold_missed": 0,
-        "index_ms": 6618,
-        "preflight_ms": 494,
+        "index_ms": 5514,
+        "preflight_ms": 466,
         "ranking": {
           "recall_at_5": 0.6666666666666666,
           "recall_at_10": 0.6666666666666666,
@@ -8189,8 +8189,8 @@
         ],
         "fallback_tokens": 1300,
         "gold_missed": 0,
-        "index_ms": 33412,
-        "preflight_ms": 1606,
+        "index_ms": 31317,
+        "preflight_ms": 1533,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -8511,8 +8511,8 @@
         ],
         "fallback_tokens": 5064,
         "gold_missed": 0,
-        "index_ms": 32824,
-        "preflight_ms": 1420,
+        "index_ms": 30840,
+        "preflight_ms": 1376,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -8781,8 +8781,8 @@
         ],
         "fallback_tokens": 6115,
         "gold_missed": 0,
-        "index_ms": 7195,
-        "preflight_ms": 1372,
+        "index_ms": 6354,
+        "preflight_ms": 1362,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -8994,8 +8994,8 @@
           }
         ],
         "gold_missed": 0,
-        "index_ms": 8180,
-        "preflight_ms": 1427,
+        "index_ms": 7484,
+        "preflight_ms": 1393,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,

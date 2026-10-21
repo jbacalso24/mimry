@@ -197,8 +197,8 @@
           }
         ],
         "fallback_tokens": 3984,
-        "index_ms": 12451,
-        "preflight_ms": 723,
+        "index_ms": 10313,
+        "preflight_ms": 805,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -332,8 +332,8 @@
           }
         ],
         "fallback_tokens": 827,
-        "index_ms": 8708,
-        "preflight_ms": 616,
+        "index_ms": 7906,
+        "preflight_ms": 696,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -402,8 +402,8 @@
             "shown": true
           }
         ],
-        "index_ms": 5982,
-        "preflight_ms": 725,
+        "index_ms": 7215,
+        "preflight_ms": 801,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -582,8 +582,8 @@
           }
         ],
         "fallback_tokens": 5108,
-        "index_ms": 5737,
-        "preflight_ms": 635,
+        "index_ms": 6333,
+        "preflight_ms": 739,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -674,8 +674,8 @@
             "shown": true
           }
         ],
-        "index_ms": 4038,
-        "preflight_ms": 651,
+        "index_ms": 4401,
+        "preflight_ms": 752,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -819,8 +819,8 @@
           }
         ],
         "fallback_tokens": 3090,
-        "index_ms": 4539,
-        "preflight_ms": 647,
+        "index_ms": 4674,
+        "preflight_ms": 756,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -951,8 +951,8 @@
             "shown": true
           }
         ],
-        "index_ms": 4331,
-        "preflight_ms": 700,
+        "index_ms": 4768,
+        "preflight_ms": 772,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -1097,8 +1097,8 @@
             "shown": true
           }
         ],
-        "index_ms": 4068,
-        "preflight_ms": 652,
+        "index_ms": 4491,
+        "preflight_ms": 731,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -1177,8 +1177,8 @@
             "shown": true
           }
         ],
-        "index_ms": 3616,
-        "preflight_ms": 359,
+        "index_ms": 3863,
+        "preflight_ms": 399,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -1355,8 +1355,8 @@
           }
         ],
         "fallback_tokens": 725,
-        "index_ms": 3581,
-        "preflight_ms": 350,
+        "index_ms": 3884,
+        "preflight_ms": 394,
         "ranking": {
           "recall_at_5": 0.5,
           "recall_at_10": 0.5,
@@ -1448,8 +1448,8 @@
             "shown": true
           }
         ],
-        "index_ms": 3023,
-        "preflight_ms": 333,
+        "index_ms": 3413,
+        "preflight_ms": 378,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -1568,8 +1568,8 @@
             "shown": true
           }
         ],
-        "index_ms": 2043,
-        "preflight_ms": 345,
+        "index_ms": 2282,
+        "preflight_ms": 390,
         "ranking": {
           "recall_at_5": 0.5,
           "recall_at_10": 1.0,
@@ -1672,8 +1672,8 @@
           }
         ],
         "fallback_tokens": 0,
-        "index_ms": 2470,
-        "preflight_ms": 334,
+        "index_ms": 2712,
+        "preflight_ms": 378,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -1818,8 +1818,8 @@
             "shown": true
           }
         ],
-        "index_ms": 2823,
-        "preflight_ms": 351,
+        "index_ms": 3140,
+        "preflight_ms": 395,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -1974,8 +1974,8 @@
           }
         ],
         "fallback_tokens": 1363,
-        "index_ms": 1990,
-        "preflight_ms": 346,
+        "index_ms": 2235,
+        "preflight_ms": 394,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.5,
@@ -2065,8 +2065,8 @@
             "shown": true
           }
         ],
-        "index_ms": 3472,
-        "preflight_ms": 346,
+        "index_ms": 3850,
+        "preflight_ms": 386,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2175,8 +2175,8 @@
             "shown": true
           }
         ],
-        "index_ms": 2025,
-        "preflight_ms": 292,
+        "index_ms": 2296,
+        "preflight_ms": 303,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2323,8 +2323,8 @@
             "shown": true
           }
         ],
-        "index_ms": 1694,
-        "preflight_ms": 270,
+        "index_ms": 1884,
+        "preflight_ms": 298,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2460,8 +2460,8 @@
             "shown": true
           }
         ],
-        "index_ms": 1494,
-        "preflight_ms": 275,
+        "index_ms": 1635,
+        "preflight_ms": 309,
         "ranking": {
           "recall_at_5": 0.5,
           "recall_at_10": 1.0,
@@ -2536,8 +2536,8 @@
             "shown": true
           }
         ],
-        "index_ms": 1441,
-        "preflight_ms": 283,
+        "index_ms": 1566,
+        "preflight_ms": 308,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2612,8 +2612,8 @@
             "shown": true
           }
         ],
-        "index_ms": 1423,
-        "preflight_ms": 272,
+        "index_ms": 1569,
+        "preflight_ms": 285,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2689,8 +2689,8 @@
             "shown": true
           }
         ],
-        "index_ms": 1458,
-        "preflight_ms": 260,
+        "index_ms": 1434,
+        "preflight_ms": 291,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2766,8 +2766,8 @@
             "shown": true
           }
         ],
-        "index_ms": 1413,
-        "preflight_ms": 279,
+        "index_ms": 1535,
+        "preflight_ms": 310,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2834,8 +2834,8 @@
             "shown": true
           }
         ],
-        "index_ms": 1445,
-        "preflight_ms": 275,
+        "index_ms": 1622,
+        "preflight_ms": 282,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -2972,8 +2972,8 @@
             "shown": true
           }
         ],
-        "index_ms": 15245,
-        "preflight_ms": 1300,
+        "index_ms": 16604,
+        "preflight_ms": 1446,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -3042,8 +3042,8 @@
             "shown": true
           }
         ],
-        "index_ms": 14838,
-        "preflight_ms": 1273,
+        "index_ms": 16170,
+        "preflight_ms": 1375,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -3115,8 +3115,8 @@
             "shown": true
           }
         ],
-        "index_ms": 6068,
-        "preflight_ms": 1256,
+        "index_ms": 6780,
+        "preflight_ms": 1422,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -3297,8 +3297,8 @@
           }
         ],
         "fallback_tokens": 568,
-        "index_ms": 6209,
-        "preflight_ms": 1058,
+        "index_ms": 6768,
+        "preflight_ms": 1173,
         "ranking": {
           "recall_at_5": 0.3333333333333333,
           "recall_at_10": 0.6666666666666666,
@@ -3477,8 +3477,8 @@
           }
         ],
         "fallback_tokens": 993,
-        "index_ms": 6357,
-        "preflight_ms": 1218,
+        "index_ms": 6991,
+        "preflight_ms": 1357,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -3591,8 +3591,8 @@
             "shown": true
           }
         ],
-        "index_ms": 6268,
-        "preflight_ms": 1181,
+        "index_ms": 6869,
+        "preflight_ms": 1307,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 1.0,
@@ -3681,8 +3681,8 @@
             "shown": true
           }
         ],
-        "index_ms": 8345,
-        "preflight_ms": 1158,
+        "index_ms": 9242,
+        "preflight_ms": 1268,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -3760,8 +3760,8 @@
             "shown": true
           }
         ],
-        "index_ms": 8435,
-        "preflight_ms": 990,
+        "index_ms": 9218,
+        "preflight_ms": 1111,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -3845,8 +3845,8 @@
             "shown": true
           }
         ],
-        "index_ms": 5303,
-        "preflight_ms": 436,
+        "index_ms": 5753,
+        "preflight_ms": 474,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -3941,8 +3941,8 @@
             "shown": true
           }
         ],
-        "index_ms": 5228,
-        "preflight_ms": 420,
+        "index_ms": 5602,
+        "preflight_ms": 455,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4064,8 +4064,8 @@
             "shown": true
           }
         ],
-        "index_ms": 2371,
-        "preflight_ms": 428,
+        "index_ms": 2556,
+        "preflight_ms": 462,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 1.0,
@@ -4201,8 +4201,8 @@
             "shown": true
           }
         ],
-        "index_ms": 4797,
-        "preflight_ms": 420,
+        "index_ms": 5219,
+        "preflight_ms": 467,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4278,8 +4278,8 @@
             "shown": true
           }
         ],
-        "index_ms": 4767,
-        "preflight_ms": 412,
+        "index_ms": 5199,
+        "preflight_ms": 452,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4359,8 +4359,8 @@
             "shown": true
           }
         ],
-        "index_ms": 2828,
-        "preflight_ms": 417,
+        "index_ms": 3131,
+        "preflight_ms": 460,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
@@ -4542,8 +4542,8 @@
           }
         ],
         "fallback_tokens": 1315,
-        "index_ms": 2348,
-        "preflight_ms": 409,
+        "index_ms": 2595,
+        "preflight_ms": 449,
         "ranking": {
           "recall_at_5": 0.6666666666666666,
           "recall_at_10": 0.6666666666666666,
@@ -4712,8 +4712,8 @@
           }
         ],
         "fallback_tokens": 493,
-        "index_ms": 5260,
-        "preflight_ms": 408,
+        "index_ms": 5815,
+        "preflight_ms": 449,
         "ranking": {
           "recall_at_5": 0.6666666666666666,
           "recall_at_10": 0.6666666666666666,
@@ -4895,8 +4895,8 @@
           }
         ],
         "fallback_tokens": 1300,
-        "index_ms": 26752,
-        "preflight_ms": 1294,
+        "index_ms": 28949,
+        "preflight_ms": 1428,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -5079,8 +5079,8 @@
           }
         ],
         "fallback_tokens": 5064,
-        "index_ms": 26625,
-        "preflight_ms": 1222,
+        "index_ms": 29151,
+        "preflight_ms": 1371,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -5241,8 +5241,8 @@
           }
         ],
         "fallback_tokens": 6115,
-        "index_ms": 6288,
-        "preflight_ms": 1235,
+        "index_ms": 6845,
+        "preflight_ms": 1343,
         "ranking": {
           "recall_at_5": 0.0,
           "recall_at_10": 0.0,
@@ -5372,8 +5372,8 @@
             "shown": true
           }
         ],
-        "index_ms": 7122,
-        "preflight_ms": 1207,
+        "index_ms": 7700,
+        "preflight_ms": 1365,
         "ranking": {
           "recall_at_5": 1.0,
           "recall_at_10": 1.0,
