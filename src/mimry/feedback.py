@@ -33,9 +33,15 @@ FEEDBACK_LABELS = {
 FEEDBACK_UNUSED_LABEL = "feedback unused suggestion decay"
 FEEDBACK_SCHEMA_VERSION = "0.1.0"
 COMMIT_NOTE_PREFIX = "Recorded from commit "
+# The key is the whole run of key characters, so it starts only at a run
+# boundary. The lookahead admits a run only when it names a secret. That
+# keeps the scan linear and leaves non-secret text unconsumed, so an
+# assignment inside a value ("url=...?password=x") is still found.
 SECRET_ASSIGNMENT_RE = re.compile(
-    r"\b(?P<key>[A-Za-z0-9_.-]*(?:secret|token|password|passwd|api[_-]?key|credential)[A-Za-z0-9_.-]*"
-    r"|pass)"
+    r"(?<![A-Za-z0-9_.-])"
+    r"(?=[A-Za-z0-9_.-]*?(?:secret|token|password|passwd|api[_-]?key|credential)"
+    r"|(?:[A-Za-z0-9_.-]*?[.-])?pass(?![A-Za-z0-9_.-]))"
+    r"(?P<key>[A-Za-z0-9_.-]++)"
     r"(?P<sep>[\"']?\s*(?:=|:)\s*)"
     r"(?P<value>(?!\[REDACTED\])(?:Bearer\s+)?[\"']?[^\s,;\"'{}\]]+[\"']?)",
     re.IGNORECASE,

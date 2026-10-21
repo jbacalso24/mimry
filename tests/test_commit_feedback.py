@@ -4,6 +4,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -438,6 +439,40 @@ def test_feedback_keeps_prose_that_mentions_passwords(text):
 )
 def test_feedback_redacts_password_values(text, expected):
     assert _redact_feedback_string(text) == (expected, True)
+
+
+def test_feedback_redaction_is_linear_on_worst_case_input():
+    for text in ("a." * 50_000, "secret." * 20_000):
+        started = time.perf_counter()
+        _redact_feedback_string(text)
+        assert time.perf_counter() - started < 1.0
+
+    started = time.perf_counter()
+    redacted, changed = _redact_feedback_string("a." * 50_000 + "password=tomato-canary")
+    assert time.perf_counter() - started < 1.0
+    assert "tomato-canary" not in redacted
+    assert changed
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("api_key=tomato-canary", "api_key=[REDACTED]"),
+        ("config.password: tomato-canary", "config.password: [REDACTED]"),
+        ("pass=tomato-canary", "pass=[REDACTED]"),
+        ("by.pass=tomato-canary", "by.pass=[REDACTED]"),
+        ("bypass=tomato-canary", "bypass=tomato-canary"),
+        ('token = "tomato-canary"', "token = [REDACTED]"),
+        ('"secret": "tomato-canary"', '"secret": [REDACTED]'),
+        ("password=[REDACTED]", "password=[REDACTED]"),
+        ("count=3", "count=3"),
+        ("x-api-key: tomato-canary", "x-api-key: [REDACTED]"),
+        ("url=https://x?password=tomato-canary", "url=https://x?password=[REDACTED]"),
+        ("foo=secret=tomato-canary", "foo=secret=[REDACTED]"),
+    ],
+)
+def test_feedback_secret_assignment_matches_previous_output(text, expected):
+    assert _redact_feedback_string(text) == (expected, expected != text)
 
 
 def test_feedback_payload_from_args_is_unchanged(tmp_path):
