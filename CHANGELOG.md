@@ -11,6 +11,7 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 - `mimry install --refresh` adds Claude Code's PowerShell tool to the search hook, so `mimry` queries run there are tagged with their session ([#556](https://github.com/jbacalso24/mimry/pull/556)).
   `mimry doctor` reports a hook table from 0.7.0 as incomplete and prints the repair command.
 - Installing from a uv throwaway env (`uvx mimry install`) now stops before writing anything when the `mimry` on PATH is another version, and says how to upgrade it ([#545](https://github.com/jbacalso24/mimry/pull/545)).
+  `mimry install --refresh` and the refresh after `mimry upgrade` check the same ([#565](https://github.com/jbacalso24/mimry/pull/565)).
   Hooks used to run the older copy and fail.
 - The session command log keeps a keyed hash of each query, so a short secret typed as a query cannot be guessed from the file ([#546](https://github.com/jbacalso24/mimry/pull/546)).
   Rows written by 0.7.0 are ignored.
@@ -21,16 +22,19 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
   Session feedback is now recorded when the agent stops, not only after the next command.
 - MCP queries are tagged with their session through the PreToolUse hook, so session learning covers agents that use the MCP tools ([#518](https://github.com/jbacalso24/mimry/pull/518)).
 - Read commands work in a sandbox that cannot write MIMRY's cache: they answer from the index that exists and say once that it cannot be updated, with the folder to point `MIMRY_CACHE_HOME` at ([#527](https://github.com/jbacalso24/mimry/pull/527), [#549](https://github.com/jbacalso24/mimry/pull/549), [#557](https://github.com/jbacalso24/mimry/pull/557)).
+  The MCP tools, `mimry status` and `mimry doctor` say so too, rather than failing or promising a refresh ([#568](https://github.com/jbacalso24/mimry/pull/568)).
   A cache inside the project is no longer indexed as part of the project.
 
 ### Fixes
 
 - Redaction catches more secrets: in comments, URLs, f-strings and subscript assignments ([#512](https://github.com/jbacalso24/mimry/pull/512)), in tuple assignments and auth headers inside strings ([#528](https://github.com/jbacalso24/mimry/pull/528)), and in chained and one-element assignments, split string literals and `Authorization` values with any scheme ([#553](https://github.com/jbacalso24/mimry/pull/553)).
+  It also catches chained and backslash-continued values that run across lines ([#567](https://github.com/jbacalso24/mimry/pull/567)), and `Authorization` values of plain words, while prose such as `basic auth is required` is kept ([#571](https://github.com/jbacalso24/mimry/pull/571)).
 - A multi-line secret is redacted line by line, so the file keeps its shape and is still indexed, and a docstring that mentions a password keeps its prose ([#536](https://github.com/jbacalso24/mimry/pull/536)).
-- Secret scans, the prompt hook and feedback redaction run in time proportional to the input on worst-case text, such as long runs of escaped quotes or dotted names ([#529](https://github.com/jbacalso24/mimry/pull/529), [#537](https://github.com/jbacalso24/mimry/pull/537), [#551](https://github.com/jbacalso24/mimry/pull/551)).
+  A triple-quoted secret that never closes keeps its line breaks too ([#570](https://github.com/jbacalso24/mimry/pull/570)).
+- Secret scans, the prompt hook and feedback redaction run in time proportional to the input on worst-case text, such as long runs of escaped quotes or dotted names, or a command with many `mimry` lines ([#529](https://github.com/jbacalso24/mimry/pull/529), [#537](https://github.com/jbacalso24/mimry/pull/537), [#551](https://github.com/jbacalso24/mimry/pull/551), [#566](https://github.com/jbacalso24/mimry/pull/566)).
 - The search hook stays quiet on pipes, word regexes and searches of named files ([#517](https://github.com/jbacalso24/mimry/pull/517)).
 - Session learning keeps the session's last query through Stop, matches queries exactly, and counts edits made in the same clock tick as Stop on Windows ([#531](https://github.com/jbacalso24/mimry/pull/531), [#534](https://github.com/jbacalso24/mimry/pull/534)).
-  A query that starts with a secret label keeps its session tag ([#556](https://github.com/jbacalso24/mimry/pull/556)).
+  A query that starts with a secret label keeps its session tag ([#556](https://github.com/jbacalso24/mimry/pull/556)), and queries are tagged on drives without hard links, such as FAT or exFAT ([#569](https://github.com/jbacalso24/mimry/pull/569)).
 - `mimry install` registers its own `mimry-mcp` rather than the first one on PATH, keeps `--prompt-hook` in repair hints, and prints tidier output ([#508](https://github.com/jbacalso24/mimry/pull/508), [#532](https://github.com/jbacalso24/mimry/pull/532), [#510](https://github.com/jbacalso24/mimry/pull/510)).
 - MIMRY's own installed skill files are no longer indexed ([#507](https://github.com/jbacalso24/mimry/pull/507)).
 - A brief file error on a busy Windows machine is reported as itself, not as a missing index pointer ([#538](https://github.com/jbacalso24/mimry/pull/538)).
