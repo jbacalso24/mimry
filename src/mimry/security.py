@@ -5,6 +5,7 @@ import fnmatch
 import functools
 import os
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, BinaryIO, NamedTuple
 
@@ -307,10 +308,47 @@ YAML_QUOTED_MULTILINE_ASSIGNMENT_START_RE = re.compile(
     r"^(?P<indent>[ \t]*)(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)"
     r"(?P<header>[ \t]*:[ \t]*)(?P<quote>['\"])"
 )
-PRIVATE_KEY_BLOCK_RE = re.compile(
-    r"(?is)-----BEGIN (?P<label>(?:RSA |EC |OPENSSH |DSA |ENCRYPTED |)PRIVATE KEY)-----"
-    r".*?-----END (?P=label)-----"
+# A private key block runs from its BEGIN line to the END line with the
+# same label; see _private_key_block_spans.
+_PRIVATE_KEY_BEGIN_RE = re.compile(
+    r"-----BEGIN (?P<label>(?:RSA |EC |OPENSSH |DSA |ENCRYPTED |)PRIVATE KEY)-----",
+    re.IGNORECASE,
 )
+
+
+@functools.lru_cache(maxsize=16)
+def _private_key_end_re(label: str) -> re.Pattern[str]:
+    return re.compile(rf"-----END {re.escape(label)}-----", re.IGNORECASE)
+
+
+def _private_key_block_spans(text: str) -> list[tuple[int, int]]:
+    """The spans of the private key blocks in text.
+
+    A BEGIN line with no END line of its label after it is skipped, and
+    so is every later BEGIN line of that label, since no END line
+    follows those either. A search from each BEGIN line rescanned the
+    rest of the text each time, which was quadratic on many BEGIN lines.
+    """
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    without_end: set[str] = set()
+    # BEGIN lines may overlap in their dashes, so each search starts one
+    # character after the last BEGIN line found, not after its end.
+    scan = 0
+    while (begin := _PRIVATE_KEY_BEGIN_RE.search(text, scan)) is not None:
+        scan = begin.start() + 1
+        label = begin.group("label")
+        if begin.start() < pos or label.casefold() in without_end:
+            continue
+        end = _private_key_end_re(label).search(text, begin.end())
+        if end is None:
+            without_end.add(label.casefold())
+            continue
+        spans.append((begin.start(), end.end()))
+        pos = end.end()
+    return spans
+
+
 SENSITIVE_VALUE_RE = re.compile(
     r"(?is)(\"type\"\s*:\s*\"service_account\"|"
     r"//firebase\.google\.com/docs/|"
@@ -558,7 +596,7 @@ def _contains_sensitive_text(text: str, *, code: bool, depth: int) -> bool:
     if not text:
         return False
     if (
-        PRIVATE_KEY_BLOCK_RE.search(text)
+        _private_key_block_spans(text)
         or STANDALONE_SECRET_RE.search(text)
         or SENSITIVE_VALUE_RE.search(text)
         or _has_url_credential(text)
@@ -606,7 +644,9 @@ def _contains_sensitive_text(text: str, *, code: bool, depth: int) -> bool:
         return True
     if any(
         _literal_comparison_is_sensitive(match, code=code)
-        for match in LITERAL_COMPARED_RE.finditer(text)
+        for match in _literal_finditer(
+            LITERAL_COMPARED_RE, text, quotes=_DOUBLE_OR_SINGLE_QUOTE_RE
+        )
     ):
         return True
     if any(
@@ -640,7 +680,9 @@ def redact_standalone_secrets(text: str) -> str:
     run this pass, so the list lives in one place.
     """
 
-    redacted = PRIVATE_KEY_BLOCK_RE.sub(REDACTED, text)
+    redacted = _splice(
+        text, [(start, end, REDACTED) for start, end in _private_key_block_spans(text)]
+    )
     redacted = STANDALONE_SECRET_RE.sub(REDACTED, redacted)
     return SENSITIVE_VALUE_RE.sub(REDACTED, redacted)
 
@@ -670,7 +712,15 @@ def _redact_text(text: str, *, depth: int) -> str:
     redacted = _redact_yaml_quoted_multiline(redacted)
     redacted = _redact_hash_entries(redacted)
     redacted = _redact_values(redacted, ASSIGNMENT_RE, _redact_assignment, prose=depth > 0)
-    redacted = LITERAL_COMPARED_RE.sub(_redact_literal_comparison, redacted)
+    redacted = _splice(
+        redacted,
+        [
+            (match.start(), match.end(), _redact_literal_comparison(match))
+            for match in _literal_finditer(
+                LITERAL_COMPARED_RE, redacted, quotes=_DOUBLE_OR_SINGLE_QUOTE_RE
+            )
+        ],
+    )
     redacted = LABEL_COMPARED_RE.sub(_redact_label_comparison, redacted)
     redacted = TUPLE_LABELED_RE.sub(_redact_tuple, redacted)
     redacted = _redact_tuple_slots(redacted)
@@ -1856,7 +1906,9 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
     if _AUTH_HEADER_HINT_RE.search(text) is None:
         return []
     spans: list[tuple[int, int]] = []
-    for literal in _STRING_LITERAL_RE.finditer(text):
+    for literal in _literal_finditer(
+        _STRING_LITERAL_RE, text, quotes=_LITERAL_QUOTE_RE, prefixed=True
+    ):
         for header in _AUTH_HEADER_VALUE_RE.finditer(literal.group(0)):
             if _text_is_credential(header.group("value")):
                 start, end = header.span("value")
@@ -2249,6 +2301,55 @@ def _literal_close(line: str, index: int) -> int | None:
             return pos
         pos += 1
     return None
+
+
+# The body of a quote-delimited literal, as the patterns above read it.
+# A backslash escapes the next character. The body stops before a quote
+# of its own kind, a line break, or a backslash that escapes nothing.
+_LITERAL_BODY_RES = {
+    '"': re.compile(r"(?:\\.|[^\"\\\r\n])*"),
+    "'": re.compile(r"(?:\\.|[^'\\\r\n])*"),
+    "`": re.compile(r"(?:\\.|[^`\\])*"),
+}
+_DOUBLE_OR_SINGLE_QUOTE_RE = re.compile(r"[\"']")
+
+
+def _literal_finditer(
+    pattern: re.Pattern[str],
+    text: str,
+    *,
+    quotes: re.Pattern[str],
+    prefixed: bool = False,
+) -> Iterator[re.Match[str]]:
+    """``pattern.finditer(text)``, found in one pass over the quotes.
+
+    ``pattern`` matches a quote-delimited literal at a quote, after up
+    to two prefix letters when ``prefixed``. Tried from every quote, a
+    literal that does not close is scanned to where it stops, and so is
+    each later quote of its kind inside it. Those quotes are escaped, so
+    each fails where the first one fails. A quote before the end of an
+    earlier literal of its kind is therefore skipped, and the pass is
+    linear.
+    """
+    pos = 0
+    # Per quote kind, the index before which a quote of that kind lies
+    # inside an earlier literal that did not match.
+    fails_before: dict[str, int] = {}
+    for found in quotes.finditer(text):
+        at = found.start()
+        quote = found.group()
+        if at < pos or at < fails_before.get(quote, 0):
+            continue
+        start = at
+        if prefixed:
+            while start > pos and at - start < 2 and text[start - 1] in _STRING_PREFIX_CHARS:
+                start -= 1
+        match = pattern.match(text, start)
+        if match is None:
+            fails_before[quote] = _LITERAL_BODY_RES[quote].match(text, at + 1).end()
+            continue
+        yield match
+        pos = match.end()
 
 
 def _redacted_value_line(line: str, *, comments: bool = True) -> str:

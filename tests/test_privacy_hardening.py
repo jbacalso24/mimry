@@ -2458,3 +2458,33 @@ def test_a_secret_split_over_many_spaces_is_judged_in_linear_time():
     started = time.perf_counter()
     contains_sensitive_text(text, code=True)
     assert time.perf_counter() - started < 5.0
+
+
+def test_escaped_quote_runs_are_judged_in_linear_time():
+    # #541: a literal that never closes was rescanned from every escaped
+    # quote inside it, so a run of escaped quotes cost quadratic time
+    # (contains_sensitive_text took 4.7 s at 16k quotes). A private key
+    # BEGIN line with no END line was searched again from each BEGIN
+    # line, the same shape. Each call is bounded at 5 s; the linear cost
+    # is well under 1 s, the quadratic cost is minutes.
+    import time
+
+    run = '\\"' * 64000
+    texts = (
+        "password = (\n" + run + "\n)\n",
+        'u, password = "' + run,
+        'if "' + run + " == password",
+        'authorization: "' + run,
+        'x = """' * 20000,
+        "-----BEGIN PRIVATE KEY-----\n" * 64000,
+    )
+    for text in texts:
+        started = time.perf_counter()
+        redact_sensitive_text(text)
+        assert time.perf_counter() - started < 5.0, text[:40]
+        started = time.perf_counter()
+        contains_sensitive_text(text)
+        assert time.perf_counter() - started < 5.0, text[:40]
+        started = time.perf_counter()
+        contains_sensitive_text(text, code=True)
+        assert time.perf_counter() - started < 5.0, text[:40]
