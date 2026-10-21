@@ -442,6 +442,8 @@ def mimry_queries(command: str) -> list[str]:
             i
             for i, word in enumerate(words)
             if re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe") == "mimry"
+            # ``mimry find mimry`` searches for the word.
+            and not (i and words[i - 1] in MIMRY_QUERY_COMMANDS)
         ]
         for n, i in enumerate(starts):
             end = starts[n + 1] if n + 1 < len(starts) else len(words)

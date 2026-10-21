@@ -219,6 +219,7 @@ def test_mimry_queries_stops_each_query_at_the_next_mimry_word():
     # shlex reads a newline as a space, so these lines form one segment.
     # Each query's arguments end where the next mimry word starts.
     assert mimry_queries("mimry find login flow\n" * 3) == ["login", "flow"] * 3
+    assert mimry_queries("mimry find mimry hook") == ["mimry", "hook"]
 
 
 def test_mimry_queries_stays_linear_on_many_mimry_words_in_one_segment():
