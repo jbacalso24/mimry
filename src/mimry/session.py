@@ -49,6 +49,7 @@ SESSION_STOP_LOCK_WAIT = 5.0
 # came from a process that died holding it.
 APPEND_LOCK = "session-files.lock"
 APPEND_WAIT = 2.0
+APPEND_UNWRITABLE_TRIES = 3
 APPEND_STALE = 5.0
 # The last shell commands that named mimry, and the last MCP queries,
 # each with the session that ran it. A find run from such a command, or
@@ -147,6 +148,7 @@ def _append_lock(state: Path) -> Iterator[None]:
     """
     lock = state / APPEND_LOCK
     deadline = time.monotonic() + APPEND_WAIT
+    refused_with_no_lock = 0
     while True:
         try:
             os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
@@ -159,6 +161,14 @@ def _append_lock(state: Path) -> Iterator[None]:
             try:
                 stale = time.time() - lock.stat().st_mtime > APPEND_STALE
             except FileNotFoundError:
+                if isinstance(error, PermissionError):
+                    # Refused with no lock there: a pending unlink that
+                    # just finished, or a folder that is not writable.
+                    # Retry a few times only: a sandbox must not wait.
+                    refused_with_no_lock += 1
+                    if refused_with_no_lock > APPEND_UNWRITABLE_TRIES:
+                        raise error from None
+                    time.sleep(0.002)
                 continue  # released between the two calls
             except PermissionError:
                 stale = False  # still being unlinked on Windows: busy
