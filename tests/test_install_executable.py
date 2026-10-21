@@ -96,6 +96,61 @@ def test_throwaway_env_keeps_path_and_skips_the_probe(two_installs, tmp_path, mo
     assert installer._resolve_executable("mimry-mcp") == two_installs["on_path"]["mimry-mcp"]
 
 
+def _throwaway_env(tmp_path, monkeypatch):
+    """Run from a uv cache environment, with its own mimry scripts."""
+    cached = tmp_path / "cache" / "builds-v0" / "abc" / "Scripts"
+    _script(cached, "mimry")
+    _script(cached, "mimry-mcp")
+    monkeypatch.setattr(sys, "executable", str(cached / "python"))
+
+
+def test_throwaway_env_same_version_on_path_is_silent(two_installs, tmp_path, monkeypatch, capsys):
+    """A same-version PATH copy in a throwaway env is kept, quietly."""
+    _throwaway_env(tmp_path, monkeypatch)
+    _probe(monkeypatch, __version__)
+    on_path = two_installs["on_path"]
+
+    assert installer._resolve_executable("mimry-mcp") == on_path["mimry-mcp"]
+    installer._warn_if_path_differs()
+    assert "on PATH" not in capsys.readouterr().out
+
+
+def test_throwaway_env_older_path_copy_is_kept_and_warns(
+    two_installs, tmp_path, monkeypatch, capsys
+):
+    """#525: keep PATH's older copy, since a throwaway script vanishes.
+
+    The warning names both versions and the upgrade commands.
+    """
+    _throwaway_env(tmp_path, monkeypatch)
+    _probe(monkeypatch, "0.6.4")
+    on_path = two_installs["on_path"]
+
+    assert installer._resolve_executable("mimry-mcp") == on_path["mimry-mcp"]
+    installer._warn_if_path_differs()
+    lines = [line for line in capsys.readouterr().out.splitlines() if "on PATH" in line]
+    assert len(lines) == 1
+    assert "0.6.4" in lines[0]
+    assert __version__ in lines[0]
+    assert on_path["mimry"] in lines[0]
+    assert "uv tool upgrade mimry" in lines[0]
+    assert "pipx upgrade mimry" in lines[0]
+
+
+def test_throwaway_env_without_path_copy_uses_the_script_beside_silently(
+    two_installs, tmp_path, monkeypatch, capsys
+):
+    """Nothing on PATH: the throwaway script is used, silently."""
+    _throwaway_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(installer, "which", lambda name: None)
+    monkeypatch.setattr(installer.shutil, "which", lambda name: None)
+    cached = Path(sys.executable).parent
+
+    assert installer._resolve_executable("mimry-mcp") == str(cached / "mimry-mcp")
+    installer._warn_if_path_differs()
+    assert "on PATH" not in capsys.readouterr().out
+
+
 def test_no_sibling_uses_path_then_bare_name(tmp_path, monkeypatch):
     """No script beside the interpreter: PATH, then the bare name."""
     monkeypatch.setattr(sys, "executable", str(tmp_path / "venv" / "Scripts" / "python"))

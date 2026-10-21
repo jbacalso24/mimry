@@ -1221,6 +1221,7 @@ def _resolve_executable(name: str) -> str:
         return found or name
     if found is None:
         return beside
+    # Keep PATH's copy: a throwaway script vanishes with the uv cache.
     if _same_file(found, beside) or _in_throwaway_env():
         return found
     if _path_mimry_version() == __version__:
@@ -1233,10 +1234,21 @@ def _warn_if_path_differs() -> None:
 
     Hooks and the MCP server then run this install, not the one a shell
     finds first. Both versions are shown, so the mismatch is visible.
+    In a throwaway env PATH's copy is kept whatever its version, so a
+    different version is warned about with the upgrade commands.
     """
     on_path = which("mimry")
     own = _resolve_mimry_exe()
-    if on_path and not _same_file(on_path, own):
+    if on_path and _in_throwaway_env():
+        path_version = _path_mimry_version()
+        if path_version != __version__:
+            ui.warn(
+                f"`mimry` on PATH is {path_version or 'an unknown version'} ({on_path});"
+                f" this install is {__version__} from a uv throwaway env, so hooks and the"
+                " MCP server use the one on PATH. Upgrade it with `uv tool upgrade mimry`"
+                " or `pipx upgrade mimry`."
+            )
+    elif on_path and not _same_file(on_path, own):
         path_version = _path_mimry_version() or "an unknown version"
         ui.warn(
             f"`mimry` on PATH is {path_version} ({on_path}); hooks and the MCP server"
