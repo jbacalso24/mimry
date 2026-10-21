@@ -1272,20 +1272,18 @@ def test_transient_stat_error_on_locked_reload_is_not_reported_as_disappeared(
 ):
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
-    mimry_dir = (repo / ".mimry").resolve()
-    real_stat = os.stat
-    stats_of_mimry = 0
+    real_is_dir = storage.path_is_dir
+    checks = 0
 
-    def flaky(path, *args, **kwargs):
-        nonlocal stats_of_mimry
-        if Path(path) == mimry_dir:
-            stats_of_mimry += 1
-            # Second stat is the reload under the lock.
-            if stats_of_mimry == 2:
-                raise OSError(errno.EIO, "transient stat failure", str(path))
-        return real_stat(path, *args, **kwargs)
+    def flaky(path):
+        nonlocal checks
+        checks += 1
+        # The second check is load_pointer's reload under the lock.
+        if checks == 2:
+            raise OSError(errno.EIO, "transient stat failure", str(path))
+        return real_is_dir(path)
 
-    monkeypatch.setattr(os, "stat", flaky)
+    monkeypatch.setattr(storage, "path_is_dir", flaky)
 
     with pytest.raises(OSError, match="transient stat failure") as raised:
         with active_index_pointer(repo):
