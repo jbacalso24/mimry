@@ -440,7 +440,7 @@ Two scripted agents get the same task text and a budget of 10 file reads: one st
 Each follows fixed rules, and the benchmark counts the tokens it reads before it has read every file the pull request changed.
 A model-driven agent chooses its reads differently, so treat these as a measure of retrieval, not a saving you are guaranteed in your own sessions.
 
-Measured with MIMRY 0.8.0 on 44 merged pull requests from 6 open-source projects, the set rerun for every release:
+Measured with MIMRY 0.8.1 on 44 merged pull requests from 6 open-source projects, the set rerun for every release:
 
 | How the agent reads files | Tokens saved with MIMRY | Tasks located, MIMRY / grep |
 |---|---|---|

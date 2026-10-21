@@ -39,11 +39,25 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.8.0">0.8.0</a><a href="#v0.7.0">0.7.0</a><a href="#v0.6.4">0.6.4</a><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.8.1">0.8.1</a><a href="#v0.8.0">0.8.0</a><a href="#v0.7.0">0.7.0</a><a href="#v0.6.4">0.6.4</a><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.8.1">
+<header class="release-meta">
+<h2>0.8.1</h2>
+<p class="release-date"><time datetime="2026-10-21">21 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.8.1">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.8.1/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Fixes</h3>
+<ul><li><code>Authorization</code> values after Bearer, Basic or Token are redacted again whatever follows them, as before 0.8.0, and a plain-word value is caught when its header ends at a comma, a semicolon or a line break, escaped or not (<a href="https://github.com/jbacalso24/mimry/pull/578">#578</a>). Common words such as <code>disabled</code>, <code>needed</code> or <code>default</code> after <code>Authorization:</code> are no longer redacted.</li><li>A query that mentions mimry without quotes, such as <code>mimry find how does mimry work</code>, keeps all its words in the session log again (<a href="https://github.com/jbacalso24/mimry/pull/577">#577</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.8.0">
 <header class="release-meta">
 <h2>0.8.0</h2>
-<p class="release-date"><time datetime="2026-10-21">21 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-21">21 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.8.0">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.8.0/">PyPI</a></li>
