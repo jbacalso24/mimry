@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import io
 import sys
 from functools import wraps
@@ -331,6 +332,12 @@ def _requires_text(param: str, noun: str, example: str):
     return decorate
 
 
+# Whether the running tool's refresh was refused by a read-only cache.
+_CACHE_READ_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "mimry_cache_read_only", default=False
+)
+
+
 def _index_operation(*, exclusive: bool = False, refresh: bool = False):
     def decorate(func):
         func_signature = signature(func)
@@ -356,11 +363,16 @@ def _index_operation(*, exclusive: bool = False, refresh: bool = False):
                     except Exception as exc:
                         # Graph health still shows what is left.
                         graph_error = str(exc)
-            with active_index_pointer(root_path, exclusive=exclusive):
-                result = func(*args, **kwargs)
+            token = _CACHE_READ_ONLY.set(read_only)
+            try:
+                with active_index_pointer(root_path, exclusive=exclusive):
+                    result = func(*args, **kwargs)
+            finally:
+                _CACHE_READ_ONLY.reset(token)
             if read_only and isinstance(result, dict):
                 # Same key and wording as the preflight's warning.
-                result["stdout"] = READ_ONLY_CACHE_STALE_WARNING
+                before = result.get("stdout") or ""
+                result["stdout"] = "\n".join(filter(None, (READ_ONLY_CACHE_STALE_WARNING, before)))
             if stats is not None and isinstance(result, dict):
                 if stats.get("set_up_worktree"):
                     result["set_up_worktree"] = True
@@ -757,7 +769,9 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
     raw_query = query
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows, pack_path = write_context_pack(root_path, ptr, raw_query, semantic=semantic)
+    rows, pack_path = write_context_pack(
+        root_path, ptr, raw_query, semantic=semantic, read_only=_CACHE_READ_ONLY.get()
+    )
     return sanitize_data(
         {
             "query": redact_sensitive_text(query),

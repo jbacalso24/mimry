@@ -1223,6 +1223,8 @@ def test_read_only_cache_mcp_context_stale_index_answers_with_the_warning(tmp_pa
 
     assert payload["files"]
     assert READ_ONLY_CACHE_STALE_WARNING in payload["stdout"]
+    pack = Path(payload["output"]).read_text(encoding="utf-8")
+    assert "run `mimry refresh`" not in pack
 
 
 def test_read_only_cache_mcp_explain_stale_index_answers_with_the_warning(tmp_path, monkeypatch):
