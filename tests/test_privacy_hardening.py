@@ -2333,14 +2333,15 @@ def test_a_run_of_unclosed_multiline_openers_is_judged_in_linear_time():
 
     # 60000 openers that never close, as a parenthesised value or a
     # triple-quoted string (about 0.8 and 0.9 MB). Each call is bounded
-    # at 5 s, as above, and the quadratic cost is 30 s and up (#520).
+    # at 10 s (the triple shape is near 3 s on CI), and the quadratic
+    # cost is 30 s and up (#520).
     for text in ("password = (\n" * 60000, 'password = """\n' * 60000):
         started = time.perf_counter()
         redact_sensitive_text(text)
-        assert time.perf_counter() - started < 5.0
+        assert time.perf_counter() - started < 10.0
         started = time.perf_counter()
         contains_sensitive_text(text, code=True)
-        assert time.perf_counter() - started < 5.0
+        assert time.perf_counter() - started < 10.0
 
 
 def test_files_with_a_multi_line_secret_are_indexed_and_the_value_is_nowhere_in_the_cache(
