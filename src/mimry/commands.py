@@ -1149,7 +1149,11 @@ def cmd_context(a):
     if getattr(a, "semantic", False):
         _print_semantic_degrade(Path(ptr["indexPath"]), ptr.get("rootId"))
     rows, pack_path = write_context_pack(
-        root, ptr, a.query, semantic=getattr(a, "semantic", False)
+        root,
+        ptr,
+        a.query,
+        semantic=getattr(a, "semantic", False),
+        read_only=getattr(a, "cache_read_only", False),
     )
     ui.ok(f"Wrote a context pack for {ui.quote(sanitize_query(a.query))}")
     ui.detail(ui.facts(ui.display_path(pack_path, root), ui.count(len(rows), "relevant file")))

@@ -119,7 +119,9 @@ def _print_index_note(fresh: dict, graph: dict, *, read_only: bool = False) -> N
         ui.warn(f"Graph files are {graph['status']}. Run `mimry refresh` to rebuild them.")
 
 
-def _refresh_action(fresh: dict, graph: dict) -> str:
+def _refresh_action(fresh: dict, graph: dict, *, read_only: bool = False) -> str:
+    if read_only:
+        return READ_ONLY_CACHE_STALE_WARNING
     actions = []
     if fresh["state"] != "current":
         actions.append(f"index is {fresh['state']}")
@@ -221,7 +223,14 @@ def oversized_message(root: Path, ptr: dict, text: str) -> str | None:
 
 
 def _status_summary_not_current(
-    root: Path, ptr: dict, fresh: dict, graph: dict, semantic_state: dict, semantic: bool
+    root: Path,
+    ptr: dict,
+    fresh: dict,
+    graph: dict,
+    semantic_state: dict,
+    semantic: bool,
+    *,
+    read_only: bool = False,
 ) -> list[str]:
     """Status lines when the index or graph needs a refresh."""
     last_indexed = ui.local_time(ptr.get("lastIndexedAt"))
@@ -247,7 +256,7 @@ def _status_summary_not_current(
             f" {'present' if graph['report_exists'] else 'missing'}, manifest.json"
             f" {'present' if graph['manifest_exists'] else 'missing'}"
         ),
-        f"- Refresh action: {_refresh_action(fresh, graph)}",
+        f"- Refresh action: {_refresh_action(fresh, graph, read_only=read_only)}",
     ]
 
 
@@ -377,7 +386,9 @@ def _risk_lines(fresh: dict, rows: list[dict]) -> list[str]:
     return lines
 
 
-def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]:
+def _graph_context_lines(
+    root: Path, rows: list[dict], graph: dict, *, read_only: bool = False
+) -> list[str]:
     paths = [r["path"] for r in rows]
     # 8, not the default 12: the same files are already enumerated under
     # Relevant Files and Reading Order, so the marginal path adds
@@ -387,11 +398,18 @@ def _graph_context_lines(root: Path, rows: list[dict], graph: dict) -> list[str]
     rel_lines = [line for line in all_edges if " --defines--> " not in line]
     if graph["status"] != "current":
         status = graph["status"]
-        return [
-            (
+        if read_only:
+            stale_line = (
+                f"- MIMRY relationship data is missing or stale (`{status}`). "
+                f"{READ_ONLY_CACHE_STALE_WARNING}"
+            )
+        else:
+            stale_line = (
                 f"- MIMRY relationship data is missing or stale (`{status}`); run `mimry refresh`"
                 " before relying on graph paths."
-            ),
+            )
+        return [
+            stale_line,
             (
                 "- No relationship path was invented. Use source imports/callers directly if this"
                 " remains empty."
@@ -437,6 +455,7 @@ def write_context_pack(
     fresh: dict | None = None,
     graph: dict | None = None,
     history: list[str] | None = None,
+    read_only: bool = False,
 ) -> tuple[list[dict], Path]:
     # The session lookup takes the query as the caller sent it: the hook
     # hashed that text, and the stored query is the redacted one.
@@ -481,7 +500,7 @@ def write_context_pack(
         ]
     else:
         status_summary_lines = _status_summary_not_current(
-            root, ptr, fresh, graph, semantic_state, semantic
+            root, ptr, fresh, graph, semantic_state, semantic, read_only=read_only
         )
 
     lines = [
@@ -550,7 +569,7 @@ def write_context_pack(
         ),
         "",
         "## Graph Relationships / Communities",
-        *_graph_context_lines(root, rows, graph),
+        *_graph_context_lines(root, rows, graph, read_only=read_only),
         "",
         "## Suggested Reading Order",
         *_reading_order_lines(rows),
@@ -716,6 +735,7 @@ def run_preflight(a):
                 fresh=fresh,
                 graph=graph,
                 history=history,
+                read_only=cache_read_only,
             )
 
     total = ui.took(time.perf_counter() - started_all)

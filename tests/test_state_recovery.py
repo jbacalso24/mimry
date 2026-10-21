@@ -25,6 +25,7 @@ from mimry.indexer import _cleanup_generations, write_index
 from mimry.lifecycle import STALE_INDEX_HINT
 from mimry.mcp_tools import _capture_command, mimry_find, mimry_preflight
 from mimry.paths import idx_path
+from mimry.queries import index_and_graph_health, write_context_pack
 from mimry.scanner import scan_entries
 from mimry.storage import (
     active_index_pointer,
@@ -1174,6 +1175,34 @@ def test_writable_cache_stale_index_still_prints_the_refresh_hint(
     out = capsys.readouterr().out
     assert STALE_INDEX_HINT in out
     assert READ_ONLY_CACHE_STALE_WARNING not in out
+
+
+def test_read_only_cache_stale_pack_gives_the_read_only_advice_not_a_refresh(
+    tmp_path: Path, monkeypatch
+):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_cache_writes(monkeypatch, cache)
+
+    assert cli.main(["--root", str(repo), "preflight", "login timeout"]) == 0
+
+    packs = list((repo / ".mimry" / "mimry-out" / "context").glob("*.md"))
+    assert packs
+    for pack in packs:
+        text = pack.read_text(encoding="utf-8")
+        assert READ_ONLY_CACHE_STALE_WARNING in text
+        assert "run `mimry refresh`" not in text
+
+
+def test_writable_cache_stale_pack_keeps_the_refresh_action(tmp_path: Path, monkeypatch):
+    repo, _cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    ptr = load_pointer(repo)
+    fresh, graph = index_and_graph_health(repo, ptr)
+
+    _rows, pack_path = write_context_pack(repo, ptr, "login timeout", fresh=fresh, graph=graph)
+
+    pack = pack_path.read_text(encoding="utf-8")
+    assert "- Refresh action: run `mimry refresh` (index is stale" in pack
+    assert READ_ONLY_CACHE_STALE_WARNING not in pack
 
 
 def test_cache_wipe_all_refuses_without_touching_cache_while_root_writer_is_active(
