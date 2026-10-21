@@ -33,4 +33,4 @@ Nothing that depends on colour to make sense.
 ## How to report a barrier
 
 Open an issue with the bug report form, or the feature request form, and say in the title that it is an accessibility problem.
-Add the `accessibility` label, which marks barriers to using MIMRY.
+We add the `accessibility` label, so barriers are easy to find and fix first.
