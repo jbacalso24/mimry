@@ -363,7 +363,7 @@ def test_inline_and_multiline_assignments_are_fully_redacted_without_matching_pr
 
     unclosed = f'auth = """first line\n{DEFENSIVE_MARKER}\n'
     assert contains_sensitive_text(unclosed)
-    assert redact_sensitive_text(unclosed) == 'auth = """[REDACTED]'
+    assert redact_sensitive_text(unclosed) == 'auth = """[REDACTED]\n[REDACTED]\n'
 
 
 # Each line once dropped a real source file from the index: flask's
@@ -2558,6 +2558,31 @@ def test_a_secret_in_a_triple_quoted_string_over_several_lines_is_redacted_line_
     kept = indexable_bytes(tmp_path / "settings.py", source.encode("utf-8"))
     assert kept == expected.encode("utf-8")
     assert b"tomato-canary" not in kept
+
+
+@pytest.mark.parametrize(
+    "source",
+    ['password = """\ntomato-canary\n', 'password = """\r\ntomato-canary\r\n'],
+    ids=["lf", "crlf"],
+)
+def test_an_unterminated_triple_quoted_secret_keeps_its_line_breaks(source: str):
+    redacted = redact_sensitive_text(source)
+    assert "tomato-canary" not in redacted
+    assert redacted.count("\n") == source.count("\n")
+    assert redacted.count("\r") == source.count("\r")
+
+
+@pytest.mark.parametrize("source", ['password = """\n', 'password = """'])
+def test_an_unterminated_triple_quote_with_no_value_keeps_its_line_breaks(source: str):
+    redacted = redact_sensitive_text(source)
+    assert redacted.count("\n") == source.count("\n")
+
+
+def test_a_three_line_unterminated_triple_quoted_secret_keeps_every_line():
+    source = 'password = """\ntomato-canary\ntomato-second\ntomato-third\n'
+    redacted = redact_sensitive_text(source)
+    assert "tomato" not in redacted
+    assert redacted.count("\n") == source.count("\n")
 
 
 def test_a_yaml_block_secret_keeps_each_line_and_its_indent():

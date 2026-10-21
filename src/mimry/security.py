@@ -2621,11 +2621,21 @@ def _redact_unclosed_quoted_values(text: str) -> str:
 
 
 def _redact_unclosed_multiline_assignment(match: re.Match[str]) -> str:
-    if not _is_sensitive_label(match.group("label"), match.group("body")) or match.group(
-        "quote"
-    ) in match.group("body"):
+    body = match.group("body")
+    if not _is_sensitive_label(match.group("label"), body) or match.group("quote") in body:
         return match.group(0)
-    return f"{match.group('prefix')}{match.group('quote')}{REDACTED}"
+    return f"{match.group('prefix')}{match.group('quote')}{_redacted_unclosed_body(body)}"
+
+
+def _redacted_unclosed_body(body: str) -> str:
+    """The body of a triple-quoted value that never closes, redacted as
+    a closed block is: each run of text on a line becomes the marker and
+    every line break stays. A body with no text keeps its breaks behind
+    the marker, and is left as it is once it holds the marker, so a
+    second pass does not grow it."""
+    if _holds_text(body):
+        return _redacted_lines(body)
+    return body if REDACTED in body else REDACTED + body
 
 
 def sanitize_query(value: str) -> str:
