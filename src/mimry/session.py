@@ -327,17 +327,24 @@ def _session_key(state: Path, create: bool = True) -> bytes | None:
     hard-linked to the key's name, or renamed onto it where hard links
     are unsupported. The link (or Windows rename) fails when another
     hook got there first, so a reader never sees a half-written key.
-    An empty or wrong-length key is replaced the same way. With
-    ``create`` False nothing is written. Returns None when no key can
-    be read or made. Never raises.
+    An empty or wrong-length key is replaced the same way. A read that
+    fails with PermissionError means a peer is renaming onto the key, so
+    it is retried. With ``create`` False nothing is written. Returns
+    None when no key can be read or made. Never raises.
     """
     path = state / SESSION_KEY
     try:
-        for _ in range(3):
+        for _ in range(10):
             try:
                 key: bytes | None = path.read_bytes()
             except FileNotFoundError:
                 key = None
+            except PermissionError:
+                # A peer is renaming its key onto this name (Windows
+                # refuses the read meanwhile). Wait a moment, then read
+                # again, writing nothing on this pass.
+                time.sleep(0.005)
+                continue
             if key is not None and len(key) == SESSION_KEY_BYTES:
                 return key
             if not create:

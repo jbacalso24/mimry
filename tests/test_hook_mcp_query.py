@@ -386,6 +386,46 @@ def test_logging_still_tags_when_the_volume_has_no_hard_links(tmp_path, monkeypa
     assert mimry_session._query_session(state, QUERY) == SESSION
 
 
+def _key_read_refused(monkeypatch, state: Path, refusals: int | None) -> None:
+    """Make reads of the key raise PermissionError, as a rename does.
+
+    Only the first ``refusals`` reads fail; None fails every read.
+    """
+    key_path = state / "session-key"
+    real_read_bytes = Path.read_bytes
+    reads = {"count": 0}
+
+    def read_bytes(self):
+        if self == key_path:
+            reads["count"] += 1
+            if refusals is None or reads["count"] <= refusals:
+                raise PermissionError(errno.EACCES, "the key is being renamed", os.fspath(self))
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+
+
+def test_a_key_read_that_races_a_peers_rename_is_retried(tmp_path, monkeypatch):
+    state = tmp_path / ".mimry"
+    state.mkdir()
+    key = os.urandom(32)
+    (state / "session-key").write_bytes(key)
+    _key_read_refused(monkeypatch, state, refusals=2)
+
+    assert mimry_session._session_key(state) == key
+    assert sorted(path.name for path in state.iterdir()) == ["session-key"]
+
+
+def test_a_key_read_refused_every_time_gives_none_and_leaves_no_part_file(tmp_path, monkeypatch):
+    state = tmp_path / ".mimry"
+    state.mkdir()
+    (state / "session-key").write_bytes(os.urandom(32))
+    _key_read_refused(monkeypatch, state, refusals=None)
+
+    assert mimry_session._session_key(state) is None
+    assert sorted(path.name for path in state.iterdir()) == ["session-key"]
+
+
 @pytest.mark.parametrize(
     "name", ["mcp__mimry__mimry_find", "mcp__mimry__mimry_preflight", "mcp__mimry__mimry_context"]
 )
