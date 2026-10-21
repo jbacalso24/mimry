@@ -12,7 +12,11 @@ from types import SimpleNamespace
 from typing import Any, Literal
 
 from mimry.adapters import list_adapters
-from mimry.cache_safety import IndexOutsideCacheError, UnsafeCachePathError
+from mimry.cache_safety import (
+    READ_ONLY_CACHE_STALE_WARNING,
+    IndexOutsideCacheError,
+    UnsafeCachePathError,
+)
 from mimry.core.artifacts import CALL_DIRECTIONS, graph_health
 from mimry.core.languages import language_counts
 from mimry.digest import canonical_digest
@@ -22,6 +26,7 @@ from mimry.history import history_payload
 from mimry.indexer import write_index
 from mimry.lifecycle import (
     INDEX_REBUILT_NOTE,
+    answers_from_read_only_cache,
     build_graph_first,
     change_summary,
     rebuild_outdated_index,
@@ -336,14 +341,26 @@ def _index_operation(*, exclusive: bool = False, refresh: bool = False):
             root_path = _root(bound.arguments.get("root"))
             stats = None
             graph_error = None
+            read_only = False
             if refresh:
-                stats = refresh_if_stale(root_path, include_missing=True)
                 try:
-                    build_graph_first(root_path)
-                except Exception as exc:  # the payload's graph health still reports what is left
-                    graph_error = str(exc)
+                    stats = refresh_if_stale(root_path, include_missing=True)
+                except PermissionError as exc:
+                    # A read-only cache still answers from its index.
+                    if not answers_from_read_only_cache(root_path, exc):
+                        raise
+                    read_only = True
+                else:
+                    try:
+                        build_graph_first(root_path)
+                    except Exception as exc:
+                        # Graph health still shows what is left.
+                        graph_error = str(exc)
             with active_index_pointer(root_path, exclusive=exclusive):
                 result = func(*args, **kwargs)
+            if read_only and isinstance(result, dict):
+                # Same key and wording as the preflight's warning.
+                result["stdout"] = READ_ONLY_CACHE_STALE_WARNING
             if stats is not None and isinstance(result, dict):
                 if stats.get("set_up_worktree"):
                     result["set_up_worktree"] = True

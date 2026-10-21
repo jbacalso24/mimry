@@ -18,6 +18,7 @@ from .bench import run_bench
 from .cache_safety import (
     READ_ONLY_CACHE_STALE_WARNING,
     UnsafeCachePathError,
+    cache_writable,
     cache_write_denied,
     validated_cache_home,
     validated_current_root_cache_path,
@@ -45,6 +46,7 @@ from .indexer import nested_too_deep_paths, write_index
 from .install_info import repair_command
 from .lifecycle import (
     NESTED_TOO_DEEP_REASON,
+    answers_from_read_only_cache,
     build_graph_first,
     change_summary,
     command_root,
@@ -271,7 +273,14 @@ def _install_problem() -> str | None:
 
 
 def _print_status(
-    root: Path, ptr: dict, fresh: dict, graph: dict, semantic: dict, *, verbose: bool
+    root: Path,
+    ptr: dict,
+    fresh: dict,
+    graph: dict,
+    semantic: dict,
+    *,
+    verbose: bool,
+    read_only: bool = False,
 ) -> None:
     name = root_name(root)
     if fresh["state"] == "missing":
@@ -323,7 +332,7 @@ def _print_status(
     print_grammar_warning(grammar_unavailable_count(ptr), grammar_error_of(ptr))
     print_parse_error_warning(*parse_error_summary(ptr))
     print_nested_too_deep_warning(*nested_too_deep_summary(ptr))
-    fixes = print_problems(fresh, graph, semantic)
+    fixes = print_problems(fresh, graph, semantic, read_only=read_only)
     if verbose:
         ui.table(
             [
@@ -381,7 +390,16 @@ def cmd_status(a):
         ui.detail("Run `mimry init` to set it up.")
         return 1
     fresh, graph, semantic = health(root, ptr, verify=getattr(a, "verify", False))
-    _print_status(root, ptr, fresh, graph, semantic, verbose=getattr(a, "verbose", False))
+    read_only = fresh["state"] == "stale" and not cache_writable()
+    _print_status(
+        root,
+        ptr,
+        fresh,
+        graph,
+        semantic,
+        verbose=getattr(a, "verbose", False),
+        read_only=read_only,
+    )
     return 0 if fresh["state"] == "current" else 2
 
 
@@ -449,8 +467,7 @@ def _fresh_index(command):
         except PermissionError as exc:
             # A read-only cache (a sandbox) can still answer from an
             # index that exists. An index never built cannot answer.
-            indexed = load_pointer(root, validate_active_generation=False)
-            if not cache_write_denied(exc) or not indexed:
+            if not answers_from_read_only_cache(root, exc):
                 raise
             ui.warn(READ_ONLY_CACHE_STALE_WARNING)
             # The command reads this to drop its own refresh hint.

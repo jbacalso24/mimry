@@ -33,6 +33,22 @@ def cache_write_denied(exc: BaseException) -> bool:
     return Path(exc.filename).is_relative_to(cache_home().expanduser())
 
 
+def cache_writable() -> bool:
+    """Whether MIMRY's cache accepts a write, probed with a temp file.
+
+    Only a write the OS refuses as denied counts as read-only. Any other
+    failure keeps the usual behaviour. Call it only for a stale index.
+    """
+    probe = cache_home().expanduser() / f".write-probe-{os.getpid()}"
+    try:
+        with probe.open("x"):
+            pass
+        probe.unlink()
+    except OSError as exc:
+        return not cache_write_denied(exc)
+    return True
+
+
 class IndexOutsideCacheError(UnsafeCachePathError):
     """A repo's index lives outside the current MIMRY cache, usually
     because MIMRY_CACHE_HOME changed since it was built.

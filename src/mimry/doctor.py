@@ -17,7 +17,12 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, embed, installer, ui
-from .cache_safety import IndexOutsideCacheError, validated_current_index_path
+from .cache_safety import (
+    READ_ONLY_CACHE_STALE_WARNING,
+    IndexOutsideCacheError,
+    cache_writable,
+    validated_current_index_path,
+)
 from .core.languages import grammar_error_reason, is_grammar_download_failure, is_network_failure
 from .install_info import (
     direct_url,
@@ -26,7 +31,7 @@ from .install_info import (
     local_folder,
     repair_command,
 )
-from .lifecycle import health
+from .lifecycle import STALE_INDEX_HINT, health
 from .paths import pointer_file
 from .state import parse_error_summary, validate_generation
 
@@ -681,7 +686,8 @@ def _root_checks(root: Path, *, verify: bool) -> list[dict[str, Any]]:
     if state == "missing":
         suggestion = "Run `mimry index` to build the index."
     elif state == "stale":
-        suggestion = "The next query updates it; `mimry reindex` updates it now."
+        read_only = not cache_writable()
+        suggestion = READ_ONLY_CACHE_STALE_WARNING if read_only else STALE_INDEX_HINT
     checks = [
         _check(
             "root.index",

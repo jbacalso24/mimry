@@ -17,13 +17,19 @@ from unittest.mock import patch
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
-from mimry import cli, commands, state, storage
+from mimry import cli, commands, doctor, state, storage
 from mimry.cache_safety import READ_ONLY_CACHE_STALE_WARNING, UnsafeCachePathError
 from mimry.commands import cmd_cache_wipe, cmd_feedback, cmd_preflight
 from mimry.freshness import index_freshness
 from mimry.indexer import _cleanup_generations, write_index
 from mimry.lifecycle import STALE_INDEX_HINT
-from mimry.mcp_tools import _capture_command, mimry_find, mimry_preflight
+from mimry.mcp_tools import (
+    _capture_command,
+    mimry_context,
+    mimry_explain,
+    mimry_find,
+    mimry_preflight,
+)
 from mimry.paths import idx_path
 from mimry.queries import index_and_graph_health, write_context_pack
 from mimry.scanner import scan_entries
@@ -1175,6 +1181,84 @@ def test_writable_cache_stale_index_still_prints_the_refresh_hint(
     out = capsys.readouterr().out
     assert STALE_INDEX_HINT in out
     assert READ_ONLY_CACHE_STALE_WARNING not in out
+
+
+def _deny_cache_file_writes(monkeypatch, cache: Path) -> None:
+    """Fail every write-mode open under ``cache``, as a sandbox does."""
+    original = Path.open
+    denied_root = cache.resolve()
+
+    def guarded(self, mode="r", *args, **kwargs):
+        if any(flag in mode for flag in "wax+") and self.resolve().is_relative_to(denied_root):
+            raise PermissionError(errno.EACCES, "Permission denied", str(self))
+        return original(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded)
+
+
+def _deny_mcp_refresh(monkeypatch, cache: Path) -> None:
+    denied = cache / "indexes" / "locked" / "operation.lock"
+
+    def refused(root, *, include_missing=False):
+        raise PermissionError(errno.EACCES, "Permission denied", str(denied))
+
+    monkeypatch.setattr("mimry.mcp_tools.refresh_if_stale", refused)
+
+
+def test_read_only_cache_mcp_find_stale_index_answers_with_the_warning(tmp_path, monkeypatch):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_mcp_refresh(monkeypatch, cache)
+
+    payload = mimry_find("auth", str(repo))
+
+    assert payload["results"]
+    assert READ_ONLY_CACHE_STALE_WARNING in payload["stdout"]
+
+
+def test_read_only_cache_mcp_context_stale_index_answers_with_the_warning(tmp_path, monkeypatch):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_mcp_refresh(monkeypatch, cache)
+
+    payload = mimry_context("login timeout", str(repo))
+
+    assert payload["files"]
+    assert READ_ONLY_CACHE_STALE_WARNING in payload["stdout"]
+
+
+def test_read_only_cache_mcp_explain_stale_index_answers_with_the_warning(tmp_path, monkeypatch):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_mcp_refresh(monkeypatch, cache)
+
+    payload = mimry_explain("login timeout", str(repo))
+
+    assert payload["files"]
+    assert READ_ONLY_CACHE_STALE_WARNING in payload["stdout"]
+
+
+def test_read_only_cache_status_stale_index_does_not_promise_a_refresh(
+    tmp_path: Path, monkeypatch, capsys
+):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_cache_file_writes(monkeypatch, cache)
+
+    assert cli.main(["--root", str(repo), "status"]) == 2
+
+    out = capsys.readouterr().out
+    assert READ_ONLY_CACHE_STALE_WARNING in out
+    for phrase in REFRESH_PROMISES:
+        assert phrase not in out
+
+
+def test_read_only_cache_doctor_stale_index_does_not_promise_a_refresh(
+    tmp_path: Path, monkeypatch
+):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_cache_file_writes(monkeypatch, cache)
+
+    checks = {check["id"]: check for check in doctor._root_checks(repo, verify=False)}
+
+    assert checks["root.index"]["state"] == "stale"
+    assert checks["root.index"]["suggestion"] == READ_ONLY_CACHE_STALE_WARNING
 
 
 def test_read_only_cache_stale_pack_gives_the_read_only_advice_not_a_refresh(

@@ -8,7 +8,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import ui
-from .cache_safety import validated_cache_home
+from .cache_safety import (
+    READ_ONLY_CACHE_STALE_WARNING,
+    cache_write_denied,
+    validated_cache_home,
+)
 from .constants import SCHEMA_VERSION
 from .core.artifacts import graph_health, graph_path, manifest_path, report_path
 from .core.languages import NESTING_LEVEL_LIMIT, is_network_failure
@@ -292,6 +296,15 @@ def _set_up_new_worktree(root: Path) -> dict | None:
     stats = write_index(top, require(top, validate=False), full=True)
     stats["set_up_worktree"] = True
     return stats
+
+
+def answers_from_read_only_cache(root: Path, exc: BaseException) -> bool:
+    """Whether a refused refresh can still answer from an index.
+
+    A read-only cache (a sandbox) can answer from an existing index.
+    An index never built cannot answer, so the error must be raised.
+    """
+    return cache_write_denied(exc) and bool(load_pointer(root, validate_active_generation=False))
 
 
 def refresh_if_stale(root: Path, *, include_missing: bool = False) -> dict | None:
@@ -590,12 +603,17 @@ def stale_summary(fresh: dict) -> str:
 STALE_INDEX_HINT = "The next query updates it; `mimry reindex` updates it now."
 
 
-def print_problems(fresh: dict, graph: dict, semantic: dict) -> list[str]:
-    """Warn on anything not current; return the commands that fix it."""
+def print_problems(
+    fresh: dict, graph: dict, semantic: dict, *, read_only: bool = False
+) -> list[str]:
+    """Warn on anything not current; return the commands that fix it.
+
+    A read-only cache cannot refresh a stale index, so it says so.
+    """
     fixes = []
     if fresh["state"] == "stale":
         # The caller has already said what changed.
-        ui.detail(STALE_INDEX_HINT)
+        ui.detail(READ_ONLY_CACHE_STALE_WARNING if read_only else STALE_INDEX_HINT)
     elif graph["status"] != "current":
         ui.warn(f"The graph files in .mimry/mimry-out/graph are {graph['status']}")
         fixes.append("mimry refresh")
