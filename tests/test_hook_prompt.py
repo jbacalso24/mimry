@@ -25,7 +25,7 @@ from mimry.hook import (
     cmd_hook_prompt,
     cmd_hook_stop,
 )
-from mimry.session import QUERY_LOG
+from mimry.session import QUERY_LOG, SESSION_STOP_LOCK_WAIT
 from mimry.storage import load_pointer
 
 PROMPT = "where does the code create a user session after login"
@@ -263,11 +263,14 @@ def test_stop_hook_closes_the_window_of_the_prompt_note(repo, monkeypatch, capsy
 
 def test_stop_hook_flushes_the_session_feedback(repo, monkeypatch):
     flushed = []
-    monkeypatch.setattr(hook, "flush_session_feedback", flushed.append)
+    monkeypatch.setattr(
+        hook, "flush_session_feedback", lambda root, **kw: flushed.append((root, kw))
+    )
     _feed(monkeypatch, {"hook_event_name": "Stop", "session_id": SESSION})
 
     assert cmd_hook_stop(SimpleNamespace(root=str(repo))) == 0
-    assert flushed == [repo.resolve()]
+    # The Stop hook runs async, so it waits for the lock.
+    assert flushed == [(repo.resolve(), {"lock_wait": SESSION_STOP_LOCK_WAIT})]
 
 
 def test_stop_hook_never_fails_the_turn(repo, monkeypatch):
