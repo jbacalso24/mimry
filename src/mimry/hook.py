@@ -36,6 +36,7 @@ feedback.
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import os
 import re
@@ -122,13 +123,16 @@ PROMPT_FENCE = re.compile(r"```.*?```", re.DOTALL)
 PROMPT_URL = re.compile(r"https?://\S+")
 # A word of three or more characters, as a file or module name has them.
 PROMPT_WORD = re.compile(r"[a-z][a-z0-9_]{2,}")
-# An identifier (snake_case or camelCase) or a source file name. The
-# path run is bounded: unbounded, it backtracks quadratically.
-PROMPT_CODE_TOKEN = re.compile(
-    r"\b[a-z]+(?:_[a-z0-9]+)+\b"
-    r"|\b[a-z]+[A-Z][A-Za-z0-9]*\b"
-    r"|\b[\w/.-]{1,200}\.(?:py|tsx?|jsx?|go|rs|java|kt|rb|cs|cpp|h|md|json|toml|ya?ml|sql|sh)\b"
-)
+# An identifier (snake_case or camelCase) or a source file name, one
+# pattern per kind. Possessive runs never give characters back: a word
+# run ends only where it ends. A path run starts only after a character
+# outside the run, so each run is scanned once.
+PROMPT_SNAKE = re.compile(r"\b[a-z]++(?:_[a-z0-9]++)++\b")
+PROMPT_CAMEL = re.compile(r"\b[a-z]++[A-Z][A-Za-z0-9]*+\b")
+PROMPT_FILE_EXT = r"\.(?:py|tsx?|jsx?|go|rs|java|kt|rb|cs|cpp|h|md|json|toml|ya?ml|sql|sh)\b"
+PROMPT_FILE_TAIL = re.compile(PROMPT_FILE_EXT)
+PROMPT_FILE = re.compile(r"(?<![\w/.-])[/.-]*\w[\w/.-]*" + PROMPT_FILE_EXT)
+PROMPT_UPPER = re.compile(r"[A-Z]")
 # Words too common in prompts to show that a task names code.
 PROMPT_COMMON_WORDS = frozenset(
     """
@@ -1259,19 +1263,69 @@ def _indexed_paths_for_prompt(root: Path, index: Path) -> list[str] | None:
     return paths
 
 
-def _task_names_code(text: str, paths: list[str]) -> bool:
+def _task_names_code(text: str, paths: list[str], names: list[str]) -> bool:
     """True when the task names code: an identifier, a file, or a word
-    of an indexed path.
+    of an indexed path. ``names`` are the code names in ``text``.
 
     Chat shares no such word with the code base, so it gets no note.
     """
-    if PROMPT_CODE_TOKEN.search(text):
+    if names:
         return True
     words = set(PROMPT_WORD.findall(text.lower())) - PROMPT_COMMON_WORDS
     path_words: set[str] = set()
     for path in paths:
         path_words.update(PROMPT_WORD.findall(path.lower()))
     return bool(words & path_words)
+
+
+def _code_names(text: str):
+    """The code names in ``text`` as (position, name), in order.
+
+    A kind is scanned only when the text can hold it: snake_case needs
+    an underscore, camelCase an upper-case letter, a file name a
+    recognised extension.
+    """
+    streams = []
+    if "_" in text:
+        streams.append(_spans(PROMPT_SNAKE, text))
+    if PROMPT_UPPER.search(text):
+        streams.append(_spans(PROMPT_CAMEL, text))
+    if PROMPT_FILE_TAIL.search(text):
+        streams.append(_spans(PROMPT_FILE, text))
+    return heapq.merge(*streams)
+
+
+def _spans(pattern: re.Pattern[str], text: str):
+    for match in pattern.finditer(text):
+        yield match.start(), match.group()
+
+
+def _code_name_list(text: str) -> list[str]:
+    """The distinct code names in ``text``, in order of appearance, read
+    until they fill PROMPT_QUERY_CHARS.
+    """
+    names: dict[str, None] = {}
+    size = 0
+    for _, name in _code_names(text):
+        if name not in names:
+            names[name] = None
+            size += len(name) + 1
+            if size >= PROMPT_QUERY_CHARS:
+                break
+    return list(names)
+
+
+def _prompt_query(text: str, names: list[str]) -> str:
+    """The text the note searches for.
+
+    A prompt that fits PROMPT_QUERY_CHARS is searched as it is. A longer
+    one leads with the code names found anywhere in it, so a file named
+    after a long paste still ranks, then fills the rest with its start.
+    """
+    if len(text) <= PROMPT_QUERY_CHARS:
+        return text
+    head = " ".join(names)
+    return (head + " " + text[:PROMPT_QUERY_CHARS])[:PROMPT_QUERY_CHARS]
 
 
 def _hook_prompt(root: Path) -> None:
@@ -1294,26 +1348,27 @@ def _hook_prompt(root: Path) -> None:
     pointer_path = mimry_dir / "pointer.json"
     if not pointer_path.is_file():
         return
-    # Code blocks and links are not words the task is about. Only the
-    # start of the prompt is read: the note's query is that start too.
-    head = prompt[:PROMPT_QUERY_CHARS]
-    text = " ".join(PROMPT_URL.sub(" ", PROMPT_FENCE.sub(" ", head)).split())
-    if len(text.split()) < PROMPT_WORD_MIN:
+    # Code blocks and links are not words the task is about.
+    text = " ".join(PROMPT_URL.sub(" ", PROMPT_FENCE.sub(" ", prompt)).split())
+    if len(text.split(None, PROMPT_WORD_MIN - 1)) < PROMPT_WORD_MIN:
         return
     ptr = json.loads(pointer_path.read_text(encoding="utf-8"))
     paths = _indexed_paths_for_prompt(root, Path(ptr["indexPath"]))
-    if paths is None or not _task_names_code(text, paths):
+    if paths is None:
         return
+    names = _code_name_list(text)
+    if not _task_names_code(text, paths, names):
+        return
+    query = _prompt_query(text, names)
     if session:
-        # A prompt with the same word set gets no second note.
-        words = " ".join(sorted(set(re.findall(r"\w+", text.lower()))))
+        # A prompt with the same query words gets no second note.
+        words = " ".join(sorted(set(re.findall(r"\w+", query.lower()))))
         key = "prompt:" + hashlib.sha1(words.encode("utf-8")).hexdigest()[:16]
         if not _first_for_query(mimry_dir, session, key):
             return
     from .search import find_rows
     from .security import sanitize_query
 
-    query = text[:PROMPT_QUERY_CHARS]
     # No index refresh and no freshness walk here: the note reads the
     # index as it stands, as the search hooks do.
     rows = find_rows(

@@ -145,15 +145,40 @@ def test_a_long_unbroken_token_keeps_the_prompt_hook_fast(repo, monkeypatch, cap
     assert out == ""
 
 
-def test_a_code_token_past_the_query_chars_is_ignored(repo, monkeypatch, capsys):
-    # Only the first PROMPT_QUERY_CHARS count. A token there names a
-    # file; the same token past them names none.
+def test_a_file_named_after_a_long_filler_is_still_found(repo, monkeypatch, capsys):
+    # The whole prompt is read for code names, so a file named after a
+    # long paste gets its note and leads the query the note searches.
     filler = "lorem ipsum dolor sit amet " * (PROMPT_QUERY_CHARS // 27 + 1)
     before = _query_count(repo)
 
-    assert "session.py" in _note(_prompt(monkeypatch, capsys, repo, "create_session " + filler))
-    assert _prompt(monkeypatch, capsys, repo, filler + "what does create_session return") == ""
+    note = _note(_prompt(monkeypatch, capsys, repo, filler + "please check src/auth/session.py"))
+
+    assert "session.py" in note
     assert _query_count(repo) == before + 1
+    assert _query_rows(repo)[-1]["query"].startswith("src/auth/session.py")
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "a." * 500_000,
+        "a/" * 500_000,
+        "a-" * 500_000,
+        "a" * 1_000_000,
+        "x.py" * 250_000,
+        "```" + "a." * 500_000,
+        "http://" * 142_857,
+    ],
+    ids=["dot-run", "slash-run", "dash-run", "one-word", "file-run", "unclosed-fence", "url-run"],
+)
+def test_a_megabyte_prompt_is_decided_quickly(repo, monkeypatch, capsys, shape):
+    prompt = "please fix the code in " + shape + " fix it"
+
+    started = time.perf_counter()
+    _prompt(monkeypatch, capsys, repo, prompt)
+
+    # Each shape takes about 50 ms; the bound leaves room for slow CI.
+    assert time.perf_counter() - started < 0.5
 
 
 def test_prompt_hook_prints_nothing_when_switched_off(repo, monkeypatch, capsys):
