@@ -16,6 +16,7 @@ imported inside the functions that need them.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -309,32 +310,31 @@ def edited_paths(tool_input: dict[str, Any]) -> list[str]:
     return paths
 
 
-def log_hook_command(root: Path, session: str, command: str, queries: list[str]) -> None:
-    """Remember a shell command that names mimry, or an MCP query, with
-    its session.
+def log_hook_command(root: Path, session: str, queries: list[str]) -> None:
+    """Remember the queries a shell command passes to mimry, or an MCP
+    query, with the session.
 
     The PreToolUse hook calls this before the command runs, or before an
     MCP tool answers, so the find it starts can be tagged with the
-    session. ``queries`` are the query texts the command passes to
-    mimry, or the MCP query itself; a command with none is not kept. An
-    MCP query is also stored in the ``command`` field as it was sent.
+    session. Only a hash of each query is kept, never its text or the
+    command line, and rows past the match window are dropped.
     Never raises.
     """
     try:
         state = _state_dir(root)
         if state is None or not session or not session_feedback_enabled():
             return
-        texts = [text[:2000] for text in queries if text.strip()]
-        if not texts:
+        keys = [key for key in map(_query_hash, queries) if key]
+        if not keys:
             return
+        now = time.time()
         rows = [
-            *_read_rows(state / HOOK_COMMAND_LOG),
-            {
-                "time": datetime.now(UTC).isoformat(),
-                "session": session,
-                "command": command[:2000],
-                "queries": texts,
-            },
+            *(
+                row
+                for row in _read_rows(state / HOOK_COMMAND_LOG)
+                if (stamp := _stamp(row)) is not None and now - stamp <= HOOK_COMMAND_WINDOW
+            ),
+            {"time": datetime.now(UTC).isoformat(), "session": session, "queries": keys},
         ]
         _write_rows(state / HOOK_COMMAND_LOG, rows[-HOOK_COMMAND_LIMIT:])
     except Exception:
@@ -353,16 +353,26 @@ def query_key(query: Any) -> str:
     return text[:2000]
 
 
+def _query_hash(query: Any) -> str:
+    """A hash of the query as a command passes it, or "" when blank.
+
+    Matching needs only equality, so the commands log keeps this and not
+    the query, which can hold a secret. Stdlib only: the hook calls it.
+    """
+    text = str(query or "").strip()[:2000]
+    return hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
+
+
 def _query_session(state: Path, query: str) -> str:
     """The session of the newest recent hook command whose query equals
     ``query``, or "".
 
     A command counts when it ran within HOOK_COMMAND_WINDOW. The match
-    is exact after query_key, never a substring, so a query that only
+    is exact, never a substring, so a query that only
     contains another does not take its session. Other processes'
     queries stay untagged.
     """
-    key = query_key(query)
+    key = _query_hash(query)
     if not key:
         return ""
     now = time.time()
@@ -371,7 +381,7 @@ def _query_session(state: Path, query: str) -> str:
         if stamp is None or now - stamp > HOOK_COMMAND_WINDOW:
             continue
         texts = row.get("queries")
-        if isinstance(texts, list) and any(query_key(text) == key for text in texts):
+        if isinstance(texts, list) and key in texts:
             return str(row.get("session") or "")
     return ""
 

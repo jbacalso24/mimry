@@ -1122,7 +1122,7 @@ def _hook_check(root: Path) -> None:
             # Nothing is printed, and nothing heavy is imported.
             query = tool_input.get("query")
             if isinstance(query, str) and query.strip():
-                log_hook_command(root, session, query, [query])
+                log_hook_command(root, session, [query])
             return
         # A Read only ever gets the outline of a large file, never a
         # search answer, so a path containing "grep" cannot trigger one.
@@ -1137,7 +1137,7 @@ def _hook_check(root: Path) -> None:
         command = str(tool_input.get("command") or "")
         if "mimry" in command:
             # The find this command starts is tagged with the session.
-            log_hook_command(root, session, command, mimry_queries(command))
+            log_hook_command(root, session, mimry_queries(command))
     except Exception:
         command = raw
     mimry_dir = root / ".mimry"
