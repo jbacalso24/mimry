@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from mimry import __version__, installer
+from mimry.cli import main
 
 
 def _script(folder: Path, name: str) -> str:
@@ -321,3 +322,61 @@ def test_outside_throwaway_older_path_registers_own_copy_and_warns(
     lines = [line for line in capsys.readouterr().out.splitlines() if "on PATH" in line]
     assert len(lines) == 1
     assert "0.6.4" in lines[0]
+
+
+def _stale_project_install(user, monkeypatch):
+    """A project install with hooks and a skill from an old mimry."""
+    monkeypatch.setattr(installer, "_project_repo_root", lambda start: user["repo"])
+    installer.install_skill("claude-code", project=True, root=user["repo"], hooks=True, mcp=False)
+    skill = user["repo"] / ".claude" / "skills" / "mimry" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+    skill.write_text(text + "\nOld guidance.\n", encoding="utf-8")
+    (skill.parent / ".mimry_version").write_text("0.3.1\n", encoding="utf-8")
+    return skill
+
+
+def _contents(*roots: Path) -> dict[Path, bytes]:
+    return {
+        path: path.read_bytes() for root in roots for path in root.rglob("*") if path.is_file()
+    }
+
+
+def test_refresh_in_throwaway_env_with_older_path_mimry_refuses_before_writing(
+    two_installs, tmp_path, monkeypatch, user
+):
+    """#558: `--refresh`, which `mimry upgrade` runs, rewrites hooks.
+    So it refuses as install does and leaves every file as it was.
+    """
+    _stale_project_install(user, monkeypatch)
+    before = _contents(user["profile"], user["repo"])
+    _throwaway_env(tmp_path, monkeypatch)
+    _probe(monkeypatch, "0.6.4")
+    on_path = two_installs["on_path"]
+
+    with pytest.raises(SystemExit) as refused:
+        main(["--root", str(user["repo"]), "install", "--refresh"])
+
+    message = refused.value.code
+    assert isinstance(message, str)
+    for expected in ("0.6.4", __version__, on_path["mimry"], "uv tool upgrade mimry"):
+        assert expected in message
+    with pytest.raises(SystemExit):
+        installer.refresh_installed(user["repo"])
+    assert _contents(user["profile"], user["repo"]) == before
+
+
+def test_refresh_in_throwaway_env_with_same_version_path_mimry_works(
+    two_installs, tmp_path, monkeypatch, user, capsys
+):
+    """#558: a same-version PATH copy refreshes as before."""
+    skill = _stale_project_install(user, monkeypatch)
+    _throwaway_env(tmp_path, monkeypatch)
+    _probe(monkeypatch, __version__)
+    capsys.readouterr()
+
+    assert main(["--root", str(user["repo"]), "install", "--refresh"]) == 0
+
+    assert "Refreshed the MIMRY skill for Claude Code (this project)" in capsys.readouterr().out
+    version = (skill.parent / ".mimry_version").read_text(encoding="utf-8")
+    assert version == __version__ + "\n"
+    assert "Old guidance." not in skill.read_text(encoding="utf-8")

@@ -2424,6 +2424,9 @@ def refresh_installed(start: Path) -> list[InstallRefresh]:
     installed: a missing skill, always-on rules or hooks stay missing,
     and MCP registration and Git's global ignore are not touched.
     """
+    # Refuse like install does: hooks written here would run PATH's
+    # older copy.
+    _refuse_throwaway_path_mismatch()
     scopes: list[tuple[Path, bool]] = [(start.resolve(), False)]
     repo = _project_repo_root(start)
     if repo is not None:
