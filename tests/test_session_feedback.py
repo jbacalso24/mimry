@@ -642,8 +642,8 @@ def test_a_busy_flush_builds_no_feedback_record(tmp_path, monkeypatch):
 
 
 def test_a_held_append_lock_costs_the_event_not_the_hook(tmp_path, monkeypatch, capsys):
-    # The wait is short by design: the hook runs in the agent's path.
-    assert session.APPEND_WAIT <= 0.25
+    # The wait is bounded: the hook runs in the agent's path.
+    assert session.APPEND_WAIT <= 2.0
     assert session.APPEND_STALE <= 5
     # A lock another process holds past the wait drops the event. The
     # hook still exits 0 and prints nothing that is not JSON, and leaves
@@ -655,12 +655,53 @@ def test_a_held_append_lock_costs_the_event_not_the_hook(tmp_path, monkeypatch, 
 
     started = time.monotonic()
     assert _read(monkeypatch, repo, repo / "src" / "auth" / "session.py") == 0
-    assert time.monotonic() - started < 1
+    assert time.monotonic() - started < session.APPEND_WAIT + 1
     out = capsys.readouterr().out
     assert out == "" or isinstance(json.loads(out), dict)
     assert lock.exists()
     log = repo / ".mimry" / FILE_LOG
     assert not log.exists() or "src/auth/session.py" not in log.read_text(encoding="utf-8")
+
+
+def test_a_busy_append_lock_on_windows_is_retried_not_dropped(tmp_path, monkeypatch):
+    # On Windows the lock's O_EXCL create fails with PermissionError
+    # while the previous holder's unlink is still pending. That is a
+    # busy lock, so the hook retries and its event lands.
+    (tmp_path / ".mimry").mkdir()
+    monkeypatch.setattr(session.os, "name", "nt")
+    real_open = os.open
+    refusals: list[str] = []
+
+    def busy_then_free(path, flags, *args, **kwargs):
+        if str(path).endswith(session.APPEND_LOCK) and len(refusals) < 2:
+            refusals.append(str(path))
+            raise PermissionError(13, "lock is being removed")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(session.os, "open", busy_then_free)
+    log_file_event(tmp_path, SESSION, "changed", [tmp_path / "src" / "app.py"])
+
+    assert len(refusals) == 2
+    log = tmp_path / ".mimry" / FILE_LOG
+    assert "src/app.py" in log.read_text(encoding="utf-8")
+
+
+def test_a_permission_error_off_windows_is_still_raised_at_once(tmp_path, monkeypatch):
+    # Off Windows a PermissionError on the lock means the folder is not
+    # writable, not a busy lock. It is raised without waiting.
+    state = tmp_path / ".mimry"
+    state.mkdir()
+    monkeypatch.setattr(session.os, "name", "posix")
+
+    def refuse(path, flags, *args, **kwargs):
+        raise PermissionError(13, "folder is not writable")
+
+    monkeypatch.setattr(session.os, "open", refuse)
+    started = time.monotonic()
+    with pytest.raises(PermissionError):
+        with session._append_lock(state):
+            pass
+    assert time.monotonic() - started < session.APPEND_WAIT
 
 
 def test_each_flushed_window_holds_only_its_own_sessions_events(tmp_path, monkeypatch):

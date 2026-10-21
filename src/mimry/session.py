@@ -48,7 +48,7 @@ SESSION_STOP_LOCK_WAIT = 5.0
 # an event is never appended without it; a lock older than APPEND_STALE
 # came from a process that died holding it.
 APPEND_LOCK = "session-files.lock"
-APPEND_WAIT = 0.25
+APPEND_WAIT = 2.0
 APPEND_STALE = 5.0
 # The last shell commands that named mimry, and the last MCP queries,
 # each with the session that ran it. A find run from such a command, or
@@ -151,11 +151,17 @@ def _append_lock(state: Path) -> Iterator[None]:
         try:
             os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
             break
-        except FileExistsError:
+        except (FileExistsError, PermissionError) as error:
+            # On Windows a lock whose unlink is still pending fails the
+            # create with PermissionError: it is busy, not unwritable.
+            if isinstance(error, PermissionError) and os.name != "nt":
+                raise
             try:
                 stale = time.time() - lock.stat().st_mtime > APPEND_STALE
             except FileNotFoundError:
                 continue  # released between the two calls
+            except PermissionError:
+                stale = False  # still being unlinked on Windows: busy
             if stale:
                 lock.unlink(missing_ok=True)
             elif time.monotonic() >= deadline:
