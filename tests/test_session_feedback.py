@@ -670,7 +670,7 @@ def test_a_busy_append_lock_on_windows_is_retried_not_dropped(tmp_path, monkeypa
     (tmp_path / ".mimry").mkdir()
     lock = tmp_path / ".mimry" / session.APPEND_LOCK
     lock.touch()  # the previous holder's lock, still being removed
-    monkeypatch.setattr(session.os, "name", "nt")
+    monkeypatch.setattr(session, "_WINDOWS", True)
     real_open = os.open
     refusals: list[str] = []
 
@@ -695,7 +695,7 @@ def test_a_permission_error_off_windows_is_still_raised_at_once(tmp_path, monkey
     # writable, not a busy lock. It is raised without waiting.
     state = tmp_path / ".mimry"
     state.mkdir()
-    monkeypatch.setattr(session.os, "name", "posix")
+    monkeypatch.setattr(session, "_WINDOWS", False)
 
     def refuse(path, flags, *args, **kwargs):
         raise PermissionError(13, "folder is not writable")
@@ -713,7 +713,7 @@ def test_an_unwritable_folder_on_windows_is_raised_not_waited_on(tmp_path, monke
     # folder is unwritable (a sandbox): raise at once, never spin.
     state = tmp_path / ".mimry"
     state.mkdir()
-    monkeypatch.setattr(session.os, "name", "nt")
+    monkeypatch.setattr(session, "_WINDOWS", True)
 
     def refuse(path, flags, *args, **kwargs):
         raise PermissionError(13, "folder is not writable")

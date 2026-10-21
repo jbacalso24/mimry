@@ -50,6 +50,8 @@ SESSION_STOP_LOCK_WAIT = 5.0
 APPEND_LOCK = "session-files.lock"
 APPEND_WAIT = 2.0
 APPEND_UNWRITABLE_TRIES = 3
+# Where a lock being removed refuses a new one with PermissionError.
+_WINDOWS = os.name == "nt"
 APPEND_STALE = 5.0
 # The last shell commands that named mimry, and the last MCP queries,
 # each with the session that ran it. A find run from such a command, or
@@ -156,7 +158,7 @@ def _append_lock(state: Path) -> Iterator[None]:
         except (FileExistsError, PermissionError) as error:
             # On Windows a lock whose unlink is still pending fails the
             # create with PermissionError: it is busy, not unwritable.
-            if isinstance(error, PermissionError) and os.name != "nt":
+            if isinstance(error, PermissionError) and not _WINDOWS:
                 raise
             try:
                 stale = time.time() - lock.stat().st_mtime > APPEND_STALE
