@@ -358,10 +358,10 @@ def _session_key(state: Path, create: bool = True) -> bytes | None:
                 except (OSError, AttributeError):
                     # No hard links here (FAT, exFAT, some shares).
                     # Windows rename will not replace, so the first hook
-                    # wins. Elsewhere rename replaces, so read back
-                    # whichever key the name now holds.
+                    # wins. Elsewhere rename replaces, so every hook
+                    # reads back whichever key the name now holds.
                     os.rename(spare, path)
-                    return fresh if os.name == "nt" else path.read_bytes()
+                    continue
             except FileExistsError:
                 continue  # another hook linked its key first; read that one
             finally:
