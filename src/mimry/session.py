@@ -17,9 +17,11 @@ imported inside the functions that need them.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -55,6 +57,10 @@ APPEND_STALE = 5.0
 HOOK_COMMAND_LOG = "session-commands.jsonl"
 HOOK_COMMAND_LIMIT = 20
 HOOK_COMMAND_WINDOW = 2 * 60
+# The random key that keys the command log's query hashes. It lives in
+# the repo's .mimry folder, so a log copied elsewhere cannot be checked.
+SESSION_KEY = "session-key"
+SESSION_KEY_BYTES = 32
 SESSION_NOTE = "recorded from session"
 COMPACT_FILES = 10
 COMPACT_QUERY_LIMIT = 300
@@ -314,23 +320,67 @@ def edited_paths(tool_input: dict[str, Any]) -> list[str]:
     return paths
 
 
+def _session_key(state: Path, create: bool = True) -> bytes | None:
+    """The repo's random key for hashing queries, or None.
+
+    The key is SESSION_KEY_BYTES random bytes in ``state``. It is made
+    on first need: the new key is written to a private file, then
+    hard-linked to the key's name. The link fails when another hook got
+    there first, so a reader never sees a half-written key. An empty or
+    wrong-length key is replaced the same way. With ``create`` False
+    nothing is written. Returns None when no key can be read or made.
+    Never raises.
+    """
+    path = state / SESSION_KEY
+    try:
+        for _ in range(3):
+            try:
+                key: bytes | None = path.read_bytes()
+            except FileNotFoundError:
+                key = None
+            if key is not None and len(key) == SESSION_KEY_BYTES:
+                return key
+            if not create:
+                return None
+            if key is not None:
+                path.unlink(missing_ok=True)
+            fresh = secrets.token_bytes(SESSION_KEY_BYTES)
+            spare = state / f"{SESSION_KEY}.{secrets.token_hex(8)}.part"
+            fd = os.open(spare, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(fresh)
+                os.link(spare, path)
+                return fresh
+            except FileExistsError:
+                continue  # another hook linked its key first; read that one
+            finally:
+                spare.unlink(missing_ok=True)
+    except OSError:
+        return None
+    return None
+
+
 def log_hook_command(root: Path, session: str, queries: list[str]) -> None:
     """Remember the queries a shell command passes to mimry, or an MCP
     query, with the session.
 
     The PreToolUse hook calls this before the command runs, or before an
     MCP tool answers, so the find it starts can be tagged with the
-    session. Only a hash of each query is kept, never its text or the
-    command line, and rows past the match window are dropped.
-    Never raises.
+    session. Only a keyed hash of each query is kept (see _query_hash),
+    never its text or the command line, and rows past the match window
+    are dropped. Without a key, nothing is logged. Never raises.
     """
     try:
         state = _state_dir(root)
         if state is None or not session or not session_feedback_enabled():
             return
-        keys = [key for key in map(_query_hash, queries) if key]
-        if not keys:
+        if not any(str(query or "").strip() for query in queries):
             return
+        key = _session_key(state)
+        if key is None:
+            return
+        keys = [digest for digest in (_query_hash(query, key) for query in queries) if digest]
         now = time.time()
         rows = [
             *(
@@ -357,14 +407,17 @@ def query_key(query: Any) -> str:
     return text[:2000]
 
 
-def _query_hash(query: Any) -> str:
-    """A hash of the query as a command passes it, or "" when blank.
+def _query_hash(query: Any, key: bytes) -> str:
+    """An HMAC-SHA256 of the query as a command passes it, or "" when
+    blank.
 
-    Matching needs only equality, so the commands log keeps this and not
-    the query, which can hold a secret. Stdlib only: the hook calls it.
+    The commands log keeps this and not the query, which can hold a
+    secret. The key is random per repo and never leaves .mimry, so a
+    word list cannot be checked against the log. Matching needs only
+    equality. Stdlib only: the hook calls it.
     """
     text = str(query or "").strip()[:2000]
-    return hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
+    return hmac.new(key, text.encode("utf-8"), hashlib.sha256).hexdigest() if text else ""
 
 
 def _query_session(state: Path, query: str) -> str:
@@ -374,10 +427,12 @@ def _query_session(state: Path, query: str) -> str:
     A command counts when it ran within HOOK_COMMAND_WINDOW. The match
     is exact, never a substring, so a query that only
     contains another does not take its session. Other processes'
-    queries stay untagged.
+    queries stay untagged. Reads the key only: without one no row can
+    match, so none is made here.
     """
-    key = _query_hash(query)
-    if not key:
+    key = _session_key(state, create=False)
+    hashed = _query_hash(query, key) if key is not None else ""
+    if not hashed:
         return ""
     now = time.time()
     for row in reversed(_read_rows(state / HOOK_COMMAND_LOG)):
@@ -385,7 +440,7 @@ def _query_session(state: Path, query: str) -> str:
         if stamp is None or now - stamp > HOOK_COMMAND_WINDOW:
             continue
         texts = row.get("queries")
-        if isinstance(texts, list) and key in texts:
+        if isinstance(texts, list) and hashed in texts:
             return str(row.get("session") or "")
     return ""
 

@@ -7,10 +7,14 @@ nothing for these calls.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
+import os
 import re
+import shutil
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +22,7 @@ import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
 from mimry import installer
+from mimry import session as mimry_session
 from mimry.constants import MCP_QUERY_NAME
 from mimry.hook import cmd_hook_check, mimry_queries
 from mimry.session import HOOK_COMMAND_LOG, _query_hash, record_query
@@ -60,6 +65,22 @@ def _query_rows(repo: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def _key(repo: Path) -> bytes:
+    return (repo / ".mimry" / "session-key").read_bytes()
+
+
+def _apply_feedback_find(monkeypatch, repo: Path, session_id: str) -> None:
+    _hook(
+        monkeypatch,
+        repo,
+        {
+            "session_id": session_id,
+            "tool_name": "Bash",
+            "tool_input": {"command": "mimry find apply_feedback"},
+        },
+    )
+
+
 @pytest.mark.parametrize("name", FIND_NAMES)
 def test_mcp_find_is_logged_with_its_session_and_prints_nothing(
     tmp_path, monkeypatch, capsys, name
@@ -79,7 +100,7 @@ def test_mcp_find_is_logged_with_its_session_and_prints_nothing(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
-    assert [row["queries"] for row in _command_rows(repo)] == [[_query_hash(QUERY)]]
+    assert [row["queries"] for row in _command_rows(repo)] == [[_query_hash(QUERY, _key(repo))]]
     assert "command" not in _command_rows(repo)[0]
     assert _command_rows(repo)[0]["session"] == SESSION
 
@@ -193,3 +214,93 @@ def test_the_commands_log_keeps_no_query_text(tmp_path, monkeypatch):
     assert "mimry find" not in text
     record_query(repo, secret_query, [])
     assert _query_rows(repo)[-1]["session"] == SESSION
+
+
+def test_the_commands_log_holds_neither_the_query_nor_its_plain_hash(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    _apply_feedback_find(monkeypatch, repo, SESSION)
+
+    assert _command_rows(repo)
+    text = (repo / ".mimry" / HOOK_COMMAND_LOG).read_text(encoding="utf-8")
+    assert hashlib.sha256(b"apply_feedback").hexdigest() not in text
+    assert "apply_feedback" not in text
+
+
+def test_each_repo_gets_its_own_key_so_the_same_query_hashes_differently(tmp_path, monkeypatch):
+    repos = [_repo(tmp_path / name, monkeypatch) for name in ("one", "two")]
+    for repo in repos:
+        _apply_feedback_find(monkeypatch, repo, SESSION)
+
+    keys = [_key(repo) for repo in repos]
+    assert len(keys[0]) == len(keys[1]) == 32
+    assert keys[0] != keys[1]
+    assert _query_hash("apply_feedback", keys[0]) != _query_hash("apply_feedback", keys[1])
+    assert _command_rows(repos[0])[0]["queries"] != _command_rows(repos[1])[0]["queries"]
+
+
+def test_two_first_uses_at_once_agree_on_one_key_and_both_tag(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    state = repo / ".mimry"
+    (state / "session-key").unlink(missing_ok=True)
+
+    workers = 8
+    barrier = threading.Barrier(workers)
+    keys: list[bytes | None] = [None] * workers
+
+    def first_use(index: int) -> None:
+        barrier.wait()
+        keys[index] = mimry_session._session_key(state)
+
+    threads = [threading.Thread(target=first_use, args=(i,)) for i in range(workers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert keys[0] is not None
+    assert all(key == keys[0] for key in keys)
+    assert _key(repo) == keys[0]
+    assert sorted(path.name for path in state.glob("session-key*")) == ["session-key"]
+
+    for session_id, query in (
+        ("first-session", "first query"),
+        ("second-session", "second query"),
+    ):
+        _hook(
+            monkeypatch,
+            repo,
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": f'mimry find "{query}"'},
+            },
+        )
+        record_query(repo, query, [])
+        assert _query_rows(repo)[-1]["session"] == session_id
+
+
+@pytest.mark.parametrize("case", ["missing", "read-only"])
+def test_without_a_writable_mimry_the_log_is_skipped_and_the_tag_is_empty(
+    tmp_path, monkeypatch, case
+):
+    repo = _repo(tmp_path, monkeypatch)
+    state = repo / ".mimry"
+    if case == "missing":
+        shutil.rmtree(state)
+    else:
+        (state / "session-key").unlink(missing_ok=True)
+        real_open = os.open
+
+        def refuse_key(path, flags, *args, **kwargs):
+            if "session-key" in os.fspath(path):
+                raise PermissionError(13, "read-only folder", os.fspath(path))
+            return real_open(path, flags, *args, **kwargs)
+
+        monkeypatch.setattr(os, "open", refuse_key)
+
+    mimry_session.log_hook_command(repo, SESSION, [QUERY])
+    assert mimry_session._query_session(state, QUERY) == ""
+    record_query(repo, QUERY, [])
+
+    assert _command_rows(repo) == []
+    assert not (state / "session-key").exists()
