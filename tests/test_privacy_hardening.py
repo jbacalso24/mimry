@@ -2340,3 +2340,59 @@ def test_a_run_of_unclosed_multiline_openers_is_judged_in_linear_time():
         started = time.perf_counter()
         contains_sensitive_text(text, code=True)
         assert time.perf_counter() - started < 5.0
+
+
+def test_files_with_a_multi_line_secret_are_indexed_and_the_value_is_nowhere_in_the_cache(
+    tmp_path: Path,
+):
+    # #520: the triple-quoted file was refused by the adapter's check on
+    # its own hint and reported as unreadable. Each of these files keeps
+    # its lines, with the secret as [REDACTED], and is indexed.
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "doc.py").write_text(
+        'def f():\n    """Set password = "tomato-canary" in config."""\n    return 1\n',
+        encoding="utf-8",
+    )
+    (repo / "src" / "paren.py").write_text(
+        'password = (\n    "tomato-canary"\n)\n', encoding="utf-8"
+    )
+    (repo / "src" / "triple.py").write_text(
+        'SECRET = """\ntomato-canary\n"""\nafter = 2\n', encoding="utf-8"
+    )
+    cache = tmp_path / "cache"
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    indexed = run_cli(repo, cache, "index")
+    assert indexed.returncode == 0, indexed.stderr
+    assert "could not be read" not in indexed.stdout + indexed.stderr
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    idx = Path(pointer["indexPath"])
+    records = {
+        record["rel_path"]: record
+        for record in (
+            json.loads(line)
+            for line in (idx / "files.jsonl").read_text(encoding="utf-8").splitlines()
+        )
+    }
+    assert {"src/doc.py", "src/paren.py", "src/triple.py"} <= set(records)
+    assert records["src/triple.py"]["content_hint"].startswith('SECRET = """\n[REDACTED]\n"""')
+    assert '"[REDACTED]"' in records["src/paren.py"]["content_hint"]
+    assert '"""Set password = "[REDACTED]" in config."""' in records["src/doc.py"]["content_hint"]
+
+    # Every file the cache or the repo's own output holds, as bytes.
+    canary = b"tomato-canary"
+    for root_dir in (cache, repo / ".mimry"):
+        for candidate in root_dir.rglob("*"):
+            if candidate.is_file():
+                assert canary not in candidate.read_bytes(), candidate.name
+
+
+def test_a_redacted_multi_line_secret_redacts_to_itself():
+    # Redacting again must not wrap the marker, or the hint of a file
+    # redacted once (and again by the sanitiser) is refused (#520).
+    source = 'SECRET = """\ntomato-canary\n"""\nafter = 2\n'
+    once = redact_sensitive_text(source)
+    assert once == 'SECRET = """\n[REDACTED]\n"""\nafter = 2\n'
+    assert redact_sensitive_text(once) == once
+    assert not contains_sensitive_text(once, code=True)

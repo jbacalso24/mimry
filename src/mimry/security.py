@@ -759,6 +759,9 @@ def _value_is_credential(
         not candidate
         or candidate in {REDACTED, REDACTED + '"', REDACTED + "'"}
         or candidate[0] == "|"
+        # A quoted block whose lines are only the marker, as a triple-
+        # quoted value redacted line by line, is already redacted.
+        or (REDACTED in candidate and not _holds_text(candidate.strip("\"'`")))
     ):
         return False  # nothing assigned, already redacted, or a YAML block (classified above)
     # Punctuation alone (``...``, ``***``, ``---``) has no letter or
@@ -2172,6 +2175,10 @@ def _redacted_value_text(text: str) -> str:
     # A comment after a value's literal is judged as text of its own
     # (see SUB_TEXT_RE), so it stays, as a line of code does.
     if _VALUE_COMMENT_RE.match(text):
+        return text
+    # A line holding only the marker is already redacted. Wrapping it
+    # again would grow the marker on every pass.
+    if not any(char.isalnum() for char in text.replace(REDACTED, "")):
         return text
     match = _VALUE_LINE_RE.fullmatch(text)
     if match is None or not any(char.isalnum() for char in match["body"]):
