@@ -7,6 +7,7 @@ nothing for these calls.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
@@ -323,6 +324,44 @@ def test_without_a_writable_mimry_the_log_is_skipped_and_the_tag_is_empty(
 
     assert _command_rows(repo) == []
     assert not (state / "session-key").exists()
+
+
+def _no_hard_links(monkeypatch, case: str) -> None:
+    if case == "eperm":
+
+        def refuse(src, dst, *args, **kwargs):
+            raise PermissionError(errno.EPERM, "hard links are not supported here", os.fspath(src))
+
+        monkeypatch.setattr(os, "link", refuse)
+    else:
+        monkeypatch.delattr(os, "link")
+
+
+@pytest.mark.parametrize("case", ["eperm", "no-os-link"])
+def test_the_key_is_still_made_when_the_volume_has_no_hard_links(tmp_path, monkeypatch, case):
+    state = tmp_path / ".mimry"
+    state.mkdir()
+    _no_hard_links(monkeypatch, case)
+
+    key = mimry_session._session_key(state)
+
+    assert key is not None and len(key) == 32
+    assert (state / "session-key").read_bytes() == key
+    assert mimry_session._session_key(state) == key
+    assert sorted(path.name for path in state.iterdir()) == ["session-key"]
+
+
+def test_logging_still_tags_when_the_volume_has_no_hard_links(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    state = repo / ".mimry"
+    (state / "session-key").unlink(missing_ok=True)
+    _no_hard_links(monkeypatch, "eperm")
+
+    mimry_session.log_hook_command(repo, SESSION, [QUERY])
+
+    assert [row["queries"] for row in _command_rows(repo)] == [[_query_hash(QUERY, _key(repo))]]
+    assert _command_rows(repo)[0]["session"] == SESSION
+    assert mimry_session._query_session(state, QUERY) == SESSION
 
 
 @pytest.mark.parametrize(

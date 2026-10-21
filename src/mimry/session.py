@@ -324,11 +324,12 @@ def _session_key(state: Path, create: bool = True) -> bytes | None:
 
     The key is SESSION_KEY_BYTES random bytes in ``state``. It is made
     on first need: the new key is written to a private file, then
-    hard-linked to the key's name. The link fails when another hook got
-    there first, so a reader never sees a half-written key. An empty or
-    wrong-length key is replaced the same way. With ``create`` False
-    nothing is written. Returns None when no key can be read or made.
-    Never raises.
+    hard-linked to the key's name, or renamed onto it where hard links
+    are unsupported. The link (or Windows rename) fails when another
+    hook got there first, so a reader never sees a half-written key.
+    An empty or wrong-length key is replaced the same way. With
+    ``create`` False nothing is written. Returns None when no key can
+    be read or made. Never raises.
     """
     path = state / SESSION_KEY
     try:
@@ -349,8 +350,18 @@ def _session_key(state: Path, create: bool = True) -> bytes | None:
             try:
                 with os.fdopen(fd, "wb") as handle:
                     handle.write(fresh)
-                os.link(spare, path)
-                return fresh
+                try:
+                    os.link(spare, path)
+                    return fresh
+                except FileExistsError:
+                    raise
+                except (OSError, AttributeError):
+                    # No hard links here (FAT, exFAT, some shares).
+                    # Windows rename will not replace, so the first hook
+                    # wins. Elsewhere rename replaces, so read back
+                    # whichever key the name now holds.
+                    os.rename(spare, path)
+                    return fresh if os.name == "nt" else path.read_bytes()
             except FileExistsError:
                 continue  # another hook linked its key first; read that one
             finally:
