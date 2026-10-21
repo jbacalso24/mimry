@@ -2530,6 +2530,67 @@ def test_chained_and_split_credentials_across_lines_do_not_reach_the_index_cache
         assert b"canary" not in data, path
 
 
+# #561: an Authorization value is judged by its position and wording,
+# not its shape. A word of letters alone is a credential when it ends
+# its header and is not a prose word, whatever the scheme.
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        ('h = "Authorization: tomatocanary"\n', 'h = "Authorization: [REDACTED]"\n'),
+        (
+            'h = "Authorization: Digest tomatocanary"\n',
+            'h = "Authorization: Digest [REDACTED]"\n',
+        ),
+        (
+            'h = "Authorization: Negotiate tomatocanary"\n',
+            'h = "Authorization: Negotiate [REDACTED]"\n',
+        ),
+        ('h = "authorization: tomatocanary"\n', 'h = "authorization: [REDACTED]"\n'),
+        (
+            'h = "Proxy-Authorization: tomatocanary"\n',
+            'h = "Proxy-Authorization: [REDACTED]"\n',
+        ),
+        ('h = "Authorization: " "tomatocanary"\n', 'h = "Authorization: " "[REDACTED]"\n'),
+        ('h = "Authorization: " + "tomatocanary"\n', 'h = "Authorization: " + "[REDACTED]"\n'),
+        (
+            'h = "Authorization: tomato" "canary"\n',
+            'h = "Authorization: [REDACTED]" "[REDACTED]"\n',
+        ),
+        (
+            'h = "Authorization: Basic tomatocanary"\n',
+            'h = "Authorization: Basic [REDACTED]"\n',
+        ),
+        ('h = "Authorization: Bearer abc-123"\n', 'h = "Authorization: Bearer [REDACTED]"\n'),
+    ),
+)
+def test_authorization_values_judged_by_position_are_redacted(
+    tmp_path: Path, source: str, expected: str
+):
+    assert contains_sensitive_text(source, code=True), source
+    assert redact_sensitive_text(source) == expected
+    kept = indexable_bytes(tmp_path / "position.py", source.encode("utf-8")).decode("utf-8")
+    assert kept == expected
+    assert "tomato" not in kept and "canary" not in kept and "abc-123" not in kept
+
+
+@pytest.mark.parametrize(
+    "line",
+    (
+        'print("Authorization: required")\n',
+        'print("Authorization: header missing")\n',
+        'log.info("Authorization: header is invalid")\n',
+        'print("Authorization: Bearer <token>")\n',
+        'print("Authorization: Bearer token is missing")\n',
+        'msg = "Authorization: basic auth is required"\n',
+    ),
+)
+def test_authorization_prose_is_kept_whatever_the_scheme(tmp_path: Path, line: str):
+    assert redact_sensitive_text(line) == line, line
+    assert not contains_sensitive_text(line, code=True), line
+    data = line.encode("utf-8")
+    assert indexable_bytes(tmp_path / "prose.py", data) == data
+
+
 # #520: a quoted word after a redacted value was cut with it, and a
 # secret over several lines collapsed to one, so the file was refused.
 # Each value keeps its line count, and the file stays indexed.
