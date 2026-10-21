@@ -122,11 +122,12 @@ PROMPT_FENCE = re.compile(r"```.*?```", re.DOTALL)
 PROMPT_URL = re.compile(r"https?://\S+")
 # A word of three or more characters, as a file or module name has them.
 PROMPT_WORD = re.compile(r"[a-z][a-z0-9_]{2,}")
-# An identifier (snake_case or camelCase) or a source file name.
+# An identifier (snake_case or camelCase) or a source file name. The
+# path run is bounded: unbounded, it backtracks quadratically.
 PROMPT_CODE_TOKEN = re.compile(
     r"\b[a-z]+(?:_[a-z0-9]+)+\b"
     r"|\b[a-z]+[A-Z][A-Za-z0-9]*\b"
-    r"|\b[\w/.-]+\.(?:py|tsx?|jsx?|go|rs|java|kt|rb|cs|cpp|h|md|json|toml|ya?ml|sql|sh)\b"
+    r"|\b[\w/.-]{1,200}\.(?:py|tsx?|jsx?|go|rs|java|kt|rb|cs|cpp|h|md|json|toml|ya?ml|sql|sh)\b"
 )
 # Words too common in prompts to show that a task names code.
 PROMPT_COMMON_WORDS = frozenset(
@@ -1293,8 +1294,10 @@ def _hook_prompt(root: Path) -> None:
     pointer_path = mimry_dir / "pointer.json"
     if not pointer_path.is_file():
         return
-    # Code blocks and links are not words the task is about.
-    text = " ".join(PROMPT_URL.sub(" ", PROMPT_FENCE.sub(" ", prompt)).split())
+    # Code blocks and links are not words the task is about. Only the
+    # start of the prompt is read: the note's query is that start too.
+    head = prompt[:PROMPT_QUERY_CHARS]
+    text = " ".join(PROMPT_URL.sub(" ", PROMPT_FENCE.sub(" ", head)).split())
     if len(text.split()) < PROMPT_WORD_MIN:
         return
     ptr = json.loads(pointer_path.read_text(encoding="utf-8"))

@@ -6,6 +6,7 @@ from __future__ import annotations
 import io
 import json
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +19,7 @@ from mimry.core.artifacts import graph_path
 from mimry.feedback import list_feedback
 from mimry.hook import (
     PROMPT_NOTE_LIMIT,
+    PROMPT_QUERY_CHARS,
     _prompt_note,
     cmd_hook_check,
     cmd_hook_prompt,
@@ -125,6 +127,32 @@ def test_an_identifier_alone_names_the_task(repo, monkeypatch, capsys):
     note = _note(_prompt(monkeypatch, capsys, repo, "what does create_session return to callers"))
 
     assert "session.py" in note
+
+
+@pytest.mark.parametrize(
+    "unit, count",
+    [("a.", 50_000), ("a/", 50_000), ("a-", 50_000), ("a", 200_000)],
+    ids=["dot-run", "slash-run", "dash-run", "single-word"],
+)
+def test_a_long_unbroken_token_keeps_the_prompt_hook_fast(repo, monkeypatch, capsys, unit, count):
+    prompt = "please fix the code in " + unit * count + " fix it"
+
+    started = time.perf_counter()
+    out = _prompt(monkeypatch, capsys, repo, prompt)
+
+    assert time.perf_counter() - started < 0.2
+    assert out == ""
+
+
+def test_a_code_token_past_the_query_chars_is_ignored(repo, monkeypatch, capsys):
+    # Only the first PROMPT_QUERY_CHARS count. A token there names a
+    # file; the same token past them names none.
+    filler = "lorem ipsum dolor sit amet " * (PROMPT_QUERY_CHARS // 27 + 1)
+    before = _query_count(repo)
+
+    assert "session.py" in _note(_prompt(monkeypatch, capsys, repo, "create_session " + filler))
+    assert _prompt(monkeypatch, capsys, repo, filler + "what does create_session return") == ""
+    assert _query_count(repo) == before + 1
 
 
 def test_prompt_hook_prints_nothing_when_switched_off(repo, monkeypatch, capsys):
