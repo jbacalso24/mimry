@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bisect
 import codecs
 import fnmatch
 import functools
@@ -186,8 +187,9 @@ TUPLE_LABELED_RE = re.compile(
     r"(?P<literal>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*')"
 )
 # A tuple or list assignment at the start of a statement, as in
-# ``user, password = "admin", "..."``, ``(user, password) = (...)`` or
-# ``[user, password] = [...]``. A target is a name, an attribute or a
+# ``user, password = "admin", "..."``, ``(user, password) = (...)``,
+# ``[user, password] = [...]``, or a one-element tuple such as
+# ``password, = ...``. A target is a name, an attribute or a
 # string subscript (``creds["password"]``). Each target takes the value
 # at its own position (see _tuple_slots), so ASSIGNMENT_RE never reads
 # the label as the owner of the value after it (#519).
@@ -197,14 +199,22 @@ _TUPLE_ASSIGNMENT_RE = re.compile(
     # blanks that follows a word, as in ``a.py user, password = ...``.
     # A blank run after a comma or a bracket is not a start, so a long
     # list of names is not tried from every element.
-    r"(?m)(?:^[ \t]*|(?<=;)[ \t]*|(?<=[^\s,;(\[{])[ \t]+)"
+    r"(?m)(?:^[ \t]*|(?<=;)[ \t]*|(?<=[\w)\]'\"`])[ \t]+)"
     r"(?:(?:const|let|var)[ \t]+)?(?:[(\[][ \t]*)?"
-    rf"(?P<targets>{_TUPLE_TARGET}(?:[ \t]*,[ \t]*{_TUPLE_TARGET})+)"
+    rf"(?P<targets>{_TUPLE_TARGET}(?:[ \t]*,[ \t]*{_TUPLE_TARGET})+|{_TUPLE_TARGET}[ \t]*,)"
     r"(?:[ \t]*,)?[ \t]*(?:[)\]][ \t]*)?:?=(?![=>])"
 )
 _TUPLE_TARGET_ITEM_RE = re.compile(
     r"(?P<name>[A-Za-z_][A-Za-z0-9_.]*)"
     r"(?:\[[ \t]*['\"](?P<key>[A-Za-z_][A-Za-z0-9_.]*)['\"][ \t]*\])?"
+)
+# A target that a value chains onto, as ``password = `` in
+# ``a = password = "..."``. Each target takes the value after the last
+# ``=``. A comparison (``==``, ``!=``, ``=>``) is not a target (#540).
+_CHAINED_TARGET_RE = re.compile(
+    r"\$?(?P<name>[A-Za-z_][A-Za-z0-9_.]*)"
+    r"(?:\[[ \t]*['\"](?P<key>[A-Za-z_][A-Za-z0-9_.]*)['\"][ \t]*\])?"
+    r"[ \t]*=(?![=>])[ \t]*"
 )
 # A value that is a keyword argument, as in
 # ``f(a, password="...", b="...")``, is not a tuple value.
@@ -219,12 +229,26 @@ _TUPLE_VALUES_LIMIT = 4096
 # An Authorization header written into a string literal, as in
 # ``"Authorization: Bearer <token>"``. The scheme stays and the value is
 # judged as a credential. A placeholder, a reference or a template
-# (``<token>``, ``$TOKEN``, ``{token}``) is kept (#519).
+# (``<token>``, ``$TOKEN``, ``{token}``) is kept (#519). The scheme may
+# be any word, or none (#540); see _auth_value_is_credential.
 _AUTH_HEADER_HINT_RE = re.compile(r"(?i)authorization")
+# The joined pieces of a value are separated by a NUL, which a header's
+# blanks and value may run across, but which is not a letter, so it
+# starts a header as the start of a line does. A value stops before the
+# next header, so a header that follows one is not read as its value.
+_LITERAL_SEPARATOR = "\0"
 _AUTH_HEADER_VALUE_RE = re.compile(
-    r"(?i)(?<![A-Za-z0-9-])(?:Proxy-)?Authorization[ \t]*:[ \t]*(?:bearer|basic|token)[ \t]+"
-    r"(?P<value>[^\s\"'`{}<>,;()\[\]\\$]+)"
+    r"(?i)(?<![A-Za-z0-9-])(?:Proxy-)?Authorization[ \t\x00]*:[ \t\x00]*"
+    r"(?:(?P<scheme>[A-Za-z][A-Za-z0-9-]*)[ \t\x00]+)?"
+    r"(?P<value>(?!(?:Proxy-)?Authorization[ \t\x00]*:)[^\s\x00\"'`{}<>,;()\[\]\\$]"
+    r"(?:(?!(?:Proxy-)?Authorization[ \t\x00]*:)[^\s\"'`{}<>,;()\[\]\\$])*)"
 )
+# The schemes whose value is a credential whatever it holds, as before
+# #540. With another scheme, or none, see _auth_value_is_credential.
+_BEARER_LIKE_AUTH_SCHEMES = frozenset({"basic", "bearer", "token"})
+# What joins two string literals of one value: blanks (implicit
+# concatenation, as ``"a" "b"``) or a ``+``.
+_LITERAL_JOIN_RE = re.compile(r"[ \t]*(?:\+[ \t]*)?")
 # Text that is not a statement of its own: a comment, or a triple-quoted
 # string such as a docstring or YAML inside a Python string.
 # ASSIGNMENT_RE reads through a triple-quoted string as one value, and
@@ -703,7 +727,6 @@ def _redact_text(text: str, *, depth: int) -> str:
         redacted = SUB_TEXT_RE.sub(lambda match: _redact_sub_text(match, depth=depth), text)
     redacted = redact_standalone_secrets(redacted)
     redacted = _redact_url_credentials(redacted)
-    redacted = _redact_auth_headers(redacted)
     redacted = _redact_unclosed_quoted_values(redacted)
     redacted = _redact_values(
         redacted, SPACED_SENSITIVE_ASSIGNMENT_RE, _redact_spaced_assignment, prose=depth > 0
@@ -712,6 +735,7 @@ def _redact_text(text: str, *, depth: int) -> str:
     redacted = _redact_yaml_quoted_multiline(redacted)
     redacted = _redact_hash_entries(redacted)
     redacted = _redact_values(redacted, ASSIGNMENT_RE, _redact_assignment, prose=depth > 0)
+    redacted = _redact_auth_headers(redacted)
     redacted = _splice(
         redacted,
         [
@@ -1483,13 +1507,14 @@ def _redact_values(text: str, pattern: re.Pattern[str], render, *, prose: bool =
         if end is None:
             pieces.append(REDACTED)  # nested past the budget: fail closed
             return "".join(pieces)
-        value_span = text[match.start("value") : end]
+        judged = _judged_start(match)
+        value_span = text[judged:end]
         if "\n" in value_span or "\r" in value_span:
             # A value over several lines keeps its line breaks, so each
             # line is redacted in place instead of collapsing to one.
-            replacement = text[match.start() : match.start("value")] + _redacted_multiline(
-                value_span
-            )
+            # Chained targets before a judged literal are kept as they
+            # are.
+            replacement = text[match.start() : judged] + _redacted_multiline(value_span)
         pieces.append(replacement)
         pos = end
     pieces.append(text[pos:])
@@ -1615,9 +1640,56 @@ def _comparison_is_credential(text: str, start: int, *, code: bool) -> bool:
     )
 
 
+def _chained_target(match: re.Match[str]) -> tuple[str, int] | None:
+    """The credential target that an assignment's value chains onto, and
+    where the literal it takes starts (#540).
+
+    In ``a = password = "..."`` both targets take the literal, so the
+    literal is judged as ``password``'s value and ``a = password = `` is
+    kept in front of it. Only a quoted literal is judged this way: a
+    value that is not one (``TOKEN=abc=def``) is one value, judged as
+    before, and so is a value whose own label is a credential.
+    """
+    if match.group("operator") != "=" or _is_sensitive_label(
+        match.group("label"), match.group("value")
+    ):
+        return None
+    text, pos, end = match.string, match.start("value"), match.end("value")
+    credential = None
+    while (found := _CHAINED_TARGET_RE.match(text, pos, end)) is not None:
+        name = found["key"] or found["name"]
+        if _is_sensitive_label(name):
+            credential = name
+        pos = found.end()
+    if credential is None or _STRING_LITERAL_RE.match(text, pos, end) is None:
+        return None
+    return credential, pos
+
+
+def _judged_start(match: re.Match[str]) -> int:
+    """Where the value that an assignment match judges starts: after any
+    chained targets before the literal (#540)."""
+    if "operator" not in match.re.groupindex:
+        return match.start("value")
+    chained = _chained_target(match)
+    return match.start("value") if chained is None else chained[1]
+
+
 def _assignment_match_is_sensitive(
     match: re.Match[str], *, code: bool = False, scanner: _Scanner
 ) -> bool:
+    chained = _chained_target(match)
+    if chained is not None:
+        credential, start = chained
+        return _value_is_credential(
+            match.string,
+            start,
+            match.string[start : match.end("value")],
+            "=",
+            credential,
+            code=code,
+            scanner=scanner,
+        )
     label = match.group("label")
     if not _is_sensitive_label(label, match.group("value")):
         return False
@@ -1647,11 +1719,13 @@ def _assignment_match_is_sensitive(
 def _redact_assignment(match: re.Match[str], scanner: _Scanner) -> str | None:
     if not _assignment_match_is_sensitive(match, scanner=scanner):
         return None
-    stripped = match.group("value").strip()
+    start = _judged_start(match)
+    head = match.string[match.start("value") : start]
+    stripped = match.string[start : match.end("value")].strip()
     arrow = ""
     if stripped.startswith(">"):  # ``'key' => 'value'``
         arrow, stripped = "> ", stripped[1:].strip()
-    return f"{match.group('prefix')}{arrow}{_redacted_secret(stripped)}"
+    return f"{match.group('prefix')}{head}{arrow}{_redacted_secret(stripped)}"
 
 
 def _literal_comparison_is_sensitive(match: re.Match[str], *, code: bool = False) -> bool:
@@ -1900,19 +1974,76 @@ def _redact_tuple_slots(text: str) -> str:
     return _splice(text, edits)
 
 
-def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
-    """The spans of credential values in Authorization headers that are
-    written inside a string literal (#519)."""
-    if _AUTH_HEADER_HINT_RE.search(text) is None:
-        return []
-    spans: list[tuple[int, int]] = []
+def _literal_chains(text: str) -> Iterator[list[re.Match[str]]]:
+    """The string literals of ``text``, grouped where each one is joined
+    to the one before it (see _LITERAL_JOIN_RE)."""
+    chain: list[re.Match[str]] = []
     for literal in _literal_finditer(
         _STRING_LITERAL_RE, text, quotes=_LITERAL_QUOTE_RE, prefixed=True
     ):
-        for header in _AUTH_HEADER_VALUE_RE.finditer(literal.group(0)):
-            if _text_is_credential(header.group("value")):
-                start, end = header.span("value")
-                spans.append((literal.start() + start, literal.start() + end))
+        if chain and _LITERAL_JOIN_RE.fullmatch(text, chain[-1].end(), literal.start()) is None:
+            yield chain
+            chain = []
+        chain.append(literal)
+    if chain:
+        yield chain
+
+
+def _auth_value_is_credential(scheme: str | None, value: str) -> bool:
+    """Whether an Authorization header's value is a credential (#540).
+
+    With Bearer, Basic or Token, the value is one whatever it holds, as
+    before. With another scheme, or none, it must read as a token: a
+    digit or one of ``-_.~+/=``. A word of letters alone (``required``,
+    ``header``) is prose, so ``Authorization: required`` is kept.
+    """
+    if not _text_is_credential(value):
+        return False
+    if scheme is not None and scheme.lower() in _BEARER_LIKE_AUTH_SCHEMES:
+        return True
+    return any(char.isdigit() or char in "-_.~+/=" for char in value)
+
+
+def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
+    """The spans of credential values in Authorization headers written
+    inside string literals (#519).
+
+    The literals of one value are read together (#540): in
+    ``"Authorization: Bearer " "tok"`` or ``"Authorization: Bearer tok-"
+    + "en"`` a value runs across the pieces, and each piece it covers
+    gives one span.
+    """
+    if _AUTH_HEADER_HINT_RE.search(text) is None:
+        return []
+    spans: list[tuple[int, int]] = []
+    for chain in _literal_chains(text):
+        # Each piece as (start, end) in the joined text, and where its
+        # body starts in the source.
+        pieces: list[tuple[int, int, int]] = []
+        bodies: list[str] = []
+        total = 0
+        for literal in chain:
+            quoted = literal.group("literal")
+            width = 3 if quoted[:3] in ('"""', "'''") else 1
+            body_start = literal.start("literal") + width
+            body_end = literal.end("literal") - width
+            pieces.append((total, total + body_end - body_start, body_start))
+            bodies.append(text[body_start:body_end])
+            total += body_end - body_start + 1  # and the separator after it
+        starts = [piece[0] for piece in pieces]
+        joined = _LITERAL_SEPARATOR.join(bodies)
+        for header in _AUTH_HEADER_VALUE_RE.finditer(joined):
+            value = header.group("value").replace(_LITERAL_SEPARATOR, "")
+            if not _auth_value_is_credential(header.group("scheme"), value):
+                continue
+            low, high = header.span("value")
+            index = bisect.bisect_right(starts, low) - 1
+            while index < len(pieces) and pieces[index][0] < high:
+                piece_start, piece_end, source = pieces[index]
+                lo, hi = max(low, piece_start), min(high, piece_end)
+                if lo < hi:
+                    spans.append((source + lo - piece_start, source + hi - piece_start))
+                index += 1
     return spans
 
 
