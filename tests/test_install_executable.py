@@ -8,6 +8,7 @@ test, so no real `mimry` is run.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -115,12 +116,12 @@ def test_throwaway_env_same_version_on_path_is_silent(two_installs, tmp_path, mo
     assert "on PATH" not in capsys.readouterr().out
 
 
-def test_throwaway_env_older_path_copy_is_kept_and_warns(
+def test_throwaway_env_older_path_copy_is_kept_and_not_warned(
     two_installs, tmp_path, monkeypatch, capsys
 ):
-    """#525: keep PATH's older copy, since a throwaway script vanishes.
+    """#525: keep PATH's older copy. #539: install_skill refuses it.
 
-    The warning names both versions and the upgrade commands.
+    So there is no warning to show here.
     """
     _throwaway_env(tmp_path, monkeypatch)
     _probe(monkeypatch, "0.6.4")
@@ -128,13 +129,7 @@ def test_throwaway_env_older_path_copy_is_kept_and_warns(
 
     assert installer._resolve_executable("mimry-mcp") == on_path["mimry-mcp"]
     installer._warn_if_path_differs()
-    lines = [line for line in capsys.readouterr().out.splitlines() if "on PATH" in line]
-    assert len(lines) == 1
-    assert "0.6.4" in lines[0]
-    assert __version__ in lines[0]
-    assert on_path["mimry"] in lines[0]
-    assert "uv tool upgrade mimry" in lines[0]
-    assert "pipx upgrade mimry" in lines[0]
+    assert "on PATH" not in capsys.readouterr().out
 
 
 def test_throwaway_env_without_path_copy_uses_the_script_beside_silently(
@@ -215,3 +210,114 @@ def test_probe_skips_the_run_when_mimry_is_not_on_path(fresh_probe, monkeypatch)
 
     assert installer._path_mimry_version() is None
     assert calls == []
+
+
+@pytest.fixture
+def user(tmp_path, monkeypatch):
+    """A scratch profile and repo, so installs write nowhere real."""
+    profile = tmp_path / "userprofile"
+    profile.mkdir()
+    for name in ("HOME", "USERPROFILE", "LOCALAPPDATA", "APPDATA"):
+        monkeypatch.setenv(name, str(profile))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(profile / "xdg"))
+    monkeypatch.setattr(installer, "_home", lambda: profile)
+    # The suite turns MCP registration off; these installs need it.
+    monkeypatch.delenv("MIMRY_NO_MCP_REGISTRATION", raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    return {"profile": profile, "repo": repo}
+
+
+def _mcp_command(profile):
+    servers = json.loads((profile / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    return servers["mcpServers"]["mimry"]["command"]
+
+
+# Where each install writes: a refused one must leave it absent.
+REFUSED_INSTALLS = [
+    pytest.param("claude-code", True, True, lambda u: u["repo"] / ".claude", id="project-hooks"),
+    pytest.param("cursor", False, False, lambda u: u["profile"] / ".cursor", id="global-mcp"),
+]
+
+
+@pytest.mark.parametrize("platform, project, hooks, written", REFUSED_INSTALLS)
+@pytest.mark.parametrize("dry_run", [False, True], ids=["install", "dry-run"])
+def test_throwaway_older_path_refuses_before_writing(
+    two_installs, tmp_path, monkeypatch, user, platform, project, hooks, written, dry_run
+):
+    """#539: a throwaway install must not register an older mimry.
+
+    The refusal names both versions and the way out. It writes nothing,
+    dry run included.
+    """
+    _throwaway_env(tmp_path, monkeypatch)
+    _probe(monkeypatch, "0.6.4")
+    on_path = two_installs["on_path"]
+
+    with pytest.raises(SystemExit) as refused:
+        installer.install_skill(
+            platform, project=project, root=user["repo"], hooks=hooks, dry_run=dry_run
+        )
+
+    message = refused.value.code
+    assert isinstance(message, str)
+    for expected in (
+        "0.6.4",
+        __version__,
+        on_path["mimry"],
+        "uv tool upgrade mimry",
+        "pipx upgrade mimry",
+        "uv tool install mimry",
+    ):
+        assert expected in message
+    assert not written(user).exists()
+    assert not any(user["profile"].rglob("*"))
+    assert not any(user["repo"].rglob("*"))
+
+
+def test_throwaway_unknown_path_version_refuses_before_writing(
+    two_installs, tmp_path, monkeypatch, user
+):
+    """An unreadable PATH copy counts as a different version."""
+    _throwaway_env(tmp_path, monkeypatch)
+    _probe(monkeypatch, None)
+    on_path = two_installs["on_path"]
+
+    with pytest.raises(SystemExit) as refused:
+        installer.install_skill("cursor", project=False, root=user["repo"])
+
+    message = refused.value.code
+    assert "an unknown version" in message
+    assert on_path["mimry"] in message
+    assert not any(user["profile"].rglob("*"))
+
+
+def test_throwaway_same_version_installs_and_registers_path_copy(
+    two_installs, tmp_path, monkeypatch, user, capsys
+):
+    """Same version on PATH: register that copy."""
+    _throwaway_env(tmp_path, monkeypatch)
+    _probe(monkeypatch, __version__)
+    on_path = two_installs["on_path"]
+
+    installer.install_skill("cursor", project=False, root=user["repo"])
+
+    assert (user["profile"] / ".cursor" / "skills" / "mimry" / "SKILL.md").is_file()
+    assert _mcp_command(user["profile"]) == on_path["mimry-mcp"]
+    assert "on PATH" not in capsys.readouterr().out
+
+
+def test_outside_throwaway_older_path_registers_own_copy_and_warns(
+    two_installs, monkeypatch, user, capsys
+):
+    """#505: a non-throwaway install keeps its own copy and says so."""
+    _probe(monkeypatch, "0.6.4")
+    own = two_installs["own"]
+
+    installer.install_skill("cursor", project=False, root=user["repo"])
+
+    assert (user["profile"] / ".cursor" / "skills" / "mimry" / "SKILL.md").is_file()
+    assert _mcp_command(user["profile"]) == own["mimry-mcp"]
+    lines = [line for line in capsys.readouterr().out.splitlines() if "on PATH" in line]
+    assert len(lines) == 1
+    assert "0.6.4" in lines[0]

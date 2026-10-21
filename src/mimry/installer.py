@@ -1229,26 +1229,40 @@ def _resolve_executable(name: str) -> str:
     return beside
 
 
+def _refuse_throwaway_path_mismatch() -> None:
+    """Refuse a throwaway install when PATH's mimry is another version.
+
+    The throwaway script vanishes with the uv cache, so hooks and the
+    MCP server would run PATH's copy. Another version there can fail,
+    or be unable to run at all, so nothing is written.
+    """
+    on_path = which("mimry")
+    if on_path is None or not _in_throwaway_env():
+        return
+    path_version = _path_mimry_version()
+    if path_version == __version__:
+        return
+    raise SystemExit(
+        ui.error_text(
+            f"`mimry` on PATH is {path_version or 'an unknown version'} ({on_path}),"
+            f" but this install is {__version__} from a uv throwaway env",
+            "Hooks and the MCP server would run the copy on PATH, so nothing was installed.",
+            "Upgrade the one on PATH: `uv tool upgrade mimry` or `pipx upgrade mimry`.",
+            "Or put this version on PATH with `uv tool install mimry`.",
+        )
+    )
+
+
 def _warn_if_path_differs() -> None:
     """Warn when the mimry on PATH is not this install's, naming both.
 
     Hooks and the MCP server then run this install, not the one a shell
     finds first. Both versions are shown, so the mismatch is visible.
-    In a throwaway env PATH's copy is kept whatever its version, so a
-    different version is warned about with the upgrade commands.
+    A throwaway env registers PATH's copy, so it never warns here.
     """
     on_path = which("mimry")
     own = _resolve_mimry_exe()
-    if on_path and _in_throwaway_env():
-        path_version = _path_mimry_version()
-        if path_version != __version__:
-            ui.warn(
-                f"`mimry` on PATH is {path_version or 'an unknown version'} ({on_path});"
-                f" this install is {__version__} from a uv throwaway env, so hooks and the"
-                " MCP server use the one on PATH. Upgrade it with `uv tool upgrade mimry`"
-                " or `pipx upgrade mimry`."
-            )
-    elif on_path and not _same_file(on_path, own):
+    if on_path and not _same_file(on_path, own):
         path_version = _path_mimry_version() or "an unknown version"
         ui.warn(
             f"`mimry` on PATH is {path_version} ({on_path}); hooks and the MCP server"
@@ -1923,6 +1937,7 @@ def install_skill(
         raise SystemExit(ui.error_text("--prompt-hook only works with --hooks"))
     if prompt_hook and key != "claude-code":
         raise SystemExit(ui.error_text("--prompt-hook only works with Claude Code"))
+    _refuse_throwaway_path_mismatch()
     dst = (root / cfg.project_path if project else cfg.global_path).resolve()
     # Never merge into a hooks file that cannot be parsed: that would
     # replace everything in it. Skip the hooks, show them, exit 1.
