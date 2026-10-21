@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from .paths import cache_home, repo_root
+from .state import path_exists, path_is_dir
 
 
 class UnsafeCachePathError(ValueError):
@@ -46,7 +47,7 @@ class IndexOutsideCacheError(UnsafeCachePathError):
 
 
 def _is_empty_dir(path: Path) -> bool:
-    return path.is_dir() and next(path.iterdir(), None) is None
+    return path_is_dir(path) and next(path.iterdir(), None) is None
 
 
 def _holds_model_folder(resolved: Path) -> bool:
@@ -59,8 +60,8 @@ def _holds_model_folder(resolved: Path) -> bool:
     from .embed import MODEL_FOLDER_PREFIX
 
     models = resolved / "models"
-    return models.is_dir() and any(
-        child.is_dir() for child in models.glob(f"{MODEL_FOLDER_PREFIX}*")
+    return path_is_dir(models) and any(
+        path_is_dir(child) for child in models.glob(f"{MODEL_FOLDER_PREFIX}*")
     )
 
 
@@ -103,13 +104,13 @@ def validated_cache_home(current_root: Path | None = None) -> Path:
     # so a concurrent run must not take it for someone else's files.
     mimry_looking = (
         resolved.name == "mimry"
-        or (resolved / "roots.json").exists()
-        or (resolved / "roots.json.lock").exists()
-        or (resolved / "indexes").exists()
+        or path_exists(resolved / "roots.json")
+        or path_exists(resolved / "roots.json.lock")
+        or path_exists(resolved / "indexes")
         or _is_empty_dir(resolved)
         or _holds_model_folder(resolved)
     )
-    if resolved.exists() and not mimry_looking:
+    if path_exists(resolved) and not mimry_looking:
         raise UnsafeCachePathError(
             f"MIMRY_CACHE_HOME is {resolved}, which holds files that are not a MIMRY cache. "
             "Point MIMRY_CACHE_HOME at an empty folder or one named mimry."

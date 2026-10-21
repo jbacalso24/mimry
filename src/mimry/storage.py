@@ -17,6 +17,7 @@ from .state import (
     atomic_write_text,
     exclusive_file_lock,
     load_json_state,
+    path_is_dir,
     read_scope,
     shared_file_lock,
     validate_generation,
@@ -108,7 +109,7 @@ def load_pointer(
 ):
     # A folder never set up has no .mimry/ to lock in. Creating one to
     # answer "not set up" would leave a stray lock file behind.
-    if not mdir(Path(root)).is_dir():
+    if not path_is_dir(mdir(Path(root))):
         return None
     with exclusive_file_lock(_pointer_lock(Path(root))):
         return _load_pointer_unlocked(

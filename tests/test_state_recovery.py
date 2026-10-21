@@ -17,8 +17,8 @@ from unittest.mock import patch
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
-from mimry import cli, commands, state
-from mimry.cache_safety import READ_ONLY_CACHE_STALE_WARNING
+from mimry import cli, commands, state, storage
+from mimry.cache_safety import READ_ONLY_CACHE_STALE_WARNING, UnsafeCachePathError
 from mimry.commands import cmd_cache_wipe, cmd_feedback, cmd_preflight
 from mimry.freshness import index_freshness
 from mimry.indexer import _cleanup_generations, write_index
@@ -1222,3 +1222,94 @@ def test_generation_publication_fails_closed_after_bounded_retries(tmp_path: Pat
     with pytest.raises(PermissionError):
         state.replace_path(staging, tmp_path / "final2", attempts=4, delay=0.001)
     assert calls["n"] == 4, "retry count must be bounded by attempts"
+
+
+def test_load_json_state_missing_file_returns_default(tmp_path: Path):
+    assert state.load_json_state(tmp_path / "absent.json", default={"fresh": True}) == (
+        {"fresh": True},
+        False,
+    )
+
+
+def test_load_json_state_read_error_is_not_read_as_missing(tmp_path: Path, monkeypatch):
+    target = tmp_path / "state.json"
+    target.write_text("{}", encoding="utf-8")
+    real_exists = Path.exists
+
+    def exists_like_windows(self, *args, **kwargs):
+        # Path.exists() is False for any OSError, not only not-found.
+        return False if self == target else real_exists(self, *args, **kwargs)
+
+    def denied(candidate):
+        raise PermissionError(errno.EACCES, "Permission denied", str(candidate))
+
+    monkeypatch.setattr(Path, "exists", exists_like_windows)
+    monkeypatch.setattr(state, "_parse_json", denied)
+
+    with pytest.raises(PermissionError):
+        state.load_json_state(target, default={"fresh": True})
+
+
+def test_load_pointer_stat_error_on_mimry_folder_propagates(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    mimry_dir = repo / ".mimry"
+    mimry_dir.mkdir(parents=True)
+    real_stat = os.stat
+
+    def denied(path, *args, **kwargs):
+        if Path(path) == mimry_dir:
+            raise PermissionError(errno.EACCES, "Permission denied", str(path))
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", denied)
+
+    with pytest.raises(PermissionError):
+        load_pointer(repo)
+
+
+def test_transient_stat_error_on_locked_reload_is_not_reported_as_disappeared(
+    tmp_path: Path, monkeypatch
+):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    mimry_dir = (repo / ".mimry").resolve()
+    real_stat = os.stat
+    stats_of_mimry = 0
+
+    def flaky(path, *args, **kwargs):
+        nonlocal stats_of_mimry
+        if Path(path) == mimry_dir:
+            stats_of_mimry += 1
+            # Second stat is the reload under the lock.
+            if stats_of_mimry == 2:
+                raise OSError(errno.EIO, "transient stat failure", str(path))
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", flaky)
+
+    with pytest.raises(OSError, match="transient stat failure") as raised:
+        with active_index_pointer(repo):
+            pass
+    assert not isinstance(raised.value, UnsafeCachePathError)
+
+
+def test_pointer_deleted_between_the_two_loads_still_reports_disappeared(
+    tmp_path: Path, monkeypatch
+):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    real_load = storage.load_pointer
+    loads = 0
+
+    def delete_before_locked_reload(root, **kwargs):
+        nonlocal loads
+        loads += 1
+        if loads == 2:
+            (repo / ".mimry" / "pointer.json").unlink()
+        return real_load(root, **kwargs)
+
+    monkeypatch.setattr(storage, "load_pointer", delete_before_locked_reload)
+
+    with pytest.raises(UnsafeCachePathError, match="disappeared"):
+        with active_index_pointer(repo):
+            pass

@@ -6,6 +6,7 @@ import json
 import os
 import random
 import sqlite3
+import stat
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -285,6 +286,28 @@ def atomic_write_json(path: Path, payload: Any, *, keep_backup: bool = False) ->
         )
 
 
+def path_exists(path: Path) -> bool:
+    """Whether ``path`` exists, reading only not-found as absent.
+
+    ``Path.exists`` is False for any OSError, so a transient stat
+    failure would pass for a missing file. Other errors propagate.
+    """
+    try:
+        os.stat(path)
+    except (FileNotFoundError, NotADirectoryError, ValueError):
+        return False
+    return True
+
+
+def path_is_dir(path: Path) -> bool:
+    """Whether ``path`` is an existing directory (see path_exists)."""
+    try:
+        mode = os.stat(path).st_mode
+    except (FileNotFoundError, NotADirectoryError, ValueError):
+        return False
+    return stat.S_ISDIR(mode)
+
+
 def _parse_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -306,11 +329,10 @@ def load_json_state(
 ) -> tuple[Any, bool]:
     """Load JSON state; optionally repair a corrupt target.
 
-    The repair restores the target from its backup.
+    The repair restores the target from its backup. Only a missing file
+    reads as absent; any other read error propagates.
     """
     path = Path(path)
-    if not path.exists():
-        return default, False
 
     def parse(candidate: Path) -> Any:
         payload = _parse_json(candidate)
@@ -320,12 +342,16 @@ def load_json_state(
 
     try:
         return parse(path), False
+    except FileNotFoundError:
+        return default, False
     except StateCorruptionError as primary:
         backup = backup_path(path)
-        if not recover_backup or not backup.exists():
+        if not recover_backup:
             raise StateCorruptionError(path, primary.detail, backup=backup) from primary
         try:
             payload = parse(backup)
+        except FileNotFoundError:
+            raise StateCorruptionError(path, primary.detail, backup=backup) from primary
         except StateCorruptionError as backup_error:
             raise StateCorruptionError(
                 path,
