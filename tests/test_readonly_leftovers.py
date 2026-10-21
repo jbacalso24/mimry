@@ -10,6 +10,7 @@ from test_state_recovery import (
     _deny_cache_file_writes,
     _deny_cache_writes,
     _deny_mcp_refresh,
+    _initialized_repo,
     _stale_repo_with_cache,
 )
 
@@ -119,3 +120,39 @@ def test_graph_advice_does_not_promise_readonly_refresh(tmp_path, monkeypatch, c
     output = capsys.readouterr().out
     assert "Run `mimry refresh`" not in output
     assert "read-only" in output
+
+
+def _count_cache_probes(monkeypatch) -> list[str]:
+    """Record every call to cache_writable, wherever it is imported."""
+    calls: list[str] = []
+
+    def spy() -> bool:
+        calls.append("probe")
+        return True
+
+    for target in ("mimry.cache_safety", "mimry.mcp_tools", "mimry.commands"):
+        monkeypatch.setattr(f"{target}.cache_writable", spy)
+    return calls
+
+
+def test_status_on_current_index_does_not_probe_a_writable_cache(tmp_path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    probes = _count_cache_probes(monkeypatch)
+
+    result = mimry_status(str(repo))
+
+    assert result["index_state"] == "current"
+    assert "cache_read_only" not in result
+    assert probes == []
+
+
+def test_cli_history_on_writable_cache_does_not_probe(tmp_path, monkeypatch, capsys):
+    repo, cache = _share_extension_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    probes = _count_cache_probes(monkeypatch)
+
+    assert cli.main(["--root", str(repo), "history", "share extension"]) == 0
+
+    assert "Remove the Share Extension target" in capsys.readouterr().out
+    assert probes == []

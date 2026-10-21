@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import io
-import sqlite3
 import sys
 from functools import wraps
 from inspect import signature
@@ -82,7 +81,13 @@ from mimry.state import (
     StateLockTimeoutError,
     UnsupportedIndexSchemaError,
 )
-from mimry.storage import RootIdentityError, active_index_pointer, connect, load_pointer
+from mimry.storage import (
+    RootIdentityError,
+    active_index_pointer,
+    connect,
+    connect_read_only,
+    load_pointer,
+)
 
 
 def _schema_upgrade_error_payload(
@@ -353,7 +358,16 @@ _CACHE_READ_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar(
 )
 
 
-def _index_operation(*, exclusive: bool = False, refresh: bool = False):
+def _index_operation(
+    *, exclusive: bool = False, refresh: bool = False, read_only_retry: bool = False
+):
+    """Run a tool under the index lock, refreshing the index first.
+
+    read_only_retry: when the cache refuses an exclusive call, run it
+    again read-only under the shared lock. Only for a tool whose
+    uncommitted writes are dropped when the call ends.
+    """
+
     def decorate(func):
         func_signature = signature(func)
 
@@ -378,14 +392,24 @@ def _index_operation(*, exclusive: bool = False, refresh: bool = False):
                     except Exception as exc:
                         # Graph health still shows what is left.
                         graph_error = str(exc)
-            if exclusive and refresh and not cache_writable():
-                read_only = True
-            token = _CACHE_READ_ONLY.set(read_only)
+
+            def run_locked(read_only: bool):
+                token = _CACHE_READ_ONLY.set(read_only)
+                try:
+                    with active_index_pointer(root_path, exclusive=exclusive and not read_only):
+                        return func(*args, **kwargs)
+                finally:
+                    _CACHE_READ_ONLY.reset(token)
+
             try:
-                with active_index_pointer(root_path, exclusive=exclusive and not read_only):
-                    result = func(*args, **kwargs)
-            finally:
-                _CACHE_READ_ONLY.reset(token)
+                result = run_locked(read_only)
+            except PermissionError as exc:
+                if not (
+                    read_only_retry and exclusive and not read_only and cache_write_denied(exc)
+                ):
+                    raise
+                read_only = True
+                result = run_locked(True)
             if read_only and isinstance(result, dict):
                 # Same key and wording as the preflight's warning.
                 before = result.get("stdout") or ""
@@ -439,16 +463,10 @@ def _status_payload_unchecked(root_path: Path, verify: bool = False) -> dict[str
         "graph": graph,
         "semantic": semantic_health(Path(idx), ptr.get("rootId"), expected_files=len(files)),
     }
-    if not cache_writable():
+    # Probe only when a refresh is needed, as `mimry status` does.
+    if state == "stale" and not cache_writable():
         payload["cache_read_only"] = True
-        payload["stdout"] = (
-            READ_ONLY_CACHE_STALE_WARNING
-            if state == "stale"
-            else (
-                "The cache is read-only; the existing index can still answer. "
-                + CACHE_NOT_WRITABLE_HINT
-            )
-        )
+        payload["stdout"] = READ_ONLY_CACHE_STALE_WARNING
     return payload
 
 
@@ -895,7 +913,7 @@ def mimry_why(
 @tool
 @_state_guard
 @_requires_text("query", "query", '"share extension removed"')
-@_index_operation(exclusive=True, refresh=True)
+@_index_operation(exclusive=True, refresh=True, read_only_retry=True)
 def mimry_history(query: str, limit: int = 10, root: str | None = None) -> dict[str, Any]:
     """Find the commits that added, removed or renamed matching files.
 
@@ -911,11 +929,7 @@ def mimry_history(query: str, limit: int = 10, root: str | None = None) -> dict[
     ptr = require(root_path)
     read_only = _CACHE_READ_ONLY.get()
     idx = Path(ptr["indexPath"])
-    con = (
-        sqlite3.connect((idx / "mimry.sqlite").as_uri() + "?mode=ro", uri=True)
-        if read_only
-        else connect(idx)
-    )
+    con = connect_read_only(idx) if read_only else connect(idx)
     try:
         payload = history_payload(
             con, root_path, sanitize_query(query), limit, read_only=read_only

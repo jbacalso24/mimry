@@ -5,7 +5,6 @@ import json
 import os
 import re
 import shutil
-import sqlite3
 import sys
 import time
 import webbrowser
@@ -118,6 +117,7 @@ from .state import (
 from .storage import (
     active_index_pointer,
     connect,
+    connect_read_only,
     load_pointer,
     load_root_registry,
     prune_root_registry,
@@ -962,6 +962,20 @@ HISTORY_PATHS_SHOWN = 8
 HISTORY_SHALLOW_NOTE = "shallow history: only the commits this clone has are searched"
 
 
+def _history_answer(root: Path, query: str, limit: int, *, read_only: bool) -> dict:
+    # Exclusive: the commit tables are written in place when HEAD moved.
+    with active_index_pointer(root, exclusive=not read_only) as ptr:
+        if not ptr:
+            raise SystemExit(not_set_up(root))
+        idx = Path(ptr["indexPath"])
+        con = connect_read_only(idx) if read_only else connect(idx)
+        try:
+            return history_payload(con, root, query, limit, read_only=read_only)
+        finally:
+            # Closing without a commit drops half-written commit tables.
+            con.close()
+
+
 @_requires_text("query", "query", 'mimry history "share extension removed"')
 @_fresh_index
 def cmd_history(a):
@@ -970,22 +984,16 @@ def cmd_history(a):
         ui.fail("Give a limit of 1 or more", 'For example: mimry history "login" --limit 5')
         return 2
     query = sanitize_query(a.query)
-    read_only = getattr(a, "cache_read_only", False) or not cache_writable()
     # A writable cache updates commit tables; a read-only one answers
-    # from stored history.
-    with active_index_pointer(root, exclusive=not read_only) as ptr:
-        if not ptr:
-            raise SystemExit(not_set_up(root))
-        idx = Path(ptr["indexPath"])
-        con = (
-            sqlite3.connect((idx / "mimry.sqlite").as_uri() + "?mode=ro", uri=True)
-            if read_only
-            else connect(idx)
-        )
-        try:
-            payload = history_payload(con, root, query, a.limit, read_only=read_only)
-        finally:
-            con.close()
+    # from stored history. Try the writable path first, and only a write
+    # the cache refuses falls back to the read-only answer.
+    read_only = getattr(a, "cache_read_only", False)
+    try:
+        payload = _history_answer(root, query, a.limit, read_only=read_only)
+    except PermissionError as exc:
+        if read_only or not cache_write_denied(exc):
+            raise
+        payload = _history_answer(root, query, a.limit, read_only=True)
     if "error" in payload:
         error = payload["error"]
         if error["code"] == "history_failed":

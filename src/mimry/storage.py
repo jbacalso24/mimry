@@ -331,6 +331,14 @@ def connect(idx):
     return con
 
 
+def connect_read_only(idx: Path) -> sqlite3.Connection:
+    """Open an existing index read-only, for a refusing cache.
+
+    Unlike connect(), it creates nothing and changes no schema.
+    """
+    return sqlite3.connect((idx / "mimry.sqlite").as_uri() + "?mode=ro", uri=True)
+
+
 def write_jsonl(path, rows):
     from .security import sanitize_data
 
