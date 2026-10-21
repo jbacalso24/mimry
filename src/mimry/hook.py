@@ -47,6 +47,7 @@ from typing import NamedTuple
 
 from .constants import HEAVY_IGNORES, MCP_QUERY_NAME, NON_CODE_KINDS
 from .session import (
+    SESSION_STOP_LOCK_WAIT,
     compact_note,
     edited_paths,
     flush_session_feedback,
@@ -1430,4 +1431,4 @@ def _hook_stop(root: Path) -> None:
     session = str(data.get("session_id") or "") if isinstance(data, dict) else ""
     root = indexed_root(root.resolve())
     log_session_stop(root, session)
-    flush_session_feedback(root)
+    flush_session_feedback(root, lock_wait=SESSION_STOP_LOCK_WAIT)
