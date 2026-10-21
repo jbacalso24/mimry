@@ -215,6 +215,27 @@ def test_mimry_queries_reads_powershell_quoting(command, expected):
     assert mimry_queries(command) == expected
 
 
+def test_mimry_queries_stops_each_query_at_the_next_mimry_word():
+    # shlex reads a newline as a space, so these lines form one segment.
+    # Each query's arguments end where the next mimry word starts.
+    assert mimry_queries("mimry find login flow\n" * 3) == ["login", "flow"] * 3
+
+
+def test_mimry_queries_stays_linear_on_many_mimry_words_in_one_segment():
+    import time
+
+    # CPU time, not wall time: a busy machine is not a complexity bug.
+    timings = {}
+    for n in (2000, 8000):
+        command = "mimry find login flow\n" * n
+        started = time.process_time()
+        found = mimry_queries(command)
+        timings[n] = (len(found), time.process_time() - started)
+    (small, _), (large, elapsed) = timings[2000], timings[8000]
+    assert large <= 4 * small
+    assert elapsed < 2.0, f"8000 mimry words took {elapsed:.1f}s"
+
+
 def test_the_commands_log_keeps_no_query_text(tmp_path, monkeypatch):
     repo = _repo(tmp_path, monkeypatch)
     secret_query = "apply_feedback password=tomato-canary"

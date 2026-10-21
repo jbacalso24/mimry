@@ -430,19 +430,24 @@ def _shell_searches(command: str) -> list[_Search]:
 def mimry_queries(command: str) -> list[str]:
     """The query texts a shell command passes to mimry, as written.
 
-    Every word after a query command, except options, is a candidate:
-    a quoted query is one word, and an option's value only matters
-    when it equals a query exactly. Returns [] when the command does
-    not parse or runs no query command.
+    Every word after a query command, up to the next mimry word, except
+    options, is a candidate: a quoted query is one word, and an option's
+    value only matters when it equals a query exactly. Each word is
+    visited once, so the cost is linear. Returns [] when the command
+    does not parse or runs no query command.
     """
     queries: list[str] = []
     for words, _ in _shell_segments(command):
-        for i, word in enumerate(words):
-            if re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe") != "mimry":
-                continue
-            for j in range(i + 1, len(words)):
+        starts = [
+            i
+            for i, word in enumerate(words)
+            if re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe") == "mimry"
+        ]
+        for n, i in enumerate(starts):
+            end = starts[n + 1] if n + 1 < len(starts) else len(words)
+            for j in range(i + 1, end):
                 if words[j] in MIMRY_QUERY_COMMANDS:
-                    queries.extend(arg for arg in words[j + 1 :] if not arg.startswith("-"))
+                    queries.extend(arg for arg in words[j + 1 : end] if not arg.startswith("-"))
                     break
     return queries
 
