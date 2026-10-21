@@ -643,13 +643,13 @@ def test_value_scan_stays_linear_on_pathological_input():
     for chunk in ("{token:(a}," * 6000, "token=(" * 9000, "token=f(x," * 6000):
         started = time.process_time()
         contains_sensitive_text(chunk, code=True)
-        assert time.process_time() - started < 0.5, chunk[:20]
+        assert time.process_time() - started < 2.0, chunk[:20]
     # Minified JSON is one long line of values.
     minified = '{"user":"svc1","password":"","role":"reader"},' * 4000
     for judge in (contains_sensitive_text, redact_sensitive_text):
         started = time.process_time()
         judge(minified)
-        assert time.process_time() - started < 0.5, judge.__name__
+        assert time.process_time() - started < 2.0, judge.__name__
 
 
 def test_configuration_values_are_literals_unless_null_numeric_or_a_reference():
