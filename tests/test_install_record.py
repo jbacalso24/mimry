@@ -443,7 +443,7 @@ def test_a_second_plain_uninstall_still_names_the_hooks_left(repo, capsys):
     out = capsys.readouterr().out
 
     assert "Nothing to remove" in out
-    assert "Kept the hooks in .claude/settings.json. Add --hooks to remove it too." in out
+    assert "Still installed: the hooks in .claude/settings.json. Add --hooks to remove it." in out
 
 
 # Hooks are per project: a user-scope install says how to get them

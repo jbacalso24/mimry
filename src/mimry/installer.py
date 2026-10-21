@@ -2105,13 +2105,16 @@ def _kept_by_uninstall(
     return kept
 
 
-def _say_kept(kept: list[tuple[str, str]]) -> None:
+def _say_kept(kept: list[tuple[str, str]], *, left_over: bool = False) -> None:
+    """Name what an uninstall kept, or found left over."""
     if kept:
         flags = " ".join(flag for flag, _ in kept)
-        ui.detail(
-            f"Kept {' and '.join(what for _, what in kept)}. Add {flags} to remove"
-            f" {'them' if len(kept) > 1 else 'it'} too."
-        )
+        what = " and ".join(what for _, what in kept)
+        them = "them" if len(kept) > 1 else "it"
+        if left_over:
+            ui.detail(f"Still installed: {what}. Add {flags} to remove {them}.")
+        else:
+            ui.detail(f"Kept {what}. Add {flags} to remove {them} too.")
 
 
 def uninstall_skill(
@@ -2524,5 +2527,5 @@ def cmd_uninstall(a) -> int:
         kept = _kept_by_uninstall(
             root, cfg, project=a.project, always_on=a.always_on, hooks=a.hooks
         )
-        _say_kept(kept)
+        _say_kept(kept, left_over=True)
     return 0
