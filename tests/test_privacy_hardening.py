@@ -2280,3 +2280,63 @@ def test_a_long_list_of_names_after_blanks_is_judged_in_linear_time():
     started = time.perf_counter()
     contains_sensitive_text(text, code=True)
     assert time.perf_counter() - started < 2.0
+
+
+# #520: a quoted word after a redacted value was cut with it, and a
+# secret over several lines collapsed to one, so the file was refused.
+# Each value keeps its line count, and the file stays indexed.
+def test_a_quoted_secret_in_a_docstring_keeps_the_prose_after_it(tmp_path: Path):
+    source = 'def f():\n    """Set password = "tomato-canary" in config."""\n    return 1\n'
+    expected = 'def f():\n    """Set password = "[REDACTED]" in config."""\n    return 1\n'
+    assert redact_sensitive_text(source) == expected
+    kept = indexable_bytes(tmp_path / "doc.py", source.encode("utf-8"))
+    assert kept == expected.encode("utf-8")
+    assert b"tomato-canary" not in kept
+
+
+def test_a_secret_in_parentheses_over_several_lines_is_redacted_line_by_line(tmp_path: Path):
+    source = 'password = (\n    "tomato-canary"\n)\n'
+    expected = 'password = (\n    "[REDACTED]"\n)\n'
+    kept = indexable_bytes(tmp_path / "config.py", source.encode("utf-8"))
+    assert kept == expected.encode("utf-8")
+    assert b"tomato-canary" not in kept
+
+
+def test_a_secret_in_a_triple_quoted_string_over_several_lines_is_redacted_line_by_line(
+    tmp_path: Path,
+):
+    source = 'SECRET = """\ntomato-canary\n"""\n'
+    expected = 'SECRET = """\n[REDACTED]\n"""\n'
+    kept = indexable_bytes(tmp_path / "settings.py", source.encode("utf-8"))
+    assert kept == expected.encode("utf-8")
+    assert b"tomato-canary" not in kept
+
+
+def test_a_yaml_block_secret_keeps_each_line_and_its_indent():
+    # YAML is a data format that indexable_bytes still refuses, so this
+    # checks the redaction itself. The redacted text keeps its lines, so
+    # it parses as the same YAML.
+    source = "password: |\n  tomato-canary\n  tomato-second\nhost: h\n"
+    expected = "password: |\n  [REDACTED]\n  [REDACTED]\nhost: h\n"
+    assert redact_sensitive_text(source) == expected
+
+
+def test_a_quoted_secret_continued_on_the_next_line_keeps_each_quote_paired():
+    source = 'password = "tomato-canary" + \n    "tomato-second"\n'
+    expected = 'password = "[REDACTED]" + \n    "[REDACTED]"\n'
+    assert redact_sensitive_text(source) == expected
+
+
+def test_a_run_of_unclosed_multiline_openers_is_judged_in_linear_time():
+    import time
+
+    # 60000 openers that never close, as a parenthesised value or a
+    # triple-quoted string (about 0.8 and 0.9 MB). Both entry points
+    # must stay far under the quadratic cost (#520).
+    for text in ("password = (\n" * 60000, 'password = """\n' * 60000):
+        started = time.perf_counter()
+        redact_sensitive_text(text)
+        assert time.perf_counter() - started < 5.0
+        started = time.perf_counter()
+        contains_sensitive_text(text, code=True)
+        assert time.perf_counter() - started < 5.0
