@@ -42,6 +42,9 @@ Best matches for "magic link"
 To update the index now, run `mimry reindex`.
 If a file is still missing after that, see [A file is not indexed](#a-file-is-not-indexed).
 
+If the cache is read-only, as in some sandboxes, MIMRY answers from the index it has and says that it cannot update it.
+Set `MIMRY_CACHE_HOME` to a writable folder, inside the project if the sandbox only allows that, and the next query rebuilds the index.
+
 ## A file is not indexed
 
 MIMRY leaves some files out on purpose.

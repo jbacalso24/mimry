@@ -104,12 +104,17 @@ def index_and_graph_health(root: Path, ptr: dict):
     return fresh, graph
 
 
-def _print_index_note(fresh: dict, graph: dict) -> None:
-    """One warning line when results come from a non-current index."""
+def _print_index_note(fresh: dict, graph: dict, *, read_only: bool = False) -> None:
+    """One warning line when results come from a non-current index.
+
+    A read-only cache has already said it cannot update the index, so
+    the generic refresh hint would promise a refresh that cannot happen.
+    """
     if fresh["state"] == "missing":
         ui.warn("This folder has not been indexed yet. Run `mimry index` first.")
     elif fresh["state"] == "stale":
-        ui.warn(_stale_index_message(fresh))
+        if not read_only:
+            ui.warn(_stale_index_message(fresh))
     elif graph["status"] != "current":
         ui.warn(f"Graph files are {graph['status']}. Run `mimry refresh` to rebuild them.")
 
@@ -666,6 +671,7 @@ def run_preflight(a):
         fresh = {"state": "missing"}
 
     stats = None
+    cache_read_only = False
     semantic = getattr(a, "semantic", False)
     # Index when there is none, when files changed since the last
     # index, or when asked: a stale index points confidently at the
@@ -687,6 +693,7 @@ def run_preflight(a):
             if not cache_write_denied(exc) or fresh["state"] == "missing":
                 raise
             ui.warn(READ_ONLY_CACHE_STALE_WARNING)
+            cache_read_only = True
         elapsed = time.perf_counter() - started
 
     with ui.working("Finding the files for this task"):
@@ -752,7 +759,7 @@ def run_preflight(a):
     ui.detail(f"Context pack: {ui.display_path(pack_path, root)}")
     for line in history:
         ui.detail(line)
-    _print_index_note(fresh, graph)
+    _print_index_note(fresh, graph, read_only=cache_read_only)
     print_results_section("Start with", rows[:5], verbose=getattr(a, "verbose", False))
     print()
     print(f"Next: read {ui.display_path(pack_path, root)} before opening files.")
@@ -1007,7 +1014,9 @@ def run_explain(a):
     rows = answer["rows"]
     mark_uncommitted(root, rows)
     ui.title(f"How {ui.quote(query)} maps to {root_name(root)}")
-    _print_index_note(answer["fresh"], answer["graph"])
+    _print_index_note(
+        answer["fresh"], answer["graph"], read_only=getattr(a, "cache_read_only", False)
+    )
     print_results_section("Most relevant files", rows, verbose=getattr(a, "verbose", False))
 
     if answer["symbols"]:

@@ -22,6 +22,7 @@ from mimry.cache_safety import READ_ONLY_CACHE_STALE_WARNING, UnsafeCachePathErr
 from mimry.commands import cmd_cache_wipe, cmd_feedback, cmd_preflight
 from mimry.freshness import index_freshness
 from mimry.indexer import _cleanup_generations, write_index
+from mimry.lifecycle import STALE_INDEX_HINT
 from mimry.mcp_tools import _capture_command, mimry_find, mimry_preflight
 from mimry.paths import idx_path
 from mimry.scanner import scan_entries
@@ -1093,6 +1094,86 @@ def test_read_only_cache_answers_from_stale_index_with_one_warning(
 
     assert cli.main(["--root", str(repo), "find", "def"]) == 0
     assert READ_ONLY_CACHE_STALE_WARNING in capsys.readouterr().out
+
+
+REFRESH_PROMISES = ("The next query updates it", "`mimry reindex` updates it now")
+
+
+def _stale_repo_with_cache(tmp_path: Path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    (repo / "src" / "auth" / "new_flow.py").write_text(
+        "def new_login_flow():\n    return True\n", encoding="utf-8"
+    )
+    return repo, cache
+
+
+def _deny_cache_writes(monkeypatch, cache: Path):
+    denied = cache / "indexes" / "locked" / "operation.lock"
+
+    def refused(*args, **kwargs):
+        raise PermissionError(errno.EACCES, "Permission denied", str(denied))
+
+    monkeypatch.setattr("mimry.queries.write_index", refused)
+    monkeypatch.setattr(commands, "refresh_if_stale", refused)
+
+
+def test_read_only_cache_preflight_stale_index_does_not_promise_a_refresh(
+    tmp_path: Path, monkeypatch, capsys
+):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_cache_writes(monkeypatch, cache)
+
+    assert cli.main(["--root", str(repo), "preflight", "login timeout"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.count(READ_ONLY_CACHE_STALE_WARNING) == 1
+    for phrase in REFRESH_PROMISES:
+        assert phrase not in out
+    for pack in (repo / ".mimry" / "mimry-out" / "context").glob("*.md"):
+        text = pack.read_text(encoding="utf-8")
+        for phrase in REFRESH_PROMISES:
+            assert phrase not in text
+
+
+def test_read_only_cache_find_stale_index_does_not_promise_a_refresh(
+    tmp_path: Path, monkeypatch, capsys
+):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_cache_writes(monkeypatch, cache)
+
+    assert cli.main(["--root", str(repo), "find", "login"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.count(READ_ONLY_CACHE_STALE_WARNING) == 1
+    for phrase in REFRESH_PROMISES:
+        assert phrase not in out
+
+
+def test_read_only_cache_explain_stale_index_does_not_promise_a_refresh(
+    tmp_path: Path, monkeypatch, capsys
+):
+    repo, cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+    _deny_cache_writes(monkeypatch, cache)
+
+    assert cli.main(["--root", str(repo), "explain", "login timeout"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.count(READ_ONLY_CACHE_STALE_WARNING) == 1
+    for phrase in REFRESH_PROMISES:
+        assert phrase not in out
+
+
+def test_writable_cache_stale_index_still_prints_the_refresh_hint(
+    tmp_path: Path, monkeypatch, capsys
+):
+    repo, _cache = _stale_repo_with_cache(tmp_path, monkeypatch)
+
+    assert cli.main(["--root", str(repo), "status"]) == 2
+
+    out = capsys.readouterr().out
+    assert STALE_INDEX_HINT in out
+    assert READ_ONLY_CACHE_STALE_WARNING not in out
 
 
 def test_cache_wipe_all_refuses_without_touching_cache_while_root_writer_is_active(

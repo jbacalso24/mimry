@@ -16,7 +16,9 @@ CACHE_NOT_WRITABLE_HINT = (
     "which a sandbox allows."
 )
 READ_ONLY_CACHE_STALE_WARNING = (
-    "The index is out of date, and the cache is read-only here, so it was not updated"
+    "The index is stale and cannot be updated from this read-only cache. Set MIMRY_CACHE_HOME "
+    "to a writable folder (inside the project when a sandbox only allows that), then the next "
+    "query rebuilds it."
 )
 
 

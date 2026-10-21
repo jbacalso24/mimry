@@ -453,6 +453,8 @@ def _fresh_index(command):
             if not cache_write_denied(exc) or not indexed:
                 raise
             ui.warn(READ_ONLY_CACHE_STALE_WARNING)
+            # The command reads this to drop its own refresh hint.
+            a.cache_read_only = True
             stats = None
         if stats is not None and not getattr(a, "json", False):
             elapsed = ui.took(time.perf_counter() - started)
