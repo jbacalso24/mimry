@@ -1392,6 +1392,15 @@ def _has_prompt_hook(root: Path, cfg: MimryPlatform) -> bool:
     )
 
 
+def _hook_repair_flags(root: Path, cfg: MimryPlatform) -> str:
+    """The flags that complete a partial hook table.
+
+    --prompt-hook is kept when the install has it. Without it the repair
+    would drop the prompt hook, since the flag sets whether it is there.
+    """
+    return " --hooks --prompt-hook" if _has_prompt_hook(root, cfg) else " --hooks"
+
+
 def _hooks_current(root: Path, cfg: MimryPlatform, prompt: bool = False) -> bool:
     """True when rewriting the hooks file would change nothing."""
     dst = (root / cfg.hook_path).resolve()
@@ -1772,7 +1781,7 @@ def install_status_with_code(
     if not healthy:
         flags = " --project" if project else ""
         flags += " --always-on" if always_on_stale else ""
-        flags += " --hooks" if hooks_partial else ""
+        flags += _hook_repair_flags(root, cfg) if hooks_partial else ""
         # Keep the install's --no-mcp choice, or repair registers MCP.
         flags += " --no-mcp" if no_mcp else ""
         verb = "install" if not result["skill"] else "repair"
@@ -2076,6 +2085,35 @@ def _nothing_to_remove(platform_name: str, *, project: bool) -> str:
     )
 
 
+def _kept_by_uninstall(
+    root: Path, cfg: MimryPlatform, *, project: bool, always_on: bool, hooks: bool
+) -> list[tuple[str, str]]:
+    """What a plain uninstall keeps in the project.
+
+    Each entry pairs what was kept with the flag that removes it.
+    """
+    kept = []
+    if project and not always_on and _has_always_on(root, cfg):
+        kept.append(("--always-on", f"the always-on block in {cfg.always_on_file.as_posix()}"))
+    if project and not hooks:
+        hook_present = _has_any_hook(root, cfg)
+        if hook_present is None:
+            hooks_file = _shown(root / cfg.hook_path, root, True)
+            ui.warn(f"Skipped the hook check: could not read {hooks_file}")
+        elif hook_present:
+            kept.append(("--hooks", f"the hooks in {cfg.hook_path.as_posix()}"))
+    return kept
+
+
+def _say_kept(kept: list[tuple[str, str]]) -> None:
+    if kept:
+        flags = " ".join(flag for flag, _ in kept)
+        ui.detail(
+            f"Kept {' and '.join(what for _, what in kept)}. Add {flags} to remove"
+            f" {'them' if len(kept) > 1 else 'it'} too."
+        )
+
+
 def uninstall_skill(
     platform_name: str,
     *,
@@ -2129,22 +2167,7 @@ def uninstall_skill(
         ui.detail(line)
     if mcp_removed:
         ui.detail(f"Removed the MIMRY MCP server from {cfg.label}")
-    kept = []
-    if project and not always_on and _has_always_on(root, cfg):
-        kept.append(("--always-on", f"the always-on block in {cfg.always_on_file.as_posix()}"))
-    if project and not hooks:
-        hook_present = _has_any_hook(root, cfg)
-        if hook_present is None:
-            hooks_file = _shown(root / cfg.hook_path, root, True)
-            ui.warn(f"Skipped the hook check: could not read {hooks_file}")
-        elif hook_present:
-            kept.append(("--hooks", f"the hooks in {cfg.hook_path.as_posix()}"))
-    if kept:
-        flags = " ".join(flag for flag, _ in kept)
-        ui.detail(
-            f"Kept {' and '.join(what for _, what in kept)}. Add {flags} to remove"
-            f" {'them' if len(kept) > 1 else 'it'} too."
-        )
+    _say_kept(_kept_by_uninstall(root, cfg, project=project, always_on=always_on, hooks=hooks))
     if project and cfg.mcp is not None and not _mcp_disabled(not mcp):
         ui.detail(
             "Kept the MCP server registration, which every project shares;"
@@ -2492,7 +2515,14 @@ def cmd_uninstall(a) -> int:
     ignore_removed = False
     if removed or remove_ignore:
         ignore_removed = _uninstall_global_ignore(remove=remove_ignore)
-    # "Nothing to remove" only when nothing at all was removed.
+    # "Nothing to remove" only when nothing at all was removed. Leftover
+    # hooks in a project are named here too.
     if not removed and not ignore_removed:
         print(_nothing_to_remove(a.platform, project=a.project))
+        root = Path(a.root).resolve()
+        cfg = platforms()[canonical_platform(a.platform)]
+        kept = _kept_by_uninstall(
+            root, cfg, project=a.project, always_on=a.always_on, hooks=a.hooks
+        )
+        _say_kept(kept)
     return 0

@@ -411,6 +411,41 @@ def test_repair_hint_after_a_no_mcp_install_keeps_no_mcp(user, capsys):
     assert "Run `mimry install --platform claude-code --no-mcp` to repair it." in out
 
 
+def test_repair_hint_after_a_prompt_hook_install_keeps_the_prompt_hook(repo, capsys):
+    installer.install_skill(
+        "claude-code", project=True, root=repo, hooks=True, prompt_hook=True, mcp=False
+    )
+    settings = repo / ".claude" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    del data["hooks"]["Stop"]
+    settings.write_text(json.dumps(data), encoding="utf-8")
+    capsys.readouterr()
+
+    _, code = _status(repo, project=True)
+    out = capsys.readouterr().out
+
+    assert code == 2
+    assert (
+        "Run `mimry install --platform claude-code --project --hooks --prompt-hook --no-mcp`"
+        " to repair it." in out
+    )
+
+
+# A second plain uninstall still names the hooks left behind
+
+
+def test_a_second_plain_uninstall_still_names_the_hooks_left(repo, capsys):
+    installer.install_skill("claude-code", project=True, root=repo, hooks=True, mcp=False)
+    assert main(["uninstall", "--platform", "claude-code", "--project", "--no-mcp"]) == 0
+    capsys.readouterr()
+
+    assert main(["uninstall", "--platform", "claude-code", "--project", "--no-mcp"]) == 0
+    out = capsys.readouterr().out
+
+    assert "Nothing to remove" in out
+    assert "Kept the hooks in .claude/settings.json. Add --hooks to remove it too." in out
+
+
 # Hooks are per project: a user-scope install says how to get them
 
 

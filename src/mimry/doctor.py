@@ -401,13 +401,28 @@ def _command_resolves(command: object) -> bool | None:
         return False
 
 
+def _hooks_incomplete(root: Path, cfg: installer.MimryPlatform) -> bool:
+    """Only part of MIMRY's hook table is in the project."""
+    return installer._has_any_hook(root, cfg) is True and installer._has_hook(root, cfg) is False
+
+
+def _hook_repair_command(key: str, cfg: installer.MimryPlatform, root: Path) -> str:
+    """The repair line for the hooks, as status prints it."""
+    state = installer._read_state((root / cfg.project_path).resolve())
+    no_mcp = " --no-mcp" if state.get("no_mcp") is True else ""
+    flags = installer._hook_repair_flags(root, cfg)
+    return f"mimry install --platform {key} --project{flags}{no_mcp}"
+
+
 def _registrations_check(root: Path) -> dict[str, Any]:
     """Which agents have MIMRY set up, from their config files."""
     agents: list[dict[str, Any]] = []
+    hook_repairs: list[str] = []
     for key, cfg in installer.platforms().items():
         skill = _skill_state(cfg, root)
         registered, command = _mcp_registration(cfg)
-        if skill is None and registered is not True:
+        incomplete = _hooks_incomplete(root, cfg)
+        if skill is None and registered is not True and not incomplete:
             continue
         agents.append(
             {
@@ -418,6 +433,8 @@ def _registrations_check(root: Path) -> dict[str, Any]:
                 "command_resolves": _command_resolves(command) if registered else None,
             }
         )
+        if incomplete:
+            hook_repairs.append(_hook_repair_command(key, cfg, root))
     if not agents:
         return _check(
             "agents.registrations",
@@ -428,19 +445,27 @@ def _registrations_check(root: Path) -> dict[str, Any]:
         )
     labels = ", ".join(agent["label"] for agent in agents)
     broken = [agent["key"] for agent in agents if agent["command_resolves"] is False]
-    if not broken:
+    if not broken and not hook_repairs:
         return _check(
             "agents.registrations",
             "ok",
             f"MIMRY is set up for {labels}",
             agents=agents,
         )
-    fixes = " and ".join(f"`mimry install --platform {key}`" for key in broken)
+    problems: list[str] = []
+    suggestions: list[str] = []
+    if broken:
+        fixes = " and ".join(f"`mimry install --platform {key}`" for key in broken)
+        problems.append("a registered command does not resolve")
+        suggestions.append(f"Run {fixes} to register the current server.")
+    if hook_repairs:
+        problems.append("the hook table is incomplete")
+        suggestions.extend(f"Run `{command}` to repair the hooks." for command in hook_repairs)
     return _check(
         "agents.registrations",
         "warning",
-        f"MIMRY is set up for {labels}, but a registered command does not resolve",
-        f"Run {fixes} to register the current server.",
+        f"MIMRY is set up for {labels}, but {' and '.join(problems)}",
+        " ".join(suggestions),
         agents=agents,
     )
 

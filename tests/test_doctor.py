@@ -676,6 +676,29 @@ def test_registration_with_unresolvable_command_warns(tmp_path, monkeypatch):
     assert {agent["key"]: agent for agent in check["agents"]}["kiro"]["command_resolves"] is False
 
 
+def test_incomplete_hook_table_warns_with_the_status_repair_command(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    root = tmp_path / "project"
+    _isolate(monkeypatch, home)
+    doctor.installer.install_skill(
+        "claude-code", project=True, root=root, hooks=True, prompt_hook=True, mcp=False
+    )
+    assert doctor._registrations_check(root)["status"] == "ok"
+    settings = root / ".claude" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    del data["hooks"]["Stop"]
+    settings.write_text(json.dumps(data), encoding="utf-8")
+
+    check = doctor._registrations_check(root)
+
+    assert check["status"] == "warning"
+    assert check["summary"] == "MIMRY is set up for Claude Code, but the hook table is incomplete"
+    assert check["suggestion"] == (
+        "Run `mimry install --platform claude-code --project --hooks --prompt-hook --no-mcp`"
+        " to repair the hooks."
+    )
+
+
 def test_broken_config_is_not_registered_and_no_agents_is_ok(tmp_path, monkeypatch):
     home = tmp_path / "home"
     _isolate(monkeypatch, home)
