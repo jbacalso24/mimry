@@ -35,6 +35,8 @@ feedback.
 
 from __future__ import annotations
 
+import argparse
+import functools
 import hashlib
 import heapq
 import json
@@ -178,8 +180,59 @@ MCP_QUERY_RE = re.compile(MCP_QUERY_NAME)
 # The mimry commands whose argument is query text. A shell command that
 # runs one is logged with that text, so the find it starts is tagged.
 MIMRY_QUERY_COMMANDS = frozenset(
-    {"find", "preflight", "context", "related", "route", "explain", "brief", "history", "semantic"}
+    {
+        "find",
+        "preflight",
+        "context",
+        "related",
+        "route",
+        "explain",
+        "brief",
+        "history",
+        "semantic",
+        "symbol",
+    }
 )
+
+
+@functools.cache
+def _mimry_cli_words() -> tuple[frozenset[str], frozenset[str]]:
+    """The subcommands of the mimry CLI, and its top-level options that
+    take a value. Read from the parser, so the lists never drift."""
+    from .cli import build_parser
+
+    parser = build_parser()
+    commands = frozenset(
+        name
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+        for name in action.choices
+    )
+    valued = frozenset(
+        option
+        for action in parser._actions
+        if action.nargs != 0
+        for option in action.option_strings
+    )
+    return commands, valued
+
+
+def _starts_command(words: list[str], i: int) -> bool:
+    """Whether the mimry word at ``i`` starts a command: the first word
+    after it that is not an option is a mimry subcommand.
+
+    Scans stop at the first such word, so each word is read once.
+    """
+    commands, valued = _mimry_cli_words()
+    j = i + 1
+    while j < len(words):
+        if words[j] in valued:
+            j += 2  # the option's value
+        elif words[j].startswith("-"):
+            j += 1
+        else:
+            return words[j] in commands
+    return False
 
 
 class _Search(NamedTuple):
@@ -432,9 +485,11 @@ def mimry_queries(command: str) -> list[str]:
 
     Every word after a query command, up to the next mimry word, except
     options, is a candidate: a quoted query is one word, and an option's
-    value only matters when it equals a query exactly. Each word is
-    visited once, so the cost is linear. Returns [] when the command
-    does not parse or runs no query command.
+    value only matters when it equals a query exactly. A mimry word
+    starts a command only when a subcommand follows its options, else it
+    is a query word. Each word is visited a bounded number of times, so
+    the cost is linear. Returns [] when the command does not parse or
+    runs no query command.
     """
     queries: list[str] = []
     for words, _ in _shell_segments(command):
@@ -444,6 +499,7 @@ def mimry_queries(command: str) -> list[str]:
             if re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe") == "mimry"
             # ``mimry find mimry`` searches for the word.
             and not (i and words[i - 1] in MIMRY_QUERY_COMMANDS)
+            and _starts_command(words, i)
         ]
         for n, i in enumerate(starts):
             end = starts[n + 1] if n + 1 < len(starts) else len(words)

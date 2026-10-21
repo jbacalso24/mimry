@@ -223,6 +223,19 @@ def test_mimry_queries_stops_each_query_at_the_next_mimry_word():
     assert mimry_queries("mimry find mimry hook") == ["mimry", "hook"]
 
 
+def test_mimry_queries_keeps_a_query_that_mentions_mimry():
+    # A mimry word starts a command only when a subcommand follows it.
+    assert mimry_queries("mimry find how does mimry work") == ["how", "does", "mimry", "work"]
+    assert mimry_queries("mimry find ways mimry hooks log") == ["ways", "mimry", "hooks", "log"]
+    assert mimry_queries("mimry find a\nmimry symbol b") == ["a", "b"]
+    assert mimry_queries("mimry --root repo find how does mimry work") == [
+        "how",
+        "does",
+        "mimry",
+        "work",
+    ]
+
+
 def test_mimry_queries_stays_linear_on_many_mimry_words_in_one_segment():
     import time
 
