@@ -2582,6 +2582,10 @@ def test_authorization_values_judged_by_position_are_redacted(
         'print("Authorization: Bearer <token>")\n',
         'print("Authorization: Bearer token is missing")\n',
         'msg = "Authorization: basic auth is required"\n',
+        'print("Authorization: disabled")\n',
+        'print("Authorization: needed")\n',
+        'print("Authorization: default")\n',
+        'MSG = ("Authorization: "\n       "disabled")\n',
     ),
 )
 def test_authorization_prose_is_kept_whatever_the_scheme(tmp_path: Path, line: str):
@@ -2589,6 +2593,44 @@ def test_authorization_prose_is_kept_whatever_the_scheme(tmp_path: Path, line: s
     assert not contains_sensitive_text(line, code=True), line
     data = line.encode("utf-8")
     assert indexable_bytes(tmp_path / "prose.py", data) == data
+
+
+# #573: a Basic, Bearer or Token value is a credential whatever follows
+# it on its line, and a value that ends its header at a line break, real
+# or escaped, is judged as the last word of the header (#561).
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        (
+            'h = "Authorization: Basic tomatocanary, X-Id: 1"\n',
+            'h = "Authorization: Basic [REDACTED], X-Id: 1"\n',
+        ),
+        (
+            'h = "Authorization: Bearer tomatocanary extra"\n',
+            'h = "Authorization: Bearer [REDACTED] extra"\n',
+        ),
+        (
+            'h = "Authorization: tomatocanary\\r\\n"\n',
+            'h = "Authorization: [REDACTED]\\r\\n"\n',
+        ),
+        (
+            'h = "Host: a.example\\r\\nAuthorization: tomatocanary\\r\\nAccept: */*\\r\\n"\n',
+            'h = "Host: a.example\\r\\nAuthorization: [REDACTED]\\r\\nAccept: */*\\r\\n"\n',
+        ),
+        (
+            'h = ("Authorization: "\n     "tomatocanary\\r\\n")\n',
+            'h = ("Authorization: "\n     "[REDACTED]\\r\\n")\n',
+        ),
+    ),
+)
+def test_authorization_values_ending_a_header_are_redacted(
+    tmp_path: Path, source: str, expected: str
+):
+    assert contains_sensitive_text(source, code=True), source
+    assert redact_sensitive_text(source) == expected
+    kept = indexable_bytes(tmp_path / "header.py", source.encode("utf-8")).decode("utf-8")
+    assert kept == expected
+    assert "tomatocanary" not in kept
 
 
 # #520: a quoted word after a redacted value was cut with it, and a
