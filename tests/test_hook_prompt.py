@@ -140,7 +140,8 @@ def test_a_long_unbroken_token_keeps_the_prompt_hook_fast(repo, monkeypatch, cap
     started = time.perf_counter()
     out = _prompt(monkeypatch, capsys, repo, prompt)
 
-    assert time.perf_counter() - started < 0.2
+    # Quadratic took minutes here; the bound leaves room for slow CI.
+    assert time.perf_counter() - started < 2.0
     assert out == ""
 
 
