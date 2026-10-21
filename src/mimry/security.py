@@ -2127,17 +2127,34 @@ def _redacted_lines(value: str) -> str:
     return re.sub(r"[^\r\n]+", REDACTED, value)
 
 
-_LINE_BREAK_SPLIT_RE = re.compile(r"(\r\n|\r|\n)")
 # A non-empty string literal within one line of a value.
 _VALUE_LITERAL_RE = re.compile(
     r"[rRbBuUfF]{0,2}(?:\"(?:\\.|[^\"\\\r\n])+\"|'(?:\\.|[^'\\\r\n])+'|`(?:\\.|[^`\\])+`)"
 )
+# A letter or digit, as str.isalnum counts them; a single search is much
+# faster than a Python loop over each character of a long value.
+_ALNUM_RE = re.compile(r"[^\W_]")
 # A comment that starts a piece of a value's line.
 _VALUE_COMMENT_RE = re.compile(r"[ \t]*(?:#|//)")
 # A line of a value, as its leading indent and delimiters, its text and
 # its trailing delimiters. Only the text is redacted.
 _VALUE_LINE_RE = re.compile(
     r"(?P<lead>[ \t]*[\"'`(\[{)\]}]*)(?P<body>.*?)(?P<tail>[\"'`(\[{)\]},;]*[ \t]*)"
+)
+
+
+# A line with a quote or the marker takes the line-by-line path.
+_QUOTED_OR_MARKED_LINE_RE = re.compile(
+    r"(?<![^\r\n])[^\r\n]*(?:[\"'`]|REDACTED)[^\r\n]*(?![^\r\n])"
+)
+# A line with no quote, no marker and no comment, and a letter or digit
+# after its leading delimiters. _redacted_value_text redacts exactly
+# these lines as lead, marker and tail, so one substitution does them
+# all, instead of a Python call per line.
+_PLAIN_VALUE_LINE_RE = re.compile(
+    r"(?<![^\r\n])(?![ \t]*(?:#|//))(?![^\r\n]*(?:[\"'`]|REDACTED))"
+    r"(?P<lead>[ \t]*[(\[{)\]}]*)(?=[^\r\n]*?[^\W_])"
+    r"[^\r\n]*?(?P<tail>[(\[{)\]},;]*[ \t]*)(?![^\r\n])"
 )
 
 
@@ -2149,10 +2166,8 @@ def _redacted_multiline(value: str) -> str:
     line count and still parses. A line with no letter or digit has no
     text to redact and is kept.
     """
-    parts = _LINE_BREAK_SPLIT_RE.split(value)
-    return "".join(
-        part if index % 2 else _redacted_value_line(part) for index, part in enumerate(parts)
-    )
+    value = _QUOTED_OR_MARKED_LINE_RE.sub(lambda match: _redacted_value_line(match.group()), value)
+    return _PLAIN_VALUE_LINE_RE.sub(r"\g<lead>" + REDACTED + r"\g<tail>", value)
 
 
 def _redacted_value_line(line: str) -> str:
@@ -2178,10 +2193,10 @@ def _redacted_value_text(text: str) -> str:
         return text
     # A line holding only the marker is already redacted. Wrapping it
     # again would grow the marker on every pass.
-    if not any(char.isalnum() for char in text.replace(REDACTED, "")):
+    if _ALNUM_RE.search(text.replace(REDACTED, "")) is None:
         return text
     match = _VALUE_LINE_RE.fullmatch(text)
-    if match is None or not any(char.isalnum() for char in match["body"]):
+    if match is None or _ALNUM_RE.search(match["body"]) is None:
         return text
     return match["lead"] + REDACTED + match["tail"]
 

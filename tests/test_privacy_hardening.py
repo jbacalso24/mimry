@@ -2247,15 +2247,16 @@ def test_a_run_of_unclosed_tuple_openers_is_judged_in_linear_time():
     import time
 
     # 60000 lines, each opening a tuple that never closes (960 KB). Each
-    # opener used to be read to the value limit, about 50 s here. The
-    # bounds sit far above the linear cost and far below that.
+    # opener used to be read to the value limit, about 50 s here. Each
+    # call is bounded at 5 s: CI runs about 1.6x slower than the linear
+    # cost, and the quadratic cost is 30 s and up.
     text = "a, password = (\n" * 60000
     started = time.perf_counter()
     redact_sensitive_text(text)
-    assert time.perf_counter() - started < 2.0
+    assert time.perf_counter() - started < 5.0
     started = time.perf_counter()
     contains_sensitive_text(text, code=True)
-    assert time.perf_counter() - started < 3.0
+    assert time.perf_counter() - started < 5.0
 
 
 def test_a_redacted_tuple_after_a_metadata_prefix_is_not_refused_by_the_adapter_check():
@@ -2331,8 +2332,8 @@ def test_a_run_of_unclosed_multiline_openers_is_judged_in_linear_time():
     import time
 
     # 60000 openers that never close, as a parenthesised value or a
-    # triple-quoted string (about 0.8 and 0.9 MB). Both entry points
-    # must stay far under the quadratic cost (#520).
+    # triple-quoted string (about 0.8 and 0.9 MB). Each call is bounded
+    # at 5 s, as above, and the quadratic cost is 30 s and up (#520).
     for text in ("password = (\n" * 60000, 'password = """\n' * 60000):
         started = time.perf_counter()
         redact_sensitive_text(text)
