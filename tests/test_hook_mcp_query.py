@@ -237,6 +237,41 @@ def test_mimry_queries_keeps_a_query_that_mentions_mimry():
     ]
 
 
+def test_mimry_queries_keeps_every_word_after_a_query_command():
+    # A subcommand name inside a query is a query word.
+    assert mimry_queries("mimry find the mimry init command") == [
+        "the",
+        "mimry",
+        "init",
+        "command",
+    ]
+    assert mimry_queries("mimry find how does mimry status") == [
+        "how",
+        "does",
+        "mimry",
+        "status",
+    ]
+    assert mimry_queries('mimry find "the mimry init command"') == ["the mimry init command"]
+    # Only the first command of a segment counts.
+    assert mimry_queries("mimry status find x") == []
+    # A backslash at a line end continues the command.
+    assert mimry_queries("mimry find a \\\n b") == ["a", "b"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["mimry --root " * 20000, "mimry find " + "mimry --root x " * 20000],
+    ids=["repeated-root", "find-then-repeated-root"],
+)
+def test_mimry_queries_is_linear_on_repeated_mimry_words(command):
+    import time
+
+    # CPU time, not wall time: a busy machine is not a complexity bug.
+    started = time.process_time()
+    mimry_queries(command)
+    assert time.process_time() - started < 1.0
+
+
 def test_the_hook_knows_every_mimry_subcommand_and_valued_option():
     import argparse
 

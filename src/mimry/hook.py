@@ -65,7 +65,7 @@ from .session import (
 REGEX_CONSTRUCT = re.compile(r"\||\.[*+]|\\[wsbdWSBD]|\[[^\]]*\]|\(.*\)|\(\?i\)")
 ESCAPED_CLASS = re.compile(r"\\[wsbdWSBD]")
 WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
-SEPARATOR = re.compile(r"[|&;]+")
+SEPARATOR = re.compile(r"[|&;\n]+")
 # One regex token: an escape pair, a whole [...] class or one character.
 REGEX_TOKEN = re.compile(r"\\.|\[(?:\\.|[^\]\\])*\]|.", re.DOTALL)
 # A trailing call opener: (, \(, \s*( or \s*\(.
@@ -193,21 +193,32 @@ MIMRY_SUBCOMMANDS = frozenset(
 MIMRY_VALUED_OPTIONS = frozenset({"--root"})
 
 
-def _starts_command(words: list[str], i: int) -> bool:
-    """Whether the mimry word at ``i`` starts a command: the first word
-    after it that is not an option is a mimry subcommand.
+def _names_mimry(word: str) -> bool:
+    """Whether a shell word names the mimry program, such as ``mimry``
+    or ``C:/Tools/mimry.exe``."""
+    return re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe") == "mimry"
 
-    Scans stop at the first such word, so each word is read once.
+
+def _subcommand_index(words: list[str], i: int) -> int | None:
+    """Index of the word that names the subcommand of the mimry word at
+    ``i``: the first word after it that is not an option or an option's
+    value.
+
+    None when a word naming mimry comes before it, or sits where an
+    option's value is skipped: that word starts a command of its own.
+    The scan stops at such a word, so each word is read by one scan.
     """
     j = i + 1
-    while j < len(words):
+    while j < len(words) and not _names_mimry(words[j]):
         if words[j] in MIMRY_VALUED_OPTIONS:
+            if j + 1 < len(words) and _names_mimry(words[j + 1]):
+                return None
             j += 2  # the option's value
         elif words[j].startswith("-"):
             j += 1
         else:
-            return words[j] in MIMRY_SUBCOMMANDS
-    return False
+            return j
+    return None
 
 
 class _Search(NamedTuple):
@@ -390,8 +401,9 @@ def _keep_backslashes(command: str) -> str:
     POSIX reads a backslash before a letter as that letter alone,
     outside quotes, so a Windows path written with backslashes
     would lose its separators. Such a backslash is doubled, so the
-    shell reads it back as one. Other escapes and single-quoted
-    text are left alone.
+    shell reads it back as one. A backslash at a line end continues
+    the line, so it is dropped with the newline. Other escapes and
+    single-quoted text are left alone.
     """
     if "\\" not in command:
         return command
@@ -402,6 +414,9 @@ def _keep_backslashes(command: str) -> str:
         ch = command[i]
         nxt = command[i + 1] if i + 1 < len(command) else ""
         if ch == "\\" and quote != "'":
+            if nxt == "\n" or command.startswith("\r\n", i + 1):
+                i += 2 if nxt == "\n" else 3
+                continue
             if re.fullmatch(r"[A-Za-z0-9_.-]", nxt):
                 out.append("\\\\")
                 i += 1
@@ -420,7 +435,7 @@ def _keep_backslashes(command: str) -> str:
 
 
 def _shell_segments(command: str) -> list[tuple[list[str], bool]]:
-    """The words of each ``|``, ``&&``, ``;`` segment.
+    """The words of each ``|``, ``&&``, ``;`` or newline segment.
 
     Each is paired with whether a pipe feeds it. Returns [] when the
     command does not parse.
@@ -428,7 +443,9 @@ def _shell_segments(command: str) -> list[tuple[list[str], bool]]:
     import shlex
 
     try:
-        lexer = shlex.shlex(_keep_backslashes(command), posix=True, punctuation_chars="|&;<>")
+        lexer = shlex.shlex(_keep_backslashes(command), posix=True, punctuation_chars="|&;<>\n")
+        # A newline is a separator, so it is not whitespace here.
+        lexer.whitespace = " \t\r"
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
@@ -439,7 +456,7 @@ def _shell_segments(command: str) -> list[tuple[list[str], bool]]:
     for tok in tokens:
         if SEPARATOR.fullmatch(tok):
             segments.append([])
-            piped.append(tok in PIPE_OPERATORS)
+            piped.append(tok.strip() in PIPE_OPERATORS)
         else:
             segments[-1].append(tok)
     return list(zip(segments, piped, strict=True))
@@ -448,8 +465,8 @@ def _shell_segments(command: str) -> list[tuple[list[str], bool]]:
 def _shell_searches(command: str) -> list[_Search]:
     """Every grep, rg, ag, ack or git grep segment of a shell command.
 
-    Every ``|``, ``&&``, ``;`` segment is checked. Returns [] when the
-    command does not parse.
+    Every ``|``, ``&&``, ``;`` or newline segment is checked. Returns []
+    when the command does not parse.
     """
     found = (_parse_search(words, fed) for words, fed in _shell_segments(command))
     return [search for search in found if search is not None]
@@ -458,30 +475,26 @@ def _shell_searches(command: str) -> list[_Search]:
 def mimry_queries(command: str) -> list[str]:
     """The query texts a shell command passes to mimry, as written.
 
-    Every word after a query command, up to the next mimry word, except
-    options, is a candidate: a quoted query is one word, and an option's
-    value only matters when it equals a query exactly. A mimry word
+    A shell segment runs at most one mimry command: the first mimry word
+    that starts one. Its query command's arguments run to the end of the
+    segment, so a later mimry word is a query word, not a new command.
+    Options are left out, and a quoted query is one word. A mimry word
     starts a command only when a subcommand follows its options, else it
-    is a query word. Each word is visited a bounded number of times, so
-    the cost is linear. Returns [] when the command does not parse or
-    runs no query command.
+    is a query word. Each word is read a bounded number of times, so the
+    cost is linear. Returns [] when the command does not parse or runs
+    no query command.
     """
     queries: list[str] = []
     for words, _ in _shell_segments(command):
-        starts = [
-            i
-            for i, word in enumerate(words)
-            if re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe") == "mimry"
+        for i, word in enumerate(words):
             # ``mimry find mimry`` searches for the word.
-            and not (i and words[i - 1] in MIMRY_QUERY_COMMANDS)
-            and _starts_command(words, i)
-        ]
-        for n, i in enumerate(starts):
-            end = starts[n + 1] if n + 1 < len(starts) else len(words)
-            for j in range(i + 1, end):
+            if not _names_mimry(word) or (i and words[i - 1] in MIMRY_QUERY_COMMANDS):
+                continue
+            j = _subcommand_index(words, i)
+            if j is not None and words[j] in MIMRY_SUBCOMMANDS:
                 if words[j] in MIMRY_QUERY_COMMANDS:
-                    queries.extend(arg for arg in words[j + 1 : end] if not arg.startswith("-"))
-                    break
+                    queries.extend(arg for arg in words[j + 1 :] if not arg.startswith("-"))
+                break
     return queries
 
 
