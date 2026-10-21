@@ -444,9 +444,9 @@ Measured with MIMRY 0.8.0 on 44 merged pull requests from 6 open-source projects
 
 | How the agent reads files | Tokens saved with MIMRY | Tasks located, MIMRY / grep |
 |---|---|---|
-| The line ranges MIMRY names first | **71.3%** | **32** / 28 |
-| Whole files | **51.0%** | **33** / 28 |
-| `grep -n`, then 100 lines around each match | **48.9%** | **31** / 27 |
+| The line ranges MIMRY names first | **71.2%** | **32** / 28 |
+| Whole files | **50.8%** | **33** / 28 |
+| `grep -n`, then 100 lines around each match | **48.6%** | **31** / 27 |
 
 See [benchmarks/tokens](benchmarks/tokens/README.md) for the method, per-project results and how to reproduce them.
 
