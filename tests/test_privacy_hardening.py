@@ -2398,3 +2398,63 @@ def test_a_redacted_multi_line_secret_redacts_to_itself():
     assert once == 'SECRET = """\n[REDACTED]\n"""\nafter = 2\n'
     assert redact_sensitive_text(once) == once
     assert not contains_sensitive_text(once, code=True)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'SECRET = """\n#tomato-canary\n"""\n',
+        "SECRET = '''\n#tomato-canary\n'''\n",
+        'SECRET = """\n// tomato-canary\n"""\n',
+        "SECRET = '''\n// tomato-canary\n'''\n",
+        '    SECRET = """\n    # tomato-canary\n    """\n',
+        "    SECRET = '''\n    // tomato-canary\n    '''\n",
+    ],
+)
+def test_a_comment_like_line_in_a_triple_quoted_string_is_redacted(source):
+    # #520 audit: inside a triple-quoted string a # or // line is text,
+    # not a comment, so its secret must not stay.
+    redacted = redact_sensitive_text(source)
+    assert "tomato-canary" not in redacted
+    assert redacted.count("\n") == source.count("\n")
+    assert redact_sensitive_text(redacted) == redacted
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("password: |\n  // tomato-canary\nhost: h\n", "password: |\n  [REDACTED]\nhost: h\n"),
+        ("password: >\n  # tomato-canary\nhost: h\n", "password: >\n  [REDACTED]\nhost: h\n"),
+        (
+            "    password: |\n      # tomato-canary\n    host: h\n",
+            "    password: |\n      [REDACTED]\n    host: h\n",
+        ),
+    ],
+)
+def test_a_comment_like_line_in_a_yaml_block_scalar_is_redacted(source, expected):
+    # A YAML block scalar holds text: # and // in it are not comments.
+    assert redact_sensitive_text(source) == expected
+
+
+def test_a_comment_line_in_a_parenthesised_value_stays_a_comment():
+    # In code, a # line inside a parenthesised value is a real comment,
+    # so it keeps its text and the value still parses.
+    source = 'password = (\n    "x",\n    # first half\n)\n'
+    assert (
+        redact_sensitive_text(source) == 'password = (\n    "[REDACTED]",\n    # first half\n)\n'
+    )
+
+
+def test_a_secret_split_over_many_spaces_is_judged_in_linear_time():
+    # #520 audit: a run of spaces inside one unclosed value line made
+    # the line scan quadratic (about 1.9 s at 16k spaces). 64k spaces
+    # must stay far under the bound.
+    import time
+
+    text = "password = (\n" + "x" + " " * 64000 + "y\n)\n"
+    started = time.perf_counter()
+    redact_sensitive_text(text)
+    assert time.perf_counter() - started < 5.0
+    started = time.perf_counter()
+    contains_sensitive_text(text, code=True)
+    assert time.perf_counter() - started < 5.0

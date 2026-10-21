@@ -487,3 +487,23 @@ def test_preflight_adds_no_history_line_for_a_task_with_no_path(tmp_path):
     assert res.returncode == 0, res.stderr
     assert "History:" not in res.stdout
     assert "## Commit History" not in _context_pack(repo)
+
+
+def test_comment_like_secret_lines_in_a_commit_body_leave_no_canary_in_the_cache(tmp_path):
+    # #520 audit: a # or // line inside a triple-quoted string or a YAML
+    # block was kept as a comment, so its secret reached the history.
+    cache = tmp_path / "cache"
+    repo = _init_repo(tmp_path / "repo")
+    _write(repo, "deploy.txt")
+    _git(repo, "add", "-A")
+    body = 'SECRET = """\n#tomato-canary\n"""\n\npassword: |\n  // tomato-canary\nhost: h\n'
+    _commit(repo, "Wire up deploys", body)
+    assert _mimry(repo, cache, "init", "--skip-graph").returncode == 0
+    res = _mimry(repo, cache, "history", "deploys")
+
+    assert res.returncode == 0, res.stderr
+    assert "tomato-canary" not in res.stdout + res.stderr
+    for root in (cache, repo / ".mimry"):
+        for path in root.rglob("*"):
+            if path.is_file():
+                assert b"tomato-canary" not in path.read_bytes(), path
