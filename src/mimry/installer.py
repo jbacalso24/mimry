@@ -1026,12 +1026,13 @@ def hook_table(platform_key: str) -> dict[str, list[tuple[str, str, bool]]]:
         search, edit = "Bash", "apply_patch|Edit|Write"
     else:
         # Grep and Glob are Claude Code's search tools; Bash covers
-        # shelled-out grep/rg. Read gets only the outline of a large
-        # file, never the search reminder. MIMRY's own MCP query tools
-        # are matched too, so the hook logs their query with the
+        # shelled-out grep/rg. PowerShell (Windows) is matched only so
+        # its mimry queries are logged. Read gets only the outline of a
+        # large file, never the search reminder. MIMRY's own MCP query
+        # tools are matched too, so the hook logs their query with the
         # session. A matcher with regex characters is tested unanchored,
         # hence the anchors.
-        search = f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$"
+        search = f"^(?:Bash|PowerShell|Glob|Grep|Read|{MCP_QUERY_NAME})$"
         edit = "Edit|Write|MultiEdit|NotebookEdit"
     session_start = [("startup|resume", "hook-refresh", True)]
     table = {}

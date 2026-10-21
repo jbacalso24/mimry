@@ -19,7 +19,7 @@ from mimry.cli import main
 from mimry.constants import MCP_QUERY_NAME
 
 NO_MCP = ["--no-mcp", "--no-global-gitignore"]
-SEARCH_MATCHER = f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$"
+SEARCH_MATCHER = f"^(?:Bash|PowerShell|Glob|Grep|Read|{MCP_QUERY_NAME})$"
 
 
 @pytest.fixture

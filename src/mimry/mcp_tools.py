@@ -483,12 +483,13 @@ def mimry_preflight(
 ) -> dict[str, Any]:
     """Fast readiness check and task context, matching CLI preflight."""
     root_path = _root(root)
+    raw_query = query
     query = sanitize_query(query)
     payload = _capture_command(
         run_preflight,
         SimpleNamespace(
             root=str(root_path),
-            task=query,
+            task=raw_query,
             force_refresh=force_refresh,
             semantic=semantic,
         ),
@@ -532,6 +533,7 @@ def mimry_find(
     Pass offset=0 on page one.
     """
     root_path = _root(root)
+    raw_query = query
     query = sanitize_query(query)
     ptr = require(root_path)
     try:
@@ -569,7 +571,7 @@ def mimry_find(
                 "returncode": 2,
                 "error": {"code": "invalid_snippet_limits", "message": str(exc)},
             }
-    record_query(root_path, query, [row["path"] for row in rows])
+    record_query(root_path, query, [row["path"] for row in rows], lookup=raw_query)
     payload = {
         "query": redact_sensitive_text(query),
         "root": str(root_path),
@@ -735,9 +737,10 @@ def mimry_context(query: str, root: str | None = None, semantic: bool = False) -
     Returns its path plus the selected files.
     """
     root_path = _root(root)
+    raw_query = query
     query = sanitize_query(query)
     ptr = require(root_path)
-    rows, pack_path = write_context_pack(root_path, ptr, query, semantic=semantic)
+    rows, pack_path = write_context_pack(root_path, ptr, raw_query, semantic=semantic)
     return sanitize_data(
         {
             "query": redact_sensitive_text(query),

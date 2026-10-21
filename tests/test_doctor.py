@@ -12,6 +12,7 @@ import pytest
 import mimry.doctor as doctor
 from mimry.cli import main
 from mimry.commands import cmd_init
+from mimry.constants import MCP_QUERY_NAME
 from mimry.indexer import write_index
 from mimry.storage import load_pointer
 
@@ -687,6 +688,30 @@ def test_incomplete_hook_table_warns_with_the_status_repair_command(tmp_path, mo
     settings = root / ".claude" / "settings.json"
     data = json.loads(settings.read_text(encoding="utf-8"))
     del data["hooks"]["Stop"]
+    settings.write_text(json.dumps(data), encoding="utf-8")
+
+    check = doctor._registrations_check(root)
+
+    assert check["status"] == "warning"
+    assert check["summary"] == "MIMRY is set up for Claude Code, but the hook table is incomplete"
+    assert check["suggestion"] == (
+        "Run `mimry install --platform claude-code --project --hooks --prompt-hook --no-mcp`"
+        " to repair the hooks."
+    )
+
+
+def test_a_zero_seven_hook_table_without_powershell_warns_to_repair(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    root = tmp_path / "project"
+    _isolate(monkeypatch, home)
+    doctor.installer.install_skill(
+        "claude-code", project=True, root=root, hooks=True, prompt_hook=True, mcp=False
+    )
+    assert doctor._registrations_check(root)["status"] == "ok"
+    settings = root / ".claude" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    # Every row is there; only the search matcher is the 0.7.0 one.
+    data["hooks"]["PreToolUse"][0]["matcher"] = f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$"
     settings.write_text(json.dumps(data), encoding="utf-8")
 
     check = doctor._registrations_check(root)

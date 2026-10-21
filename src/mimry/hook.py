@@ -1139,6 +1139,10 @@ def _hook_check(root: Path) -> None:
         if "mimry" in command:
             # The find this command starts is tagged with the session.
             log_hook_command(root, session, mimry_queries(command))
+        if tool_name == "powershell":
+            # PowerShell gets query logging only. The search answer
+            # below parses POSIX shell, so it is skipped.
+            return
     except Exception:
         command = raw
     mimry_dir = root / ".mimry"

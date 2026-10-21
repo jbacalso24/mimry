@@ -23,7 +23,7 @@ from mimry.storage import load_pointer
 
 EDITED = Path("src") / "auth" / "session.py"
 SEARCH_MATCHER = {
-    "claude-code": f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$",
+    "claude-code": f"^(?:Bash|PowerShell|Glob|Grep|Read|{MCP_QUERY_NAME})$",
     "codex": "Bash",
 }
 EDIT_MATCHER = {

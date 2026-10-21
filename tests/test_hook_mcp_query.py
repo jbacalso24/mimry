@@ -21,7 +21,8 @@ from types import SimpleNamespace
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
-from mimry import installer
+from mimry import hook as hook_module
+from mimry import installer, mcp_tools
 from mimry import session as mimry_session
 from mimry.constants import MCP_QUERY_NAME
 from mimry.hook import cmd_hook_check, mimry_queries
@@ -160,6 +161,7 @@ def test_pre_tool_use_matcher_covers_both_name_forms_and_the_search_tools():
         "mcp__mimry__mimry_related",
         "mcp__mimry__mimry_route",
         "mcp__mimry__mimry_explain",
+        "PowerShell",
     ):
         assert re.search(MATCHER, name), name
 
@@ -177,7 +179,7 @@ def test_pre_tool_use_matcher_leaves_out_other_tools():
 
 
 def test_mcp_query_name_is_the_one_the_matcher_uses():
-    assert MATCHER == f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$"
+    assert MATCHER == f"^(?:Bash|PowerShell|Glob|Grep|Read|{MCP_QUERY_NAME})$"
     assert installer.hook_table("codex")["PreToolUse"] == [("Bash", "hook-check", False)]
 
 
@@ -193,6 +195,23 @@ def test_mcp_query_name_is_the_one_the_matcher_uses():
     ],
 )
 def test_mimry_queries_reads_the_query_argument_of_each_mimry_command(command, expected):
+    assert mimry_queries(command) == expected
+
+
+# PowerShell tool calls use the same parser. What differs from POSIX
+# shell is the call operator, a quoted exe path, and the separators.
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ('mimry find "two words"', ["two words"]),
+        ("mimry find 'two words'", ["two words"]),
+        ("& mimry.exe find x", ["x"]),
+        ("& 'C:\\Tools\\mimry.exe' find \"two words\"", ["two words"]),
+        ("mimry find x; other", ["x"]),
+        ("mimry find x | Select-Object -First 5", ["x"]),
+    ],
+)
+def test_mimry_queries_reads_powershell_quoting(command, expected):
     assert mimry_queries(command) == expected
 
 
@@ -304,3 +323,120 @@ def test_without_a_writable_mimry_the_log_is_skipped_and_the_tag_is_empty(
 
     assert _command_rows(repo) == []
     assert not (state / "session-key").exists()
+
+
+@pytest.mark.parametrize(
+    "name", ["mcp__mimry__mimry_find", "mcp__mimry__mimry_preflight", "mcp__mimry__mimry_context"]
+)
+def test_mcp_secret_label_query_is_tagged_and_stored_redacted(tmp_path, monkeypatch, name):
+    repo = _repo(tmp_path, monkeypatch)
+    secret = "secret: rotate"
+    assert (
+        _hook(
+            monkeypatch,
+            repo,
+            {"session_id": SESSION, "tool_name": name, "tool_input": {"query": secret}},
+        )
+        == 0
+    )
+
+    tool = getattr(mcp_tools, name.removeprefix("mcp__mimry__"))
+    assert "error" not in tool(secret, str(repo))
+
+    row = _query_rows(repo)[-1]
+    assert row["session"] == SESSION
+    assert row["query"] == "secret: [REDACTED]"
+
+
+def test_cli_find_with_a_secret_label_query_is_tagged_and_stored_redacted(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    secret = "secret: rotate"
+    _hook(
+        monkeypatch,
+        repo,
+        {
+            "session_id": SESSION,
+            "tool_name": "Bash",
+            "tool_input": {"command": f'mimry find "{secret}"'},
+        },
+    )
+
+    res = run_cli(repo, tmp_path / "cache", "find", secret)
+
+    # Exit 1 is "no match": the query is still recorded.
+    assert res.returncode in (0, 1), res.stderr
+    row = _query_rows(repo)[-1]
+    assert row["session"] == SESSION
+    assert row["query"] == "secret: [REDACTED]"
+
+
+def test_powershell_find_is_logged_and_its_later_find_is_tagged(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    capsys.readouterr()
+
+    assert (
+        _hook(
+            monkeypatch,
+            repo,
+            {
+                "session_id": SESSION,
+                "tool_name": "PowerShell",
+                "tool_input": {"command": 'mimry find "fix login"'},
+            },
+        )
+        == 0
+    )
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert [row["queries"] for row in _command_rows(repo)] == [
+        [_query_hash("fix login", _key(repo))]
+    ]
+    assert _command_rows(repo)[0]["session"] == SESSION
+
+    res = run_cli(repo, tmp_path / "cache", "find", "fix login")
+    assert res.returncode == 0, res.stderr
+    assert _query_rows(repo)[-1]["session"] == SESSION
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rg -n fetch_user .",
+        "Select-String -Path src\\*.py -Pattern fetch_user",
+        "Get-Content fetch_user.txt",
+    ],
+)
+def test_powershell_call_without_mimry_prints_and_logs_nothing(
+    tmp_path, monkeypatch, capsys, command
+):
+    repo = _repo(tmp_path, monkeypatch)
+    capsys.readouterr()
+    # The search answer only runs once a context pack exists.
+    context = repo / ".mimry" / "mimry-out" / "context"
+    context.mkdir(parents=True, exist_ok=True)
+    (context / "latest.md").write_text("", encoding="utf-8")
+
+    # The nudge parses POSIX shell: PowerShell calls must not reach it.
+    # cmd_hook_check swallows errors, so record the calls instead.
+    reached: list[str] = []
+
+    def record(name):
+        def run(*args, **kwargs):
+            reached.append(name)
+            return None
+
+        return run
+
+    monkeypatch.setattr(hook_module, "_symbol_answer", record("_symbol_answer"))
+    monkeypatch.setattr(hook_module, "broad_search_query", record("broad_search_query"))
+    code = _hook(
+        monkeypatch,
+        repo,
+        {"session_id": SESSION, "tool_name": "PowerShell", "tool_input": {"command": command}},
+    )
+
+    assert code == 0
+    assert reached == []
+    assert capsys.readouterr().out == ""
+    assert _command_rows(repo) == []

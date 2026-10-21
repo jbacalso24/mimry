@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(?:Bash|Glob|Grep|Read|mcp__(?:plugin_mimry_)?mimry__mimry_(?:brief|context|explain|find|history|preflight|related|route|semantic|why))$",
+        "matcher": "^(?:Bash|PowerShell|Glob|Grep|Read|mcp__(?:plugin_mimry_)?mimry__mimry_(?:brief|context|explain|find|history|preflight|related|route|semantic|why))$",
         "hooks": [
           {
             "type": "command",

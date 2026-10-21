@@ -438,6 +438,9 @@ def write_context_pack(
     graph: dict | None = None,
     history: list[str] | None = None,
 ) -> tuple[list[dict], Path]:
+    # The session lookup takes the query as the caller sent it: the hook
+    # hashed that text, and the stored query is the redacted one.
+    lookup = query
     query = sanitize_query(query)
     if fresh is None or graph is None:
         fresh, graph = index_and_graph_health(root, ptr)
@@ -605,7 +608,7 @@ def write_context_pack(
     atomic_write_text(context_file(root), text)
     _prune_task_packs(root, keep=pack_path)
     log_preflight(root, rows)
-    record_query(root, query, [r["path"] for r in rows], context_path=pack_path)
+    record_query(root, query, [r["path"] for r in rows], context_path=pack_path, lookup=lookup)
     return rows, pack_path
 
 

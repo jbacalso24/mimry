@@ -848,7 +848,7 @@ def _find_in_directory(a, root, start):
         except ValueError as exc:
             ui.fail("Invalid snippet limits", str(exc))
             return 2
-    record_query(root, query, [row["path"] for row in rows])
+    record_query(root, query, [row["path"] for row in rows], lookup=a.query)
     if not rows:
         for name in missing_file_names(idx, query):
             print(f"No file named {ui.quote(redact_sensitive_text(name))} is indexed.")

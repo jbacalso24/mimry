@@ -445,15 +445,22 @@ def _query_session(state: Path, query: str) -> str:
 
 
 def record_query(
-    root: Path, query: str, shown: list[Any], context_path: Any = None, session: str = ""
+    root: Path,
+    query: str,
+    shown: list[Any],
+    context_path: Any = None,
+    session: str = "",
+    lookup: str | None = None,
 ) -> None:
     """Append the query, the paths shown and the context path.
 
     The row names ``session`` when a hook passes it, else the session of
-    the hook that saw the shell command that ran it. Never raises. The
-    command may hold the shared index lock here, and an append is safe
-    under it. The flush that needs the exclusive lock runs after the
-    command returns.
+    the hook that saw the shell command that ran it. The hook hashed the
+    query as the agent sent it, so ``lookup`` carries that text when
+    ``query`` was already redacted. The stored query is query_key of
+    ``query`` either way. Never raises. The command may hold the shared
+    index lock here, and an append is safe under it. The flush that
+    needs the exclusive lock runs after the command returns.
     """
     try:
         state = _state_dir(root)
@@ -466,7 +473,7 @@ def record_query(
             "shown": [rel for rel in (_tracked(root, p) for p in shown) if rel is not None],
             "context": _relative(root, context_path),
         }
-        tag = session or _query_session(state, raw)
+        tag = session or _query_session(state, raw if lookup is None else str(lookup))
         if tag:
             row["session"] = tag
         _append(state / QUERY_LOG, row)
