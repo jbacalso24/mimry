@@ -184,6 +184,46 @@ TUPLE_LABELED_RE = re.compile(
     r"\((?P<label>[A-Za-z_][A-Za-z0-9_.-]*)[ \t]*,[ \t]*"
     r"(?P<literal>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*')"
 )
+# A tuple or list assignment at the start of a statement, as in
+# ``user, password = "admin", "..."``, ``(user, password) = (...)`` or
+# ``[user, password] = [...]``. A target is a name, an attribute or a
+# string subscript (``creds["password"]``). Each target takes the value
+# at its own position (see _tuple_slots), so ASSIGNMENT_RE never reads
+# the label as the owner of the value after it (#519).
+_TUPLE_TARGET = r"[A-Za-z_][A-Za-z0-9_.]*(?:\[[ \t]*['\"][A-Za-z_][A-Za-z0-9_.]*['\"][ \t]*\])?"
+_TUPLE_ASSIGNMENT_RE = re.compile(
+    # A statement starts at a line start, after ``;``, or after a run of
+    # blanks that follows a word, as in ``a.py user, password = ...``.
+    # A blank run after a comma or a bracket is not a start, so a long
+    # list of names is not tried from every element.
+    r"(?m)(?:^[ \t]*|(?<=;)[ \t]*|(?<=[^\s,;(\[{])[ \t]+)"
+    r"(?:(?:const|let|var)[ \t]+)?(?:[(\[][ \t]*)?"
+    rf"(?P<targets>{_TUPLE_TARGET}(?:[ \t]*,[ \t]*{_TUPLE_TARGET})+)"
+    r"(?:[ \t]*,)?[ \t]*(?:[)\]][ \t]*)?:?=(?![=>])"
+)
+_TUPLE_TARGET_ITEM_RE = re.compile(
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_.]*)"
+    r"(?:\[[ \t]*['\"](?P<key>[A-Za-z_][A-Za-z0-9_.]*)['\"][ \t]*\])?"
+)
+# A value that is a keyword argument, as in
+# ``f(a, password="...", b="...")``, is not a tuple value.
+_KEYWORD_VALUE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*[ \t]*=(?![=>])")
+# What ends a value or opens a nested one: quotes, brackets, a comma, a
+# statement end, a line break, or a comment.
+_TUPLE_BREAK_RE = re.compile(r"[\"'`()\[\]{},;#\r\n]|(?<=\s)//")
+_TUPLE_TAIL_RE = re.compile(r"[ \t]*(?:\r?\n|;|#|//|\Z)")
+# How far the values of one tuple assignment may run. A value that does
+# not close within it is not read as a tuple, and is judged as before.
+_TUPLE_VALUES_LIMIT = 4096
+# An Authorization header written into a string literal, as in
+# ``"Authorization: Bearer <token>"``. The scheme stays and the value is
+# judged as a credential. A placeholder, a reference or a template
+# (``<token>``, ``$TOKEN``, ``{token}``) is kept (#519).
+_AUTH_HEADER_HINT_RE = re.compile(r"(?i)authorization")
+_AUTH_HEADER_VALUE_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9-])(?:Proxy-)?Authorization[ \t]*:[ \t]*(?:bearer|basic|token)[ \t]+"
+    r"(?P<value>[^\s\"'`{}<>,;()\[\]\\$]+)"
+)
 # Text that is not a statement of its own: a comment, or a triple-quoted
 # string such as a docstring or YAML inside a Python string.
 # ASSIGNMENT_RE reads through a triple-quoted string as one value, and
@@ -517,6 +557,7 @@ def _contains_sensitive_text(text: str, *, code: bool, depth: int) -> bool:
         or STANDALONE_SECRET_RE.search(text)
         or SENSITIVE_VALUE_RE.search(text)
         or _has_url_credential(text)
+        or _auth_header_value_spans(text)
     ):
         return True
     # Every remaining detector is an assignment form whose pattern
@@ -570,6 +611,11 @@ def _contains_sensitive_text(text: str, *, code: bool, depth: int) -> bool:
     if any(_tuple_is_sensitive(match, code=code) for match in TUPLE_LABELED_RE.finditer(text)):
         return True
     if any(
+        _tuple_slot_is_sensitive(slot, code=code, scanner=scanner)
+        for slot in scanner.tuple_slots()
+    ):
+        return True
+    if any(
         _hash_entry_is_sensitive(match, code=code, scanner=scanner)
         for match in HASH_ENTRY_RE.finditer(text)
     ):
@@ -609,6 +655,7 @@ def _redact_text(text: str, *, depth: int) -> str:
         redacted = SUB_TEXT_RE.sub(lambda match: _redact_sub_text(match, depth=depth), text)
     redacted = redact_standalone_secrets(redacted)
     redacted = _redact_url_credentials(redacted)
+    redacted = _redact_auth_headers(redacted)
     redacted = _redact_unclosed_quoted_values(redacted)
     redacted = _redact_values(redacted, SPACED_SENSITIVE_ASSIGNMENT_RE, _redact_spaced_assignment)
     redacted = YAML_BLOCK_ASSIGNMENT_RE.sub(_redact_yaml_block, redacted)
@@ -618,6 +665,7 @@ def _redact_text(text: str, *, depth: int) -> str:
     redacted = LITERAL_COMPARED_RE.sub(_redact_literal_comparison, redacted)
     redacted = LABEL_COMPARED_RE.sub(_redact_label_comparison, redacted)
     redacted = TUPLE_LABELED_RE.sub(_redact_tuple, redacted)
+    redacted = _redact_tuple_slots(redacted)
     redacted = UNCLOSED_MULTILINE_QUOTED_ASSIGNMENT_RE.sub(
         _redact_unclosed_multiline_assignment, redacted
     )
@@ -1050,6 +1098,8 @@ class _Scanner:
         self.text = text
         self.redaction = redaction
         self.left = 4 * len(text) + 1024
+        self._tuple_slots: list[_TupleSlot] | None = None
+        self._tuple_label_starts: set[int] | None = None
 
     def scan(self, start: int, *, strict: bool = False) -> _Value | None:
         if self.left <= 0:
@@ -1059,6 +1109,17 @@ class _Scanner:
         )
         self.left -= value.end - start + 1
         return value
+
+    def tuple_slots(self) -> list[_TupleSlot]:
+        """The targets of the tuple assignments, read once."""
+        if self._tuple_slots is None:
+            self._tuple_slots = _tuple_slots(self.text)
+        return self._tuple_slots
+
+    def tuple_label_starts(self) -> set[int]:
+        if self._tuple_label_starts is None:
+            self._tuple_label_starts = {slot.label_start for slot in self.tuple_slots()}
+        return self._tuple_label_starts
 
 
 def _scan_value(
@@ -1478,6 +1539,8 @@ def _assignment_match_is_sensitive(
     label = match.group("label")
     if not _is_sensitive_label(label, match.group("value")):
         return False
+    if match.start("label") in scanner.tuple_label_starts():
+        return False  # a tuple target takes the value at its own position (#519)
     if match.group("operator") in COMPARISON_OPERATORS:
         return _comparison_is_credential(match.string, match.start("value"), code=code)
     if code and not match.group("label_quote") and match.group("value").startswith(">"):
@@ -1555,6 +1618,237 @@ def _redact_tuple(match: re.Match[str]) -> str:
         return match.group(0)
     literal = match.group("literal")
     return match.group(0)[: -len(literal)] + _redacted_secret(literal)
+
+
+class _TupleSlot(NamedTuple):
+    """A target of a tuple assignment and the value at its position.
+
+    ``literal`` is the string literal that is exactly that value, or
+    None for any other expression, judged as an assignment's value.
+    """
+
+    label: str
+    label_start: int
+    start: int
+    end: int
+    literal: re.Match[str] | None
+
+
+def _tuple_slots(text: str) -> list[_TupleSlot]:
+    """The targets of each statement-level tuple or list assignment in
+    ``text``, paired with the value at the same position (#519).
+
+    A statement whose values do not pair one to one with its targets is
+    not a tuple here; it is judged as before.
+    """
+    slots: list[_TupleSlot] = []
+    statements = list(_TUPLE_ASSIGNMENT_RE.finditer(text))
+    for index, statement in enumerate(statements):
+        # A statement's values end before the next statement starts, so
+        # each scan covers its own span and no span is read twice.
+        # Without this bound, each unclosed opener in a run of
+        # ``a, p = (`` lines was read to the value limit (#519).
+        stop = statements[index + 1].start() if index + 1 < len(statements) else len(text)
+        items = list(
+            _TUPLE_TARGET_ITEM_RE.finditer(
+                text, statement.start("targets"), statement.end("targets")
+            )
+        )
+        values = _statement_values(text, statement.end(), stop)
+        if values is None or len(values) != len(items):
+            continue
+        for item, (start, end) in zip(items, values, strict=True):
+            if item.group("key") is not None:
+                label, label_start = item.group("key"), item.start("key")
+            else:
+                label, label_start = item.group("name"), item.start("name")
+            literal = _STRING_LITERAL_RE.match(text, start, end)
+            if literal is not None and literal.end() != end:
+                literal = None  # part of a larger expression, as ``"a" + b``
+            slots.append(_TupleSlot(label, label_start, start, end, literal))
+    return slots
+
+
+def _statement_values(text: str, pos: int, stop: int) -> list[tuple[int, int]] | None:
+    """The stripped spans of the values right of a tuple's operator.
+
+    They start at ``text[pos:]`` and end before ``stop``. None when they
+    do not read as one statement: a bracket opens outside them (a call's
+    arguments), one is a keyword argument, or they run past
+    _TUPLE_VALUES_LIMIT. The whole right-hand side may be bracketed, as
+    in ``= ("a", "b")``.
+    """
+    pos = _skip_blanks(text, pos)
+    if text.startswith(("(", "["), pos):
+        closer = ")" if text[pos] == "(" else "]"
+        if all(text.find(char, pos + 1, stop) == -1 for char in ")]}"):
+            return None  # no bracket can close this one before the next statement
+        wrapped = _split_elements(text, pos + 1, closer, stop)
+        if wrapped is not None and _TUPLE_TAIL_RE.match(text, wrapped[1]) is not None:
+            return _stripped_values(text, wrapped[0])
+    bare = _split_elements(text, pos, None, stop)
+    return None if bare is None else _stripped_values(text, bare[0])
+
+
+def _split_elements(
+    text: str, pos: int, closer: str | None, stop: int
+) -> tuple[list[tuple[int, int]], int] | None:
+    """The top-level comma-separated spans of the values.
+
+    They start at ``text[pos:]``. The values end at ``closer``, a
+    bracket that opens before ``pos``, or at the end of the statement
+    when ``closer`` is None. Returns their spans and the index after
+    them, or None when a bracket closes outside them or they do not end
+    before ``stop`` or within the limit.
+    Quotes, nested brackets and comments are stepped over, so a comma in
+    any of them does not split a value.
+    """
+    limit = min(len(text), pos + _TUPLE_VALUES_LIMIT, stop)
+    spans: list[tuple[int, int]] = []
+    start = pos
+    depth = 0
+    i = pos
+    while True:
+        found = _TUPLE_BREAK_RE.search(text, i, limit)
+        if found is None:
+            if closer is None and limit == len(text):
+                spans.append((start, limit))
+                return spans, limit
+            return None
+        i = found.start()
+        char = found.group()
+        if char in "\"'`":
+            literal = _STRING_LITERAL_RE.match(text, i, limit)
+            if literal is None:
+                if text.startswith(char * 3, i):
+                    return None  # a triple quote that does not close in range
+                i += 1
+            else:
+                i = literal.end()
+            continue
+        if char in ("#", "//"):
+            if closer is None:
+                if depth:
+                    return None
+                spans.append((start, i))
+                return spans, i
+            newline = text.find("\n", i, limit)
+            if newline == -1:
+                return None
+            i = newline
+            continue
+        if char in "\r\n":
+            if closer is None:
+                if depth:
+                    return None  # a bare value that runs on past its line
+                spans.append((start, i))
+                return spans, i
+            i += 1
+            continue
+        if char == ";":
+            if closer is None:
+                if depth:
+                    return None
+                spans.append((start, i))
+                return spans, i
+            if depth == 0:
+                return None
+            i += 1
+            continue
+        if char == ",":
+            if depth == 0:
+                spans.append((start, i))
+                start = i + 1
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if depth:
+                depth -= 1
+            elif char == closer:
+                spans.append((start, i))
+                return spans, i + 1
+            else:
+                return None
+        i += 1
+
+
+def _stripped_values(text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]] | None:
+    values: list[tuple[int, int]] = []
+    for start, end in spans:
+        while start < end and text[start].isspace():
+            start += 1
+        while end > start and text[end - 1].isspace():
+            end -= 1
+        if start == end:
+            continue  # a trailing comma leaves an empty value
+        if _KEYWORD_VALUE_RE.match(text, start) is not None:
+            return None
+        values.append((start, end))
+    return values
+
+
+def _tuple_slot_is_sensitive(slot: _TupleSlot, *, code: bool, scanner: _Scanner) -> bool:
+    if not _is_sensitive_label(slot.label):
+        return False
+    if slot.literal is not None:
+        return _string_literal_is_credential(slot.literal, code=code)
+    return _value_is_credential(
+        scanner.text,
+        slot.start,
+        scanner.text[slot.start : slot.end],
+        "=",
+        slot.label,
+        code=code,
+        scanner=scanner,
+    )
+
+
+def _redact_tuple_slots(text: str) -> str:
+    scanner = _Scanner(text, redaction=True)
+    edits: list[tuple[int, int, str]] = []
+    for slot in scanner.tuple_slots():
+        if not _tuple_slot_is_sensitive(slot, code=False, scanner=scanner):
+            continue
+        if slot.literal is not None:
+            prefix = slot.literal["prefix"]
+            replacement = prefix + _redacted_secret(slot.literal["literal"])
+            edits.append((slot.start, slot.literal.end(), replacement))
+        else:
+            edits.append((slot.start, slot.end, _redacted_secret(text[slot.start : slot.end])))
+    return _splice(text, edits)
+
+
+def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
+    """The spans of credential values in Authorization headers that are
+    written inside a string literal (#519)."""
+    if _AUTH_HEADER_HINT_RE.search(text) is None:
+        return []
+    spans: list[tuple[int, int]] = []
+    for literal in _STRING_LITERAL_RE.finditer(text):
+        for header in _AUTH_HEADER_VALUE_RE.finditer(literal.group(0)):
+            if _text_is_credential(header.group("value")):
+                start, end = header.span("value")
+                spans.append((literal.start() + start, literal.start() + end))
+    return spans
+
+
+def _redact_auth_headers(text: str) -> str:
+    return _splice(text, [(start, end, REDACTED) for start, end in _auth_header_value_spans(text)])
+
+
+def _splice(text: str, edits: list[tuple[int, int, str]]) -> str:
+    """``text`` with each (start, end, replacement) edit made. The edits
+    are in order and do not overlap."""
+    if not edits:
+        return text
+    pieces: list[str] = []
+    pos = 0
+    for start, end, replacement in edits:
+        pieces.append(text[pos:start])
+        pieces.append(replacement)
+        pos = end
+    pieces.append(text[pos:])
+    return "".join(pieces)
 
 
 def _sub_text_parts(match: re.Match[str]) -> tuple[str, str, str]:

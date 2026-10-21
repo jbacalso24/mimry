@@ -2105,3 +2105,178 @@ def test_a_secret_before_a_closing_backtick_keeps_the_inline_code():
         'Set `cfg["password"] = "[REDACTED]"` in the file.\nNext line.\n'
     )
     assert not contains_sensitive_text(redact_sensitive_text(text), code=False)
+
+
+# #519: a tuple assignment paired its label with the wrong literal, and
+# an Authorization header inside a string literal was indexed as is.
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        (
+            'user, password = "admin", "tomato-canary"\n',
+            'user, password = "admin", "[REDACTED]"\n',
+        ),
+        (
+            'password, user = "tomato-canary", "admin"\n',
+            'password, user = "[REDACTED]", "admin"\n',
+        ),
+        (
+            'creds["password"], other = "tomato-canary", "x"\n',
+            'creds["password"], other = "[REDACTED]", "x"\n',
+        ),
+        (
+            'self.user, self.password = "admin", "tomato-canary"\n',
+            'self.user, self.password = "admin", "[REDACTED]"\n',
+        ),
+        (
+            '(user, password) = ("admin", "tomato-canary")\n',
+            '(user, password) = ("admin", "[REDACTED]")\n',
+        ),
+        (
+            '[user, password] = ["admin", "tomato-canary"]\n',
+            '[user, password] = ["admin", "[REDACTED]"]\n',
+        ),
+        (
+            'const [user, password] = ["admin", "tomato-canary"];\n',
+            'const [user, password] = ["admin", "[REDACTED]"];\n',
+        ),
+        (
+            'user, password := "admin", "tomato-canary"\n',
+            'user, password := "admin", "[REDACTED]"\n',
+        ),
+        (
+            'user, password = (\n    "admin",\n    "tomato-canary",\n)\n',
+            'user, password = (\n    "admin",\n    "[REDACTED]",\n)\n',
+        ),
+        (
+            'x = 1; user, password = "admin", "tomato-canary"  # note\n',
+            'x = 1; user, password = "admin", "[REDACTED]"  # note\n',
+        ),
+        # A keyword argument is still its own assignment, not a tuple.
+        ('foo(a, password="tomato-canary", b="y")\n', 'foo(a, password="[REDACTED]", b="y")\n'),
+    ),
+)
+def test_tuple_assigned_credentials_redact_the_literal_at_their_own_position(
+    tmp_path: Path, source: str, expected: str
+):
+    assert contains_sensitive_text(source, code=True), source
+    assert redact_sensitive_text(source) == expected
+    kept = indexable_bytes(tmp_path / "creds.py", source.encode("utf-8")).decode("utf-8")
+    assert kept == expected
+    assert kept.count("\n") == source.count("\n")
+    assert "tomato-canary" not in kept
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        (
+            'h = "Authorization: Bearer abcdef1234567890XYZ"\n',
+            'h = "Authorization: Bearer [REDACTED]"\n',
+        ),
+        (
+            'h = "Authorization: Basic abcdef1234567890XYZ"\n',
+            'h = "Authorization: Basic [REDACTED]"\n',
+        ),
+        (
+            'h = "Authorization: Token abcdef1234567890XYZ"\n',
+            'h = "Authorization: Token [REDACTED]"\n',
+        ),
+        (
+            'h = "Proxy-Authorization: Bearer abcdef1234567890XYZ"\n',
+            'h = "Proxy-Authorization: Bearer [REDACTED]"\n',
+        ),
+        (
+            "h = 'Authorization: Bearer abcdef1234567890XYZ'\n",
+            "h = 'Authorization: Bearer [REDACTED]'\n",
+        ),
+        (
+            'h = f"Authorization: Bearer abcdef1234567890XYZ{tok}"\n',
+            'h = f"Authorization: Bearer [REDACTED]{tok}"\n',
+        ),
+    ),
+)
+def test_authorization_header_values_in_string_literals_are_redacted_and_keep_the_scheme(
+    tmp_path: Path, source: str, expected: str
+):
+    assert contains_sensitive_text(source, code=True), source
+    assert redact_sensitive_text(source) == expected
+    kept = indexable_bytes(tmp_path / "headers.py", source.encode("utf-8")).decode("utf-8")
+    assert kept == expected
+    assert "abcdef1234567890XYZ" not in kept
+
+
+@pytest.mark.parametrize(
+    "line",
+    (
+        'user, count = "admin", 3\n',
+        'token_type, scheme = "bearer", "Bearer"\n',
+        'print("Authorization: Bearer <token>")\n',
+        'h = "Authorization: Bearer $TOKEN"\n',
+        'h = "Authorization: Bearer {tok}"\n',
+        'h = "X-Authorization: Bearer abcdef1234567890XYZ"\n',
+        'user, password = "admin", os.environ["PW"]\n',
+        'log(token, "some message here")\n',
+        'user, password == "admin", "tomato-canary"\n',
+    ),
+)
+def test_tuple_and_header_shapes_without_a_credential_are_kept(tmp_path: Path, line: str):
+    assert redact_sensitive_text(line) == line, line
+    assert not contains_sensitive_text(line, code=True), line
+    data = line.encode("utf-8")
+    assert indexable_bytes(tmp_path / "shapes.py", data) == data
+
+
+def test_a_long_tuple_assignment_is_judged_in_linear_time():
+    import time
+
+    # Four hundred targets and values on one line, the credential last.
+    names = ", ".join(f"v{i}" for i in range(400)) + ", password"
+    values = ", ".join(f'"x{i}"' for i in range(400)) + ', "tomato-canary"'
+    line = f"{names} = {values}\n"
+    started = time.perf_counter()
+    assert contains_sensitive_text(line, code=True)
+    redacted = redact_sensitive_text(line)
+    assert time.perf_counter() - started < 1.0
+    assert redacted.endswith(', "[REDACTED]"\n')
+    assert "tomato-canary" not in redacted
+    assert redacted.count("\n") == line.count("\n")
+
+
+def test_a_run_of_unclosed_tuple_openers_is_judged_in_linear_time():
+    import time
+
+    # 60000 lines, each opening a tuple that never closes (960 KB). Each
+    # opener used to be read to the value limit, about 50 s here. The
+    # bounds sit far above the linear cost and far below that.
+    text = "a, password = (\n" * 60000
+    started = time.perf_counter()
+    redact_sensitive_text(text)
+    assert time.perf_counter() - started < 2.0
+    started = time.perf_counter()
+    contains_sensitive_text(text, code=True)
+    assert time.perf_counter() - started < 3.0
+
+
+def test_a_redacted_tuple_after_a_metadata_prefix_is_not_refused_by_the_adapter_check():
+    # The file record joins its path to the redacted text, so the first
+    # tuple line starts mid-line. Its redacted literal must still pass,
+    # or the whole file is dropped as unreadable.
+    from mimry.security import contains_sensitive_data
+
+    redacted = redact_sensitive_text(
+        'user, password = "admin", "tomato-canary"\npassword, user = "tomato-canary", "admin"\n'
+    )
+    record = {"content_hint": redacted, "metadata_text": "src/x.py x.py .py " + redacted}
+    assert not contains_sensitive_data(record, code=True)
+
+
+def test_a_long_list_of_names_after_blanks_is_judged_in_linear_time():
+    import time
+
+    from mimry.security import contains_sensitive_text
+
+    text = "x a, " * 3000 + "password\n"
+    started = time.perf_counter()
+    contains_sensitive_text(text, code=True)
+    assert time.perf_counter() - started < 2.0
