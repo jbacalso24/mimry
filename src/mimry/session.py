@@ -309,43 +309,69 @@ def edited_paths(tool_input: dict[str, Any]) -> list[str]:
     return paths
 
 
-def log_hook_command(root: Path, session: str, command: str) -> None:
+def log_hook_command(root: Path, session: str, command: str, queries: list[str]) -> None:
     """Remember a shell command that names mimry, or an MCP query, with
     its session.
 
     The PreToolUse hook calls this before the command runs, or before an
     MCP tool answers, so the find it starts can be tagged with the
-    session. An MCP query is stored in the ``command`` field as it was
-    sent. Never raises.
+    session. ``queries`` are the query texts the command passes to
+    mimry, or the MCP query itself; a command with none is not kept. An
+    MCP query is also stored in the ``command`` field as it was sent.
+    Never raises.
     """
     try:
         state = _state_dir(root)
         if state is None or not session or not session_feedback_enabled():
             return
+        texts = [text[:2000] for text in queries if text.strip()]
+        if not texts:
+            return
         rows = [
             *_read_rows(state / HOOK_COMMAND_LOG),
-            {"time": datetime.now(UTC).isoformat(), "session": session, "command": command[:2000]},
+            {
+                "time": datetime.now(UTC).isoformat(),
+                "session": session,
+                "command": command[:2000],
+                "queries": texts,
+            },
         ]
         _write_rows(state / HOOK_COMMAND_LOG, rows[-HOOK_COMMAND_LIMIT:])
     except Exception:
         pass
 
 
-def _query_session(state: Path, query: str) -> str:
-    """The session of a recent hook command naming ``query``, or "".
+def query_key(query: Any) -> str:
+    """A query as record_query stores it: stripped, redacted and capped.
 
-    A command counts when it ran within HOOK_COMMAND_WINDOW and names
-    the query. Other processes' queries stay untagged.
+    Two queries belong to the same session only when their keys are
+    equal. Never raises.
     """
-    text = query.strip()
-    if not text:
+    from .feedback import _redact_feedback_string
+
+    text, _ = _redact_feedback_string(str(query or "").strip())
+    return text[:2000]
+
+
+def _query_session(state: Path, query: str) -> str:
+    """The session of the newest recent hook command whose query equals
+    ``query``, or "".
+
+    A command counts when it ran within HOOK_COMMAND_WINDOW. The match
+    is exact after query_key, never a substring, so a query that only
+    contains another does not take its session. Other processes'
+    queries stay untagged.
+    """
+    key = query_key(query)
+    if not key:
         return ""
     now = time.time()
     for row in reversed(_read_rows(state / HOOK_COMMAND_LOG)):
         stamp = _stamp(row)
         if stamp is None or now - stamp > HOOK_COMMAND_WINDOW:
             continue
-        if text in str(row.get("command") or ""):
+        texts = row.get("queries")
+        if isinstance(texts, list) and any(query_key(text) == key for text in texts):
             return str(row.get("session") or "")
     return ""
 
@@ -365,13 +391,10 @@ def record_query(
         state = _state_dir(root)
         if state is None or not session_feedback_enabled():
             return
-        from .feedback import _redact_feedback_string
-
         raw = str(query or "")
-        text, _ = _redact_feedback_string(raw.strip())
         row: dict[str, Any] = {
             "time": datetime.now(UTC).isoformat(),
-            "query": text[:2000],
+            "query": query_key(raw),
             "shown": [rel for rel in (_tracked(root, p) for p in shown) if rel is not None],
             "context": _relative(root, context_path),
         }
@@ -445,10 +468,23 @@ def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
     for stamps in stops_by_session.values():
         stamps.sort()
 
+    # Each session's newest query outlives its closed window, so the
+    # compaction note can still name it. It is marked recorded, so its
+    # window is never recorded twice.
+    newest: dict[str, int] = {}
+    for index, (_, query) in enumerate(timed_queries):
+        if _session_of(query):
+            newest[_session_of(query)] = index
     windows: list[dict[str, Any]] = []
     kept_queries: list[dict[str, Any]] = []
+    marked = 0
     for index, (begin, query) in enumerate(timed_queries):
         session = _session_of(query)
+        keep = bool(session) and newest.get(session) == index
+        if query.get("recorded"):
+            if keep:
+                kept_queries.append(query)
+            continue
         end = _window_end(timed_queries, index, session, stops_by_session.get(session, []))
         if end is None and now - begin <= SESSION_WINDOW_IDLE:
             kept_queries.append(query)
@@ -462,26 +498,28 @@ def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
         ]
         opened = _unique(e["path"] for e in window if e.get("action") == "opened")
         changed = _unique(e["path"] for e in window if e.get("action") == "changed")
-        if not opened and not changed:
-            continue
-        shown = [str(p) for p in query.get("shown") or []]
-        # Ignored only means something when the agent changed a file.
-        ignored: list[str] = []
-        if changed:
-            fresh = [p for p in shown if p not in opened and p not in changed]
-            ignored = fresh[:SESSION_IGNORED_LIMIT]
-        windows.append(
-            {
-                "query": query.get("query") or "",
-                "context_path": query.get("context"),
-                "suggested": shown,
-                "opened": opened,
-                "changed": changed,
-                "ignored": ignored,
-                "outcome": "unknown",
-                "notes": SESSION_NOTE,
-            }
-        )
+        if opened or changed:
+            shown = [str(p) for p in query.get("shown") or []]
+            # Ignored only means something once a file was changed.
+            ignored: list[str] = []
+            if changed:
+                fresh = [p for p in shown if p not in opened and p not in changed]
+                ignored = fresh[:SESSION_IGNORED_LIMIT]
+            windows.append(
+                {
+                    "query": query.get("query") or "",
+                    "context_path": query.get("context"),
+                    "suggested": shown,
+                    "opened": opened,
+                    "changed": changed,
+                    "ignored": ignored,
+                    "outcome": "unknown",
+                    "notes": SESSION_NOTE,
+                }
+            )
+        if keep:
+            kept_queries.append({**query, "recorded": True})
+            marked += 1
 
     # File events are kept by age, not by window: a window only counts
     # events after its own query, so a flushed one is never counted
@@ -492,6 +530,7 @@ def _flush_plan(state: Path, now: float) -> dict[str, Any] | None:
     ]
     if (
         not windows
+        and not marked
         and len(kept_queries) == len(timed_queries)
         and len(kept_events) == len(timed_events)
         and len(kept_stops) == len(raw_stops)

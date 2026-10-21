@@ -25,7 +25,7 @@ from test_mimry_cli import copy_fixture, run_cli
 from mimry import feedback, session
 from mimry.cli import main
 from mimry.feedback import feedback_payload_from_args, list_feedback, parse_context_suggested_paths
-from mimry.hook import cmd_hook_check, cmd_hook_compact, cmd_hook_refresh
+from mimry.hook import cmd_hook_check, cmd_hook_compact, cmd_hook_refresh, cmd_hook_stop
 from mimry.paths import TASK_PACK_PATTERN, cache_home
 from mimry.search import find_rows
 from mimry.session import (
@@ -763,3 +763,111 @@ def test_a_session_with_a_tagged_mcp_query_never_takes_an_untagged_one(
     note = _restored(monkeypatch, capsys, repo)
     assert f'you were working on: "{QUERY}".' in note
     assert "untagged cli query" not in note
+
+
+def _stop(monkeypatch, repo: Path, session: str = SESSION) -> None:
+    """The turn ends, the way the Stop hook runs it."""
+    _feed(monkeypatch, {"hook_event_name": "Stop", "session_id": session})
+    assert cmd_hook_stop(SimpleNamespace(root=str(repo))) == 0
+
+
+def test_stop_keeps_the_last_query_for_the_compact_note_and_records_once(
+    tmp_path, monkeypatch, capsys
+):
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find_in_session(monkeypatch, repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[0]) == 0
+
+    _stop(monkeypatch, repo)
+    note = _restored(monkeypatch, capsys, repo)
+    assert note == (
+        f'Before the context was compacted you were working on: "{QUERY}". '
+        f"Read: {shown[0]}. "
+        f'Run mimry find "{QUERY}" to get the ranked files back.'
+    )
+    [record] = _rows(repo)
+    assert record["opened_paths"] == [shown[0]]
+
+    _stop(monkeypatch, repo)
+    assert _restored(monkeypatch, capsys, repo) == note
+    assert len(_rows(repo)) == 1
+
+
+def test_a_later_turn_records_its_own_window_once_after_a_stop(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    shown = _find_in_session(monkeypatch, repo, QUERY)
+    assert _read(monkeypatch, repo, repo / shown[0]) == 0
+    _stop(monkeypatch, repo)
+
+    later = _find_in_session(monkeypatch, repo, FOLLOW_UP)
+    assert _read(monkeypatch, repo, repo / later[0]) == 0
+    _stop(monkeypatch, repo)
+    _stop(monkeypatch, repo)
+
+    recorded = {row["query"]: row["opened_paths"] for row in _rows(repo)}
+    assert recorded == {QUERY: [shown[0]], FOLLOW_UP: [later[0]]}
+
+
+def test_a_session_is_tagged_only_by_a_query_equal_to_its_own(tmp_path, monkeypatch, capsys):
+    # AA's find is logged first. BB's MCP query only contains the same
+    # words. AA's find stays AA's, and BB's note does not name it.
+    repo = _repo(tmp_path, monkeypatch)
+    _feed(
+        monkeypatch,
+        {
+            "session_id": "AA",
+            "tool_name": "Bash",
+            "tool_input": {"command": 'mimry find "apply_feedback"'},
+        },
+    )
+    assert cmd_hook_check(SimpleNamespace(root=str(repo))) == 0
+    time.sleep(0.01)
+    _mcp_query(monkeypatch, repo, "apply_feedback_v2 cleanup", session="BB")
+    time.sleep(0.01)
+    # No file matches in the fixture, but the query is logged anyway.
+    _cli(repo, "find", "apply_feedback")
+    time.sleep(0.01)
+    assert _read(monkeypatch, repo, repo / "src" / "auth" / "session.py", session="BB") == 0
+    assert _read(monkeypatch, repo, repo / "src" / "app.ts", session="AA") == 0
+
+    assert _query_lines(repo)[-1]["query"] == "apply_feedback"
+    assert _query_lines(repo)[-1]["session"] == "AA"
+    note_b = _restored(monkeypatch, capsys, repo, session="BB")
+    assert 'you were working on: "apply_feedback_v2 cleanup".' in note_b
+    assert '"apply_feedback"' not in note_b
+    note_a = _restored(monkeypatch, capsys, repo, session="AA")
+    assert 'you were working on: "apply_feedback".' in note_a
+
+
+def test_a_shell_query_that_only_contains_the_text_does_not_tag_it(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    _feed(
+        monkeypatch,
+        {
+            "session_id": "BB",
+            "tool_name": "Bash",
+            "tool_input": {"command": "mimry find apply_feedback_v2"},
+        },
+    )
+    assert cmd_hook_check(SimpleNamespace(root=str(repo))) == 0
+
+    record_query(repo, "apply_feedback", [])
+    assert _query_lines(repo)[-1]["query"] == "apply_feedback"
+    assert "session" not in _query_lines(repo)[-1]
+
+
+def test_an_exact_match_is_tagged_with_the_newest_session_that_ran_it(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    for session_id in ("old-session", "new-session"):
+        _feed(
+            monkeypatch,
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": f'mimry find "{QUERY}"'},
+            },
+        )
+        assert cmd_hook_check(SimpleNamespace(root=str(repo))) == 0
+
+    record_query(repo, QUERY, [])
+    assert _query_lines(repo)[-1]["session"] == "new-session"

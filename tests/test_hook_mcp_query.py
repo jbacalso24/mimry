@@ -19,7 +19,7 @@ from test_mimry_cli import copy_fixture, run_cli
 
 from mimry import installer
 from mimry.constants import MCP_QUERY_NAME
-from mimry.hook import cmd_hook_check
+from mimry.hook import cmd_hook_check, mimry_queries
 from mimry.session import HOOK_COMMAND_LOG, record_query
 
 SESSION = "mcp-session-under-test"
@@ -157,3 +157,18 @@ def test_pre_tool_use_matcher_leaves_out_other_tools():
 def test_mcp_query_name_is_the_one_the_matcher_uses():
     assert MATCHER == f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$"
     assert installer.hook_table("codex")["PreToolUse"] == [("Bash", "hook-check", False)]
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ('mimry find "login session timeout"', ["login session timeout"]),
+        ('cd repo && uv run mimry preflight "fix login" --json', ["fix login"]),
+        ("C:\\Tools\\mimry.exe context fetch_user", ["fetch_user"]),
+        ('mimry find "a" | head', ["a"]),
+        ("mimry feedback --query fetch_user", []),
+        ("cat fetch_user.txt", []),
+    ],
+)
+def test_mimry_queries_reads_the_query_argument_of_each_mimry_command(command, expected):
+    assert mimry_queries(command) == expected

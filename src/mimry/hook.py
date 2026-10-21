@@ -174,6 +174,11 @@ BIG_READ_MAX_BYTES = 4_000_000
 _HEAVY_IGNORES_CASEFOLD = frozenset(part.casefold() for part in HEAVY_IGNORES)
 # The MIMRY MCP tools whose query argument is logged with the session.
 MCP_QUERY_RE = re.compile(MCP_QUERY_NAME)
+# The mimry commands whose argument is query text. A shell command that
+# runs one is logged with that text, so the find it starts is tagged.
+MIMRY_QUERY_COMMANDS = frozenset(
+    {"find", "preflight", "context", "related", "route", "explain", "brief", "history", "semantic"}
+)
 
 
 class _Search(NamedTuple):
@@ -385,10 +390,10 @@ def _keep_backslashes(command: str) -> str:
     return "".join(out)
 
 
-def _shell_searches(command: str) -> list[_Search]:
-    """Every grep, rg, ag, ack or git grep segment of a shell command.
+def _shell_segments(command: str) -> list[tuple[list[str], bool]]:
+    """The words of each ``|``, ``&&``, ``;`` segment.
 
-    Every ``|``, ``&&``, ``;`` segment is checked. Returns [] when the
+    Each is paired with whether a pipe feeds it. Returns [] when the
     command does not parse.
     """
     import shlex
@@ -408,8 +413,37 @@ def _shell_searches(command: str) -> list[_Search]:
             piped.append(tok in PIPE_OPERATORS)
         else:
             segments[-1].append(tok)
-    found = (_parse_search(words, fed) for words, fed in zip(segments, piped, strict=True))
+    return list(zip(segments, piped, strict=True))
+
+
+def _shell_searches(command: str) -> list[_Search]:
+    """Every grep, rg, ag, ack or git grep segment of a shell command.
+
+    Every ``|``, ``&&``, ``;`` segment is checked. Returns [] when the
+    command does not parse.
+    """
+    found = (_parse_search(words, fed) for words, fed in _shell_segments(command))
     return [search for search in found if search is not None]
+
+
+def mimry_queries(command: str) -> list[str]:
+    """The query texts a shell command passes to mimry, as written.
+
+    Every word after a query command, except options, is a candidate:
+    a quoted query is one word, and an option's value only matters
+    when it equals a query exactly. Returns [] when the command does
+    not parse or runs no query command.
+    """
+    queries: list[str] = []
+    for words, _ in _shell_segments(command):
+        for i, word in enumerate(words):
+            if re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe") != "mimry":
+                continue
+            for j in range(i + 1, len(words)):
+                if words[j] in MIMRY_QUERY_COMMANDS:
+                    queries.extend(arg for arg in words[j + 1 :] if not arg.startswith("-"))
+                    break
+    return queries
 
 
 def shell_search_pattern(command: str, root: Path) -> str | None:
@@ -1088,7 +1122,7 @@ def _hook_check(root: Path) -> None:
             # Nothing is printed, and nothing heavy is imported.
             query = tool_input.get("query")
             if isinstance(query, str) and query.strip():
-                log_hook_command(root, session, query)
+                log_hook_command(root, session, query, [query])
             return
         # A Read only ever gets the outline of a large file, never a
         # search answer, so a path containing "grep" cannot trigger one.
@@ -1103,7 +1137,7 @@ def _hook_check(root: Path) -> None:
         command = str(tool_input.get("command") or "")
         if "mimry" in command:
             # The find this command starts is tagged with the session.
-            log_hook_command(root, session, command)
+            log_hook_command(root, session, command, mimry_queries(command))
     except Exception:
         command = raw
     mimry_dir = root / ".mimry"
