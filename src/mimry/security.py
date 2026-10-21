@@ -246,9 +246,13 @@ _AUTH_HEADER_VALUE_RE = re.compile(
 # The schemes whose value is a credential whatever it holds, as before
 # #540. With another scheme, or none, see _auth_value_is_credential.
 _BEARER_LIKE_AUTH_SCHEMES = frozenset({"basic", "bearer", "token"})
-# What joins two string literals of one value: blanks (implicit
-# concatenation, as ``"a" "b"``) or a ``+``.
-_LITERAL_JOIN_RE = re.compile(r"[ \t]*(?:\+[ \t]*)?")
+# What joins two string literals of one value: blanks, line breaks or a
+# backslash-newline (implicit concatenation, as ``"a" "b"``, or a value
+# split over lines), or a ``+``. A line break joins pieces across lines
+# as the parenthesised case does (#559).
+_LITERAL_JOIN_RE = re.compile(r"(?:[ \t]|\\?\r?\n)*(?:\+(?:[ \t]|\\?\r?\n)*)?")
+# A backslash-newline and the blanks that start the next line (#559).
+_LINE_CONTINUATION_RE = re.compile(r"\\\r?\n[ \t]*")
 # Text that is not a statement of its own: a comment, or a triple-quoted
 # string such as a docstring or YAML inside a Python string.
 # ASSIGNMENT_RE reads through a triple-quoted string as one value, and
@@ -802,6 +806,13 @@ def is_code_path(path: str | Path) -> bool:
     return ext in EXTENSION_LANGUAGE and EXTENSION_LANGUAGE[ext] not in _LITERAL_VALUE_LANGUAGES
 
 
+def _after_continuations(text: str, pos: int) -> int:
+    """``pos`` after the backslash-newlines that start there (#559)."""
+    while (found := _LINE_CONTINUATION_RE.match(text, pos)) is not None:
+        pos = found.end()
+    return pos
+
+
 def _closes_on_a_later_line(text: str, start: int) -> bool:
     """Whether the quote at ``text[start]`` opens a string that its
     line does not close but a later line does.
@@ -828,6 +839,11 @@ def _value_is_credential(
     _code_value_is_credential). Values are scanned with ``scanner``.
     """
     candidate = value.strip().rstrip(",;}").strip()
+    if candidate == "\\":
+        # A backslash-newline: the value is on the next line (#559).
+        pos = _after_continuations(text, pos + len(value) - len(value.lstrip()))
+        value = _VALUE_RE.match(text, pos).group()
+        candidate = value.strip().rstrip(",;}").strip()
     # The marker, with the closing quote _redacted_secret writes back.
     if (
         not candidate
@@ -1646,7 +1662,8 @@ def _chained_target(match: re.Match[str]) -> tuple[str, int] | None:
 
     In ``a = password = "..."`` both targets take the literal, so the
     literal is judged as ``password``'s value and ``a = password = `` is
-    kept in front of it. Only a quoted literal is judged this way: a
+    kept in front of it. Only a quoted literal, or a value that opens
+    with ``(`` or a backslash-newline, is judged this way (#559): a
     value that is not one (``TOKEN=abc=def``) is one value, judged as
     before, and so is a value whose own label is a credential.
     """
@@ -1661,9 +1678,21 @@ def _chained_target(match: re.Match[str]) -> tuple[str, int] | None:
         if _is_sensitive_label(name):
             credential = name
         pos = found.end()
-    if credential is None or _STRING_LITERAL_RE.match(text, pos, end) is None:
+    if credential is None or not _chained_value_starts(text, pos, end):
         return None
     return credential, pos
+
+
+def _chained_value_starts(text: str, pos: int, end: int) -> bool:
+    """Whether the value a chain takes starts at ``text[pos]``: a
+    string literal, a parenthesised value, or one after a backslash-
+    newline. The last two are judged as a plain assignment's are (#559).
+    """
+    return (
+        _STRING_LITERAL_RE.match(text, pos, end) is not None
+        or (pos < end and text[pos] == "(")
+        or _LINE_CONTINUATION_RE.match(text, pos) is not None
+    )
 
 
 def _judged_start(match: re.Match[str]) -> int:
@@ -1812,7 +1841,9 @@ def _tuple_slots(text: str) -> list[_TupleSlot]:
         )
         values = _statement_values(text, statement.end(), stop)
         if values is None or len(values) != len(items):
-            continue
+            values = _chained_tuple_values(text, statement.end(), stop, len(items))
+            if values is None:
+                continue
         for item, (start, end) in zip(items, values, strict=True):
             if item.group("key") is not None:
                 label, label_start = item.group("key"), item.start("key")
@@ -1844,6 +1875,36 @@ def _statement_values(text: str, pos: int, stop: int) -> list[tuple[int, int]] |
             return _stripped_values(text, wrapped[0])
     bare = _split_elements(text, pos, None, stop)
     return None if bare is None else _stripped_values(text, bare[0])
+
+
+def _chained_tuple_values(
+    text: str, pos: int, stop: int, count: int
+) -> list[tuple[int, int]] | None:
+    """The spans of the values of a tuple assignment whose targets are
+    chained to them, as in ``password, a = b = "..."`` (#559).
+
+    The chained targets are skipped. A single value is taken by every
+    target. Several values take the targets one each, but only when all
+    of them are string literals, so an expression is never split.
+    """
+    pos = _skip_blanks(text, pos)
+    chained = False
+    while (found := _CHAINED_TARGET_RE.match(text, pos, stop)) is not None:
+        pos, chained = found.end(), True
+    if not chained:
+        return None
+    values = _statement_values(text, pos, stop)
+    if values is None:
+        return None
+    if len(values) == 1:
+        return values * count
+    if len(values) != count:
+        return None
+    for start, end in values:
+        literal = _STRING_LITERAL_RE.match(text, start, end)
+        if literal is None or literal.end() != end:
+            return None
+    return values
 
 
 def _split_elements(
@@ -1965,6 +2026,8 @@ def _redact_tuple_slots(text: str) -> str:
     for slot in scanner.tuple_slots():
         if not _tuple_slot_is_sensitive(slot, code=False, scanner=scanner):
             continue
+        if edits and edits[-1][0] == slot.start:
+            continue  # a chained value several targets take is redacted once (#559)
         if slot.literal is not None:
             prefix = slot.literal["prefix"]
             replacement = prefix + _redacted_secret(slot.literal["literal"])

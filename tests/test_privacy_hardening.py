@@ -2409,6 +2409,127 @@ def test_split_chained_and_scheme_less_credentials_do_not_reach_the_index_cache(
         assert b"canary" not in data, path
 
 
+# #559: a chained target followed by a parenthesised or backslash-
+# continued value, a tuple whose targets are chained to a value, and
+# literals joined by a line break or a backslash-newline were each read
+# past. The one-line forms (#540) and the parenthesised literal join
+# were already redacted.
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        ('a = password = (\n    "tomato-canary"\n)\n', 'a = password = (\n    "[REDACTED]"\n)\n'),
+        ('a = password = \\\n"tomato-canary"\n', 'a = password = \\\n"[REDACTED]"\n'),
+        (
+            'a = password = \\\r\n"tomato-canary"\r\n',
+            'a = password = \\\r\n"[REDACTED]"\r\n',
+        ),
+        ('password, a = b = "tomato-canary"\n', 'password, a = b = "[REDACTED]"\n'),
+        ('password, a = b = "tomato-canary", "x"\n', 'password, a = b = "[REDACTED]", "x"\n'),
+        (
+            'password = "to" \\\n    "matocanary"\n',
+            'password = "[REDACTED]" \\\n    "[REDACTED]"\n',
+        ),
+        ('password = ("to"\n    "matocanary")\n', 'password = ("[REDACTED]"\n    "[REDACTED]")\n'),
+        (
+            'h = "Authorization: Bearer " \\\n    "tomato-canary"\n',
+            'h = "Authorization: Bearer " \\\n    "[REDACTED]"\n',
+        ),
+        (
+            'h = ("Authorization: Bearer "\n    "tomato-canary")\n',
+            'h = ("Authorization: Bearer "\n    "[REDACTED]")\n',
+        ),
+    ),
+)
+def test_chained_and_split_credentials_across_lines_are_redacted(
+    tmp_path: Path, source: str, expected: str
+):
+    assert contains_sensitive_text(source, code=True), source
+    assert redact_sensitive_text(source) == expected
+    kept = indexable_bytes(tmp_path / "split.py", source.encode("utf-8")).decode("utf-8")
+    assert kept == expected
+    assert kept.count("\n") == source.count("\n")
+
+
+@pytest.mark.parametrize(
+    "line",
+    (
+        "a = b = (\n  1\n)\n",
+        "x = y = \\\n3\n",
+        'msg = "a" \\\n"b"\n',
+        'h = ("Authorization: Bearer "\n    "<token>")\n',
+    ),
+)
+def test_chained_and_split_shapes_across_lines_without_a_credential_are_kept(
+    tmp_path: Path, line: str
+):
+    assert redact_sensitive_text(line) == line, line
+    assert not contains_sensitive_text(line, code=True), line
+    data = line.encode("utf-8")
+    assert indexable_bytes(tmp_path / "shapes.py", data) == data
+
+
+@pytest.mark.parametrize(
+    "unit",
+    (
+        "a = password = (\n    ",
+        "a = password = \\\n",
+        "password, a = b = ",
+        'password = "to" \\\n',
+        'h = "Authorization: Bearer " \\\n',
+    ),
+)
+def test_chained_and_split_shapes_across_lines_are_judged_in_linear_time(unit: str):
+    import time
+
+    # About 64k characters of each shape, each call bounded at 5 s.
+    text = unit * (64 * 1024 // len(unit)) + "\n"
+    started = time.perf_counter()
+    contains_sensitive_text(text, code=True)
+    assert time.perf_counter() - started < 5.0, unit
+    started = time.perf_counter()
+    redact_sensitive_text(text)
+    assert time.perf_counter() - started < 5.0, unit
+
+
+def test_chained_and_split_credentials_across_lines_do_not_reach_the_index_cache(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    cache = tmp_path / "cache"
+    (repo / "creds.py").write_text(
+        'a = password = (\n    "tomato-canary"\n)\n'
+        'a = password = \\\n"lemon-canary"\n'
+        'password, a = b = "mango-canary"\n'
+        'h1 = "Authorization: Bearer " \\\n    "basil-canary"\n'
+        'h2 = ("Authorization: Bearer "\n    "olive-canary")\n',
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src")
+    env["MIMRY_CACHE_HOME"] = str(cache)
+
+    def run(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-m", "mimry.cli", "--root", str(repo), *args],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            check=False,
+        )
+
+    assert run("init", "--skip-graph").returncode == 0
+    indexed = run("index", "--full")
+    assert indexed.returncode == 0, indexed.stderr
+    stored = [
+        path for root in (cache, repo / ".mimry") for path in root.rglob("*") if path.is_file()
+    ]
+    assert stored
+    for path in stored:
+        data = path.read_bytes()
+        assert b"canary" not in data, path
+
+
 # #520: a quoted word after a redacted value was cut with it, and a
 # secret over several lines collapsed to one, so the file was refused.
 # Each value keeps its line count, and the file stays indexed.
