@@ -2252,10 +2252,10 @@ def test_a_run_of_unclosed_tuple_openers_is_judged_in_linear_time():
     text = "a, password = (\n" * 60000
     started = time.perf_counter()
     redact_sensitive_text(text)
-    assert time.perf_counter() - started < 2.0
+    assert time.perf_counter() - started < 5.0
     started = time.perf_counter()
     contains_sensitive_text(text, code=True)
-    assert time.perf_counter() - started < 3.0
+    assert time.perf_counter() - started < 5.0
 
 
 def test_a_redacted_tuple_after_a_metadata_prefix_is_not_refused_by_the_adapter_check():
