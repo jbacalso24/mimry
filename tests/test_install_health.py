@@ -141,7 +141,11 @@ def test_status_names_a_missing_dependency(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(
         commands.metadata,
         "requires",
-        lambda name: ["pypdf>=6.19,<7", "mimry-absent-dependency>=1", "colorama; os_name == 'nt'"],
+        lambda name: [
+            "pypdf>=6.21.1,<7",
+            "mimry-absent-dependency>=1",
+            "colorama; os_name == 'nt'",
+        ],
     )
 
     commands.cmd_status(SimpleNamespace(root=str(tmp_path)))

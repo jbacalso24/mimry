@@ -25,7 +25,7 @@ classifiers = [
 ]
 authors = [{ name = "Judison Bacalso", email = "judisonbacalso24@gmail.com" }]
 dependencies = [
-    "pypdf>=6.19,<7",
+    "pypdf>=6.21.1,<7",
     # Upper-bounded on purpose. The grammars in tree-sitter-language-pack are
     # compiled against a specific core ABI; a 0.26 core can import cleanly and
     # still return a different parse tree, which would move symbol identities,
