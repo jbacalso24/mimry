@@ -1,0 +1,69 @@
+name: MIMRY missed the right file
+description: MIMRY ranked the wrong files for a task, or left out the file you needed.
+labels: [ranking]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here. Use the private report link in the [security policy](https://github.com/jbacalso24/mimry/security/policy).
+        Remove secrets, private paths and proprietary source from anything you paste.
+  - type: input
+    id: version
+    attributes:
+      label: MIMRY version
+      description: From `mimry --version` (0.3.1 and later), `uv tool list` or `pip show mimry`.
+      placeholder: "0.3.1"
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: The task or query you gave
+      description: The exact task text, or the query you passed to MIMRY.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you ran it
+      options:
+        - preflight
+        - find
+        - explain
+        - related
+        - MCP tool
+        - prompt hook
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: The file or files that should have come up
+      description: Repo-relative paths, one per line.
+    validations:
+      required: true
+  - type: textarea
+    id: returned
+    attributes:
+      label: What MIMRY returned
+      description: The top results, pasted as text.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Output of `mimry why`
+      description: Optional. Run `mimry why <path> --query "<your query>"` for one of the files above and paste the output.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: repo
+    attributes:
+      label: About the repo
+      description: Optional. The main language(s), a rough size (files or lines), and whether the repo is public. If it is public, link it.
+    validations:
+      required: false
