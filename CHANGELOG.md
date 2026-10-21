@@ -10,6 +10,7 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
   Common words such as `disabled`, `needed` or `default` after `Authorization:` are no longer redacted.
 - A query that mentions mimry without quotes, such as `mimry find how does mimry work`, keeps all its words in the session log again ([#577](https://github.com/jbacalso24/mimry/pull/577)).
 - A hook that reads the session key while another hook is writing it waits and reads again, so its query is still tagged ([#579](https://github.com/jbacalso24/mimry/pull/579)).
+- On Windows, a hook no longer drops a file event when the session log's lock is busy or still being removed, and a folder MIMRY cannot write fails at once instead of waiting ([#581](https://github.com/jbacalso24/mimry/pull/581)).
 
 ## 0.8.0 - 2026-10-21
 
