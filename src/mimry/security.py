@@ -402,6 +402,11 @@ _AUTH_DOC_WORDS = frozenset(
 _AUTH_ENCODER_NAMES = frozenset({"b64encode", "base64", "base64encode", "btoa", "encode"})
 # The characters that open or close a call, or end its line (#607).
 _CALL_CHAR_RE = re.compile(r"[()\r\n\x00]")
+# The line breaks a header ends at, real or escaped as in source (#616).
+_HEADER_BREAK_RE = re.compile(r"\r|\n|\\[rn]")
+# A known scheme and the blanks after it, where a literal's body starts
+# (#616).
+_SCHEME_START_RE = re.compile(rf"(?i)(?:{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+")
 # A bracketed placeholder after a scheme, as in ``Bearer <token>``,
 # ``Bearer [TOKEN]``, ``Bearer ${TOKEN}`` or ``Bearer {{token}}``
 # (#602).
@@ -2375,6 +2380,8 @@ def _auth_call_is_placeholder(inside: str) -> bool:
     """Whether an encoder call's inside is a doc placeholder (#607).
 
     Every part split on a colon must be a doc word, as in ``user:pass``.
+    Blanks around a part are not part of it, as in ``user: pass``
+    (#616).
     The scan stops at the first part that is not, so a long line is
     read in linear time.
     """
@@ -2382,7 +2389,7 @@ def _auth_call_is_placeholder(inside: str) -> bool:
     while True:
         colon = inside.find(":", start)
         end = len(inside) if colon == -1 else colon
-        if not _auth_doc_word(inside[start:end]):
+        if not _auth_doc_word(inside[start:end].strip(" \t")):
             return False
         if colon == -1:
             return True
@@ -2417,15 +2424,13 @@ def _call_closes(text: str) -> dict[int, int]:
     return closes
 
 
-def _auth_encoder_call(text: str, value_end: int, value: str) -> tuple[str, int] | None:
-    """The inside of an encoder call ``value(...)``, and the index just
-    past it, when ``value`` is an encoder name followed by ``(`` at
-    ``value_end`` (#607). An unclosed call runs to its line end."""
+def _auth_encoder_call(text: str, value_end: int, value: str) -> str | None:
+    """The inside of an encoder call ``value(...)`` at ``value_end``,
+    when ``value`` is an encoder name followed by ``(`` (#607). An
+    unclosed call runs to its line end."""
     if value.lower() not in _AUTH_ENCODER_NAMES or text[value_end : value_end + 1] != "(":
         return None
-    close = _call_closes(text)[value_end]
-    past = close + 1 if text[close : close + 1] == ")" else close
-    return text[value_end + 1 : close], past
+    return text[value_end + 1 : _call_closes(text)[value_end]]
 
 
 def _auth_value_is_credential(
@@ -2490,6 +2495,42 @@ def _auth_value_is_credential(
     return token or (letters and last)
 
 
+def _auth_value_runs_to_end(scheme: str | None, value: str, inside: str | None) -> bool:
+    """Whether a credential that _auth_value_is_credential accepts runs
+    to the end of its header (#616): an encoder call, or a colon-joined
+    user:password after a known scheme. Any other credential is redacted
+    as its value alone.
+    """
+    if inside is not None:
+        return True
+    return (
+        ":" in value
+        and not value.startswith("{")
+        and scheme is not None
+        and scheme.lower() in _KNOWN_AUTH_SCHEMES_LOWER
+    )
+
+
+@functools.lru_cache(maxsize=2)
+def _header_breaks(text: str) -> list[int]:
+    """The index of each line break in ``text``, real or escaped as in
+    source (#616). Cached, so a line of many headers is scanned once."""
+    return [match.start() for match in _HEADER_BREAK_RE.finditer(text)]
+
+
+def _header_end(text: str, low: int) -> int:
+    """Where the header whose value starts at ``low`` ends: at the next
+    line break, or the end of ``text``, less any sentence punctuation
+    and blanks before it (#616). Each call is a bisect, not a rescan.
+    """
+    breaks = _header_breaks(text)
+    index = bisect.bisect_left(breaks, low)
+    end = breaks[index] if index < len(breaks) else len(text)
+    while end > low and text[end - 1] in _SENTENCE_PUNCTUATION + " \t":
+        end -= 1
+    return end
+
+
 def _auth_header_credential_span(
     text: str, scheme: str | None, low: int, raw_high: int
 ) -> tuple[int, int] | None:
@@ -2500,18 +2541,19 @@ def _auth_header_credential_span(
     value: it is trimmed before the value is judged, and the span
     excludes it. The value is the last word of its header when a line
     break, a comma, a semicolon or a bar follows it, and a sentence end
-    before that break counts as the break.
+    before that break counts as the break. A colon-joined credential
+    after a known scheme, and an encoder call judged one, are redacted
+    to the end of the header instead (#616).
     """
     high = low + len(text[low:raw_high].rstrip(_SENTENCE_PUNCTUATION))
     last = _AUTH_VALUE_TAIL_RE.match(text, raw_high) is not None
     value = text[low:high]
-    call = _auth_encoder_call(text, raw_high, value)
-    if _auth_value_is_credential(
-        scheme, value, last=last, inside=None if call is None else call[0]
-    ):
-        # An encoder call is redacted through its closing bracket.
-        return (low, high if call is None else call[1])
-    return None
+    inside = _auth_encoder_call(text, raw_high, value)
+    if not _auth_value_is_credential(scheme, value, last=last, inside=inside):
+        return None
+    if _auth_value_runs_to_end(scheme, value, inside):
+        return low, _header_end(text, low)
+    return low, high
 
 
 def _auth_assignment_is_placeholder(text: str, value_start: int) -> bool:
@@ -2524,6 +2566,14 @@ def _auth_assignment_is_placeholder(text: str, value_start: int) -> bool:
     rules, as a config line ``authorization: MIMRY_TEST_VALUE_123`` is
     (see the label-policy test).
     """
+    literal = _STRING_LITERAL_RE.match(text, value_start)
+    if literal is not None:
+        # A literal holding a known scheme and a value is judged as the
+        # plain text after its opening quote (#616).
+        width = 3 if literal["literal"][:3] in ('"""', "'''") else 1
+        body = literal.start("literal") + width
+        if _SCHEME_START_RE.match(text, body):
+            value_start = body
     if _AUTH_BRACKET_PLACEHOLDER_RE.match(text, value_start):
         return True  # ``Authorization: Bearer <token>`` (#602)
     named = _AUTH_SCHEME_NAME_RE.match(text, value_start)
@@ -2583,12 +2633,13 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
                 value = header.group("value").replace(_LITERAL_SEPARATOR, "")
                 low, high = header.span("value")
                 last = _AUTH_VALUE_TAIL_RE.match(joined, high) is not None
-                call = _auth_encoder_call(joined, high, value)
+                inside = _auth_encoder_call(joined, high, value)
                 scheme = header.group("scheme") or header.group("custom")
-                if _auth_value_is_credential(
-                    scheme, value, last=last, inside=None if call is None else call[0]
-                ):
-                    values.append((low, high if call is None else call[1]))
+                if _auth_value_is_credential(scheme, value, last=last, inside=inside):
+                    # To the closing quote of the literal, or its line
+                    # end (#616).
+                    runs = _auth_value_runs_to_end(scheme, value, inside)
+                    values.append((low, _header_end(joined, low) if runs else high))
         # One literal only. A scheme in one literal and a value in the
         # next, joined with ``+``, is ``"Bearer " + token``: kept. With
         # no header name the value must read as a token, so UI text such
@@ -2602,7 +2653,12 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
             and _auth_value_is_credential(whole.group("scheme"), bare, last=True)
         ):
             values.append(whole.span("value"))
-        for low, high in values:
+        covered = 0  # the values are read in order, so each piece is mapped once (#616)
+        for low, high in sorted(values):
+            low = max(low, covered)
+            if low >= high:
+                continue
+            covered = high
             index = bisect.bisect_right(starts, low) - 1
             while index < len(pieces) and pieces[index][0] < high:
                 piece_start, piece_end, source = pieces[index]
