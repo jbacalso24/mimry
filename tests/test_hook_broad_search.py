@@ -409,6 +409,8 @@ def test_hook_sessions_keep_the_newest_sessions_and_a_bounded_key_list(tmp_path)
         # A here-string is not a heredoc: its line is still a command.
         ('cat <<< "grep -rn x ."', None),
         ("cat <<< x\ngrep -rn 'auth|session' .", "auth|session"),
+        # A bash substitution closing at a line end does not join lines.
+        ("echo `ls`\ngrep -rn 'auth|session' .", "auth|session"),
     ],
 )
 def test_heredoc_bodies_are_text_not_searches(tmp_path, command, pattern):

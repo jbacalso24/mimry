@@ -413,8 +413,8 @@ def _keep_backslashes(command: str) -> str:
     would lose its separators. Such a backslash is doubled, so the
     shell reads it back as one. A backslash at a line end continues
     the line, so it is dropped with the newline, and so is a
-    PowerShell backtick at a line end outside quotes. Other escapes
-    and single-quoted text are left alone.
+    PowerShell blank and backtick at a line end outside quotes.
+    Other escapes and single-quoted text are left alone.
     """
     if "\\" not in command and "`" not in command:
         return command
@@ -425,7 +425,9 @@ def _keep_backslashes(command: str) -> str:
         ch = command[i]
         nxt = command[i + 1] if i + 1 < len(command) else ""
         breaks = _line_break_len(command, i + 1) if ch in "\\`" else 0
-        if ch == "`" and not quote and breaks:
+        # PowerShell continues a line with a blank and a backtick; a
+        # bash substitution closes with a backtick right after a word.
+        if ch == "`" and not quote and breaks and command[i - 1 : i] in (" ", "	"):
             i += 1 + breaks
             continue
         if ch == "\\" and quote != "'":

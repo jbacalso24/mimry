@@ -272,8 +272,9 @@ def test_mimry_queries_is_linear_on_repeated_mimry_words(command):
     assert time.process_time() - started < 1.0
 
 
-# A PowerShell line ending in a backtick continues, like a backslash
-# does. A backtick inside quotes is text, so it does not continue.
+# A PowerShell line ending in a blank and a backtick continues, like a
+# backslash does. A backtick inside quotes is text, and a bash
+# substitution closing at a line end is not a continuation.
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
@@ -281,6 +282,7 @@ def test_mimry_queries_is_linear_on_repeated_mimry_words(command):
         ("mimry find a `\r\n  b", ["a", "b"]),
         ('mimry find "a`" \nmimry find b', ["a`", "b"]),
         ('mimry find "a `\nb"\nmimry find c', ["a `\nb", "c"]),
+        ("echo `date`\nmimry find x", ["x"]),
     ],
 )
 def test_mimry_queries_joins_powershell_backtick_continuations(command, expected):
