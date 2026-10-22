@@ -2414,8 +2414,9 @@ def _auth_value_is_credential(
     ``realm="Photos"`` is kept. A value with a colon is judged by its
     scheme: after a known scheme it is a ``user:password`` credential
     whatever its characters, as in ``Basic admin:S3cret!Pass`` (#607),
-    unless every side is a doc word, as in ``user:pass``, and after a custom scheme each side of the colon must be token
-    characters, as in ``acct:dG9tYXRvY2FuYXJ5`` (#593).
+    unless every side is a doc word, as in ``user:pass``, and after a
+    custom scheme each side of the colon must be token characters, as
+    in ``acct:dG9tYXRvY2FuYXJ5`` (#593).
     """
     if inside is not None:
         return not _auth_call_is_placeholder(inside)  # an encoder call (#607)
