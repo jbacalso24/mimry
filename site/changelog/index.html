@@ -39,11 +39,27 @@
 <p class="breadcrumb"><a href="../">MIMRY</a> / Changelog</p>
 <h1>Changelog</h1>
 <p class="lede">Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.</p>
-<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.8.1">0.8.1</a><a href="#v0.8.0">0.8.0</a><a href="#v0.7.0">0.7.0</a><a href="#v0.6.4">0.6.4</a><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<nav class="jump" aria-label="Jump to a release"><span>Jump to</span><a href="#v0.8.2">0.8.2</a><a href="#v0.8.1">0.8.1</a><a href="#v0.8.0">0.8.0</a><a href="#v0.7.0">0.7.0</a><a href="#v0.6.4">0.6.4</a><a href="#v0.6.3">0.6.3</a><a href="#v0.6.2">0.6.2</a><a href="#v0.6.1">0.6.1</a><a href="#v0.6.0">0.6.0</a><a href="#v0.5.0">0.5.0</a><a href="#v0.4.1">0.4.1</a><a href="#v0.4.0">0.4.0</a><a href="#v0.3.4">0.3.4</a><a href="#v0.3.3">0.3.3</a><a href="#v0.3.2">0.3.2</a><a href="#v0.3.1">0.3.1</a><a href="#v0.3.0">0.3.0</a><a href="#v0.2.1">0.2.1</a><a href="#v0.2.0">0.2.0</a><a href="#v0.1.0">0.1.0</a></nav>
+<article class="release" id="v0.8.2">
+<header class="release-meta">
+<h2>0.8.2</h2>
+<p class="release-date"><time datetime="2026-10-22">22 Oct 2026</time> <span class="tag">Latest</span></p>
+<ul class="release-links">
+<li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.8.2">Release notes on GitHub</a></li>
+<li><a href="https://pypi.org/project/mimry/0.8.2/">PyPI</a></li>
+</ul>
+</header>
+<div class="release-notes">
+<h3>Security</h3>
+<ul><li>pypdf is now required at 6.21.1 or later, which fixes five published pypdf advisories (<a href="https://github.com/jbacalso24/mimry/pull/588">#588</a>).</li></ul>
+<h3>Fixes</h3>
+<ul><li><code>Authorization</code> headers written in Markdown or prose are redacted: list items, quotes, bold labels, sentences and table cells such as <code>| Authorization | Bearer &lt;token&gt; |</code> (<a href="https://github.com/jbacalso24/mimry/pull/591">#591</a>, <a href="https://github.com/jbacalso24/mimry/pull/599">#599</a>). A credential written without a scheme is redacted even when a word follows it.</li><li>Prose after Bearer, Basic or Token, such as <code>Bearer is required</code>, is kept again; 0.8.1 redacted it (<a href="https://github.com/jbacalso24/mimry/pull/591">#591</a>). Doc placeholders such as <code>Bearer YOUR_TOKEN</code>, <code>Token abc.</code> or <code>Basic base64(user:pass)</code> no longer keep a Markdown file out of the index (<a href="https://github.com/jbacalso24/mimry/pull/599">#599</a>).</li><li><code>mimry history</code> and <code>mimry_history</code> answer from stored commits when the cache is read-only, and <code>mimry_feedback</code> there returns a <code>cache_read_only</code> error instead of failing (<a href="https://github.com/jbacalso24/mimry/pull/583">#583</a>, thanks @abhinavrastogi2627). MIMRY only checks whether the cache is writable when a refresh is needed or a write was refused, and a current index is not called stale (<a href="https://github.com/jbacalso24/mimry/pull/589">#589</a>, <a href="https://github.com/jbacalso24/mimry/pull/598">#598</a>).</li><li>The session log keeps every word of a query that mentions a subcommand name, such as <code>mimry find the mimry init command</code>, and the hook stays fast on very long commands (<a href="https://github.com/jbacalso24/mimry/pull/590">#590</a>).</li><li>The hook reads PowerShell backtick line continuations and skips heredoc bodies, so text inside a heredoc is not taken for a search or a query (<a href="https://github.com/jbacalso24/mimry/pull/597">#597</a>).</li></ul>
+</div>
+</article>
 <article class="release" id="v0.8.1">
 <header class="release-meta">
 <h2>0.8.1</h2>
-<p class="release-date"><time datetime="2026-10-21">21 Oct 2026</time> <span class="tag">Latest</span></p>
+<p class="release-date"><time datetime="2026-10-21">21 Oct 2026</time></p>
 <ul class="release-links">
 <li><a href="https://github.com/jbacalso24/mimry/releases/tag/v0.8.1">Release notes on GitHub</a></li>
 <li><a href="https://pypi.org/project/mimry/0.8.1/">PyPI</a></li>

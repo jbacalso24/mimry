@@ -2,6 +2,23 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.8.2 - 2026-10-22
+
+### Security
+
+- pypdf is now required at 6.21.1 or later, which fixes five published pypdf advisories ([#588](https://github.com/jbacalso24/mimry/pull/588)).
+
+### Fixes
+
+- `Authorization` headers written in Markdown or prose are redacted: list items, quotes, bold labels, sentences and table cells such as `| Authorization | Bearer <token> |` ([#591](https://github.com/jbacalso24/mimry/pull/591), [#599](https://github.com/jbacalso24/mimry/pull/599)).
+  A credential written without a scheme is redacted even when a word follows it.
+- Prose after Bearer, Basic or Token, such as `Bearer is required`, is kept again; 0.8.1 redacted it ([#591](https://github.com/jbacalso24/mimry/pull/591)).
+  Doc placeholders such as `Bearer YOUR_TOKEN`, `Token abc.` or `Basic base64(user:pass)` no longer keep a Markdown file out of the index ([#599](https://github.com/jbacalso24/mimry/pull/599)).
+- `mimry history` and `mimry_history` answer from stored commits when the cache is read-only, and `mimry_feedback` there returns a `cache_read_only` error instead of failing ([#583](https://github.com/jbacalso24/mimry/pull/583), thanks @abhinavrastogi2627).
+  MIMRY only checks whether the cache is writable when a refresh is needed or a write was refused, and a current index is not called stale ([#589](https://github.com/jbacalso24/mimry/pull/589), [#598](https://github.com/jbacalso24/mimry/pull/598)).
+- The session log keeps every word of a query that mentions a subcommand name, such as `mimry find the mimry init command`, and the hook stays fast on very long commands ([#590](https://github.com/jbacalso24/mimry/pull/590)).
+- The hook reads PowerShell backtick line continuations and skips heredoc bodies, so text inside a heredoc is not taken for a search or a query ([#597](https://github.com/jbacalso24/mimry/pull/597)).
+
 ## 0.8.1 - 2026-10-21
 
 ### Fixes
