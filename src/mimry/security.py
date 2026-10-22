@@ -293,10 +293,13 @@ _AUTH_HEADER_VALUE_RE = re.compile(
 # token-shaped (a digit or one of ``-_.~+/=:``) and at least 12
 # characters long, as in ``Authorization: HMAC-SHA256 tomato0123456789``
 # (#593).
-# Prose such as ``Authorization: Custom header values`` is not one.
+# Prose such as ``Authorization: Custom header values`` is not one. The
+# scheme starts with a capital, as schemes are written, and a path or a
+# file name (``see docs/auth.md``) is not a value.
 _TOKEN_SHAPED_VALUE_AHEAD = (
     r"(?=[^\s\"'`{}<>,;()\[\]\\$|]{12})"
     r"(?=[^\s\"'`{}<>,;()\[\]\\$|]*[0-9_.~+/=:-])"
+    r"(?![^\s\"'`{}<>,;()\[\]\\$|]*\.[A-Za-z]{1,5}(?![^\s\"'`{}<>,;()\[\]\\$|]))"
 )
 # The characters a colon-joined value is made of: each side of a colon
 # must be one of these (#593).
@@ -305,7 +308,7 @@ _PLAIN_AUTH_HEADER_RE = re.compile(
     r"(?i)(?<![A-Za-z0-9-])(?<![A-Za-z0-9]_)(?:Proxy-)?Authorization[ \t]*:"
     r"(?:\*\*|__|[*_])?[ \t]*"
     rf"(?:(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+"
-    rf"|(?P<custom>[A-Za-z][A-Za-z0-9-]*)[ \t]+{_TOKEN_SHAPED_VALUE_AHEAD})"
+    rf"|(?P<custom>(?-i:[A-Z])[A-Za-z0-9-]*)[ \t]+{_TOKEN_SHAPED_VALUE_AHEAD})"
     rf"(?P<value>{_AUTH_VALUE})"
 )
 # A Markdown table cell that holds the header, as in
@@ -332,6 +335,7 @@ _AUTH_SCHEME_WORD_RE = re.compile(
 # A string literal whose whole body is a known scheme and one value, as
 # in ``"Bearer tomato-canary-1"`` in a call argument or an assignment.
 # The value is judged as an Authorization value of that scheme (#593).
+_SCHEME_LITERAL_MIN_LENGTH = 12
 _SCHEME_LITERAL_RE = re.compile(
     rf"(?i)(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])"
     rf"[ \t\x00]+(?P<value>{_AUTH_VALUE})"
@@ -2333,12 +2337,16 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
                 if _auth_value_is_credential(scheme, value, last=last, called=called):
                     values.append((low, high))
         # One literal only. A scheme in one literal and a value in the
-        # next, joined with ``+``, is ``"Bearer " + token``: kept.
+        # next, joined with ``+``, is ``"Bearer " + token``: kept. With
+        # no header name the value must read as a token, so UI text such
+        # as ``"Basic Plan"`` or ``"Key Vault"`` is kept.
         whole = _SCHEME_LITERAL_RE.fullmatch(joined) if len(chain) == 1 else None
-        if whole is not None and _auth_value_is_credential(
-            whole.group("scheme"),
-            whole.group("value").replace(_LITERAL_SEPARATOR, ""),
-            last=True,
+        bare = whole.group("value").replace(_LITERAL_SEPARATOR, "") if whole else ""
+        if (
+            whole is not None
+            and len(bare) >= _SCHEME_LITERAL_MIN_LENGTH
+            and any(char.isdigit() or char in "-_.~+/=:" for char in bare)
+            and _auth_value_is_credential(whole.group("scheme"), bare, last=True)
         ):
             values.append(whole.span("value"))
         for low, high in values:

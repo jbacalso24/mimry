@@ -14,7 +14,7 @@ from mimry.security import contains_sensitive_text, redact_sensitive_text
 # value is token-shaped. Prose after an Authorization header stays.
 REDACTED_CASES = (
     (
-        'res.set("Authorization", "Bearer tomatocanary")',
+        'res.set("Authorization", "Bearer tomato-canary-1")',
         'res.set("Authorization", "Bearer [REDACTED]")',
     ),
     (
@@ -22,15 +22,15 @@ REDACTED_CASES = (
         "res.setHeader('Authorization', 'Bearer [REDACTED]')",
     ),
     (
-        'headers.append("Authorization", "Basic tomatocanary")',
+        'headers.append("Authorization", "Basic tomato-canary-1")',
         'headers.append("Authorization", "Basic [REDACTED]")',
     ),
     (
-        'req.header("Authorization", "Bearer tomatocanary")',
+        'req.header("Authorization", "Bearer tomato-canary-1")',
         'req.header("Authorization", "Bearer [REDACTED]")',
     ),
     (
-        'Headers.Add("Authorization", "Bearer tomatocanary");',
+        'Headers.Add("Authorization", "Bearer tomato-canary-1");',
         'Headers.Add("Authorization", "Bearer [REDACTED]");',
     ),
     (
@@ -57,6 +57,14 @@ KEPT_CASES = (
     "The Acme scheme is described below.",
     "Authorization: Custom header values are listed in the table.",
     "Use Authorization: Bearer YOUR_TOKEN for the API.",
+    # UI text: a scheme word and a short word or a version is no token.
+    'label = "Basic Plan"',
+    'name = "Key Vault"',
+    'action = "Token refresh"',
+    'tier = "Basic tier-2"',
+    # A path or a file name after an unknown word is no credential.
+    "Authorization: see docs/auth-headers.md for details.",
+    "Authorization: See docs/auth-headers.md",
 )
 
 
@@ -86,7 +94,7 @@ def test_authorization_prose_templates_and_placeholders_are_kept(source: str):
 @pytest.mark.parametrize(
     "source",
     (
-        'res.set("Authorization", "Bearer tomatocanary")\n' * (64 * 1024 // 48),
+        'res.set("Authorization", "Bearer tomato-canary-1")\n' * (64 * 1024 // 48),
         "Authorization: SharedKey acct:dG9tYXRvY2FuYXJ5\n" * (64 * 1024 // 46),
         "Authorization: AWS AKIATOMATOCANARY0001:tomatocanary/sig=\n" * (64 * 1024 // 58),
     ),
