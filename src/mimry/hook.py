@@ -420,15 +420,27 @@ def _keep_backslashes(command: str) -> str:
         return command
     out: list[str] = []
     quote = ""
+    # Whether an unquoted backtick on this line opened a substitution.
+    opened = False
     i = 0
     while i < len(command):
         ch = command[i]
         nxt = command[i + 1] if i + 1 < len(command) else ""
         breaks = _line_break_len(command, i + 1) if ch in "\\`" else 0
-        # PowerShell continues a line with a blank and a backtick; a
-        # bash substitution closes with a backtick right after a word.
-        if ch == "`" and not quote and breaks and command[i - 1 : i] in (" ", "	"):
-            i += 1 + breaks
+        if ch == "\n":
+            opened = False
+        elif ch == "`" and not quote:
+            if opened:
+                # A backtick that closes a substitution never continues.
+                opened = False
+            elif breaks and command[i - 1 : i] in (" ", "\t"):
+                # PowerShell: a blank and a backtick continue the line.
+                i += 1 + breaks
+                continue
+            else:
+                opened = True
+            out.append(ch)
+            i += 1
             continue
         if ch == "\\" and quote != "'":
             if breaks:
@@ -451,29 +463,42 @@ def _keep_backslashes(command: str) -> str:
     return "".join(out)
 
 
-# A heredoc's delimiter word ends at blank space, a line break, a
-# quote or an operator.
-HEREDOC_WORD_END = " \t\r\n|&;<>()'\""
+# A heredoc's delimiter word ends at blank space, a line break or an
+# operator. Quotes and backslashes inside it are part of the word.
+HEREDOC_WORD_END = " \t\r\n|&;<>()"
 
 
 def _heredoc_word(command: str, k: int) -> tuple[str, int] | None:
     """The delimiter word of a heredoc whose word starts at ``k``.
 
-    Returns the word and the index just after it as written, or None
-    when there is no word or a quoted word is not closed on its line.
+    The shell removes the quotes and backslashes of the word before it
+    matches the terminator line, so ``\\EOF``, ``E"OF"`` and ``'E'OF``
+    all name ``EOF``. Returns the word and the index just after it as
+    written, or None when there is no word or a quote is not closed on
+    its line.
     """
     n = len(command)
-    if k < n and command[k] in "'\"":
-        close = command.find(command[k], k + 1)
-        if close == -1 or command.find("\n", k + 1, close) != -1:
-            return None
-        return command[k + 1 : close], close + 1
-    end = k
-    while end < n and command[end] not in HEREDOC_WORD_END:
-        end += 1
-    if end == k:
+    parts: list[str] = []
+    i = k
+    while i < n and command[i] not in HEREDOC_WORD_END:
+        ch = command[i]
+        if ch in "'\"":
+            close = command.find(ch, i + 1)
+            if close == -1 or command.find("\n", i + 1, close) != -1:
+                return None
+            parts.append(command[i + 1 : close])
+            i = close + 1
+        elif ch == "\\":
+            if i + 1 >= n or command[i + 1] in "\r\n":
+                break
+            parts.append(command[i + 1])
+            i += 2
+        else:
+            parts.append(ch)
+            i += 1
+    if i == k:
         return None
-    return command[k:end], end
+    return "".join(parts), i
 
 
 def _skip_heredoc_bodies(command: str, pos: int, pending: list[tuple[str, bool]]) -> int:
@@ -502,16 +527,38 @@ def _skip_heredoc_bodies(command: str, pos: int, pending: list[tuple[str, bool]]
     return min(pos, n)
 
 
+def _here_string_end(command: str, i: int) -> int:
+    """The index just after the PowerShell here-string opened at ``i``.
+
+    The opener ``@'`` or ``@"`` ends its line. Its body runs to a line
+    that starts with the closer ``'@`` or ``"@``. A body with no such
+    line runs to the end of the command.
+    """
+    n = len(command)
+    closer = command[i + 1] + "@"
+    pos = i + 2 + _line_break_len(command, i + 2)
+    while pos < n:
+        if command.startswith(closer, pos):
+            return pos + 2
+        end = command.find("\n", pos)
+        if end == -1:
+            break
+        pos = end + 1
+    return n
+
+
 def _drop_heredoc_bodies(command: str) -> str:
-    """Drop the bodies of heredocs, which are text, not commands.
+    """Drop the bodies of heredocs and here-strings, which are text.
 
     An unquoted ``<<WORD``, ``<<-WORD``, ``<<'WORD'`` or ``<<"WORD"``
     opens a body that starts on the next line. The operator and its
     word stay on the command line. ``<<<`` is a here-string, not a
-    heredoc. Escapes and quoted text are skipped as the shell reads
-    them, and each character is read a bounded number of times.
+    heredoc. A PowerShell ``@'`` or ``@"`` that ends its line opens a
+    here-string body, which is dropped with its closer. Escapes and
+    quoted text are skipped as the shell reads them, and each character
+    is read a bounded number of times.
     """
-    if "<<" not in command:
+    if "<<" not in command and "@" not in command:
         return command
     out: list[str] = []
     pending: list[tuple[str, bool]] = []
@@ -534,6 +581,12 @@ def _drop_heredoc_bodies(command: str) -> str:
             quote = ch
             out.append(ch)
             i += 1
+        elif (
+            not pending and command.startswith(("@'", '@"'), i) and _line_break_len(command, i + 2)
+        ):
+            # The opener is not a quote; its closer goes with the body.
+            out.append("@")
+            i = _here_string_end(command, i)
         elif command.startswith("<<<", i):
             out.append("<<<")
             i += 3

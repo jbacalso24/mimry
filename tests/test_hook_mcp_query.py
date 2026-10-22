@@ -319,6 +319,69 @@ def test_mimry_queries_parses_a_64k_heredoc_command_quickly():
     assert time.process_time() - started < 1.0
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cat <<\\EOF\nmimry find foo\nEOF\nmimry find real", ["real"]),
+        ("cat <<\\EOF\r\nmimry find foo\r\nEOF\r\nmimry find real", ["real"]),
+        ('cat <<E"OF"\nmimry find foo\nEOF\nmimry find real', ["real"]),
+        ("cat <<'E'\"OF\"\nmimry find foo\nEOF\nmimry find real", ["real"]),
+        ("cat <<-\\EOF\n\tmimry find foo\n\tEOF\nmimry find real", ["real"]),
+    ],
+)
+def test_mimry_queries_closes_quoted_heredoc_words(command, expected):
+    assert mimry_queries(command) == expected
+
+
+# A PowerShell here-string's body is text. Its opener ends its line and
+# its closer starts one, so a quote in the body is not a quote.
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("@'\nit's fine\n'@\nmimry find real", ["real"]),
+        ("@'\r\nit's fine\r\n'@\r\nmimry find real", ["real"]),
+        ('@"\nit\'s "quoted"\n"@\nmimry find real', ["real"]),
+        ("@'\nmimry find foo\n'@\nmimry find real", ["real"]),
+        ("@'\n'@\nmimry find real", ["real"]),
+        # Not at a line end, the opener is text, as before.
+        ("$x = @'abc'@\nmimry find real", ["real"]),
+        # An unclosed here-string drops the rest.
+        ("mimry find a\n@'\nmimry find foo", ["a"]),
+        ("@'\nmimry find foo", []),
+    ],
+)
+def test_mimry_queries_skips_powershell_here_string_bodies(command, expected):
+    assert mimry_queries(command) == expected
+
+
+# A closing substitution backtick is not a PowerShell continuation.
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("echo `ls -la `\nmimry find real", ["real"]),
+        ("echo `ls -la `\r\nmimry find real", ["real"]),
+        ("echo `date`\nmimry find x", ["x"]),
+    ],
+)
+def test_mimry_queries_ends_a_line_at_a_closing_backtick(command, expected):
+    assert mimry_queries(command) == expected
+
+
+@pytest.mark.parametrize(
+    "unit",
+    ["@'\nit's fine\n'@\n", "cat <<\\EOF\nmimry find foo\nEOF\n"],
+    ids=["here-string", "quoted-word-heredoc"],
+)
+def test_mimry_queries_parses_repeated_bodies_quickly(unit):
+    import time
+
+    command = unit * (65536 // len(unit) + 1)
+    # CPU time, not wall time: a busy machine is not a complexity bug.
+    started = time.process_time()
+    assert mimry_queries(command) == []
+    assert time.process_time() - started < 1.0
+
+
 def test_the_hook_knows_every_mimry_subcommand_and_valued_option():
     import argparse
 

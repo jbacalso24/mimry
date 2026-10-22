@@ -426,3 +426,37 @@ def test_shell_search_pattern_parses_a_64k_heredoc_command_quickly(tmp_path):
     started = time.process_time()
     assert shell_search_pattern(command, tmp_path) is None
     assert time.process_time() - started < 1.0
+
+
+@pytest.mark.parametrize(
+    ("command", "pattern"),
+    [
+        ("cat <<\\EOF\ngrep -rn 'auth|session' .\nEOF\ngrep -rn 'x|y' .", "x|y"),
+        ("cat <<\\EOF\r\ngrep -rn 'auth|session' .\r\nEOF\r\ngrep -rn 'x|y' .", "x|y"),
+        ("cat <<E\"OF\"\ngrep -rn 'auth|session' .\nEOF\ngrep -rn 'x|y' .", "x|y"),
+        ("cat <<'E'\"OF\"\ngrep -rn 'auth|session' .\nEOF\ngrep -rn 'x|y' .", "x|y"),
+        ("cat <<-\\EOF > s.sh\n\tgrep -rn 'auth|session' .\n\tEOF\ngrep -rn 'x|y' .", "x|y"),
+        ("echo `ls -la `\ngrep -rn 'auth|session' .", "auth|session"),
+        ("echo `ls -la `\r\ngrep -rn 'auth|session' .", "auth|session"),
+    ],
+)
+def test_quoted_heredoc_words_and_closing_backticks(tmp_path, command, pattern):
+    assert shell_search_pattern(command, tmp_path) == pattern
+
+
+@pytest.mark.parametrize(
+    "unit",
+    [
+        "cat > s.sh <<\\EOF\ngrep -rn 'tomato.*canary' .\nEOF\n",
+        "x = @'\ngrep -rn 'tomato.*canary' .\n'@\n",
+    ],
+    ids=["quoted-word-heredoc", "here-string"],
+)
+def test_shell_search_pattern_parses_repeated_bodies_quickly(tmp_path, unit):
+    import time
+
+    command = unit * (65536 // len(unit) + 1)
+    # CPU time, not wall time: a busy machine is not a complexity bug.
+    started = time.process_time()
+    assert shell_search_pattern(command, tmp_path) is None
+    assert time.process_time() - started < 1.0
