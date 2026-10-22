@@ -2735,6 +2735,78 @@ def test_authorization_headers_are_judged_in_linear_time(unit: str):
     assert time.perf_counter() - started < 5.0, unit
 
 
+# #592: a placeholder in a header written in Markdown or prose is not a
+# credential, so the file is indexed, and a Markdown table cell that
+# holds a header is read as one.
+@pytest.mark.parametrize(
+    "line",
+    (
+        "Use Authorization: Bearer YOUR_TOKEN for the API.\n",
+        "Set Authorization: Bearer API_KEY in the request.\n",
+        "The header must start with Token, for example Authorization: Token abc.\n",
+        "The header Authorization: Basic base64(user:pass) is sent over TLS only.\n",
+        "Send Authorization: Bearer your-token-here with each call.\n",
+        "Authorization: Bearer xxx\n",
+        "- Authorization: Bearer <token>\n",
+        "| Authorization | Bearer <token> |\n",
+        "| Authorization | Bearer YOUR_TOKEN |\n",
+    ),
+)
+def test_plain_text_placeholders_are_kept(tmp_path: Path, line: str):
+    assert not contains_sensitive_text(line), line
+    assert redact_sensitive_text(line) == line, line
+    data = line.encode("utf-8")
+    assert indexable_bytes(tmp_path / "notes.md", data) == data
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    (
+        ("| Authorization | Bearer tomatocanary |\n", "| Authorization | Bearer [REDACTED] |\n"),
+        ("|Authorization|Bearer tomatocanary|\n", "|Authorization|Bearer [REDACTED]|\n"),
+        (
+            "| Authorization | Bearer tomato-canary-1 |\n",
+            "| Authorization | Bearer [REDACTED] |\n",
+        ),
+        (
+            "Use Authorization: Bearer tomato-canary-1.\n",
+            "Use Authorization: Bearer [REDACTED].\n",
+        ),
+        ("Use Authorization: Digest tomatocanary.\n", "Use Authorization: Digest [REDACTED].\n"),
+        # A digit makes a your- or my- name a token (#592).
+        ("Use Authorization: Bearer my-key-7f3a.\n", "Use Authorization: Bearer [REDACTED].\n"),
+    ),
+)
+def test_plain_text_table_cells_sentence_periods_and_digit_names_are_judged(
+    tmp_path: Path, source: str, expected: str
+):
+    assert contains_sensitive_text(source), source
+    assert redact_sensitive_text(source) == expected
+    # Markdown is not code, so a file holding the secret is refused.
+    with pytest.raises(SensitiveContentError):
+        indexable_bytes(tmp_path / "notes.md", source.encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    "unit",
+    (
+        "| Authorization | Bearer tomatocanary |\n",
+        "Use Authorization: Bearer YOUR_TOKEN for the API. ",
+    ),
+)
+def test_plain_text_authorization_shapes_are_judged_in_linear_time(unit: str):
+    import time
+
+    # About 64k characters of each shape, each call bounded at 5 s.
+    text = unit * (64 * 1024 // len(unit)) + "\n"
+    started = time.perf_counter()
+    contains_sensitive_text(text)
+    assert time.perf_counter() - started < 5.0, unit
+    started = time.perf_counter()
+    redact_sensitive_text(text)
+    assert time.perf_counter() - started < 5.0, unit
+
+
 # #520: a quoted word after a redacted value was cut with it, and a
 # secret over several lines collapsed to one, so the file was refused.
 # Each value keeps its line count, and the file stays indexed.
