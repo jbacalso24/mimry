@@ -2,6 +2,23 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.8.3 - 2026-10-22
+
+### Security
+
+- 0.8.2 let some real `Authorization` values through as doc placeholders: upper-case and upper-snake tokens such as `Bearer ZK_9F2K_77QX`, names starting `my-` or `your-`, and values followed by `(` ([#604](https://github.com/jbacalso24/mimry/pull/604)).
+  Only names built from doc words, such as `YOUR_TOKEN` or `your-token-here`, are placeholders now.
+- A secret inside an encoder call, such as `Basic base64(admin:S3cret42)`, is redacted with the whole call, while `base64(user:pass)` is kept ([#611](https://github.com/jbacalso24/mimry/pull/611)).
+- `Authorization` values are redacted when passed as call arguments, such as `res.setHeader("Authorization", "Bearer ...")`, `headers.append` or C# `Headers.Add`, after a scheme MIMRY does not know, such as `Authorization: Acme ...`, and as `id:signature` pairs such as AWS and SharedKey use ([#601](https://github.com/jbacalso24/mimry/pull/601)).
+  A Basic `user:password` is redacted whatever characters the password holds ([#611](https://github.com/jbacalso24/mimry/pull/611)).
+- Table cells and labels written with bold or backticks, such as `| **Authorization** | Bearer ... |`, are read as headers too ([#604](https://github.com/jbacalso24/mimry/pull/604)).
+
+### Fixes
+
+- Code next to `authorization` is no longer redacted: type annotations such as `def check(authorization: str)`, header lookups such as `request.headers["Authorization"]`, and dotted attributes in source files ([#605](https://github.com/jbacalso24/mimry/pull/605)).
+  Bracketed placeholders such as `Authorization: Bearer <token>`, `[TOKEN]` or `${API_TOKEN}` no longer keep a Markdown file out of the index ([#604](https://github.com/jbacalso24/mimry/pull/604)).
+- The hook reads heredocs whose delimiter is quoted or escaped, such as `<<\EOF` or `<<E"OF"`, skips PowerShell here-strings, ends a line at a closing backtick, and leaves option values such as `--limit 5` out of the logged query ([#606](https://github.com/jbacalso24/mimry/pull/606), [#610](https://github.com/jbacalso24/mimry/pull/610)).
+
 ## 0.8.2 - 2026-10-22
 
 ### Security
@@ -11,7 +28,7 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 ### Fixes
 
 - `Authorization` headers written in Markdown or prose are redacted: list items, quotes, bold labels, sentences and table cells such as `| Authorization | Bearer <token> |` ([#591](https://github.com/jbacalso24/mimry/pull/591), [#599](https://github.com/jbacalso24/mimry/pull/599)).
-  A credential written without a scheme is redacted even when a word follows it.
+  A credential written without a scheme is redacted when it ends its line or a comma or period follows it.
 - Prose after Bearer, Basic or Token, such as `Bearer is required`, is kept again; 0.8.1 redacted it ([#591](https://github.com/jbacalso24/mimry/pull/591)).
   Doc placeholders such as `Bearer YOUR_TOKEN`, `Token abc.` or `Basic base64(user:pass)` no longer keep a Markdown file out of the index ([#599](https://github.com/jbacalso24/mimry/pull/599)).
 - `mimry history` and `mimry_history` answer from stored commits when the cache is read-only, and `mimry_feedback` there returns a `cache_read_only` error instead of failing ([#583](https://github.com/jbacalso24/mimry/pull/583), thanks @abhinavrastogi2627).

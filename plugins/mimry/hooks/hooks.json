@@ -9,7 +9,7 @@
             "command": "uvx",
             "args": [
               "--from",
-              "mimry==0.8.2",
+              "mimry==0.8.3",
               "mimry",
               "hook-check"
             ]
@@ -26,7 +26,7 @@
             "command": "uvx",
             "args": [
               "--from",
-              "mimry==0.8.2",
+              "mimry==0.8.3",
               "mimry",
               "hook-refresh"
             ],
@@ -42,7 +42,7 @@
             "command": "uvx",
             "args": [
               "--from",
-              "mimry==0.8.2",
+              "mimry==0.8.3",
               "mimry",
               "hook-compact"
             ]
@@ -59,7 +59,7 @@
             "command": "uvx",
             "args": [
               "--from",
-              "mimry==0.8.2",
+              "mimry==0.8.3",
               "mimry",
               "hook-refresh"
             ],
@@ -76,7 +76,7 @@
             "command": "uvx",
             "args": [
               "--from",
-              "mimry==0.8.2",
+              "mimry==0.8.3",
               "mimry",
               "hook-stop"
             ],
