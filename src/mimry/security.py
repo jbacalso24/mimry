@@ -289,10 +289,23 @@ _AUTH_HEADER_VALUE_RE = re.compile(
 # one. It may follow a line start, a blank, a list marker, a quote or
 # a sentence word, and the emphasis may open before it or close right
 # after its colon, as in ``**Authorization:** Bearer <token>``.
+# Any other word after the colon is a scheme only before a value that is
+# token-shaped (a digit or one of ``-_.~+/=:``) and at least 12
+# characters long, as in ``Authorization: HMAC-SHA256 tomato0123456789``
+# (#593).
+# Prose such as ``Authorization: Custom header values`` is not one.
+_TOKEN_SHAPED_VALUE_AHEAD = (
+    r"(?=[^\s\"'`{}<>,;()\[\]\\$|]{12})"
+    r"(?=[^\s\"'`{}<>,;()\[\]\\$|]*[0-9_.~+/=:-])"
+)
+# The characters a colon-joined value is made of: each side of a colon
+# must be one of these (#593).
+_TOKEN_PART_RE = re.compile(r"[A-Za-z0-9_.~+/=-]+")
 _PLAIN_AUTH_HEADER_RE = re.compile(
     r"(?i)(?<![A-Za-z0-9-])(?<![A-Za-z0-9]_)(?:Proxy-)?Authorization[ \t]*:"
     r"(?:\*\*|__|[*_])?[ \t]*"
-    rf"(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+"
+    rf"(?:(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+"
+    rf"|(?P<custom>[A-Za-z][A-Za-z0-9-]*)[ \t]+{_TOKEN_SHAPED_VALUE_AHEAD})"
     rf"(?P<value>{_AUTH_VALUE})"
 )
 # A Markdown table cell that holds the header, as in
@@ -310,6 +323,18 @@ _PLAIN_AUTH_TABLE_RE = re.compile(
 _AUTH_LABEL_RE = re.compile(r"(?i)(?:Proxy-)?Authorization")
 _AUTH_LABEL_VALUE_RE = re.compile(
     rf"(?i)(?:(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+)?(?P<value>{_AUTH_VALUE})"
+)
+# A known scheme word anywhere in the text: the gate for the literal
+# pass that reads a scheme and a value alone in a string (#593).
+_AUTH_SCHEME_WORD_RE = re.compile(
+    rf"(?i)(?<![A-Za-z0-9-])(?:{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])"
+)
+# A string literal whose whole body is a known scheme and one value, as
+# in ``"Bearer tomato-canary-1"`` in a call argument or an assignment.
+# The value is judged as an Authorization value of that scheme (#593).
+_SCHEME_LITERAL_RE = re.compile(
+    rf"(?i)(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])"
+    rf"[ \t\x00]+(?P<value>{_AUTH_VALUE})"
 )
 # The schemes whose value is a credential unless it is a prose word
 # (#540, #573). After one of them, a word of letters alone that more
@@ -837,6 +862,9 @@ def _redact_text(text: str, *, depth: int) -> str:
     redacted = text
     if depth < _SUB_TEXT_DEPTH:
         redacted = SUB_TEXT_RE.sub(lambda match: _redact_sub_text(match, depth=depth), text)
+    # Before the standalone pass, which would redact an AWS key id alone
+    # and leave its signature (#593).
+    redacted = _redact_auth_headers(redacted)
     redacted = redact_standalone_secrets(redacted)
     redacted = _redact_url_credentials(redacted)
     redacted = _redact_unclosed_quoted_values(redacted)
@@ -847,7 +875,6 @@ def _redact_text(text: str, *, depth: int) -> str:
     redacted = _redact_yaml_quoted_multiline(redacted)
     redacted = _redact_hash_entries(redacted)
     redacted = _redact_values(redacted, ASSIGNMENT_RE, _redact_assignment, prose=depth > 0)
-    redacted = _redact_auth_headers(redacted)
     redacted = _splice(
         redacted,
         [
@@ -2188,7 +2215,9 @@ def _auth_value_is_credential(
     ``Authorization: Bearer is required`` keeps it. After any other
     scheme the word must end its header, as in
     ``Authorization: Digest tomatocanary``, and a parameter such as
-    ``realm="Photos"`` is kept.
+    ``realm="Photos"`` is kept. A value with a colon is one only when
+    each side of the colon is token characters, as in
+    ``acct:dG9tYXRvY2FuYXJ5`` (#593).
     """
     if (
         not _text_is_credential(value)
@@ -2202,6 +2231,8 @@ def _auth_value_is_credential(
         or called
     ):
         return False
+    if ":" in value and any(_TOKEN_PART_RE.fullmatch(part) is None for part in value.split(":")):
+        return False  # a colon joins two token-shaped parts only (#593)
     token = any(char.isdigit() or char in "-_.~+/=" for char in value)
     letters = value.isascii() and value.isalpha()
     if scheme is None:
@@ -2255,14 +2286,19 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
     Inside string literals the literals of one value are read together
     (#540): in ``"Authorization: Bearer " "tok"`` or
     ``"Authorization: Bearer tok-" + "en"`` a value runs across the
-    pieces, and each piece it covers gives one span.
+    pieces, and each piece it covers gives one span. A literal whose
+    whole body is a known scheme and one value is judged with that
+    scheme, as in ``"Bearer tomato-canary-1"`` (_SCHEME_LITERAL_RE,
+    #593).
 
-    Outside them a header is read only with a known scheme after its
-    colon (_PLAIN_AUTH_HEADER_RE, #586), or in a Markdown table cell
+    Outside them a header is read with a known scheme after its colon,
+    or with any other word before a token-shaped value
+    (_PLAIN_AUTH_HEADER_RE, #586, #593), or in a Markdown table cell
     (_PLAIN_AUTH_TABLE_RE, #592). A header inside a literal is left to
     the literal pass, so each header is judged once.
     """
-    if _AUTH_HEADER_HINT_RE.search(text) is None:
+    hinted = _AUTH_HEADER_HINT_RE.search(text) is not None
+    if not hinted and _AUTH_SCHEME_WORD_RE.search(text) is None:
         return []
     spans: list[tuple[int, int]] = []
     literal_starts: list[int] = []
@@ -2285,14 +2321,27 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
             total += body_end - body_start + 1  # and the separator after it
         starts = [piece[0] for piece in pieces]
         joined = _LITERAL_SEPARATOR.join(bodies)
-        for header in _AUTH_HEADER_VALUE_RE.finditer(joined):
-            value = header.group("value").replace(_LITERAL_SEPARATOR, "")
-            low, high = header.span("value")
-            last = _AUTH_VALUE_TAIL_RE.match(joined, high) is not None
-            called = joined[high : high + 1] == "("
-            scheme = header.group("scheme") or header.group("custom")
-            if not _auth_value_is_credential(scheme, value, last=last, called=called):
-                continue
+        # The values to redact, as (low, high) in the joined text.
+        values: list[tuple[int, int]] = []
+        if hinted:
+            for header in _AUTH_HEADER_VALUE_RE.finditer(joined):
+                value = header.group("value").replace(_LITERAL_SEPARATOR, "")
+                low, high = header.span("value")
+                last = _AUTH_VALUE_TAIL_RE.match(joined, high) is not None
+                called = joined[high : high + 1] == "("
+                scheme = header.group("scheme") or header.group("custom")
+                if _auth_value_is_credential(scheme, value, last=last, called=called):
+                    values.append((low, high))
+        # One literal only. A scheme in one literal and a value in the
+        # next, joined with ``+``, is ``"Bearer " + token``: kept.
+        whole = _SCHEME_LITERAL_RE.fullmatch(joined) if len(chain) == 1 else None
+        if whole is not None and _auth_value_is_credential(
+            whole.group("scheme"),
+            whole.group("value").replace(_LITERAL_SEPARATOR, ""),
+            last=True,
+        ):
+            values.append(whole.span("value"))
+        for low, high in values:
             index = bisect.bisect_right(starts, low) - 1
             while index < len(pieces) and pieces[index][0] < high:
                 piece_start, piece_end, source = pieces[index]
@@ -2300,13 +2349,16 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
                 if lo < hi:
                     spans.append((source + lo - piece_start, source + hi - piece_start))
                 index += 1
-    for pattern in (_PLAIN_AUTH_HEADER_RE, _PLAIN_AUTH_TABLE_RE):
+    # The plain-text passes need the word Authorization (the hint).
+    patterns = (_PLAIN_AUTH_HEADER_RE, _PLAIN_AUTH_TABLE_RE) if hinted else ()
+    for pattern in patterns:
         for header in pattern.finditer(text):
             index = bisect.bisect_right(literal_starts, header.start()) - 1
             if index >= 0 and header.start() < literal_ends[index]:
                 continue
+            groups = header.groupdict()
             span = _auth_header_credential_span(
-                text, header.group("scheme"), *header.span("value")
+                text, groups.get("scheme") or groups.get("custom"), *header.span("value")
             )
             if span is not None:
                 spans.append(span)
