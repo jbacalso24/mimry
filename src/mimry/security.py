@@ -2414,7 +2414,7 @@ def _auth_value_is_credential(
     ``realm="Photos"`` is kept. A value with a colon is judged by its
     scheme: after a known scheme it is a ``user:password`` credential
     whatever its characters, as in ``Basic admin:S3cret!Pass`` (#607),
-    and after a custom scheme each side of the colon must be token
+    unless every side is a doc word, as in ``user:pass``, and after a custom scheme each side of the colon must be token
     characters, as in ``acct:dG9tYXRvY2FuYXJ5`` (#593).
     """
     if inside is not None:
@@ -2428,6 +2428,8 @@ def _auth_value_is_credential(
         return False
     if ":" in value:
         parts = value.split(":")
+        if all(_auth_doc_word(part) for part in parts):
+            return False  # a doc pair such as user:pass (#607)
         if scheme is not None and scheme.lower() in _KNOWN_AUTH_SCHEMES_LOWER:
             return all(parts)  # a user:password after a known scheme (#607)
         if any(_TOKEN_PART_RE.fullmatch(part) is None for part in parts):

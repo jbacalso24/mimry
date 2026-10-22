@@ -74,6 +74,8 @@ ENCODER_LEAKS = (
 KEPT = (
     "Authorization: Basic base64(user:pass)",
     "Authorization: Basic base64(username:password)",
+    "Authorization: Basic user:pass",
+    "Authorization: Basic username:password",
     "Authorization: Basic btoa(client_id:client_secret)",
     "Authorization: Basic https://example.com/auth/login",
     "Authorization: Custom: see below for details",
