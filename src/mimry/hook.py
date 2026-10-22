@@ -191,6 +191,40 @@ MIMRY_SUBCOMMANDS = frozenset(
     symbol uninstall update upgrade watch why""".split()
 )
 MIMRY_VALUED_OPTIONS = frozenset({"--root"})
+# The options of the query commands that take a value. A test keeps them
+# equal to the parsers' options, as it does for the subcommands.
+MIMRY_QUERY_VALUED_OPTIONS = frozenset(
+    {
+        "--agent",
+        "--exclude-glob",
+        "--language",
+        "--limit",
+        "--offset",
+        "--path-glob",
+        "--snippet-chars",
+        "--snippet-lines",
+        "--snippet-total-chars",
+        "--snippet-total-lines",
+    }
+)
+
+
+def _query_words(args: list[str]) -> list[str]:
+    """The query words among the arguments of a query command.
+
+    Options are left out, and so is the value of an option that takes
+    one. ``--limit=5`` is one option word.
+    """
+    words: list[str] = []
+    value_next = False
+    for arg in args:
+        if value_next:
+            value_next = False
+        elif arg in MIMRY_QUERY_VALUED_OPTIONS:
+            value_next = True
+        elif not arg.startswith("-"):
+            words.append(arg)
+    return words
 
 
 def _names_mimry(word: str) -> bool:
@@ -468,18 +502,38 @@ def _keep_backslashes(command: str) -> str:
 HEREDOC_WORD_END = " \t\r\n|&;<>()"
 
 
+def _skip_blanks(command: str, i: int) -> int:
+    """The index past the blanks and backslash line breaks at ``i``.
+
+    The shell removes a backslash line break before it splits words, so
+    it separates words as a blank does.
+    """
+    n = len(command)
+    while i < n:
+        if command[i] in " \t":
+            i += 1
+        elif command[i] == "\\" and _line_break_len(command, i + 1):
+            i += 1 + _line_break_len(command, i + 1)
+        else:
+            break
+    return i
+
+
 def _heredoc_word(command: str, k: int) -> tuple[str, int] | None:
     """The delimiter word of a heredoc whose word starts at ``k``.
 
     The shell removes the quotes and backslashes of the word before it
     matches the terminator line, so ``\\EOF``, ``E"OF"`` and ``'E'OF``
-    all name ``EOF``. Returns the word and the index just after it as
-    written, or None when there is no word or a quote is not closed on
-    its line.
+    all name ``EOF``. A backslash line break inside or before the word
+    is removed with them. Returns the word and the index just after it
+    as written, or None when there is no word or a quote is not closed
+    on its line.
     """
     n = len(command)
     parts: list[str] = []
     i = k
+    # Whether the word has text, not only line continuations.
+    has_text = False
     while i < n and command[i] not in HEREDOC_WORD_END:
         ch = command[i]
         if ch in "'\"":
@@ -488,15 +542,23 @@ def _heredoc_word(command: str, k: int) -> tuple[str, int] | None:
                 return None
             parts.append(command[i + 1 : close])
             i = close + 1
+            has_text = True
         elif ch == "\\":
+            breaks = _line_break_len(command, i + 1)
+            if breaks:
+                # A backslash line break is removed before the word.
+                i += 1 + breaks
+                continue
             if i + 1 >= n or command[i + 1] in "\r\n":
                 break
             parts.append(command[i + 1])
             i += 2
+            has_text = True
         else:
             parts.append(ch)
             i += 1
-    if i == k:
+            has_text = True
+    if not has_text:
         return None
     return "".join(parts), i
 
@@ -531,14 +593,15 @@ def _here_string_end(command: str, i: int) -> int:
     """The index just after the PowerShell here-string opened at ``i``.
 
     The opener ``@'`` or ``@"`` ends its line. Its body runs to a line
-    that starts with the closer ``'@`` or ``"@``. A body with no such
-    line runs to the end of the command.
+    that starts with the closer ``'@`` or ``"@`` and ends after it, at a
+    line break or the end of the command. A body with no such line runs
+    to the end of the command.
     """
     n = len(command)
     closer = command[i + 1] + "@"
     pos = i + 2 + _line_break_len(command, i + 2)
     while pos < n:
-        if command.startswith(closer, pos):
+        if command.startswith(closer, pos) and (pos + 2 == n or _line_break_len(command, pos + 2)):
             return pos + 2
         end = command.find("\n", pos)
         if end == -1:
@@ -595,9 +658,7 @@ def _drop_heredoc_bodies(command: str) -> str:
             strip = command.startswith("-", j)
             if strip:
                 j += 1
-            k = j
-            while k < n and command[k] in " \t":
-                k += 1
+            k = _skip_blanks(command, j)
             parsed = _heredoc_word(command, k)
             if parsed is None:
                 out.append(command[i:j])
@@ -677,7 +738,7 @@ def mimry_queries(command: str) -> list[str]:
             j = _subcommand_index(words, i)
             if j is not None and words[j] in MIMRY_SUBCOMMANDS:
                 if words[j] in MIMRY_QUERY_COMMANDS:
-                    queries.extend(arg for arg in words[j + 1 :] if not arg.startswith("-"))
+                    queries.extend(_query_words(words[j + 1 :]))
                 break
     return queries
 
