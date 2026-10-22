@@ -261,6 +261,7 @@ _KNOWN_AUTH_SCHEMES = frozenset(
         "Token",
     }
 )
+_KNOWN_AUTH_SCHEMES_LOWER = frozenset(scheme.lower() for scheme in _KNOWN_AUTH_SCHEMES)
 _KNOWN_AUTH_SCHEME_RE = "|".join(
     re.escape(scheme) for scheme in sorted(_KNOWN_AUTH_SCHEMES, key=len, reverse=True)
 )
@@ -386,9 +387,19 @@ _AUTH_PLACEHOLDER_NAME_WORDS = frozenset(
     value your""".split()
 )
 _AUTH_NAME_PART_RE = re.compile(r"[-_]")
+# The words a doc writes in an encoder call's inside, as in
+# ``base64(user:pass)`` or ``btoa(client_id:client_secret)`` (#607). The
+# other doc words are the placeholder words and names above.
+_AUTH_DOC_WORDS = frozenset(
+    """api_key apikey client_id client_secret id key pass password secret token
+    user username""".split()
+)
 # A value written as an encoding call, as in ``Basic base64(user:pass)``
-# (#592). Any other value before ``(`` is still judged (#602).
+# (#592). Any other value before ``(`` is still judged (#602). Its
+# inside is judged by _auth_call_is_placeholder (#607).
 _AUTH_ENCODER_NAMES = frozenset({"b64encode", "base64", "base64encode", "btoa", "encode"})
+# The characters that open or close a call, or end its line (#607).
+_CALL_CHAR_RE = re.compile(r"[()\r\n\x00]")
 # A bracketed placeholder after a scheme, as in ``Bearer <token>``,
 # ``Bearer [TOKEN]``, ``Bearer ${TOKEN}`` or ``Bearer {{token}}``
 # (#602).
@@ -2310,18 +2321,86 @@ def _literal_chains(text: str) -> Iterator[list[re.Match[str]]]:
         yield chain
 
 
+def _auth_doc_word(part: str) -> bool:
+    """Whether a part of an encoder call's inside is a doc word."""
+    lowered = part.lower()
+    return (
+        lowered in _AUTH_DOC_WORDS
+        or lowered in _AUTH_PLACEHOLDER_WORDS
+        or _auth_placeholder_name(part)
+    )
+
+
+def _auth_call_is_placeholder(inside: str) -> bool:
+    """Whether an encoder call's inside is a doc placeholder (#607).
+
+    Every part split on a colon must be a doc word, as in ``user:pass``.
+    The scan stops at the first part that is not, so a long line is
+    read in linear time.
+    """
+    start = 0
+    while True:
+        colon = inside.find(":", start)
+        end = len(inside) if colon == -1 else colon
+        if not _auth_doc_word(inside[start:end]):
+            return False
+        if colon == -1:
+            return True
+        start = colon + 1
+
+
+@functools.lru_cache(maxsize=2)
+def _call_closes(text: str) -> dict[int, int]:
+    """The index of the ``)`` matching each ``(`` in ``text``, on the
+    same line (#607).
+
+    A ``(`` with no match ends at its line end, the index of the line
+    break or NUL after it, or the end of the text. One pass with a
+    stack reads every call in linear time, so a line of unclosed
+    calls is not rescanned for each one.
+    """
+    closes: dict[int, int] = {}
+    opened: list[int] = []
+    for match in _CALL_CHAR_RE.finditer(text):
+        index = match.start()
+        char = match.group()
+        if char == "(":
+            opened.append(index)
+        elif char == ")":
+            if opened:
+                closes[opened.pop()] = index
+        else:
+            while opened:
+                closes[opened.pop()] = index
+    while opened:
+        closes[opened.pop()] = len(text)
+    return closes
+
+
+def _auth_encoder_call(text: str, value_end: int, value: str) -> tuple[str, int] | None:
+    """The inside of an encoder call ``value(...)``, and the index just
+    past it, when ``value`` is an encoder name followed by ``(`` at
+    ``value_end`` (#607). An unclosed call runs to its line end."""
+    if value.lower() not in _AUTH_ENCODER_NAMES or text[value_end : value_end + 1] != "(":
+        return None
+    close = _call_closes(text)[value_end]
+    past = close + 1 if text[close : close + 1] == ")" else close
+    return text[value_end + 1 : close], past
+
+
 def _auth_value_is_credential(
-    scheme: str | None, value: str, *, last: bool, called: bool = False
+    scheme: str | None, value: str, *, last: bool, inside: str | None = None
 ) -> bool:
     """Whether an Authorization value is a credential (#540, #586).
 
     ``scheme`` is the scheme before the value, or None when the value
     is the first word after the colon. A placeholder, a reference, or a
     prose word is never one (_text_is_credential, _AUTH_PROSE_WORDS,
-    _AUTH_PLACEHOLDER_WORDS, _auth_placeholder_name), and neither is an
-    encoder name followed directly by ``(``, as in
-    ``base64(user:pass)`` (#592, #602). ``called`` says whether a ``(``
-    follows.
+    _AUTH_PLACEHOLDER_WORDS, _auth_placeholder_name). An encoder call,
+    as in ``Basic base64(user:pass)``, is judged by its ``inside``: it
+    is a credential unless the inside is doc placeholders
+    (_auth_call_is_placeholder, #592, #602, #607). ``inside`` is None
+    when no encoder call follows the value.
 
     A value that reads as a token (a digit or one of ``-_.~+/=``) is
     one, after any scheme. A word of letters alone is one when it ends
@@ -2332,20 +2411,27 @@ def _auth_value_is_credential(
     ``Authorization: Bearer is required`` keeps it. After any other
     scheme the word must end its header, as in
     ``Authorization: Digest tomatocanary``, and a parameter such as
-    ``realm="Photos"`` is kept. A value with a colon is one only when
-    each side of the colon is token characters, as in
-    ``acct:dG9tYXRvY2FuYXJ5`` (#593).
+    ``realm="Photos"`` is kept. A value with a colon is judged by its
+    scheme: after a known scheme it is a ``user:password`` credential
+    whatever its characters, as in ``Basic admin:S3cret!Pass`` (#607),
+    and after a custom scheme each side of the colon must be token
+    characters, as in ``acct:dG9tYXRvY2FuYXJ5`` (#593).
     """
+    if inside is not None:
+        return not _auth_call_is_placeholder(inside)  # an encoder call (#607)
     if (
         not _text_is_credential(value)
         or value.lower() in _AUTH_PROSE_WORDS
         or value.lower() in _AUTH_PLACEHOLDER_WORDS
         or _auth_placeholder_name(value)
-        or (called and value.lower() in _AUTH_ENCODER_NAMES)
     ):
         return False
-    if ":" in value and any(_TOKEN_PART_RE.fullmatch(part) is None for part in value.split(":")):
-        return False  # a colon joins two token-shaped parts only (#593)
+    if ":" in value:
+        parts = value.split(":")
+        if scheme is not None and scheme.lower() in _KNOWN_AUTH_SCHEMES_LOWER:
+            return all(parts)  # a user:password after a known scheme (#607)
+        if any(_TOKEN_PART_RE.fullmatch(part) is None for part in parts):
+            return False  # a colon joins two token-shaped parts only (#593)
     token = any(char.isdigit() or char in "-_.~+/=" for char in value)
     letters = value.isascii() and value.isalpha()
     if scheme is None:
@@ -2371,9 +2457,13 @@ def _auth_header_credential_span(
     """
     high = low + len(text[low:raw_high].rstrip(_SENTENCE_PUNCTUATION))
     last = _AUTH_VALUE_TAIL_RE.match(text, raw_high) is not None
-    called = text[raw_high : raw_high + 1] == "("
-    if _auth_value_is_credential(scheme, text[low:high], last=last, called=called):
-        return low, high
+    value = text[low:high]
+    call = _auth_encoder_call(text, raw_high, value)
+    if _auth_value_is_credential(
+        scheme, value, last=last, inside=None if call is None else call[0]
+    ):
+        # An encoder call is redacted through its closing bracket.
+        return (low, high if call is None else call[1])
     return None
 
 
@@ -2446,10 +2536,12 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
                 value = header.group("value").replace(_LITERAL_SEPARATOR, "")
                 low, high = header.span("value")
                 last = _AUTH_VALUE_TAIL_RE.match(joined, high) is not None
-                called = joined[high : high + 1] == "("
+                call = _auth_encoder_call(joined, high, value)
                 scheme = header.group("scheme") or header.group("custom")
-                if _auth_value_is_credential(scheme, value, last=last, called=called):
-                    values.append((low, high))
+                if _auth_value_is_credential(
+                    scheme, value, last=last, inside=None if call is None else call[0]
+                ):
+                    values.append((low, high if call is None else call[1]))
         # One literal only. A scheme in one literal and a value in the
         # next, joined with ``+``, is ``"Bearer " + token``: kept. With
         # no header name the value must read as a token, so UI text such
@@ -2485,7 +2577,15 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
             if span is not None:
                 spans.append(span)
     spans.sort()
-    return spans
+    # An encoder call's span runs to its closing bracket, so a span may
+    # cover the next header on its line. Overlaps merge (#607).
+    merged: list[tuple[int, int]] = []
+    for low, high in spans:
+        if merged and low < merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], high))
+        else:
+            merged.append((low, high))
+    return merged
 
 
 def _redact_auth_headers(text: str) -> str:
