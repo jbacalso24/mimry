@@ -272,6 +272,51 @@ def test_mimry_queries_is_linear_on_repeated_mimry_words(command):
     assert time.process_time() - started < 1.0
 
 
+# A PowerShell line ending in a backtick continues, like a backslash
+# does. A backtick inside quotes is text, so it does not continue.
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("mimry find a `\n  b", ["a", "b"]),
+        ("mimry find a `\r\n  b", ["a", "b"]),
+        ('mimry find "a`" \nmimry find b', ["a`", "b"]),
+        ('mimry find "a `\nb"\nmimry find c', ["a `\nb", "c"]),
+    ],
+)
+def test_mimry_queries_joins_powershell_backtick_continuations(command, expected):
+    assert mimry_queries(command) == expected
+
+
+# A heredoc body is text for the command that opens it, never a
+# mimry command.
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cat <<EOF\nmimry find foo bar\nEOF\nmimry find real", ["real"]),
+        ("cat <<-EOF\n\tmimry find foo\n\tEOF\nmimry find real", ["real"]),
+        ('cat <<"EOF"\nmimry find foo\nEOF\nmimry find real', ["real"]),
+        ("cat <<EOF\nmimry find foo\nEOF\r\nmimry find real", ["real"]),
+        ("cat <<A <<B\nmimry find a\nA\nmimry find b\nB\nmimry find real", ["real"]),
+        ("cat <<EOF\nmimry find foo\nEOF", []),
+        ("cat <<EOF\nmimry find foo\n", []),
+        ('cat <<< "mimry find x"\nmimry find real', ["real"]),
+    ],
+)
+def test_mimry_queries_skips_heredoc_bodies(command, expected):
+    assert mimry_queries(command) == expected
+
+
+def test_mimry_queries_parses_a_64k_heredoc_command_quickly():
+    import time
+
+    unit = "cat > s.sh <<'EOF'\nmimry find tomato canary\nEOF\n"
+    command = unit * (65536 // len(unit) + 1)
+    # CPU time, not wall time: a busy machine is not a complexity bug.
+    started = time.process_time()
+    assert mimry_queries(command) == []
+    assert time.process_time() - started < 1.0
+
+
 def test_the_hook_knows_every_mimry_subcommand_and_valued_option():
     import argparse
 

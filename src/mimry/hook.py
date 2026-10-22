@@ -395,6 +395,16 @@ def _parse_search(words: list[str], piped: bool = False) -> _Search | None:
     return _Search(explicit, ignore_case, recursive, paths, reads_pipe)
 
 
+def _line_break_len(command: str, i: int) -> int:
+    """Length of the line break at ``i``.
+
+    2 for CRLF, 1 for LF, 0 when there is none.
+    """
+    if command.startswith("\r\n", i):
+        return 2
+    return 1 if command.startswith("\n", i) else 0
+
+
 def _keep_backslashes(command: str) -> str:
     """Keep a backslash before a plain character as written.
 
@@ -402,10 +412,11 @@ def _keep_backslashes(command: str) -> str:
     outside quotes, so a Windows path written with backslashes
     would lose its separators. Such a backslash is doubled, so the
     shell reads it back as one. A backslash at a line end continues
-    the line, so it is dropped with the newline. Other escapes and
-    single-quoted text are left alone.
+    the line, so it is dropped with the newline, and so is a
+    PowerShell backtick at a line end outside quotes. Other escapes
+    and single-quoted text are left alone.
     """
-    if "\\" not in command:
+    if "\\" not in command and "`" not in command:
         return command
     out: list[str] = []
     quote = ""
@@ -413,9 +424,13 @@ def _keep_backslashes(command: str) -> str:
     while i < len(command):
         ch = command[i]
         nxt = command[i + 1] if i + 1 < len(command) else ""
+        breaks = _line_break_len(command, i + 1) if ch in "\\`" else 0
+        if ch == "`" and not quote and breaks:
+            i += 1 + breaks
+            continue
         if ch == "\\" and quote != "'":
-            if nxt == "\n" or command.startswith("\r\n", i + 1):
-                i += 2 if nxt == "\n" else 3
+            if breaks:
+                i += 1 + breaks
                 continue
             if re.fullmatch(r"[A-Za-z0-9_.-]", nxt):
                 out.append("\\\\")
@@ -434,6 +449,119 @@ def _keep_backslashes(command: str) -> str:
     return "".join(out)
 
 
+# A heredoc's delimiter word ends at blank space, a line break, a
+# quote or an operator.
+HEREDOC_WORD_END = " \t\r\n|&;<>()'\""
+
+
+def _heredoc_word(command: str, k: int) -> tuple[str, int] | None:
+    """The delimiter word of a heredoc whose word starts at ``k``.
+
+    Returns the word and the index just after it as written, or None
+    when there is no word or a quoted word is not closed on its line.
+    """
+    n = len(command)
+    if k < n and command[k] in "'\"":
+        close = command.find(command[k], k + 1)
+        if close == -1 or command.find("\n", k + 1, close) != -1:
+            return None
+        return command[k + 1 : close], close + 1
+    end = k
+    while end < n and command[end] not in HEREDOC_WORD_END:
+        end += 1
+    if end == k:
+        return None
+    return command[k:end], end
+
+
+def _skip_heredoc_bodies(command: str, pos: int, pending: list[tuple[str, bool]]) -> int:
+    """The index just after the bodies of the ``pending`` heredocs.
+
+    Each body runs from ``pos`` to the line that is exactly its word
+    (leading tabs stripped when ``strip`` is set, a trailing CR
+    ignored). A body with no such line runs to the end of the command.
+    """
+    n = len(command)
+    for word, strip in pending:
+        while pos < n:
+            end = command.find("\n", pos)
+            if end == -1:
+                end = n
+            line = command[pos:end]
+            pos = end + 1
+            if line.endswith("\r"):
+                line = line[:-1]
+            if strip:
+                line = line.lstrip("\t")
+            if line == word:
+                break
+        else:
+            return n
+    return min(pos, n)
+
+
+def _drop_heredoc_bodies(command: str) -> str:
+    """Drop the bodies of heredocs, which are text, not commands.
+
+    An unquoted ``<<WORD``, ``<<-WORD``, ``<<'WORD'`` or ``<<"WORD"``
+    opens a body that starts on the next line. The operator and its
+    word stay on the command line. ``<<<`` is a here-string, not a
+    heredoc. Escapes and quoted text are skipped as the shell reads
+    them, and each character is read a bounded number of times.
+    """
+    if "<<" not in command:
+        return command
+    out: list[str] = []
+    pending: list[tuple[str, bool]] = []
+    quote = ""
+    i = 0
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if ch == "\\" and quote != "'":
+            # An escape or a line continuation does not end the line.
+            take = 1 + max(1, _line_break_len(command, i + 1))
+            out.append(command[i : i + take])
+            i += take
+        elif quote:
+            if ch == quote:
+                quote = ""
+            out.append(ch)
+            i += 1
+        elif ch in "'\"":
+            quote = ch
+            out.append(ch)
+            i += 1
+        elif command.startswith("<<<", i):
+            out.append("<<<")
+            i += 3
+        elif command.startswith("<<", i):
+            j = i + 2
+            strip = command.startswith("-", j)
+            if strip:
+                j += 1
+            k = j
+            while k < n and command[k] in " \t":
+                k += 1
+            parsed = _heredoc_word(command, k)
+            if parsed is None:
+                out.append(command[i:j])
+                i = j
+            else:
+                word, end = parsed
+                pending.append((word, strip))
+                out.append(command[i:end])
+                i = end
+        elif ch == "\n" and pending:
+            out.append(ch)
+            i = _skip_heredoc_bodies(command, i + 1, pending)
+            pending = []
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def _shell_segments(command: str) -> list[tuple[list[str], bool]]:
     """The words of each ``|``, ``&&``, ``;`` or newline segment.
 
@@ -443,7 +571,8 @@ def _shell_segments(command: str) -> list[tuple[list[str], bool]]:
     import shlex
 
     try:
-        lexer = shlex.shlex(_keep_backslashes(command), posix=True, punctuation_chars="|&;<>\n")
+        text = _keep_backslashes(_drop_heredoc_bodies(command))
+        lexer = shlex.shlex(text, posix=True, punctuation_chars="|&;<>\n")
         # A newline is a separator, so it is not whitespace here.
         lexer.whitespace = " \t\r"
         lexer.whitespace_split = True

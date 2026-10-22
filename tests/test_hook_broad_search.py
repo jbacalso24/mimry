@@ -388,3 +388,39 @@ def test_hook_sessions_keep_the_newest_sessions_and_a_bounded_key_list(tmp_path)
     assert hook._first_for_query(mimry_dir, "long", "k0")  # the oldest key is dropped
     last = hook.HOOK_KEYS_PER_SESSION + 2
     assert not hook._first_for_query(mimry_dir, "long", f"k{last}")
+
+
+@pytest.mark.parametrize(
+    ("command", "pattern"),
+    [
+        # A heredoc body is text for the command that opens it.
+        ("cat > s.sh <<'EOF'\ngrep -rn 'tomato.*canary' .\nEOF", None),
+        (
+            "cat > s.sh <<'EOF'\ngrep -rn 'tomato.*canary' .\nEOF\ngrep -rn 'auth|session' .",
+            "auth|session",
+        ),
+        ("cat <<-EOF > s.sh\n\tgrep -rn 'tomato.*canary' .\n\tEOF", None),
+        (
+            "cat <<-EOF > s.sh\n\tgrep -rn 'tomato.*canary' .\n\tEOF\r\ngrep -rn 'auth|session' .",
+            "auth|session",
+        ),
+        ("cat <<EOF\ngrep -rn 'auth|session' .", None),
+        ("cat <<A <<B\ngrep -rn 'a|b' .\nA\ngrep -rn 'c|d' .\nB\ngrep -rn 'e|f' .", "e|f"),
+        # A here-string is not a heredoc: its line is still a command.
+        ('cat <<< "grep -rn x ."', None),
+        ("cat <<< x\ngrep -rn 'auth|session' .", "auth|session"),
+    ],
+)
+def test_heredoc_bodies_are_text_not_searches(tmp_path, command, pattern):
+    assert shell_search_pattern(command, tmp_path) == pattern
+
+
+def test_shell_search_pattern_parses_a_64k_heredoc_command_quickly(tmp_path):
+    import time
+
+    unit = "cat > s.sh <<'EOF'\ngrep -rn 'tomato.*canary' .\nEOF\n"
+    command = unit * (65536 // len(unit) + 1)
+    # CPU time, not wall time: a busy machine is not a complexity bug.
+    started = time.process_time()
+    assert shell_search_pattern(command, tmp_path) is None
+    assert time.process_time() - started < 1.0
