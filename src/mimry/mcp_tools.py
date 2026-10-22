@@ -408,7 +408,8 @@ def _index_operation(
                     read_only_retry and exclusive and not read_only and cache_write_denied(exc)
                 ):
                     raise
-                read_only = True
+                # The refresh passed, so the index is current: answer
+                # read-only without the stale warning, as the CLI does.
                 result = run_locked(True)
             if read_only and isinstance(result, dict):
                 # Same key and wording as the preflight's warning.

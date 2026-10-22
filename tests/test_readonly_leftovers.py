@@ -14,7 +14,7 @@ from test_state_recovery import (
     _stale_repo_with_cache,
 )
 
-from mimry import cli
+from mimry import cli, mcp_tools
 from mimry.cache_safety import cache_writable
 from mimry.mcp_tools import mimry_feedback, mimry_history, mimry_status
 from mimry.storage import load_pointer
@@ -156,3 +156,22 @@ def test_cli_history_on_writable_cache_does_not_probe(tmp_path, monkeypatch, cap
 
     assert "Remove the Share Extension target" in capsys.readouterr().out
     assert probes == []
+
+
+def test_mcp_history_on_a_current_index_does_not_call_it_stale(tmp_path, monkeypatch):
+    # The refresh passes; only history's exclusive lock is refused.
+    repo, cache = _share_extension_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    assert cli.main(["--root", str(repo), "history", "share extension"]) == 0
+    original = mcp_tools.active_index_pointer
+    denied = cache / "indexes" / "locked" / "operation.lock"
+
+    def pointer(root, *, exclusive=False):
+        if exclusive:
+            raise PermissionError(errno.EACCES, "Permission denied", str(denied))
+        return original(root, exclusive=exclusive)
+
+    monkeypatch.setattr(mcp_tools, "active_index_pointer", pointer)
+    result = mimry_history("share extension", root=str(repo))
+    assert result["commits"]
+    assert "stale" not in (result.get("stdout") or "")

@@ -44,7 +44,7 @@ If a file is still missing after that, see [A file is not indexed](#a-file-is-no
 
 If the cache is read-only, as in some sandboxes, MIMRY answers from the index it has and says that it cannot update it.
 This includes `mimry history` and `mimry_history`: they search stored commits without updating the commit tables.
-`mimry_status` reports the read-only cache, and graph advice no longer promises a refresh there.
+`mimry_status` reports the read-only cache when the index is stale, and graph advice no longer promises a refresh there.
 Feedback still needs a writable cache; `mimry_feedback` returns a `cache_read_only` error rather than recording it.
 Set `MIMRY_CACHE_HOME` to a writable folder, inside the project if the sandbox only allows that, and the next query rebuilds the index.
 
