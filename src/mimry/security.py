@@ -305,8 +305,8 @@ _TOKEN_SHAPED_VALUE_AHEAD = (
 # must be one of these (#593).
 _TOKEN_PART_RE = re.compile(r"[A-Za-z0-9_.~+/=-]+")
 _PLAIN_AUTH_HEADER_RE = re.compile(
-    r"(?i)(?<![A-Za-z0-9-])(?<![A-Za-z0-9]_)(?:Proxy-)?Authorization[ \t]*:"
-    r"(?:\*\*|__|[*_])?[ \t]*"
+    r"(?i)(?<![A-Za-z0-9-])(?<![A-Za-z0-9]_)(?:Proxy-)?Authorization(?:\*\*|__|[*_`])?[ \t]*:"
+    r"(?:\*\*|__|[*_`])?[ \t]*"
     rf"(?:(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+"
     rf"|(?P<custom>(?-i:[A-Z])[A-Za-z0-9-]*)[ \t]+{_TOKEN_SHAPED_VALUE_AHEAD})"
     rf"(?P<value>{_AUTH_VALUE})"
@@ -316,7 +316,7 @@ _PLAIN_AUTH_HEADER_RE = re.compile(
 # around the name are part of the cell. The value is read as in
 # _PLAIN_AUTH_HEADER_RE, and the bar after it ends it.
 _PLAIN_AUTH_TABLE_RE = re.compile(
-    r"(?i)\|[ \t]*(?:Proxy-)?Authorization[ \t]*\|[ \t]*"
+    r"(?i)\|[ \t]*(?:\*\*|__|`)?(?:Proxy-)?Authorization(?:\*\*|__|`)?[ \t]*\|[ \t]*`?"
     rf"(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+"
     rf"(?P<value>{_AUTH_VALUE})"
 )
@@ -370,19 +370,47 @@ _AUTH_PARAMETER_RE = re.compile(r"[A-Za-z][A-Za-z_-]*=")
 # plain text it is trimmed from a value before the value is judged, and
 # the span redacted excludes it (#592).
 _SENTENCE_PUNCTUATION = ".:!?"
-# A placeholder name in an Authorization value (#592), never a
-# credential: an upper snake name such as ``YOUR_TOKEN`` or ``API_KEY``,
-# or a single upper word such as ``TOKEN``.
-_AUTH_PLACEHOLDER_NAME_RE = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|[A-Z]+")
-# A name a doc writes for its own value, as in ``your-token-here`` or
-# ``my_key`` (#592). A digit makes it a token, as in ``my-key-7f3a``.
-_AUTH_PLACEHOLDER_PREFIX_RE = re.compile(r"(?i)(?:your|my)[-_]")
 # Stand-in words a doc or a test writes in place of a value (#592).
 # ``credentials`` is already in _AUTH_PROSE_WORDS.
 _AUTH_PLACEHOLDER_WORDS = frozenset(
     """abc xyz foo bar baz example sample dummy placeholder redacted
     changeme secret password mytoken""".split()
 )
+# The words a doc builds a placeholder name from, as in ``YOUR_TOKEN``,
+# ``API_KEY``, ``REPLACE_ME`` or ``your-token-here`` (#592). A name is a
+# placeholder only when every part is one of these, so a token such as
+# ``ZK_9F2K_77QX`` or ``my-tomato-canary`` is still a credential (#602).
+_AUTH_PLACEHOLDER_NAME_WORDS = frozenset(
+    """access api app auth bearer change client example goes here id insert
+    jwt key me my oauth pat personal put replace sample secret the token
+    value your""".split()
+)
+_AUTH_NAME_PART_RE = re.compile(r"[-_]")
+# A value written as an encoding call, as in ``Basic base64(user:pass)``
+# (#592). Any other value before ``(`` is still judged (#602).
+_AUTH_ENCODER_NAMES = frozenset({"b64encode", "base64", "base64encode", "btoa", "encode"})
+# A bracketed placeholder after a scheme, as in ``Bearer <token>``,
+# ``Bearer [TOKEN]``, ``Bearer ${TOKEN}`` or ``Bearer {{token}}``
+# (#602).
+_AUTH_BRACKET_PLACEHOLDER_RE = re.compile(
+    rf"(?i)(?:{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+"
+    r"(?:<[^<>\r\n]+>|\[[^\[\]\r\n]+\]|\$\{[^{}\r\n]+\}|\{\{[^{}\r\n]+\}\})"
+)
+# A scheme and the one word after it, to test that word as a placeholder
+# name when it is itself a scheme word, as in ``Bearer TOKEN`` (#602).
+_AUTH_SCHEME_NAME_RE = re.compile(
+    rf"(?i)(?:{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t]+(?P<name>[A-Za-z_-]+)(?![A-Za-z0-9_-])"
+)
+
+
+def _auth_placeholder_name(value: str) -> bool:
+    """Whether a value is a name a doc writes in place of a credential,
+    built only from placeholder words (#592, #602)."""
+    return not any(char.isdigit() for char in value) and all(
+        part.lower() in _AUTH_PLACEHOLDER_NAME_WORDS for part in _AUTH_NAME_PART_RE.split(value)
+    )
+
+
 # What joins two string literals of one value: blanks, line breaks or a
 # backslash-newline (implicit concatenation, as ``"a" "b"``, or a value
 # split over lines), or a ``+``. A line break joins pieces across lines
@@ -2205,10 +2233,10 @@ def _auth_value_is_credential(
     ``scheme`` is the scheme before the value, or None when the value
     is the first word after the colon. A placeholder, a reference, or a
     prose word is never one (_text_is_credential, _AUTH_PROSE_WORDS,
-    _AUTH_PLACEHOLDER_WORDS, _AUTH_PLACEHOLDER_NAME_RE,
-    _AUTH_PLACEHOLDER_PREFIX_RE), and neither is a value followed
-    directly by ``(``, as in ``base64(user:pass)``, which is
-    function-like (#592). ``called`` says whether it is.
+    _AUTH_PLACEHOLDER_WORDS, _auth_placeholder_name), and neither is an
+    encoder name followed directly by ``(``, as in
+    ``base64(user:pass)`` (#592, #602). ``called`` says whether a ``(``
+    follows.
 
     A value that reads as a token (a digit or one of ``-_.~+/=``) is
     one, after any scheme. A word of letters alone is one when it ends
@@ -2227,12 +2255,8 @@ def _auth_value_is_credential(
         not _text_is_credential(value)
         or value.lower() in _AUTH_PROSE_WORDS
         or value.lower() in _AUTH_PLACEHOLDER_WORDS
-        or _AUTH_PLACEHOLDER_NAME_RE.fullmatch(value) is not None
-        or (
-            _AUTH_PLACEHOLDER_PREFIX_RE.match(value) is not None
-            and not any(char.isdigit() for char in value)
-        )
-        or called
+        or _auth_placeholder_name(value)
+        or (called and value.lower() in _AUTH_ENCODER_NAMES)
     ):
         return False
     if ":" in value and any(_TOKEN_PART_RE.fullmatch(part) is None for part in value.split(":")):
@@ -2278,6 +2302,11 @@ def _auth_assignment_is_placeholder(text: str, value_start: int) -> bool:
     rules, as a config line ``authorization: MIMRY_TEST_VALUE_123`` is
     (see the label-policy test).
     """
+    if _AUTH_BRACKET_PLACEHOLDER_RE.match(text, value_start):
+        return True  # ``Authorization: Bearer <token>`` (#602)
+    named = _AUTH_SCHEME_NAME_RE.match(text, value_start)
+    if named and _auth_placeholder_name(named.group("name")):
+        return True  # ``Authorization: Bearer TOKEN``, a scheme word as the name
     value = _AUTH_LABEL_VALUE_RE.match(text, value_start)
     if value is None or value.group("scheme") is None:
         return False
