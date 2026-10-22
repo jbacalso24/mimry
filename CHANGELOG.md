@@ -16,6 +16,7 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 
 - 0.8.3 redacted a Basic `user:password` only up to a comma, space, `$`, quote or bracket in the password, so the rest of the password stayed visible ([#617](https://github.com/jbacalso24/mimry/pull/617)).
   The whole value, and a secret inside an encoder call such as `base64(...)`, is now redacted to the end of its header.
+- A token after a scheme that looks like a file path, such as `Bearer abc/def.key`, is redacted; a file name is kept only when no scheme comes before it ([#627](https://github.com/jbacalso24/mimry/pull/627)).
 
 ### Fixes
 
