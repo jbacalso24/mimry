@@ -669,6 +669,37 @@ _ANNOTATION_RE = re.compile(r"[^=\"'`\r\n]*?(?<![=!<>])=(?![=>])")
 # A type has no words with only a space between them: ``OAuth
 # realm="..."`` is prose, as an HTTP header written out in a docstring.
 _SPACED_WORDS_RE = re.compile(r"\w[ \t]+\w")
+# A type annotation, as in ``def check(authorization: str) -> bool:``
+# or ``authorization: "str | None" = None``, is code. Only a known type
+# counts: a builtin such as ``str`` or ``None``, or ``Optional``,
+# ``Union``, ``list`` or ``dict`` with brackets. A CamelCase word is not
+# one. The annotation ends at ``,``, ``)``, ``->`` or an ``=`` that does
+# not start a string.
+_TYPE_RE = re.compile(
+    r"(?:[A-Za-z_]\w*\.)*(?P<name>[A-Za-z_]\w*)(?P<args>\[[^\[\]\r\n]{0,200}\])?"
+)
+_QUOTED_TYPE_RE = re.compile(r"(?P<quote>[\"'])(?P<body>[^\"'\r\n]{0,200})(?P=quote)")
+_BUILTIN_TYPE_NAMES = frozenset(
+    "str string int float bool boolean bytes number any object None".split()
+)
+_GENERIC_TYPE_NAMES = frozenset({"Optional", "Union", "list", "dict"})
+_TYPE_ENDS_RE = re.compile(r"[ \t]*(?:[,)]|->|=(?![=>])(?![ \t]*[\"'`]))")
+# A subscript with a quoted key, as in
+# ``request.headers["Authorization"]`` or
+# ``req.headers['authorization']``, is a lookup in any text. A dotted
+# attribute, as in ``req.headers.authorization``, is one only in parsed
+# source: in config text, ``KEY=tomato.canary`` is a value. Keys are
+# bounded, so the scan stays linear on long lines.
+_SUBSCRIPT_LOOKUP_RE = re.compile(
+    r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*"
+    r"(?:\[[ \t]*(?:\"[^\"\r\n]{0,200}\"|'[^'\r\n]{0,200}')[ \t]*\])+"
+)
+_ATTRIBUTE_LOOKUP_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+")
+# A scheme and a placeholder that is the whole value, as in
+# ``Bearer <TOKEN>`` or ``Bearer ${TOKEN}``: kept, as ``<token>`` is.
+_SCHEME_PLACEHOLDER_RE = re.compile(
+    r"(?:basic|bearer|token)[ \t]+(?:<[^<>\r\n]+>|\$?\{[^{}\r\n]*\})", re.IGNORECASE
+)
 _VALUE_RE = re.compile(
     r"\s*(?:\"\"\"[\s\S]*?\"\"\"|'''[\s\S]*?'''|\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|[^,{;})\r\n]*)"
 )
@@ -964,6 +995,54 @@ def _closes_on_a_later_line(text: str, start: int) -> bool:
     return _quote_close(text, start + 1, text[start]) is not None
 
 
+def _is_known_type(expression: str) -> bool:
+    """Whether a type expression is a known type: a builtin such as
+    ``str`` or ``None``, or ``Optional``, ``Union``, ``list`` or
+    ``dict`` with brackets (#596).
+    """
+    match = _TYPE_RE.fullmatch(expression)
+    if match is None:
+        return False
+    if match["args"] is None:
+        return expression == match["name"] and match["name"] in _BUILTIN_TYPE_NAMES
+    return match["name"] in _GENERIC_TYPE_NAMES
+
+
+def _is_type_annotation(text: str, start: int, operator: str) -> bool:
+    """Whether the value at ``text[start:]``, after ``name:``, is a
+    known type annotation: ``str`` in
+    ``def check(authorization: str) -> bool:``, or ``"str | None"`` in
+    ``authorization: "str | None" = None``. Such a type is code, not a
+    credential (#596).
+    """
+    if operator != ":":
+        return False
+    quoted = _QUOTED_TYPE_RE.match(text, start)
+    if quoted is not None:
+        return (
+            all(_is_known_type(part.strip()) for part in quoted["body"].split("|"))
+            and _TYPE_ENDS_RE.match(text, quoted.end()) is not None
+        )
+    name = _TYPE_RE.match(text, start)
+    return (
+        name is not None
+        and _is_known_type(name.group())
+        and _TYPE_ENDS_RE.match(text, name.end()) is not None
+    )
+
+
+def _is_lookup(text: str, start: int, *, code: bool) -> bool:
+    """Whether the value at ``text[start:]`` is a lookup, as in
+    ``request.headers["Authorization"]``, which is code in any text. A
+    dotted attribute is code only in parsed source (``code``), never in
+    config text (#596).
+    """
+    lookup = _SUBSCRIPT_LOOKUP_RE.match(text, start)
+    if lookup is None and code:
+        lookup = _ATTRIBUTE_LOOKUP_RE.match(text, start)
+    return lookup is not None and _VALUE_END_RE.match(text, lookup.end()) is not None
+
+
 def _value_is_credential(
     text: str, pos: int, value: str, operator: str, label: str, *, code: bool, scanner: _Scanner
 ) -> bool:
@@ -976,6 +1055,9 @@ def _value_is_credential(
     stays strictly redacted. In parsed source an unquoted value is an
     expression, so only string literals are judged (see
     _code_value_is_credential). Values are scanned with ``scanner``.
+    A known type annotation, and a subscript lookup with a quoted key,
+    are code in either mode. A dotted attribute is code in parsed source
+    only (see _is_type_annotation and _is_lookup).
     """
     candidate = value.strip().rstrip(",;}").strip()
     if candidate == "\\":
@@ -1028,6 +1110,8 @@ def _value_is_credential(
             rhs += 1
         rhs_value = _VALUE_RE.match(text, rhs).group()
         return _value_is_credential(text, rhs, rhs_value, "=", label, code=code, scanner=scanner)
+    if _is_type_annotation(text, start, operator) or _is_lookup(text, start, code=code):
+        return False  # ``authorization: str)`` or ``req.headers["Authorization"]``: code
     if code:
         return candidate[0] != ":" and _code_value_is_credential(
             text, start, operator, label, scanner
@@ -1602,6 +1686,7 @@ def _text_is_credential(text: str) -> bool:
         or (_NUMBER_RE.fullmatch(text) is not None and len(text) < 4)
         or _REFERENCE_RE.fullmatch(text)
         or _PLACEHOLDER_RE.fullmatch(text)
+        or _SCHEME_PLACEHOLDER_RE.fullmatch(text)
         or _ENV_LOOKUP_RE.fullmatch(text)
         or _is_location(text)
     )
