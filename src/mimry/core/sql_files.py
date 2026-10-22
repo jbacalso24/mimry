@@ -37,11 +37,14 @@ OBJECT_KINDS = {
 }
 _QUOTES = '"`[]'
 # A statement that starts with CREATE opens a block at its BEGIN, but
-# BEGIN TRANSACTION and a bare BEGIN do not.
-_CREATE_START = re.compile(rb"(?:\s|--[^\n]*)*CREATE\b", re.IGNORECASE)
+# BEGIN TRANSACTION and a bare BEGIN do not. The comment run before
+# CREATE is possessive: with CRLF a comment line can end before or after
+# its \r, so a backtracking run tries 2^lines splits when no CREATE
+# follows (#619).
+_CREATE_START = re.compile(rb"(?:\s|--[^\n]*)*+CREATE\b", re.IGNORECASE)
 # A trigger the grammar cannot read: its name, and the table after ON.
 _TRIGGER_HEADER = re.compile(
-    rb"(?:\s|--[^\n]*)*(?P<head>CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+    rb"(?:\s|--[^\n]*)*+(?P<head>CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?"
     rb"(?P<name>[^\s(]+)\s.*?\bON\s+(?P<table>[^\s(]+))",
     re.IGNORECASE | re.DOTALL,
 )
