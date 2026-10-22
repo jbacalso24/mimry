@@ -2467,8 +2467,10 @@ def _auth_value_is_credential(
         return not _auth_call_is_placeholder(inside)  # an encoder call (#607)
     if value.startswith("{"):
         return _BRACED_PLACEHOLDER_RE.fullmatch(value) is None  # ``{token}`` (#608)
-    if _AUTH_PATH_RE.fullmatch(value) is not None:
-        return False  # ``docs/auth-headers.md``: a file name (#608)
+    if scheme is None and _AUTH_PATH_RE.fullmatch(value) is not None:
+        # ``docs/auth-headers.md``: a file name (#608). After a scheme a
+        # token may hold ``/`` and ``.`` too, so it is judged (#626).
+        return False
     if (
         not _text_is_credential(value)
         or value.lower() in _AUTH_PROSE_WORDS

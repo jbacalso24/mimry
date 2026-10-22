@@ -63,6 +63,9 @@ REDACTED = (
     # Judgement call: no slash, so it is not a path; the word is kept
     # redacted, as an unslashed value with a digit is a credential.
     ("Authorization: tomatocanary42.md", "tomatocanary42"),
+    # A path shape after a scheme is a token, not a file name (#626).
+    ("Authorization: Bearer tomatocanary/42xyz.key", "tomatocanary/42xyz"),
+    ("Authorization: Token tomato/canary42.json", "tomato/canary42"),
     ('password = decrypt("tomatocanary42xyz")', "tomatocanary42xyz"),
     ('token = base64.b64decode("dG9tYXRvY2FuYXJ5MTIz")', "dG9tYXRvY2FuYXJ5MTIz"),
 )
