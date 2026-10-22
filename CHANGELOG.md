@@ -2,6 +2,27 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.8.4 - 2026-10-22
+
+### Upgrade notes
+
+- Upgrade with `mimry upgrade` now if your repository has SQL files.
+  A SQL file with many comment lines and Windows line endings could stall `mimry index` for many minutes; it is read at once now ([#620](https://github.com/jbacalso24/mimry/pull/620)).
+- `mimry upgrade`, `mimry install --refresh` and `mimry init` add `.mimry/` to Git's global ignore when it is missing, so MIMRY's folder stays out of every repository's changes ([#615](https://github.com/jbacalso24/mimry/pull/615)).
+  Set `MIMRY_NO_GLOBAL_GITIGNORE=1`, or pass `init --no-global-gitignore`, to keep your global ignore untouched.
+  `mimry doctor` reports it as `git.global_ignore`.
+
+### Security
+
+- 0.8.3 redacted a Basic `user:password` only up to a comma, space, `$`, quote or bracket in the password, so the rest of the password stayed visible ([#617](https://github.com/jbacalso24/mimry/pull/617)).
+  The whole value, and a secret inside an encoder call such as `base64(...)`, is now redacted to the end of its header.
+
+### Fixes
+
+- Code next to `authorization` is kept: typed fields such as `token: String`, header lookups such as `req.get("Authorization")` or `headers[key]`, `{token}` placeholders and file paths ([#613](https://github.com/jbacalso24/mimry/pull/613)).
+  Spaced and literal doc placeholders such as `base64( user:pass )` or `"Basic user:pass"` no longer keep a Markdown file out of the index ([#617](https://github.com/jbacalso24/mimry/pull/617)).
+- Indexing a SQL file no longer stalls on a run of comment lines with Windows line endings before a statement that is not `CREATE` ([#620](https://github.com/jbacalso24/mimry/pull/620)).
+
 ## 0.8.3 - 2026-10-22
 
 ### Security
@@ -10,7 +31,7 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
   Only names built from doc words, such as `YOUR_TOKEN` or `your-token-here`, are placeholders now.
 - A secret inside an encoder call, such as `Basic base64(admin:S3cret42)`, is redacted with the whole call, while `base64(user:pass)` is kept ([#611](https://github.com/jbacalso24/mimry/pull/611)).
 - `Authorization` values are redacted when passed as call arguments, such as `res.setHeader("Authorization", "Bearer ...")`, `headers.append` or C# `Headers.Add`, after a scheme MIMRY does not know, such as `Authorization: Acme ...`, and as `id:signature` pairs such as AWS and SharedKey use ([#601](https://github.com/jbacalso24/mimry/pull/601)).
-  A Basic `user:password` is redacted whatever characters the password holds ([#611](https://github.com/jbacalso24/mimry/pull/611)).
+  A Basic `user:password` whose password holds punctuation is redacted ([#611](https://github.com/jbacalso24/mimry/pull/611)); 0.8.3 still left the part after a comma, space, quote or bracket visible, which 0.8.4 fixes.
 - Table cells and labels written with bold or backticks, such as `| **Authorization** | Bearer ... |`, are read as headers too ([#604](https://github.com/jbacalso24/mimry/pull/604)).
 
 ### Fixes
@@ -28,7 +49,7 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 ### Fixes
 
 - `Authorization` headers written in Markdown or prose are redacted: list items, quotes, bold labels, sentences and table cells such as `| Authorization | Bearer <token> |` ([#591](https://github.com/jbacalso24/mimry/pull/591), [#599](https://github.com/jbacalso24/mimry/pull/599)).
-  A credential written without a scheme is redacted when it ends its line or a comma or period follows it.
+  A credential written without a scheme is redacted when it ends its line, a comma follows it, or a period follows it at the end of the line.
 - Prose after Bearer, Basic or Token, such as `Bearer is required`, is kept again; 0.8.1 redacted it ([#591](https://github.com/jbacalso24/mimry/pull/591)).
   Doc placeholders such as `Bearer YOUR_TOKEN`, `Token abc.` or `Basic base64(user:pass)` no longer keep a Markdown file out of the index ([#599](https://github.com/jbacalso24/mimry/pull/599)).
 - `mimry history` and `mimry_history` answer from stored commits when the cache is read-only, and `mimry_feedback` there returns a `cache_read_only` error instead of failing ([#583](https://github.com/jbacalso24/mimry/pull/583), thanks @abhinavrastogi2627).
