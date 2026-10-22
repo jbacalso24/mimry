@@ -2233,10 +2233,11 @@ _LEGACY_BLOCK_PATTERNS = ("mimry-out/",)
 _GLOBAL_IGNORE_MARKER = "# MIMRY"
 
 
-def _global_ignore_path() -> Path | None:
+def _global_ignore_path(*, warn: bool = True) -> Path | None:
     """The file Git reads as its global excludes, or None when Git
     cannot say. Asks Git first so a custom core.excludesFile is
-    respected, and never writes the user's git config."""
+    respected, and never writes the user's git config. `warn` is off
+    for a read-only check, which reports the miss itself."""
     try:
         res = subprocess.run(
             ["git", "config", "--global", "--get", "core.excludesFile"],
@@ -2248,11 +2249,15 @@ def _global_ignore_path() -> Path | None:
             stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
-        ui.warn("Git is not on PATH, so the global git ignore file was not updated")
+        if warn:
+            ui.warn("Git is not on PATH, so the global git ignore file was not updated")
         return None
     # Exit 1 means the key is unset; any other failure is a git error.
     if res.returncode not in (0, 1):
-        ui.warn(f"git could not read core.excludesFile: {res.stderr.strip() or res.returncode}")
+        if warn:
+            ui.warn(
+                f"git could not read core.excludesFile: {res.stderr.strip() or res.returncode}"
+            )
         return None
     configured = res.stdout.strip()
     if res.returncode == 0 and configured:
@@ -2288,6 +2293,23 @@ def _add_global_ignore(*, dry_run: bool) -> None:
         ui.detail(f"Add these lines to it by hand: {', '.join(missing)}")
         return
     ui.ok(f"Added MIMRY to the global git ignore: {shown}")
+
+
+def global_ignore_opted_out(flag: bool = False) -> bool:
+    """True when the caller's flag or MIMRY_NO_GLOBAL_GITIGNORE says to
+    leave Git's global ignore file alone."""
+    return flag or bool(os.environ.get("MIMRY_NO_GLOBAL_GITIGNORE"))
+
+
+def add_global_ignore(*, dry_run: bool = False, opted_out: bool = False) -> None:
+    """Add MIMRY's lines to Git's global ignore file when they are
+    missing, unless opted out.
+
+    Install, refresh (and so upgrade) and init all come through here.
+    """
+    if global_ignore_opted_out(opted_out):
+        return
+    _add_global_ignore(dry_run=dry_run)
 
 
 def _without_mimry_block(lines: list[str]) -> list[str]:
@@ -2475,6 +2497,9 @@ def _refresh_command(a) -> int:
     except OSError as exc:
         ui.fail("Could not refresh the installed MIMRY skills", str(exc))
         return 1
+    # Before the early return below: the Claude Code plugin never runs
+    # install, so a refresh with no skill installed restores the line.
+    add_global_ignore(opted_out=getattr(a, "no_global_gitignore", False))
     if not found:
         ui.ok("No MIMRY skills are installed")
         return 0
@@ -2524,9 +2549,7 @@ def cmd_install(a) -> int:
     )
     # Once per run, after the install itself, so a refused install
     # leaves the machine's git ignore file alone.
-    skip = getattr(a, "no_global_gitignore", False) or os.environ.get("MIMRY_NO_GLOBAL_GITIGNORE")
-    if not skip:
-        _add_global_ignore(dry_run=a.dry_run)
+    add_global_ignore(dry_run=a.dry_run, opted_out=getattr(a, "no_global_gitignore", False))
     return 0
 
 

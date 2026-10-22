@@ -61,6 +61,13 @@ def _stub_host_checks(monkeypatch) -> None:
         "_registrations_check",
         lambda root: doctor._check("agents.registrations", "ok", "no agent has MIMRY installed"),
     )
+    monkeypatch.setattr(
+        doctor,
+        "_global_ignore_check",
+        lambda: doctor._check(
+            "git.global_ignore", "ok", "`.mimry/` is in Git's global ignore file"
+        ),
+    )
 
 
 def _install_ok(monkeypatch) -> None:

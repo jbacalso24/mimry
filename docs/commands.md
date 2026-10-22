@@ -64,7 +64,8 @@ MCP `scope` reports the normalized `offset` and whether pagination was requested
 It covers every platform in your user profile and, when the current directory is inside a Git repository, that repository's project install.
 For each install it rewrites the skill and its references, plus the always-on rules and hooks where those were added.
 It installs nothing new: a platform without a skill, or a missing always-on rule or hook, stays missing.
-It does not register MCP servers or change Git's global ignore file, and a second run writes nothing.
+It does not register MCP servers.
+It adds `.mimry/` to Git's global ignore file only when that line is missing, so a second run writes nothing.
 
 `mimry upgrade` runs the refresh with the new version after a successful upgrade, so usually you do not need to run it yourself.
 `--refresh` cannot be combined with `--platform`, `--project`, `--status`, `--dry-run`, `--list-platforms`, `--always-on` or `--hooks`.
@@ -81,7 +82,8 @@ Pass `--git-ignore` to remove them: MIMRY's `# MIMRY` line and the `.mimry/` lin
 
 ## Diagnosing an install with `doctor`
 
-`mimry doctor` checks that the installed code matches its package, that its dependencies and parsers work, and that the repo's index and caches are intact.
+`mimry doctor` checks that the installed code matches its package, that its dependencies and parsers work, that the repo's index and caches are intact, and that Git's global ignore file lists `.mimry/`.
+A missing `.mimry/` line there is a warning that does not change the exit code, because a repo can be ignored some other way.
 It only reads: it never sets up, indexes, repairs or installs anything, and it uses no network.
 Each problem comes with the command that fixes it.
 It exits 0 when everything is healthy, 1 when the repo is not set up or its index is out of date, and 2 when the install, a parser, the root or the index is broken.

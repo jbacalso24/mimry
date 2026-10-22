@@ -686,7 +686,14 @@ def run_preflight(a):
     if not ptr:
         init_ran = True
         init_status = run_init(
-            SimpleNamespace(root=str(root), root_type="repo", skip_graph=True, quiet=True)
+            SimpleNamespace(
+                root=str(root),
+                root_type="repo",
+                skip_graph=True,
+                quiet=True,
+                # Implicit setup skips Git's global ignore file.
+                no_global_gitignore=True,
+            )
         )
         if init_status != 0:
             return init_status

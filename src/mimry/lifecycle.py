@@ -19,7 +19,7 @@ from .core.languages import NESTING_LEVEL_LIMIT, is_network_failure
 from .freshness import index_freshness
 from .indexer import write_index
 from .install_info import repair_command
-from .installer import _LEGACY_BLOCK_PATTERNS
+from .installer import _LEGACY_BLOCK_PATTERNS, add_global_ignore
 from .paths import graph_output_dir, idx_path, mdir, now, output_dir, pointer_file
 from .scanner import _git_output, is_linked_worktree, size_limit_text, worktree_fingerprint
 from .security import safe_root
@@ -132,6 +132,7 @@ def drop_legacy_output_line(root: Path) -> bool:
 
 def run_init(a):
     root = Path(a.root).resolve()
+    opted_out = getattr(a, "no_global_gitignore", False)
     safe_root(root)
     validated_cache_home(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -144,6 +145,8 @@ def run_init(a):
         # Reconcile stale path/root-ID aliases in the global registry
         # from the authoritative root-local pointer.
         register_root(existing)
+        # Global ignore first, so a covered repo keeps its .gitignore.
+        add_global_ignore(opted_out=opted_out)
         gitignore_updated = ensure_mimry_gitignore(root)
         legacy_dropped = drop_legacy_output_line(root)
         ui.ok(f"MIMRY is already set up for {root_name(root)}")
@@ -153,6 +156,8 @@ def run_init(a):
             ui.detail("Added .mimry/ to .gitignore")
         ui.detail("Run `mimry status` to check the index.")
         return 0
+    # Global ignore first, so a covered repo keeps its .gitignore.
+    add_global_ignore(opted_out=opted_out)
     gitignore_updated = ensure_mimry_gitignore(root)
     legacy_dropped = drop_legacy_output_line(root)
     rid = str(uuid.uuid4())
@@ -286,7 +291,14 @@ def _set_up_new_worktree(root: Path) -> dict | None:
     if main == top or pointer_file(top).is_file() or not pointer_file(main).is_file():
         return None
     init_status = run_init(
-        SimpleNamespace(root=str(top), root_type="repo", skip_graph=True, quiet=True)
+        SimpleNamespace(
+            root=str(top),
+            root_type="repo",
+            skip_graph=True,
+            quiet=True,
+            # Implicit setup skips Git's global ignore file.
+            no_global_gitignore=True,
+        )
     )
     if init_status != 0:
         return None

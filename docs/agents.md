@@ -29,9 +29,11 @@ A `--no-mcp` install remembers that choice, so `--status` shows the MCP server a
 A later `mimry install` without `--no-mcp` registers the server and clears the choice.
 The agent starts its own `mimry-mcp` when a session begins and stops it when the session ends.
 
-`mimry install` also adds `.mimry/` to Git's global ignore file, once per machine.
+`mimry install`, `mimry install --refresh` (which `mimry upgrade` runs) and `mimry init` add `.mimry/` to Git's global ignore file when that line is missing, once per machine.
 That file is `core.excludesFile` when it is set, otherwise `$XDG_CONFIG_HOME/git/ignore` or `~/.config/git/ignore`.
-Pass `--no-global-gitignore` to leave it alone.
+Pass `--no-global-gitignore` to install or init, or set `MIMRY_NO_GLOBAL_GITIGNORE`, to leave it alone.
+In a Git repository where that file cannot be written, `mimry init` adds `.mimry/` to the repo's `.gitignore` instead.
+`mimry doctor` warns when the line is missing and prints `mimry install --refresh` as the fix.
 `mimry uninstall --git-ignore` removes those lines again.
 
 ## OpenCode

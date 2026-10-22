@@ -42,6 +42,7 @@ _SCOPE = [
     "agent skill and MCP registrations, read from their config files",
     "tree-sitter parser construction",
     "root pointer, active index generation, freshness, graph, and semantic cache",
+    "Git's global ignore file, for `.mimry/`",
 ]
 _NOT_CHECKED = [
     "network access, credentials, or remote services",
@@ -475,6 +476,43 @@ def _registrations_check(root: Path) -> dict[str, Any]:
     )
 
 
+def _global_ignore_check() -> dict[str, Any]:
+    """Whether Git's global ignore file lists .mimry/.
+
+    A repo then needs no .mimry/ line in its own .gitignore.
+    """
+    skipped = "Git's global ignore file was not checked"
+    if installer.global_ignore_opted_out():
+        return _check(
+            "git.global_ignore", "skipped", f"{skipped}: MIMRY_NO_GLOBAL_GITIGNORE is set"
+        )
+    if shutil.which("git") is None:
+        return _check("git.global_ignore", "skipped", f"{skipped}: Git is not on PATH")
+    path = installer._global_ignore_path(warn=False)
+    if path is None:
+        return _check("git.global_ignore", "skipped", f"{skipped}: Git could not say where it is")
+    shown = _display(path)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    except (OSError, UnicodeDecodeError):
+        return _check(
+            "git.global_ignore",
+            "warning",
+            f"Git's global ignore file could not be read: {shown}",
+            "Check that the file is readable, then run `mimry install --refresh`.",
+        )
+    if ".mimry/" in {line.strip() for line in lines}:
+        return _check(
+            "git.global_ignore", "ok", f"`.mimry/` is in Git's global ignore file: {shown}"
+        )
+    return _check(
+        "git.global_ignore",
+        "warning",
+        f"`.mimry/` is not in Git's global ignore file: {shown}",
+        "Run `mimry install --refresh` to add it.",
+    )
+
+
 def _embeddings_check() -> dict[str, Any]:
     """The optional embedding signal (#250).
 
@@ -733,16 +771,21 @@ def doctor_report(root: Path, *, verify: bool = False) -> dict[str, Any]:
         _path_check(),
         _servers_check(),
         _registrations_check(root),
+        _global_ignore_check(),
         _parser_check(),
         _embeddings_check(),
         *_root_checks(root, verify=verify),
     ]
-    # Install-only warnings (two mimry executables on PATH) are listed
-    # but do not set the status or the exit code.
+    # Install-only warnings (two mimry executables on PATH) and the
+    # machine's global ignore file are listed but do not set the status
+    # or the exit code: a repo can be healthy without that line.
     scored = [
         check
         for check in checks
-        if not (check["status"] == "warning" and check["id"].startswith("installation."))
+        if not (
+            check["status"] == "warning"
+            and check["id"].startswith(("installation.", "git.global_ignore"))
+        )
     ]
     statuses = {check["status"] for check in scored}
     status = "error" if "error" in statuses else "warning" if "warning" in statuses else "ok"

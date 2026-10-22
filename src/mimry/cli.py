@@ -99,14 +99,20 @@ def build_parser():
         "init",
         help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees",
         description=(
-            "Set up MIMRY for this repo: create the .mimry/ folder, add it to .gitignore, and"
-            " keep the index outside the repo. Run `mimry index` next to build the index."
+            "Set up MIMRY for this repo: create the .mimry/ folder, ignore it in Git (in Git's"
+            " global ignore file, or in .gitignore when that file cannot be written), and keep"
+            " the index outside the repo. Run `mimry index` next to build the index."
         ),
     )
     s.add_argument(
         "--root-type",
         default="repo",
         help="Folder type recorded for this root (default: repo). Nothing else reads it yet",
+    )
+    s.add_argument(
+        "--no-global-gitignore",
+        action="store_true",
+        help="Do not add .mimry/ to Git's global ignore file; write it to .gitignore instead",
     )
     # init never builds the graph; accepted for old scripts.
     s.add_argument(
