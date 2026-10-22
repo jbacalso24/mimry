@@ -1,6 +1,6 @@
 {
   "name": "mimry",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Finds the files a coding task touches, so your AI agent reads less. Local CLI and MCP server.",
   "homepage": "https://github.com/jbacalso24/mimry",
   "repository": "https://github.com/jbacalso24/mimry",
