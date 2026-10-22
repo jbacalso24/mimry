@@ -273,7 +273,9 @@ _AUTH_HEADER_START = r"(?:Proxy-)?Authorization[ \t\x00]*:"
 # ``authorization: Token = None``.
 _AUTH_VALUE = (
     rf"(?!{_AUTH_HEADER_START})(?!(?:{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-]))"
-    r"[^\s\x00\"'`{}<>,;()\[\]\\$|=]"
+    # A braced word starts a value, as ``{token}`` or ``{tomato42}``, so
+    # a scheme before it is not read as the value (#608).
+    r"(?:\{[A-Za-z0-9_.-]{1,200}\}|[^\s\x00\"'`{}<>,;()\[\]\\$|=])"
     rf"(?:(?!{_AUTH_HEADER_START})[^\s\"'`{{}}<>,;()\[\]\\$|])*"
 )
 _AUTH_HEADER_VALUE_RE = re.compile(
@@ -716,24 +718,48 @@ _SPACED_WORDS_RE = re.compile(r"\w[ \t]+\w")
 # not start a string.
 _TYPE_RE = re.compile(
     r"(?:[A-Za-z_]\w*\.)*(?P<name>[A-Za-z_]\w*)(?P<args>\[[^\[\]\r\n]{0,200}\])?"
+    r"(?P<nullable>\?)?"
 )
 _QUOTED_TYPE_RE = re.compile(r"(?P<quote>[\"'])(?P<body>[^\"'\r\n]{0,200})(?P=quote)")
+# The builtin and standard names of the languages that write a type
+# after a colon or before one: Python, TypeScript, Kotlin, Swift, Java
+# and C# (#608).
 _BUILTIN_TYPE_NAMES = frozenset(
-    "str string int float bool boolean bytes number any object None".split()
+    """str string int float bool boolean bytes number any object None
+    String Int Long Double Float Boolean Bool Any Object Unit""".split()
 )
 _GENERIC_TYPE_NAMES = frozenset({"Optional", "Union", "list", "dict"})
-_TYPE_ENDS_RE = re.compile(r"[ \t]*(?:[,)]|->|=(?![=>])(?![ \t]*[\"'`]))")
-# A subscript with a quoted key, as in
-# ``request.headers["Authorization"]`` or
-# ``req.headers['authorization']``, is a lookup in any text. A dotted
-# attribute, as in ``req.headers.authorization``, is one only in parsed
-# source: in config text, ``KEY=tomato.canary`` is a value. Keys are
-# bounded, so the scan stays linear on long lines.
-_SUBSCRIPT_LOOKUP_RE = re.compile(
-    r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*"
-    r"(?:\[[ \t]*(?:\"[^\"\r\n]{0,200}\"|'[^'\r\n]{0,200}')[ \t]*\])+"
+# A type ends at a comma, a closing bracket, ``;``, ``->``, an ``=``
+# that does not start a string, or the end of its line (#608).
+_TYPE_ENDS_RE = re.compile(r"[ \t]*(?:[,);]|->|=(?![=>])(?![ \t]*[\"'`])|\r|\n|\Z)")
+# A receiver and a quoted key, as in ``request.headers["X-Custom"]`` or
+# ``req.headers['authorization']``, is a lookup in any text (#608). A
+# call is a lookup only when its method is a getter, as in
+# ``request.getHeader("Authorization")``, ``req.headers().get("x")`` or
+# Swift ``req.value(forHTTPHeaderField: "x")``: one quoted argument and
+# an optional empty default. ``decrypt("...")`` is not one. A receiver
+# may be called, as in ``req.headers()``, and a PHP variable keeps its
+# ``$``. Keys are bounded, so the scan stays linear on long lines.
+_LOOKUP_RECEIVER_RE = re.compile(r"\$?(?:[A-Za-z_]\w*(?:\(\))?\.)*(?P<method>[A-Za-z_]\w*)")
+_LOOKUP_GETTERS = frozenset(
+    {"get", "getheader", "get_header", "header", "getenv", "getpass", "value"}
 )
+_SUBSCRIPT_KEY_RE = re.compile(r"\[[ \t]*(?P<key>\"[^\"\r\n]{1,200}\"|'[^'\r\n]{1,200}')[ \t]*\]")
+_CALL_KEY_RE = re.compile(
+    r"\((?:[ \t]*[A-Za-z_]\w*:)?[ \t]*(?P<key>\"[^\"\r\n]{1,200}\"|'[^'\r\n]{1,200}')"
+    r"(?:[ \t]*,[ \t]*(?:\"\"|''|None))?[ \t]*\)"
+)
+# A dotted attribute, as in ``req.headers.authorization``, is a lookup
+# only in parsed source: in config text, ``KEY=tomato.canary`` is a
+# value.
 _ATTRIBUTE_LOOKUP_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+")
+# A single-brace word is a placeholder, as ``{token}`` is. Digits make
+# it a value, as in ``{tomatocanary42}`` (#608).
+_BRACED_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_][A-Za-z_-]*\}")
+# A path after the header, as ``docs/auth-headers.md`` or
+# ``src/mimry/security.py``: a value with a slash that ends in a file
+# extension is a file name, not a credential (#608).
+_AUTH_PATH_RE = re.compile(r"[\w.~-]*(?:/[\w.~-]+)+\.[A-Za-z][A-Za-z0-9]{0,7}")
 # A scheme and a placeholder that is the whole value, as in
 # ``Bearer <TOKEN>`` or ``Bearer ${TOKEN}``: kept, as ``<token>`` is.
 _SCHEME_PLACEHOLDER_RE = re.compile(
@@ -1043,7 +1069,9 @@ def _is_known_type(expression: str) -> bool:
     if match is None:
         return False
     if match["args"] is None:
-        return expression == match["name"] and match["name"] in _BUILTIN_TYPE_NAMES
+        # ``String?`` is the nullable form of a builtin, as in Kotlin.
+        bare = expression[:-1] if match["nullable"] else expression
+        return bare == match["name"] and match["name"] in _BUILTIN_TYPE_NAMES
     return match["name"] in _GENERIC_TYPE_NAMES
 
 
@@ -1076,10 +1104,17 @@ def _is_lookup(text: str, start: int, *, code: bool) -> bool:
     dotted attribute is code only in parsed source (``code``), never in
     config text (#596).
     """
-    lookup = _SUBSCRIPT_LOOKUP_RE.match(text, start)
-    if lookup is None and code:
-        lookup = _ATTRIBUTE_LOOKUP_RE.match(text, start)
-    return lookup is not None and _VALUE_END_RE.match(text, lookup.end()) is not None
+    receiver = _LOOKUP_RECEIVER_RE.match(text, start)
+    if receiver is not None:
+        key = _SUBSCRIPT_KEY_RE.match(text, receiver.end())
+        if key is None and receiver["method"].lower() in _LOOKUP_GETTERS:
+            key = _CALL_KEY_RE.match(text, receiver.end())
+        if key is not None and _VALUE_END_RE.match(text, key.end()) is not None:
+            return True
+    if code:
+        attribute = _ATTRIBUTE_LOOKUP_RE.match(text, start)
+        return attribute is not None and _VALUE_END_RE.match(text, attribute.end()) is not None
+    return False
 
 
 def _value_is_credential(
@@ -1151,6 +1186,8 @@ def _value_is_credential(
         return _value_is_credential(text, rhs, rhs_value, "=", label, code=code, scanner=scanner)
     if _is_type_annotation(text, start, operator) or _is_lookup(text, start, code=code):
         return False  # ``authorization: str)`` or ``req.headers["Authorization"]``: code
+    if _AUTH_PATH_RE.fullmatch(candidate) and _AUTH_LABEL_RE.fullmatch(label):
+        return False  # ``Authorization: docs/auth-headers.md``: a file name (#608)
     if code:
         return candidate[0] != ":" and _code_value_is_credential(
             text, start, operator, label, scanner
@@ -1744,8 +1781,11 @@ def _spaced_assignment_value_is_sensitive(
     # A label with a space in it (``api key: ...``) only occurs in
     # comments and prose.
     code = code and not any(char.isspace() for char in label)
-    if match.group("separator").strip(" \t") in COMPARISON_OPERATORS:
+    separator = match.group("separator").strip(" \t")
+    if separator in COMPARISON_OPERATORS:
         return _comparison_is_credential(match.string, match.start("value"), code=code)
+    if _is_type_annotation(match.string, match.start("value"), separator):
+        return False  # ``def check(api_key: str) -> bool:``: a typed parameter (#608)
     return _value_is_credential(
         match.string,
         match.start("value"),
@@ -2420,6 +2460,10 @@ def _auth_value_is_credential(
     """
     if inside is not None:
         return not _auth_call_is_placeholder(inside)  # an encoder call (#607)
+    if value.startswith("{"):
+        return _BRACED_PLACEHOLDER_RE.fullmatch(value) is None  # ``{token}`` (#608)
+    if _AUTH_PATH_RE.fullmatch(value) is not None:
+        return False  # ``docs/auth-headers.md``: a file name (#608)
     if (
         not _text_is_credential(value)
         or value.lower() in _AUTH_PROSE_WORDS
