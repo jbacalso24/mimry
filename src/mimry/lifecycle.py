@@ -19,7 +19,7 @@ from .core.languages import NESTING_LEVEL_LIMIT, is_network_failure
 from .freshness import index_freshness
 from .indexer import write_index
 from .install_info import repair_command
-from .installer import _LEGACY_BLOCK_PATTERNS, add_global_ignore
+from .installer import _LEGACY_BLOCK_PATTERNS, add_global_ignore, record_global_ignore_opt_out
 from .paths import graph_output_dir, idx_path, mdir, now, output_dir, pointer_file
 from .scanner import _git_output, is_linked_worktree, size_limit_text, worktree_fingerprint
 from .security import safe_root
@@ -145,8 +145,10 @@ def run_init(a):
         # Reconcile stale path/root-ID aliases in the global registry
         # from the authoritative root-local pointer.
         register_root(existing)
+        if opted_out:
+            record_global_ignore_opt_out(root)
         # Global ignore first, so a covered repo keeps its .gitignore.
-        add_global_ignore(opted_out=opted_out)
+        add_global_ignore(opted_out=opted_out, root=root)
         gitignore_updated = ensure_mimry_gitignore(root)
         legacy_dropped = drop_legacy_output_line(root)
         ui.ok(f"MIMRY is already set up for {root_name(root)}")
@@ -157,7 +159,7 @@ def run_init(a):
         ui.detail("Run `mimry status` to check the index.")
         return 0
     # Global ignore first, so a covered repo keeps its .gitignore.
-    add_global_ignore(opted_out=opted_out)
+    add_global_ignore(opted_out=opted_out, root=root)
     gitignore_updated = ensure_mimry_gitignore(root)
     legacy_dropped = drop_legacy_output_line(root)
     rid = str(uuid.uuid4())
@@ -178,6 +180,8 @@ def run_init(a):
         mdir(root) / "config.toml",
         'version = "0.1.0"\nroot_type = "repo"\nstore_full_text = false\n',
     )
+    if opted_out:
+        record_global_ignore_opt_out(root)
     atomic_write_text(
         mdir(root) / "AGENT_RULES.md",
         "# MIMRY Agent Rules\n\nStart every task with MIMRY instead of exploring the repo by grep."

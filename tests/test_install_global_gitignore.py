@@ -159,10 +159,10 @@ def test_unreadable_file_warns_and_install_still_succeeds(home, capsys):
 def test_write_failure_warns_with_the_lines_to_add_by_hand(home, monkeypatch, capsys):
     real_atomic_write = installer._atomic_write
 
-    def refuse_the_ignore_file(path, content):
+    def refuse_the_ignore_file(path, content, **kwargs):
         if path.name == "ignore":
             raise PermissionError(13, "Permission denied")
-        real_atomic_write(path, content)
+        real_atomic_write(path, content, **kwargs)
 
     monkeypatch.setattr(installer, "_atomic_write", refuse_the_ignore_file)
 
@@ -192,3 +192,132 @@ def test_mimry_init_in_a_fresh_repo_leaves_git_status_clean(home, tmp_path):
     assert status == ""
     assert not (repo / ".gitignore").exists()
     assert (repo / ".mimry").is_dir()
+
+
+@pytest.mark.parametrize("pattern", [".mimry", "/.mimry/", "**/.mimry/"])
+def test_equivalent_patterns_are_not_appended_and_doctor_accepts_them(home, pattern):
+    from mimry.doctor import _global_ignore_check
+
+    path = _default_file(home)
+    path.parent.mkdir(parents=True)
+    original = (pattern + "\n").encode("utf-8")
+    path.write_bytes(original)
+    _install()
+    assert path.read_bytes() == original
+    assert _global_ignore_check()["status"] == "ok"
+
+
+@pytest.mark.parametrize("ending", [b"\n", b"\r\n"])
+def test_appending_keeps_existing_line_endings(home, ending):
+    path = _default_file(home)
+    path.parent.mkdir(parents=True)
+    original = ending.join([b"# user patterns", b"node_modules/", b""])
+    path.write_bytes(original)
+    _install()
+    assert path.read_bytes() == original + ending.join([b"# MIMRY", b".mimry/", b""])
+
+
+def test_atomic_write_does_not_translate_newlines_on_windows(home, monkeypatch):
+    from pathlib import Path
+
+    original = Path.write_text
+
+    def windows_write(path, data, *args, **kwargs):
+        if kwargs.get("newline") is None:
+            data = data.replace("\n", "\r\n")
+        kwargs["newline"] = ""
+        return original(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", windows_write)
+    _install()
+    assert _default_file(home).read_bytes() == GLOBAL_LINES.encode("utf-8")
+
+
+def test_atomic_write_preserves_crlf_for_always_on_files_on_windows(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    original = Path.write_text
+
+    def windows_write(path, data, *args, **kwargs):
+        if kwargs.get("newline") is None:
+            data = data.replace("\n", "\r\n")
+        kwargs["newline"] = ""
+        return original(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", windows_write)
+    agents = tmp_path / "AGENTS.md"
+    existing = "# Team rules\r\nKeep the existing line endings.\r\n"
+    agents.write_bytes(existing.encode())
+
+    installer._atomic_write(agents, agents.read_text(encoding="utf-8") + "## MIMRY\n")
+
+    assert agents.read_bytes() == (existing + "## MIMRY\r\n").encode()
+
+
+def test_init_opt_out_survives_doctor_reinit_and_refresh(home, tmp_path, monkeypatch):
+    from mimry.doctor import _global_ignore_check
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(installer, "_refuse_throwaway_path_mismatch", lambda: None)
+    assert main(["--root", str(repo), "init", "--skip-graph", "--no-global-gitignore"]) == 0
+    assert _global_ignore_check(repo)["status"] == "skipped"
+    assert main(["--root", str(repo), "init", "--skip-graph"]) == 0
+    assert main(["--root", str(repo), "install", "--refresh"]) == 0
+    assert not _default_file(home).exists()
+
+
+@pytest.mark.parametrize(
+    "key", ["no_global_gitignore", '"no_global_gitignore"', "'no_global_gitignore'"]
+)
+def test_recording_opt_out_preserves_comments_tables_and_line_endings(
+    home, tmp_path, key, monkeypatch
+):
+    import tomllib
+    from pathlib import Path
+
+    original_write = Path.write_text
+
+    def windows_write(path, data, *args, **kwargs):
+        if kwargs.get("newline") is None:
+            data = data.replace("\n", "\r\n")
+        kwargs["newline"] = ""
+        return original_write(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", windows_write)
+
+    root = tmp_path / "repo"
+    config = root / ".mimry" / "config.toml"
+    config.parent.mkdir(parents=True)
+    original = (
+        "# user [settings]\r\n" + key + " = false # preference\r\n"
+        "store_full_text = false\r\n[custom]\r\nno_global_gitignore = false\r\n"
+    ).encode("utf-8")
+    config.write_bytes(original)
+    installer.record_global_ignore_opt_out(root)
+    expected = original.replace(b"= false # preference", b"= true # preference")
+    assert config.read_bytes() == expected
+    assert tomllib.loads(expected.decode())["custom"]["no_global_gitignore"] is False
+    installer.record_global_ignore_opt_out(root)
+    assert config.read_bytes() == expected
+    nested = root / "src"
+    nested.mkdir()
+    installer.add_global_ignore(root=nested)
+    assert not _default_file(home).exists()
+    config.write_bytes(original)
+    installer.add_global_ignore(root=nested)
+    assert _default_file(home).read_bytes() == GLOBAL_LINES.encode()
+
+
+def test_environment_opt_out_is_not_recorded_by_init(home, tmp_path, monkeypatch):
+    import tomllib
+
+    root = tmp_path / "repo"
+    monkeypatch.setenv("MIMRY_NO_GLOBAL_GITIGNORE", "1")
+    assert main(["--root", str(root), "init", "--skip-graph"]) == 0
+    config = tomllib.loads((root / ".mimry" / "config.toml").read_text(encoding="utf-8"))
+    assert "no_global_gitignore" not in config
+    assert not _default_file(home).exists()
+    monkeypatch.delenv("MIMRY_NO_GLOBAL_GITIGNORE")
+    assert main(["--root", str(root), "init", "--skip-graph"]) == 0
+    assert _default_file(home).read_bytes() == GLOBAL_LINES.encode()
