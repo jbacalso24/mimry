@@ -79,6 +79,13 @@ MIMRY does not list the files it skipped as sensitive anywhere.
 
 A file that holds a real secret stays out of the index on purpose.
 Remove the secret from the file, or keep the file out of the repository.
+
+Documentation can use credential examples such as
+`api_key: <your-api-key>`, `password: [your password]`, masked `xxxxxxxx`
+values, or `${DB_PASSWORD}` references without losing the whole document.
+An `input('Password: ')` prompt and an Authorization scheme with no
+credential are also kept. A literal credential in the same document still
+causes it to be skipped; placeholders do not exempt the rest of the file.
 If the file holds no real secret, open an issue that describes the file type.
 For a file that could not be read, make sure your user can read it, then run `mimry reindex`.
 

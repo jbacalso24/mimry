@@ -687,6 +687,13 @@ _PLACEHOLDER_RE = re.compile(r"[*.xX]{3,}|<[^<>\r\n]+>")
 # An unquoted angle-bracket placeholder with a space in it, as in
 # ``<your key here>``.
 _SPACED_PLACEHOLDER_RE = re.compile(r"<[^<>]*\s[^<>]*>")
+# Bracketed documentation names, not an array of quoted values.
+_DOC_BRACKET_PLACEHOLDER_RE = re.compile(r"\[([A-Za-z][A-Za-z _-]*)\]")
+# input's argument is a prompt; the returned value is supplied at run
+# time. A literal fallback after the call is still judged separately.
+_INPUT_PROMPT_RE = re.compile(
+    r"""input\([ \t]*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*')?[ \t]*\)"""
+)
 # An environment lookup, up to the name it looks up.
 _ENV_LOOKUP_RE = re.compile(
     r"(?:process\.env|import\.meta\.env)\.[A-Za-z_]\w*"
@@ -1197,6 +1204,18 @@ def _value_is_credential(
         return candidate[0] != ":" and _code_value_is_credential(
             text, start, operator, label, scanner
         )
+    bracket = _DOC_BRACKET_PLACEHOLDER_RE.fullmatch(candidate)
+    if _PLACEHOLDER_RE.fullmatch(candidate) or (
+        bracket and all(_auth_doc_word(part) for part in re.split(r"[ _-]+", bracket[1].strip()))
+    ):
+        return False
+    prompt = _INPUT_PROMPT_RE.match(text, start)
+    if prompt and _VALUE_END_RE.match(text, prompt.end()):
+        return False
+    if _AUTH_LABEL_RE.fullmatch(label) and candidate.lower() in (
+        _AUTH_PROSE_WORDS | _KNOWN_AUTH_SCHEMES_LOWER
+    ):
+        return False
     literal = _STRING_LITERAL_RE.match(text, start)
     if literal:
         if literal["literal"][:3] in ('"""', "'''"):
