@@ -144,14 +144,14 @@ def test_init_adds_the_line_globally_and_leaves_the_repo_gitignore_alone(home, t
     assert _check_ignored(repo, ".mimry/pointer.json")
 
 
-def test_init_again_adds_the_line_to_an_existing_setup(home, tmp_path):
+def test_init_again_preserves_the_recorded_opt_out(home, tmp_path):
     repo = _repo(tmp_path)
     assert _init(repo, "--no-global-gitignore") == 0
     assert not _default_file(home).exists()
 
     assert _init(repo) == 0
 
-    assert _default_file(home).read_text(encoding="utf-8") == GLOBAL_LINES
+    assert not _default_file(home).exists()
     assert (repo / ".gitignore").read_text(encoding="utf-8") == ".mimry/\n"
 
 
@@ -179,10 +179,10 @@ def test_init_falls_back_to_the_repo_line_when_the_global_file_cannot_be_written
 ):
     real_atomic_write = installer._atomic_write
 
-    def refuse_the_ignore_file(path, content):
+    def refuse_the_ignore_file(path, content, **kwargs):
         if path.name == "ignore":
             raise PermissionError(13, "Permission denied")
-        real_atomic_write(path, content)
+        real_atomic_write(path, content, **kwargs)
 
     monkeypatch.setattr(installer, "_atomic_write", refuse_the_ignore_file)
     repo = _repo(tmp_path)

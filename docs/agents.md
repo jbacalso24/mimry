@@ -32,6 +32,9 @@ The agent starts its own `mimry-mcp` when a session begins and stops it when the
 `mimry install`, `mimry install --refresh` (which `mimry upgrade` runs) and `mimry init` add `.mimry/` to Git's global ignore file when that line is missing, once per machine.
 That file is `core.excludesFile` when it is set, otherwise `$XDG_CONFIG_HOME/git/ignore` or `~/.config/git/ignore`.
 Pass `--no-global-gitignore` to install or init, or set `MIMRY_NO_GLOBAL_GITIGNORE`, to leave it alone.
+`mimry init --no-global-gitignore` records `no_global_gitignore = true` in that root's `.mimry/config.toml`; later init, install and refresh runs in the root or its subdirectories respect it, and doctor reports the check as skipped.
+Set that root setting to `false` to allow updates again; the environment variable and the install flag remain temporary opt-outs.
+Existing `.mimry`, `/.mimry/` and `**/.mimry/` entries also count as coverage, and appending preserves the file's existing LF or CRLF line endings.
 In a Git repository where that file cannot be written, `mimry init` adds `.mimry/` to the repo's `.gitignore` instead.
 `mimry doctor` warns when the line is missing and prints `mimry install --refresh` as the fix.
 `mimry uninstall --git-ignore` removes those lines again.

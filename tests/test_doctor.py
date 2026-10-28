@@ -64,7 +64,7 @@ def _stub_host_checks(monkeypatch) -> None:
     monkeypatch.setattr(
         doctor,
         "_global_ignore_check",
-        lambda: doctor._check(
+        lambda root=None: doctor._check(
             "git.global_ignore", "ok", "`.mimry/` is in Git's global ignore file"
         ),
     )

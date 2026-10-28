@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -906,11 +907,11 @@ Rules:
 """  # noqa: E501 - Markdown written verbatim; its line breaks are content
 
 
-def _atomic_write(path: Path, content: str) -> None:
+def _atomic_write(path: Path, content: str, *, newline: str | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     try:
-        tmp.write_text(content, encoding="utf-8")
+        tmp.write_text(content, encoding="utf-8", newline=newline)
         replace_path(tmp, path)
     except OSError:
         with contextlib.suppress(OSError):
@@ -2233,6 +2234,47 @@ _LEGACY_BLOCK_PATTERNS = ("mimry-out/",)
 _GLOBAL_IGNORE_MARKER = "# MIMRY"
 
 
+def global_ignore_covers_mimry(lines: list[str]) -> bool:
+    return bool({line.strip() for line in lines} & {".mimry/", ".mimry", "/.mimry/", "**/.mimry/"})
+
+
+def _global_ignore_config(root: Path) -> Path:
+    root = root.expanduser().resolve()
+    for parent in (root, *root.parents):
+        config = parent / ".mimry" / "config.toml"
+        if config.is_file():
+            return config
+    return root / ".mimry" / "config.toml"
+
+
+def record_global_ignore_opt_out(root: Path) -> None:
+    """Record an init choice without replacing other root settings."""
+    config = root / ".mimry" / "config.toml"
+    existing = config.read_bytes().decode("utf-8") if config.exists() else ""
+    try:
+        data = tomllib.loads(existing)
+    except tomllib.TOMLDecodeError:
+        ui.warn("Could not save the global Git ignore choice: .mimry/config.toml is invalid TOML")
+        return
+    if data.get("no_global_gitignore") is True:
+        return
+    # Only the top-level key controls this setting.
+    parts = re.split(r"(?m)(?=^[ \t]*\[)", existing, maxsplit=1)
+    preamble, tables = parts[0], "".join(parts[1:])
+    if "no_global_gitignore" in data:
+        preamble = re.sub(
+            r"(?m)^([ \t]*"
+            r"""(?:no_global_gitignore|"no_global_gitignore"|'no_global_gitignore')"""
+            r"[ \t]*=[ \t]*)false\b",
+            r"\g<1>true",
+            preamble,
+        )
+    else:
+        newline = "\r\n" if "\r\n" in existing else "\n"
+        preamble = "no_global_gitignore = true" + newline + preamble
+    _atomic_write(config, preamble + tables, newline="")
+
+
 def _global_ignore_path(*, warn: bool = True) -> Path | None:
     """The file Git reads as its global excludes, or None when Git
     cannot say. Asks Git first so a custom core.excludesFile is
@@ -2274,20 +2316,24 @@ def _add_global_ignore(*, dry_run: bool) -> None:
         return
     shown = ui.display_path(path)
     try:
-        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        existing = path.read_bytes().decode("utf-8") if path.exists() else ""
     except (OSError, UnicodeDecodeError) as exc:
         ui.warn(f"Could not read {shown}: {exc}")
         return
-    have = {line.strip() for line in existing.splitlines()}
-    missing = [pattern for pattern in _GLOBAL_IGNORE_PATTERNS if pattern not in have]
-    if not missing:
+    if global_ignore_covers_mimry(existing.splitlines()):
         return
+    missing = list(_GLOBAL_IGNORE_PATTERNS)
     if dry_run:
         ui.detail(f"Would add MIMRY to the global git ignore: {shown}")
         return
-    lead = "" if not existing or existing.endswith("\n") else "\n"
+    newline = "\r\n" if "\r\n" in existing else "\n"
+    lead = "" if not existing or existing.endswith("\n") else newline
     try:
-        _atomic_write(path, existing + lead + "\n".join([_GLOBAL_IGNORE_MARKER, *missing]) + "\n")
+        _atomic_write(
+            path,
+            existing + lead + newline.join([_GLOBAL_IGNORE_MARKER, *missing]) + newline,
+            newline="",
+        )
     except OSError as exc:
         ui.warn(f"Could not write {shown}: {exc.strerror or exc}")
         ui.detail(f"Add these lines to it by hand: {', '.join(missing)}")
@@ -2295,19 +2341,28 @@ def _add_global_ignore(*, dry_run: bool) -> None:
     ui.ok(f"Added MIMRY to the global git ignore: {shown}")
 
 
-def global_ignore_opted_out(flag: bool = False) -> bool:
-    """True when the caller's flag or MIMRY_NO_GLOBAL_GITIGNORE says to
-    leave Git's global ignore file alone."""
-    return flag or bool(os.environ.get("MIMRY_NO_GLOBAL_GITIGNORE"))
+def global_ignore_opted_out(flag: bool = False, *, root: Path | None = None) -> bool:
+    """Whether the flag, environment or root setting opts out."""
+    if flag or os.environ.get("MIMRY_NO_GLOBAL_GITIGNORE"):
+        return True
+    if root is None:
+        return False
+    try:
+        data = tomllib.loads(_global_ignore_config(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return data.get("no_global_gitignore") is True
 
 
-def add_global_ignore(*, dry_run: bool = False, opted_out: bool = False) -> None:
+def add_global_ignore(
+    *, dry_run: bool = False, opted_out: bool = False, root: Path | None = None
+) -> None:
     """Add MIMRY's lines to Git's global ignore file when they are
     missing, unless opted out.
 
     Install, refresh (and so upgrade) and init all come through here.
     """
-    if global_ignore_opted_out(opted_out):
+    if global_ignore_opted_out(opted_out, root=root):
         return
     _add_global_ignore(dry_run=dry_run)
 
@@ -2499,7 +2554,7 @@ def _refresh_command(a) -> int:
         return 1
     # Before the early return below: the Claude Code plugin never runs
     # install, so a refresh with no skill installed restores the line.
-    add_global_ignore(opted_out=getattr(a, "no_global_gitignore", False))
+    add_global_ignore(opted_out=getattr(a, "no_global_gitignore", False), root=Path(a.root))
     if not found:
         ui.ok("No MIMRY skills are installed")
         return 0
@@ -2549,7 +2604,9 @@ def cmd_install(a) -> int:
     )
     # Once per run, after the install itself, so a refused install
     # leaves the machine's git ignore file alone.
-    add_global_ignore(dry_run=a.dry_run, opted_out=getattr(a, "no_global_gitignore", False))
+    add_global_ignore(
+        dry_run=a.dry_run, opted_out=getattr(a, "no_global_gitignore", False), root=Path(a.root)
+    )
     return 0
 
 
