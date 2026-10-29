@@ -369,6 +369,106 @@ def _initialized_repo(tmp_path: Path):
     return repo, cache
 
 
+@pytest.mark.parametrize("deleted", ["generation", "root_cache"])
+def test_deleted_generation_is_missing_and_cli_can_rebuild(tmp_path, monkeypatch, deleted):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    pointer = load_pointer(repo)
+    generation = Path(pointer["indexPath"])
+    shutil.rmtree(generation if deleted == "generation" else generation.parent.parent)
+
+    assert load_pointer(repo) == pointer
+    assert index_freshness(repo, pointer)["state"] == "missing"
+    result = run_cli(repo, cache, "find", "auth")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "damaged index data" not in result.stderr
+    assert index_freshness(repo, load_pointer(repo))["state"] == "current"
+
+
+def test_symbol_rebuilds_a_deleted_generation_before_reporting_matches(tmp_path, monkeypatch):
+    repo = copy_fixture(tmp_path)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Mimry test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index", "--full").returncode == 0
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    shutil.rmtree(Path(load_pointer(repo)["indexPath"]))
+
+    result = run_cli(repo, cache, "symbol", "auth")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "src/auth/middleware.py" in result.stdout
+    status = run_cli(repo, cache, "status")
+    assert status.returncode == 0, status.stdout + status.stderr
+    assert "not indexed" not in status.stdout.lower()
+
+
+def test_mcp_rebuilds_a_deleted_generation(tmp_path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    pointer = load_pointer(repo)
+    shutil.rmtree(Path(pointer["indexPath"]))
+
+    payload = mimry_find("auth", str(repo))
+
+    assert "error" not in payload
+    assert index_freshness(repo, load_pointer(repo))["state"] == "current"
+
+
+@pytest.mark.parametrize("manifest_state", ["missing", "wrong_id"])
+def test_existing_generation_with_a_bad_manifest_is_still_corrupt(
+    tmp_path, monkeypatch, manifest_state
+):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    pointer = load_pointer(repo)
+    manifest_path = Path(pointer["indexPath"]) / state.GENERATION_MANIFEST
+    if manifest_state == "missing":
+        manifest_path.unlink()
+    else:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["generationId"] = "another-generation"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(state.StateCorruptionError):
+        load_pointer(repo)
+    payload = mimry_find("auth", str(repo))
+    assert payload["error"]["code"] == "state_corruption"
+
+
+def test_an_unreadable_generation_is_not_treated_as_missing(tmp_path, monkeypatch):
+    repo, cache = _initialized_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    pointer = load_pointer(repo)
+    generation = Path(pointer["indexPath"])
+    original = Path.lstat
+
+    def denied(path, *args, **kwargs):
+        if path == generation:
+            raise PermissionError("generation is not readable")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", denied)
+    with pytest.raises(PermissionError, match="generation is not readable"):
+        state.validate_generation(pointer)
+
+
 def test_generation_publish_failure_between_artifacts_keeps_previous_generation(
     tmp_path: Path, monkeypatch
 ):

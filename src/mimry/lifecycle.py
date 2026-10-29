@@ -338,7 +338,11 @@ def refresh_if_stale(root: Path, *, include_missing: bool = False) -> dict | Non
     with active_index_pointer(root) as active:
         if active is not None:
             recorded = active.get("worktreeFingerprint")
-            if recorded and recorded == worktree_fingerprint(root):
+            if (
+                recorded
+                and recorded == worktree_fingerprint(root)
+                and (Path(active["indexPath"]) / "generation.json").is_file()
+            ):
                 return None  # git sees the same tree that was indexed
             states = ("stale", "missing") if include_missing else ("stale",)
             if index_freshness(root, active)["state"] not in states:
