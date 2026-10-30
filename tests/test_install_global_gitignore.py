@@ -11,7 +11,7 @@ import pytest
 from mimry import installer
 from mimry.cli import main
 
-GLOBAL_LINES = "# MIMRY\n.mimry/\n"
+GLOBAL_LINES = "".join(f"{line}\n" for line in ("# MIMRY", *installer._global_ignore_patterns()))
 
 
 @pytest.fixture
@@ -58,15 +58,16 @@ def test_existing_file_without_trailing_newline_gets_a_separator(home):
     assert path.read_text(encoding="utf-8") == "node_modules/\n" + GLOBAL_LINES
 
 
-def test_a_file_that_already_lists_mimry_is_left_alone(home, capsys):
+def test_a_file_that_already_lists_mimry_gets_only_the_other_lines(home, capsys):
     path = _default_file(home)
     path.parent.mkdir(parents=True)
     path.write_text(".mimry/\n", encoding="utf-8")
 
     assert _install() == 0
 
-    assert path.read_text(encoding="utf-8") == ".mimry/\n"
-    assert "global git ignore" not in capsys.readouterr().out
+    rest = "".join(f"{line}\n" for line in ("# MIMRY", *installer._global_ignore_patterns()[1:]))
+    assert path.read_text(encoding="utf-8") == ".mimry/\n" + rest
+    assert "Added MIMRY to the global git ignore" in capsys.readouterr().out
 
 
 def test_an_existing_mimry_out_line_is_kept_and_only_mimry_is_added(home):
@@ -203,7 +204,10 @@ def test_equivalent_patterns_are_not_appended_and_doctor_accepts_them(home, patt
     original = (pattern + "\n").encode("utf-8")
     path.write_bytes(original)
     _install()
-    assert path.read_bytes() == original
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == pattern
+    assert ".mimry/" not in [line.strip() for line in lines]
+    assert "**/.claude/settings.local.json" in lines
     assert _global_ignore_check()["status"] == "ok"
 
 
@@ -214,7 +218,7 @@ def test_appending_keeps_existing_line_endings(home, ending):
     original = ending.join([b"# user patterns", b"node_modules/", b""])
     path.write_bytes(original)
     _install()
-    assert path.read_bytes() == original + ending.join([b"# MIMRY", b".mimry/", b""])
+    assert path.read_bytes() == original + GLOBAL_LINES.replace("\n", ending.decode()).encode()
 
 
 def test_atomic_write_does_not_translate_newlines_on_windows(home, monkeypatch):

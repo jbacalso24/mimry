@@ -62,6 +62,10 @@ class MimryPlatform:
 _OLD_MARKER = "0.1.0"
 # Agents without MCP support; the skill alone covers them.
 _NO_MCP = frozenset({"aider", "pi", "agents", "grok"})
+# Hooks used to go in the shared settings.json; installs move them out.
+_LEGACY_HOOK_PATHS = {"claude-code": Path(".claude") / "settings.json"}
+# Agents whose hooks file is per machine: no Git exclude line needed.
+_LOCAL_HOOK_KEYS = frozenset({"claude-code"})
 _PLATFORM_ALIASES = {
     "claude": "claude-code",
     "claude-code": "claude-code",
@@ -337,7 +341,7 @@ def platforms() -> dict[str, MimryPlatform]:
             project_path=skill(".claude"),
             global_path=_claude_global_path(),
             always_on_file=Path("CLAUDE.md"),
-            hook_path=Path(".claude") / "settings.json",
+            hook_path=Path(".claude") / "settings.local.json",
             aliases=("claude", "windows"),
             mcp=McpCli(
                 "claude",
@@ -1119,21 +1123,49 @@ def _has_hook(root: Path, cfg: MimryPlatform) -> bool | None:
     )
 
 
-def _has_any_hook(root: Path, cfg: MimryPlatform) -> bool | None:
-    """True when any MIMRY hook entry is present, under any event; None
-    when the hooks file cannot be read.
+def _legacy_hooks_file(root: Path, cfg: MimryPlatform) -> Path | None:
+    """The settings file MIMRY used for hooks before the hooks file.
 
-    Unlike _has_hook this also sees older or partial installs, so the
-    uninstall hint can point at --hooks for them.
+    None when the agent never had one.
     """
-    path = root / cfg.hook_path if cfg.hook_path else None
-    if not (path and path.exists()):
+    legacy = _LEGACY_HOOK_PATHS.get(cfg.key)
+    return (root / legacy).resolve() if legacy else None
+
+
+def _hook_files(root: Path, cfg: MimryPlatform) -> list[Path]:
+    """Every file MIMRY may hold hooks in.
+
+    The hooks file first, then the legacy file.
+    """
+    if cfg.hook_path is None:
+        return []
+    legacy = _legacy_hooks_file(root, cfg)
+    return [(root / cfg.hook_path).resolve(), *([legacy] if legacy else [])]
+
+
+def _has_mimry_hooks_at(path: Path) -> bool | None:
+    """True when the hooks file at path holds a MIMRY entry, under any
+    event; None when it cannot be read."""
+    if not path.exists():
         return False
     try:
         hooks = _read_hooks_file(path).get("hooks", {})
     except (OSError, ValueError):
         return None
     return any(_is_mimry_hook(entry) for event in hooks for entry in _event_entries(hooks, event))
+
+
+def _has_any_hook(root: Path, cfg: MimryPlatform) -> bool | None:
+    """True when any MIMRY hook entry is present, under any event and in
+    either file; None when a file cannot be read.
+
+    Unlike _has_hook this also sees older or partial installs, so the
+    uninstall hint can point at --hooks for them.
+    """
+    found = [_has_mimry_hooks_at(path) for path in _hook_files(root, cfg)]
+    if True in found:
+        return True
+    return None if None in found else False
 
 
 def _remove_always_on(
@@ -1405,10 +1437,9 @@ def _merged_hooks_text(dst: Path, cfg: MimryPlatform, prompt: bool = False) -> s
     return json.dumps(existing, indent=2) + "\n"
 
 
-def _has_prompt_hook(root: Path, cfg: MimryPlatform) -> bool:
-    """True when the hooks file names the opt-in prompt hook."""
-    path = root / cfg.hook_path if cfg.hook_path else None
-    if not (path and path.exists()):
+def _has_prompt_hook_at(path: Path) -> bool:
+    """True when the hooks file at path names the opt-in prompt hook."""
+    if not path.exists():
         return False
     try:
         hooks = _read_hooks_file(path).get("hooks", {})
@@ -1418,6 +1449,11 @@ def _has_prompt_hook(root: Path, cfg: MimryPlatform) -> bool:
         _is_mimry_hook(entry) and PROMPT_HOOK_SUB in str(entry).lower()
         for entry in _event_entries(hooks, PROMPT_HOOK_EVENT)
     )
+
+
+def _has_prompt_hook(root: Path, cfg: MimryPlatform) -> bool:
+    """True when the hooks file names the opt-in prompt hook."""
+    return cfg.hook_path is not None and _has_prompt_hook_at(root / cfg.hook_path)
 
 
 def _hook_repair_flags(root: Path, cfg: MimryPlatform) -> str:
@@ -1460,16 +1496,42 @@ def _is_mimry_hook(entry: object) -> bool:
     return any(sub in text for sub in subcommands) and "mimry" in text
 
 
+def _move_legacy_hooks(
+    root: Path, cfg: MimryPlatform, created: frozenset[Path], prompt: bool | None = None
+) -> list[Path]:
+    """Move MIMRY's hook entries from the legacy settings file into the
+    hooks file, keeping every other key and hook in both.
+
+    The prompt hook follows ``prompt`` when it is given, and otherwise
+    stays when either file has it. Returns the files that changed.
+    """
+    legacy = _legacy_hooks_file(root, cfg)
+    if legacy is None or _has_mimry_hooks_at(legacy) is not True:
+        return []
+    if prompt is None:
+        prompt = _has_prompt_hook(root, cfg) or _has_prompt_hook_at(legacy)
+    changed = [_install_hooks(root, cfg, prompt=prompt)]
+    removed = _remove_hooks_from(legacy, root, created)
+    return [*changed, *([removed] if removed else [])]
+
+
 def _remove_hooks(
     root: Path, cfg: MimryPlatform, created: frozenset[Path] = frozenset()
+) -> list[Path]:
+    """Take MIMRY's hook entries out of every hooks file. Each file goes
+    only when MIMRY created it and nothing else is left. Returns the
+    files that changed."""
+    removed = [_remove_hooks_from(path, root, created) for path in _hook_files(root, cfg)]
+    return [path for path in removed if path]
+
+
+def _remove_hooks_from(
+    dst: Path, root: Path, created: frozenset[Path] = frozenset()
 ) -> Path | None:
-    """Take MIMRY's hook entries out of the hooks file.
+    """Take MIMRY's hook entries out of one hooks file.
 
     The file goes only when MIMRY created it and nothing else is left.
     """
-    if cfg.hook_path is None:
-        return None
-    dst = (root / cfg.hook_path).resolve()
     if not dst.exists():
         return None
     try:
@@ -1499,6 +1561,83 @@ def _remove_hooks(
     else:
         _atomic_write(dst, json.dumps(existing, indent=2) + "\n")
     return dst
+
+
+def _holds_only_mimry_hooks(path: Path) -> bool:
+    """True when the hooks file holds only MIMRY's entries."""
+    try:
+        data = _read_hooks_file(path)
+    except (OSError, ValueError):
+        return False
+    hooks = data.get("hooks")
+    return (
+        set(data) <= {"hooks"}
+        and isinstance(hooks, dict)
+        and bool(hooks)
+        and all(
+            isinstance(entries, list) and all(_is_mimry_hook(entry) for entry in entries)
+            for entries in hooks.values()
+        )
+    )
+
+
+def _set_git_exclude(root: Path, line: str, *, add: bool) -> bool:
+    """Add or remove one line in the repository's exclude file.
+
+    Git finds that file itself, so this works in linked worktrees too.
+    Returns False outside a repository, where nothing is written. The
+    file's other lines and line endings stay as they are.
+    """
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "--git-path", "info/exclude"],
+            cwd=root,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    if res.returncode != 0 or not res.stdout.strip():
+        return False
+    path = root / res.stdout.strip()
+    text = _read_text_or_none(path) or ""
+    if add:
+        if line not in {existing.strip() for existing in text.splitlines()}:
+            newline = "\r\n" if "\r\n" in text else "\n"
+            lead = "" if not text or text.endswith("\n") else newline
+            _atomic_write(path, text + lead + line + newline, newline="")
+        return True
+    lines = text.splitlines(keepends=True)
+    kept = [existing for existing in lines if existing.strip() != line]
+    if len(kept) != len(lines):
+        _atomic_write(path, "".join(kept), newline="")
+    return True
+
+
+def _drop_hooks_exclude(root: Path, cfg: MimryPlatform, removed: list[Path]) -> None:
+    """Take the Git exclude line back out once uninstall removed the
+    hooks file it covers."""
+    if cfg.hook_path is None or cfg.key in _LOCAL_HOOK_KEYS:
+        return
+    dst = (root / cfg.hook_path).resolve()
+    if dst in removed and not dst.exists():
+        _set_git_exclude(root, "/" + cfg.hook_path.as_posix(), add=False)
+
+
+def _exclude_hooks_file(root: Path, cfg: MimryPlatform, created: frozenset[Path]) -> bool:
+    """Keep a hooks file MIMRY alone made out of Git, for an agent with
+    no per-machine hooks file. A file the user added to, or one MIMRY
+    did not create, is never excluded. Returns True when it was."""
+    if cfg.hook_path is None or cfg.key in _LOCAL_HOOK_KEYS:
+        return False
+    dst = (root / cfg.hook_path).resolve()
+    if dst not in created or not dst.exists() or not _holds_only_mimry_hooks(dst):
+        return False
+    return _set_git_exclude(root, "/" + cfg.hook_path.as_posix(), add=True)
 
 
 def _mcp_by_hand(cfg: MimryPlatform, data: dict | None) -> bool:
@@ -1994,24 +2133,18 @@ def install_skill(
     _write_skill_files(dst, key)
     base = _state_base(dst, root, project)
     _record_install(dst, created=created, base=base, mcp=mcp, key=key)
-    git_paths = [
-        dst,
-        dst.parent / ".mimry_version",
-        dst.parent / _STATE_FILE,
-        dst.parent / "references",
-    ]
     if always_on:
-        ao = _install_always_on(root, cfg, dry_run=False)
-        if ao:
-            git_paths.append(ao)
-    machine_hooks = None
+        _install_always_on(root, cfg, dry_run=False)
     if hooks:
-        hp = _install_hooks(root, cfg, dry_run=False, prompt=prompt_hook)
-        if hp:
-            if _hook_executable() == "mimry":
-                git_paths.append(hp)
-            else:
-                machine_hooks = hp
+        _install_hooks(root, cfg, dry_run=False, prompt=prompt_hook)
+    moved_hooks: list[Path] = []
+    excluded = False
+    if project:
+        recorded = frozenset(_read_created(_read_state(dst), base))
+        moved_hooks = _move_legacy_hooks(
+            root, cfg, recorded, prompt=prompt_hook if hooks else None
+        )
+        excluded = _exclude_hooks_file(root, cfg, recorded)
     ui.ok(f"Installed the MIMRY skill for {cfg.label} ({_scope(project)})")
     ui.detail(_shown(dst, root, project))
     for extra in extras:
@@ -2022,15 +2155,13 @@ def install_skill(
         ui.detail(_hooks_hint(key))
     if not _mcp_disabled(not mcp):
         register_mcp(cfg, dry_run=False)
-    if project:
-        rels = [p.relative_to(root).as_posix() + ("/" if p.is_dir() else "") for p in git_paths]
-        ui.detail(f"To share it with your team: git add {' '.join(rels)}")
-    if machine_hooks:
-        hooks_rel = machine_hooks.relative_to(root).as_posix()
+    if moved_hooks:
         ui.detail(
-            f"{hooks_rel} points at this machine's mimry; teammates should run"
-            f" `mimry install --platform {key} --project --hooks` themselves."
+            f"Moved MIMRY's hooks from {_LEGACY_HOOK_PATHS[key].as_posix()}"
+            f" to {cfg.hook_path.as_posix()}"
         )
+    if excluded:
+        ui.detail(f"Git ignores {cfg.hook_path.as_posix()} through .git/info/exclude")
     if hooks_problem:
         raise SystemExit(1)
     return dst
@@ -2100,8 +2231,10 @@ def _record_still_needed(root: Path, cfg: MimryPlatform, created: frozenset[Path
     The state file then stays, so a later --hooks or --always-on
     uninstall can still delete that file.
     """
-    hook_file = (root / cfg.hook_path).resolve() if cfg.hook_path else None
-    if hook_file in created and _has_any_hook(root, cfg) is not False:
+    if any(
+        path in created and _has_mimry_hooks_at(path) is not False
+        for path in _hook_files(root, cfg)
+    ):
         return True
     always_file = (root / cfg.always_on_file).resolve() if cfg.always_on_file else None
     return always_file in created and _has_always_on(root, cfg)
@@ -2168,8 +2301,10 @@ def uninstall_skill(
     settings: list[str] = []
     if always_on and project and (path := _remove_always_on(root, cfg, created)):
         settings.append(_settings_line(path, root, project, "always-on block"))
-    if hooks and project and (path := _remove_hooks(root, cfg, created)):
-        settings.append(_settings_line(path, root, project, "hooks"))
+    if hooks and project:
+        removed_hooks = _remove_hooks(root, cfg, created)
+        settings.extend(_settings_line(path, root, project, "hooks") for path in removed_hooks)
+        _drop_hooks_exclude(root, cfg, removed_hooks)
     keep_record = project and not shared_with and _record_still_needed(root, cfg, created)
     removed: list[Path] = []
     if shared_with:
@@ -2227,8 +2362,16 @@ def _plugin_installed() -> bool:
 
 # Git's global excludes file gets these once per machine, so a repo's
 # tracked .gitignore needs no MIMRY lines. MIMRY's output lives under
-# .mimry/, so that one pattern covers it.
-_GLOBAL_IGNORE_PATTERNS = (".mimry/",)
+# .mimry/, and each project skill folder is MIMRY's whole folder. Claude
+# Code's settings.local.json is per machine and never committed.
+# settings.json and hooks.json stay out: a team may commit those.
+def _global_ignore_patterns() -> tuple[str, ...]:
+    """The lines MIMRY keeps in Git's global ignore file, in a stable
+    order. The skill folders come from the platform table."""
+    skill_folders = (f"**/{folder}/" for folder in sorted(project_skill_folders()))
+    return (".mimry/", *skill_folders, "**/.claude/settings.local.json")
+
+
 # Installs before #269 also wrote this line in the block.
 _LEGACY_BLOCK_PATTERNS = ("mimry-out/",)
 _GLOBAL_IGNORE_MARKER = "# MIMRY"
@@ -2308,8 +2451,33 @@ def _global_ignore_path(*, warn: bool = True) -> Path | None:
     return (Path(xdg) if xdg else _home() / ".config") / "git" / "ignore"
 
 
+def _with_mimry_lines(existing: str, missing: list[str]) -> str:
+    """The file text with the missing patterns added.
+
+    They go right after the last line of MIMRY's block, or in a new
+    block at the end when there is none. Every other line is kept byte
+    for byte.
+    """
+    newline = "\r\n" if "\r\n" in existing else "\n"
+    lines = existing.splitlines(keepends=True)
+    known = {*_global_ignore_patterns(), *_LEGACY_BLOCK_PATTERNS}
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() == _GLOBAL_IGNORE_MARKER), None
+    )
+    if start is None:
+        lead = "" if not existing or existing.endswith("\n") else newline
+        return existing + lead + newline.join([_GLOBAL_IGNORE_MARKER, *missing]) + newline
+    end = start + 1
+    while end < len(lines) and lines[end].strip() in known:
+        end += 1
+    if not lines[end - 1].endswith("\n"):
+        lines[end - 1] += newline
+    lines[end:end] = [pattern + newline for pattern in missing]
+    return "".join(lines)
+
+
 def _add_global_ignore(*, dry_run: bool) -> None:
-    """Append the MIMRY patterns that Git's global ignore file lacks. A
+    """Add the MIMRY patterns that Git's global ignore file lacks. A
     second run finds them all and writes nothing."""
     path = _global_ignore_path()
     if path is None:
@@ -2320,20 +2488,22 @@ def _add_global_ignore(*, dry_run: bool) -> None:
     except (OSError, UnicodeDecodeError) as exc:
         ui.warn(f"Could not read {shown}: {exc}")
         return
-    if global_ignore_covers_mimry(existing.splitlines()):
+    lines = existing.splitlines()
+    present = {line.strip() for line in lines}
+    # An equivalent spelling such as `/.mimry/` already covers .mimry/.
+    covered = global_ignore_covers_mimry(lines)
+    missing = [
+        pattern
+        for pattern in _global_ignore_patterns()
+        if pattern not in present and not (covered and pattern == ".mimry/")
+    ]
+    if not missing:
         return
-    missing = list(_GLOBAL_IGNORE_PATTERNS)
     if dry_run:
         ui.detail(f"Would add MIMRY to the global git ignore: {shown}")
         return
-    newline = "\r\n" if "\r\n" in existing else "\n"
-    lead = "" if not existing or existing.endswith("\n") else newline
     try:
-        _atomic_write(
-            path,
-            existing + lead + newline.join([_GLOBAL_IGNORE_MARKER, *missing]) + newline,
-            newline="",
-        )
+        _atomic_write(path, _with_mimry_lines(existing, missing), newline="")
     except OSError as exc:
         ui.warn(f"Could not write {shown}: {exc.strerror or exc}")
         ui.detail(f"Add these lines to it by hand: {', '.join(missing)}")
@@ -2377,7 +2547,7 @@ def _without_mimry_block(lines: list[str]) -> list[str]:
         if text == _GLOBAL_IGNORE_MARKER:
             in_block = True
             continue
-        if in_block and text in _GLOBAL_IGNORE_PATTERNS + _LEGACY_BLOCK_PATTERNS:
+        if in_block and text in (*_global_ignore_patterns(), *_LEGACY_BLOCK_PATTERNS):
             continue
         in_block = False
         kept.append(line)
@@ -2484,11 +2654,17 @@ def _refresh_one(key: str, cfg: MimryPlatform, root: Path, project: bool) -> Ins
         if cfg.always_on_file and _has_always_on(root, cfg):
             if not _always_on_current(root, cfg):
                 written.append(_install_always_on(root, cfg, dry_run=False))
-        if cfg.hook_path and _has_any_hook(root, cfg) is True:
-            # An install that has the prompt hook keeps it.
-            prompt = _has_prompt_hook(root, cfg)
-            if not _hooks_current(root, cfg, prompt=prompt):
-                written.append(_install_hooks(root, cfg, prompt=prompt))
+        if cfg.hook_path:
+            # Hooks an older install left in the legacy settings file
+            # move to the hooks file, as a plain install moves them.
+            recorded = frozenset(_read_created(_read_state(dst), _state_base(dst, root, project)))
+            moved = _move_legacy_hooks(root, cfg, recorded)
+            written.extend(moved)
+            if not moved and _has_any_hook(root, cfg) is True:
+                # An install that has the prompt hook keeps it.
+                prompt = _has_prompt_hook(root, cfg)
+                if not _hooks_current(root, cfg, prompt=prompt):
+                    written.append(_install_hooks(root, cfg, prompt=prompt))
     name = f"{cfg.label} (this project)" if project else cfg.label
     return InstallRefresh(name, root, project, tuple(p for p in written if p is not None))
 

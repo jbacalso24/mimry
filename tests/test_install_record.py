@@ -136,7 +136,7 @@ def test_a_dry_run_records_nothing(user):
 
 
 def test_uninstall_says_hooks_were_taken_out_of_a_file_that_stays(repo, capsys):
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     settings.parent.mkdir()
     settings.write_text('{"theme": "dark"}', encoding="utf-8")
     installer.install_skill("claude-code", project=True, root=repo, hooks=True, mcp=False)
@@ -162,13 +162,13 @@ def test_uninstall_deletes_a_settings_file_and_folder_mimry_created(repo, capsys
 
     assert not (repo / ".claude").exists()
     assert not (repo / "CLAUDE.md").exists()
-    assert any(line.startswith("Removed") and "settings.json" in line for line in lines)
+    assert any(line.startswith("Removed") and "settings.local.json" in line for line in lines)
     assert not any("MIMRY's hooks" in line for line in lines)
     assert "Removed CLAUDE.md" in lines
 
 
 def test_uninstall_keeps_an_empty_settings_file_the_user_already_had(repo):
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     settings.parent.mkdir()
     settings.write_text("{}", encoding="utf-8")
     installer.install_skill("claude-code", project=True, root=repo, hooks=True, mcp=False)
@@ -225,14 +225,14 @@ def test_a_later_hooks_uninstall_deletes_a_file_the_plain_one_kept(repo, capsys)
 
     assert not (repo / ".claude").exists()
     assert not (repo / "CLAUDE.md").exists()
-    assert "Removed .claude/settings.json" in lines
+    assert "Removed .claude/settings.local.json" in lines
     assert "Removed CLAUDE.md" in lines
 
 
 def test_later_hooks_uninstall_keeps_a_settings_file_with_a_user_key(repo):
     installer.install_skill("claude-code", project=True, root=repo, hooks=True, mcp=False)
     installer.uninstall_skill("claude-code", project=True, root=repo, mcp=False)
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     data = json.loads(settings.read_text(encoding="utf-8"))
     settings.write_text(json.dumps({**data, "theme": "dark"}), encoding="utf-8")
 
@@ -278,7 +278,7 @@ def test_the_global_record_holds_no_absolute_path(user):
 
 def test_an_absolute_entry_in_the_record_is_ignored_not_trusted(repo):
     installer.install_skill("claude-code", project=True, root=repo, hooks=True, mcp=False)
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     state_path = _project_skill(repo) / ".mimry_state.json"
     state_path.write_text(json.dumps({"created": [settings.as_posix()]}), encoding="utf-8")
 
@@ -303,14 +303,11 @@ def test_uninstall_still_deletes_what_mimry_created_after_the_repo_moves(repo, t
     assert not (moved / "CLAUDE.md").exists()
 
 
-def test_the_share_hint_lists_the_state_file(repo, capsys):
+def test_a_project_install_prints_no_share_hint(repo, capsys):
     installer.install_skill("claude-code", project=True, root=repo, mcp=False)
 
-    hint = [line for line in capsys.readouterr().out.splitlines() if "git add" in line]
-
-    assert len(hint) == 1
-    assert ".mimry_version" in hint[0]
-    assert ".mimry_state.json" in hint[0]
+    assert "git add" not in capsys.readouterr().out
+    assert (_project_skill(repo) / ".mimry_state.json").is_file()
 
 
 # #289: --git-ignore removes exactly MIMRY's block
@@ -415,7 +412,7 @@ def test_repair_hint_after_a_prompt_hook_install_keeps_the_prompt_hook(repo, cap
     installer.install_skill(
         "claude-code", project=True, root=repo, hooks=True, prompt_hook=True, mcp=False
     )
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     data = json.loads(settings.read_text(encoding="utf-8"))
     del data["hooks"]["Stop"]
     settings.write_text(json.dumps(data), encoding="utf-8")
@@ -443,7 +440,10 @@ def test_a_second_plain_uninstall_still_names_the_hooks_left(repo, capsys):
     out = capsys.readouterr().out
 
     assert "Nothing to remove" in out
-    assert "Still installed: the hooks in .claude/settings.json. Add --hooks to remove it." in out
+    assert (
+        "Still installed: the hooks in .claude/settings.local.json. Add --hooks to remove it."
+        in out
+    )
 
 
 # Hooks are per project: a user-scope install says how to get them

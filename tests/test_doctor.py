@@ -692,7 +692,7 @@ def test_incomplete_hook_table_warns_with_the_status_repair_command(tmp_path, mo
         "claude-code", project=True, root=root, hooks=True, prompt_hook=True, mcp=False
     )
     assert doctor._registrations_check(root)["status"] == "ok"
-    settings = root / ".claude" / "settings.json"
+    settings = root / ".claude" / "settings.local.json"
     data = json.loads(settings.read_text(encoding="utf-8"))
     del data["hooks"]["Stop"]
     settings.write_text(json.dumps(data), encoding="utf-8")
@@ -715,7 +715,7 @@ def test_a_zero_seven_hook_table_without_powershell_warns_to_repair(tmp_path, mo
         "claude-code", project=True, root=root, hooks=True, prompt_hook=True, mcp=False
     )
     assert doctor._registrations_check(root)["status"] == "ok"
-    settings = root / ".claude" / "settings.json"
+    settings = root / ".claude" / "settings.local.json"
     data = json.loads(settings.read_text(encoding="utf-8"))
     # Every row is there; only the search matcher is the 0.7.0 one.
     data["hooks"]["PreToolUse"][0]["matcher"] = f"^(?:Bash|Glob|Grep|Read|{MCP_QUERY_NAME})$"

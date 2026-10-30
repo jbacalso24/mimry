@@ -16,7 +16,7 @@ import pytest
 from mimry import doctor, installer
 from mimry.cli import main
 
-GLOBAL_LINES = "# MIMRY\n.mimry/\n"
+GLOBAL_LINES = "".join(f"{line}\n" for line in ("# MIMRY", *installer._global_ignore_patterns()))
 GLOBAL_CHECK_ID = "git.global_ignore"
 
 
