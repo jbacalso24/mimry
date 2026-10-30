@@ -1,0 +1,274 @@
+# Each line is <file name><TAB><text>. \n in the text is a line break and \t a tab.
+# A leak names a secret written as a canary word; the redacted bytes must not hold it.
+# Harvested from tests/test_auth_*.py, tests/test_document_placeholders.py and
+# tests/test_privacy_hardening.py. Secrets that were not canary words are rewritten to one.
+
+# Authorization values after a known or token-shaped scheme (#593).
+sample.py	res.set("Authorization", "Bearer tomato-canary-1")
+sample.py	res.setHeader('Authorization', 'Bearer tomato-canary-1')
+sample.py	headers.append("Authorization", "Basic tomato-canary-1")
+sample.py	req.header("Authorization", "Bearer tomato-canary-1")
+sample.cs	Headers.Add("Authorization", "Bearer tomato-canary-1");
+sample.cs	client.DefaultRequestHeaders.Add("Proxy-Authorization", "Bearer tomato-canary-1");
+sample.py	x = "Bearer tomato-canary-1"
+sample.txt	Authorization: SharedKey acct:tomatocanary0123456789+/==\n
+sample.txt	Authorization: Acme sk_live_tomatocanary\n
+sample.txt	Authorization: HMAC-SHA256 tomatocanary0123456789\n
+sample.txt	Authorization: AWS AKIATOMATOCANARY0001:tomatocanary/sig=\n
+sample.md	Authorization: Basic admin:canary!Pass
+sample.md	Authorization: Basic admin:Tomato@42canary
+sample.md	Authorization: Basic svc:tomato%canary
+sample.md	Authorization: Bearer tomato:canary!42
+sample.md	Authorization: Basic admin:canary!Pass.
+sample.md	headers:\n  Authorization: Basic admin:canary!Pass\n
+sample.md	curl -H 'Authorization: Basic admin:canary!Pass' https://x
+
+# Authorization values built from an encoder call (#607).
+sample.md	Authorization: Basic base64(admin:canary42)
+sample.md	Authorization: Bearer encode(tomatocanary42xyz)
+sample.md	Authorization: Basic b64encode(tomatocanary42)
+
+# A Basic user:password tail runs to the end of its header, whatever the separator (#616).
+sample.md	Authorization: Basic admin:tomato,canary42
+sample.md	Authorization: Basic admin:tomato$canary42
+sample.md	Authorization: Basic admin:tomato"canary42
+sample.md	Authorization: Basic admin:tomato'canary42
+sample.md	Authorization: Basic admin:tomato\canary42
+sample.md	Authorization: Basic admin:tomato|canary42
+sample.md	Authorization: Basic admin:tomato[canary42
+sample.md	Authorization: Basic admin:tomato<canary42
+sample.md	Authorization: Basic admin:tomato(canary42
+sample.md	Authorization: Basic admin:tomato)canary42
+sample.md	Authorization: Basic admin:tomato canary42
+sample.md	curl -H 'Authorization: Basic admin:tomato canary42' https://x
+sample.md	h = {"Authorization": "Basic admin:tomato,canary42"}
+
+# Real-looking tokens that a placeholder rule must not excuse (#602).
+sample.md	Authorization: Bearer TOMATOCANARYTOMATOCANARY
+sample.md	Authorization: Bearer ZK_9F2K_CANARY77
+sample.py	h = "Authorization: Bearer ZK_9F2K_CANARY77"
+sample.md	Authorization: Bearer my-tomato-canary
+sample.md	Authorization: Bearer your-prod-canary
+sample.md	Proxy-Authorization: Bearer my-tomato-canary
+sample.md	Authorization: Bearer tomatocanary(s)
+sample.md	**Authorization**: Bearer tomatocanary
+sample.md	| **Authorization** | Bearer tomatocanary |
+sample.md	| `Authorization` | `Bearer tomatocanary` |
+
+# A literal credential beside a credential name is redacted in code and in text (#596, #608).
+sample.py	authorization = "tomato-canary-1"
+sample.py	token = "tomato-canary-1"
+sample.py	h = {"Authorization": "Bearer tomato-canary-1"}
+sample.py	def check(authorization: str = "tomato-canary-1"):
+sample.txt	PASSWORD=tomato.canary
+sample.txt	password: tomato.canary
+sample.txt	api_key = tomato.canary7
+sample.txt	SECRET_KEY=abc.def.canary
+sample.txt	token: Tomatocanary)
+sample.txt	db_password: tomatoCanary.v2
+sample.txt	{password: Tomatocanary, user: x}
+sample.md	password: str = "tomatocanary42"
+sample.md	password: Optional[str] = "tomatocanary42"
+sample.md	token: Tomatocanary42
+sample.md	token: tomato-canary-1;
+sample.md	Authorization: Bearer tomatocanary42xyz
+sample.md	Authorization: Basic admin:canary!Pass
+sample.md	Authorization: tomatocanary42
+sample.py	auth = request.headers.get("Authorization") or "Bearer tomatocanary42xyz"
+sample.md	Authorization: Bearer {tomatocanary42}
+sample.md	Authorization: Bearer {tomatocanary42}abc
+sample.md	Authorization: tomatocanary42.md
+sample.md	Authorization: Bearer tomatocanary/42xyz.key
+sample.md	Authorization: Token tomato/canary42.json
+sample.md	password = decrypt("tomatocanary42xyz")
+sample.md	token = base64.b64decode("tomatocanary123")
+
+# Configuration literals that look like references but are literals (#324 and config tests).
+sample.txt	PASSWORD=$canary-config-value-42
+sample.yaml	password: $canary-config-value-42
+sample.txt	{"password": "$canary-config-value-42"}
+sample.txt	{"api_key": "${PREFIX}canary-config-value-42"}
+sample.py	password = f"canary-config-value-42"
+sample.yaml	db:\n  password: canary-config-value-42\n
+sample.yaml	password:\n  canary-config-value-42\n
+sample.txt	DB_PASSWORD=:canary-config-value-42
+sample.txt	DB_PASSWORD=$X,canary-config-value-42
+sample.yaml	password: $PG#canary-config-value-42
+sample.js	const credentials =\n  "deploy-bot:canary-config-value-42";\n
+sample.js	const authHeader = "Bearer " +\n  "canary-config-value-42";\n
+sample.txt	TOKEN="Bearer "canary-config-value-42
+sample.txt	token: abc=canary
+sample.yaml	password: canary=123
+
+# Tuple and chained assignments that carry a literal credential (#519, #540, #559).
+sample.py	user, password = "admin", "tomato-canary"
+sample.py	password, user = "tomato-canary", "admin"
+sample.py	creds["password"], other = "tomato-canary", "x"
+sample.py	self.user, self.password = "admin", "tomato-canary"
+sample.py	(user, password) = ("admin", "tomato-canary")
+sample.py	[user, password] = ["admin", "tomato-canary"]
+sample.js	const [user, password] = ["admin", "tomato-canary"];
+sample.go	user, password := "admin", "tomato-canary"
+sample.py	user, password = (\n    "admin",\n    "tomato-canary",\n)\n
+sample.py	x = 1; user, password = "admin", "tomato-canary"  # note
+sample.py	foo(a, password="tomato-canary", b="y")
+sample.py	a = password = "tomato-canary"
+sample.py	password, = "tomato-canary",
+sample.py	(password,) = ("tomato-canary",)
+sample.py	a = password = (\n    "tomato-canary"\n)\n
+sample.py	a = password = \\n"tomato-canary"\n
+sample.py	password, a = b = "tomato-canary"
+sample.py	password = "to" \\n    "matocanary"\n
+sample.py	password = ("to"\n    "matocanary")\n
+sample.py	h = ("Authorization: Bearer "\n    "tomato-canary")\n
+
+# Authorization header literals in code, with a scheme (#519, #540, #561, #573).
+sample.py	h = "Authorization: Bearer abcanary1234567890XYZ"
+sample.py	h = "Authorization: Basic canary1234567890XYZ"
+sample.py	h = "Authorization: Token canary1234567890XYZ"
+sample.py	h = "Proxy-Authorization: Bearer canary1234567890XYZ"
+sample.py	h = 'Authorization: Bearer canary1234567890XYZ'
+sample.py	h = f"Authorization: Bearer canary1234567890XYZ{tok}"
+sample.py	h = "Authorization: Bearer " "tomato-canary"
+sample.py	h = "Authorization: Digest tomato-canary"
+sample.py	h = "Authorization: Negotiate canary-123"
+sample.py	h = "Authorization: tomato-canary"
+sample.py	h = "Authorization: Bearer tomato-" + "canary"
+sample.py	h = "Authorization: Digest tomatocanary"
+sample.py	h = "authorization: tomatocanary"
+sample.py	h = "Proxy-Authorization: tomatocanary"
+sample.py	h = "Authorization: " "tomatocanary"
+sample.py	h = "Authorization: " + "tomatocanary"
+sample.py	h = "Authorization: tomato" "canary"
+sample.py	h = "Authorization: Basic tomatocanary, X-Id: 1"
+sample.py	h = "Authorization: Bearer tomatocanary extra"
+sample.py	h = "Authorization: tomatocanary extra"
+sample.py	h = "Authorization: tomatocanary # dev key"
+sample.py	h = "Authorization: tomatocanary|x"
+sample.py	h = "Authorization: Custom tomato-canary-1"
+sample.py	h = "Authorization: Bearer canary-123"
+sample.py	h = 'Authorization: Bearer canary-123'
+
+# Authorization headers in Markdown, prose and tables (#586, #592).
+sample.md	- Authorization: Bearer tomatocanary
+sample.md	* Authorization: Bearer tomatocanary
+sample.md	> Authorization: Bearer tomatocanary
+sample.md	**Authorization:** Bearer tomatocanary
+sample.md	__Authorization:__ Basic tomatocanary
+sample.md	Use the Authorization: Bearer tomatocanary header.
+sample.md	| Authorization | Bearer tomatocanary |
+sample.txt	|Authorization|Bearer tomatocanary|
+sample.txt	| Authorization | Bearer tomato-canary-1 |
+sample.txt	Use Authorization: Bearer tomato-canary-1.
+sample.txt	Use Authorization: Digest tomatocanary.
+sample.txt	Use Authorization: Bearer my-canary-7f3a.
+sample.txt	Authorization: Basic tomatocanary, X-Id: 1
+
+# A quoted or multi-line secret is redacted line by line and never kept (#499, #520, #483).
+sample.py	password = "tomatocanary\nfoo = 1\n
+sample.py	password = "tomatocanary\nfoo = 1
+sample.py	password = """\ntomato-canary\n
+sample.rb	password = "privacy-canary-\nvalue-123456789"\nputs password\n
+sample.php	<?php\n$password = "privacy-canary-\nvalue-123456789";\necho $password;\n
+sample.rs	fn main() {\n    let password = "privacy-canary-\nvalue-123456789";\n}\n
+sample.php	<?php\n$cfg = ['password' => "privacy-canary-\nvalue-123456789"];\n
+sample.rb	password = "privacy-canary-va\nlue-123456789"\n
+sample.php	<?php\n$password = "privacy-canary-va\nlue-123456789";\n
+sample.rs	let password = "privacy-canary-va\nlue-123456789";\n
+sample.php	<?php\n$a = ['password' => "privacy-canary-va\nlue-123456789"];\n
+sample.py	DownloadError("Download error: bad token=privacy-canary-value-123456789\nsecond line")
+sample.py	SECRET = """\n#tomato-canary\n"""\n
+sample.py	SECRET = '''\n#tomato-canary\n'''\n
+sample.py	SECRET = """\n// tomato-canary\n"""\n
+sample.py	    SECRET = """\n    # tomato-canary\n    """\n
+sample.yaml	password: |\n  // tomato-canary\nhost: h\n
+sample.yaml	password: >\n  # tomato-canary\nhost: h\n
+sample.yaml	    password: |\n      # tomato-canary\n    host: h\n
+
+# Literal secrets on either side of a comparison, or in a hash arrow (#500).
+sample.py	if "privacy-canary-value-123456789" == password:\n    pass\n
+sample.py	if password != "privacy-canary-value-123456789":\n    pass\n
+sample.js	if ("privacy-canary-value-123456789" === password) {\n  go();\n}\n
+sample.js	if (password !== "privacy-canary-value-123456789") {\n  go();\n}\n
+sample.go	if password != "privacy-canary-value-123456789" {\n\treturn\n}\n
+sample.rb	if "privacy-canary-value-123456789" == password\n  go\nend\n
+sample.php	<?php\n$a = ['password' => "privacy-canary-value-123456789"];\n
+sample.rb	h = { :password => "privacy-canary-value-123456789" }\n
+sample.sh	if [ "$password" == "privacy-canary-value-123456789" ]; then exit 0; fi\n
+sample.sh	if [ "$password" = "privacy-canary-value-123456789" ]; then exit 0; fi\n
+sample.sh	if [ "$password" != "privacy-canary-value-123456789" ]; then exit 0; fi\n
+sample.sh	# api_key=privacy-canary-value-123456789\n
+sample.yaml	# api_key=privacy-canary-value-123456789\n
+
+# Secret shapes kept verbatim before #494.
+sample.py	ok = token == 'secretcanary'
+sample.py	x = foo(token == "secretcanary")
+sample.py	ok = (token == "secretcanary")
+sample.py	ok = token != "secretcanary"
+sample.py	x = foo(token != "secretcanary")
+sample.py	ok = (token != "secretcanary")
+sample.py	token = f"{p}secretcanary"
+sample.py	token = f"secretcanary{p}"
+sample.py	connect(token=f"{p}secretcanary")
+sample.js	const token = `${p}secretcanary`;
+sample.py	url = "https://h/x?password=secretcanary"
+sample.py	url = "https://h/x?token=secretcanary&a=1"
+sample.py	url = "https://user:secretcanary@h/x"
+sample.py	password += "secretcanary"
+sample.py	cfg["password"] = "secretcanary"
+sample.py	cfg['api_key'] = "secretcanary"
+sample.py	os.environ["TOKEN"] = "secretcanary"
+sample.py	pair = (token, "secretcanary")
+
+# Token shapes, with or without a label in front (#593 and the token-shape tests).
+sample.md	AKIACANARY0000000000
+sample.md	key AKIACANARY0000000000
+sample.md	see ASIACANARY0000000000
+sample.md	ghp_CANARY000000000000000000000000000000
+sample.md	gho_CANARY000000000000000000000000000000
+sample.md	ghu_CANARY000000000000000000000000000000
+sample.md	ghs_CANARY000000000000000000000000000000
+sample.md	ghr_CANARY000000000000000000000000000000
+sample.md	github_pat_CANARY000000000000000000000000000000000000000000000000
+sample.md	xoxb-1111CANARY1111CANARY
+sample.md	xoxc-1111CANARY1111CANARY
+sample.md	key ghp_CANARY000000000000000000000000000000
+sample.md	see github_pat_CANARY000000000000000000000000000000000000000000000000
+sample.txt	ghp_CANARY000000000000000000000000000000
+sample.txt	key xoxb-1111CANARY1111CANARY
+sample.txt	see AKIACANARY0000000000
+sample.py	FEEDBACK = "AKIACANARY0000000000"
+sample.py	TOKEN = "ghp_CANARY000000000000000000000000000000"
+
+# Document secrets stay refused (test_document_placeholders.py).
+sample.md	api_key: documentation-canary-value-123456789
+sample.txt	api_key: documentation-canary-value-123456789
+sample.md	password: documentation-canary-value-123456789
+sample.txt	password: documentation-canary-value-123456789
+sample.md	token: documentation-canary-value-123456789
+sample.txt	token: documentation-canary-value-123456789
+sample.md	Authorization: documentation-canary-value-123456789
+sample.txt	Authorization: documentation-canary-value-123456789
+sample.md	password = input('Password: ') or 'documentation-canary-fallback-123456789'
+sample.txt	password = input('Password: ') or 'documentation-canary-fallback-123456789'
+
+# Literal secrets from the privacy hardening tests, with canary values.
+sample.txt	TOKEN=privacy-canary-value-123456789
+sample.py	password = "privacy-canary-value-123456789"
+sample.py	if token == "privacy-canary-value-123456789" and ok:\n    pass\n
+sample.py	if (password := "privacy-canary-value-123456789"):\n    pass\n
+sample.py	password = "canary-test-value-123"
+sample.py	token: str = "canary-test-value-123"
+sample.py	token := "canary-test-value-123"
+sample.py	client = Client(auth=None, password="canary-test-value-123")
+sample.py	headers = {"Authorization": "Bearer canary-test-value-123"}
+sample.py	auth = """first line\ncanary-test-value-123\nlast line"""\n
+sample.py	# api key: canary-test-value-123
+sample.py	SECRET_KEY = b"canary-test-value-123"
+sample.js	const cfg = { apiKey: `canary-test-value-123` };
+sample.js	const token = [\n  'canary-test-value-123',\n];\n
+sample.py	API_KEY = (\n    "canary-test-value-123"\n)\n
+sample.py	DB_PASSWORD = config("DB_PASSWORD", default=None) or "canary-test-value-123"
+sample.py	const getToken = () => ("canary-test-value-123");
+sample.js	const cfg = { password: "canary-test-value-123" || fallback };
+sample.py	password = "canary-test-value-123" | flags

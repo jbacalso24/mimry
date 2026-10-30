@@ -1,0 +1,46 @@
+name: Release gate
+
+# The end-to-end gate (#624): install, index, recovery, upgrade and redaction
+# checks against the built wheel. Release pull requests bump the version in
+# pyproject.toml, so they run it; a tag waits until it is green.
+on:
+  pull_request:
+    paths: [pyproject.toml, .github/workflows/release-gate.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Release gate / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment
+        run: uv sync --locked --python 3.12
+
+      - name: Build the wheel
+        run: uv build
+
+      - name: Run the release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python scripts/release_gate.py --wheel "$(ls dist/*.whl)"
