@@ -297,16 +297,27 @@ def check_index_time(
 def check_missing_generation(uv: str, env, fixture: Path, work: Path) -> str | None:
     mimry = mimry_for(uv, env)
     repo = copy_fixture(fixture, work / "missing-generation")
+    pointer_path = repo / ".mimry" / "pointer.json"
+    evidence: dict = {}
+    problem = _missing_generation(mimry, env, repo, pointer_path, evidence)
+    if problem is None:
+        return None
+    return problem + "\n" + _generation_evidence(pointer_path, evidence)
+
+
+def _missing_generation(mimry: Path, env, repo: Path, pointer_path: Path, evidence: dict):
     _seconds, problem = timed_index(mimry, env, repo, INDEX_LIMIT_SECONDS)
     if problem:
         return problem
-    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
-    generation = Path(pointer["indexPath"])
+    evidence["pointer_before"] = pointer_path.read_text(encoding="utf-8")
+    generation = Path(json.loads(evidence["pointer_before"])["indexPath"])
+    evidence["generation"] = generation
     if not generation.is_dir():
         return f"active generation {generation} is not a folder"
     shutil.rmtree(generation)
-    found = invoke(mimry, env, repo, "find", SYMBOL)
-    problem = command_problem("mimry find", found)
+    found = invoke(mimry, env, repo, "find", "-v", SYMBOL)
+    evidence["found"] = found
+    problem = command_problem("mimry find -v", found)
     if problem:
         return problem
     if SYMBOL not in found.output:
@@ -317,6 +328,44 @@ def check_missing_generation(uv: str, env, fixture: Path, work: Path) -> str | N
         if hit:
             return f"mimry {command} printed {hit!r} after the generation was deleted"
     return None
+
+
+def _read_or_note(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").rstrip()
+    except OSError as exc:
+        return f"(unreadable: {exc})"
+
+
+def _generation_evidence(pointer_path: Path, evidence: dict) -> str:
+    """Everything a failed missing-generation run needs to be diagnosed.
+
+    Built only on failure, so a passing run pays nothing for it.
+    """
+    lines = ["--- missing-generation evidence ---"]
+    lines += ["pointer.json before the delete:", evidence.get("pointer_before", "(not read)")]
+    after = _read_or_note(pointer_path) if pointer_path.exists() else "(missing)"
+    lines += ["pointer.json after find:", after]
+    found = evidence.get("found")
+    lines += ["mimry find -v output, in full:", found.output.rstrip() if found else "(not run)"]
+    generation = evidence.get("generation")
+    if generation is None:
+        lines.append("generations folder: (not known)")
+        return "\n".join(lines)
+    root = generation.parent
+    lines.append(f"generations folder: {root}")
+    if not root.is_dir():
+        lines.append("(folder missing)")
+        return "\n".join(lines)
+    folders = sorted(path for path in root.iterdir() if path.is_dir())
+    for folder in folders:
+        files = sorted(path.name for path in folder.iterdir() if path.is_file())
+        lines.append(f"  {folder.name}/: {', '.join(files) or '(no files)'}")
+    for folder in folders:
+        manifest = folder / "generation.json"
+        lines.append(f"generation.json in {folder.name}:")
+        lines.append(_read_or_note(manifest) if manifest.is_file() else "(none)")
+    return "\n".join(lines)
 
 
 def check_upgrade(uv: str, previous: str, wheel: Path, fixture: Path, work: Path) -> str | None:
