@@ -99,7 +99,7 @@ def isolated_env(home: Path) -> dict[str, str]:
         "[core]\n\tautocrlf = false\n",
         encoding="utf-8",
     )
-    env = dict(os.environ)
+    env = {key: value for key, value in os.environ.items() if not key.startswith("UV_TOOL")}
     env.pop("VIRTUAL_ENV", None)
     env.update(
         {
@@ -110,6 +110,8 @@ def isolated_env(home: Path) -> dict[str, str]:
             "XDG_CONFIG_HOME": str(config),
             "GIT_CONFIG_GLOBAL": str(gitconfig),
             "MIMRY_CACHE_HOME": str(home / "cache"),
+            "UV_TOOL_DIR": str(home / "uv-tools"),
+            "UV_TOOL_BIN_DIR": str(home / "uv-bin"),
             "PATH": os.pathsep.join(
                 entry
                 for entry in os.environ.get("PATH", "").split(os.pathsep)
@@ -156,6 +158,29 @@ def uv_install(uv: str, env: dict[str, str], spec: str, force=False) -> str | No
     if force:
         args.insert(3, "--force")
     return command_problem(f"uv tool install {spec}", run(args, env))
+
+
+def install_release(
+    uv: str, env: dict[str, str], spec: str, version: str, force=False
+) -> tuple[Path | None, str | None]:
+    """Install `spec`, then check the mimry it reports is `version`.
+
+    Every release install goes through here, so a tool folder shared
+    between homes shows up as a version mismatch, not a false pass.
+    """
+    problem = uv_install(uv, env, spec, force=force)
+    if problem:
+        return None, problem
+    mimry = mimry_for(uv, env)
+    version_run = run([mimry, "--version"], env)
+    problem = command_problem(f"mimry --version after {spec}", version_run)
+    if problem:
+        return None, problem
+    parts = version_run.stdout.split()
+    reported = parts[-1] if parts else ""
+    if reported != version:
+        return None, (f"expected mimry {version} after {spec}, got {version_run.stdout.strip()!r}")
+    return mimry, None
 
 
 def invoke(mimry: Path, env, cwd: Path, *args, timeout=900) -> Result:
@@ -216,10 +241,9 @@ def copy_fixture(fixture: Path, dest: Path) -> Path:
 
 
 def check_install_clean(uv: str, env, wheel: Path, work: Path) -> str | None:
-    problem = uv_install(uv, env, str(wheel))
+    mimry, problem = install_release(uv, env, str(wheel), wheel_version(wheel))
     if problem:
         return problem
-    mimry = mimry_for(uv, env)
     user_dir = work / "install-user"
     user_dir.mkdir()
     problem = command_problem(
@@ -266,10 +290,9 @@ def check_index_time(
 ) -> tuple[str | None, str]:
     mimry = mimry_for(uv, env)
     prev_env = isolated_env(work / "home-previous")
-    problem = uv_install(uv, prev_env, f"mimry=={previous}")
+    prev_mimry, problem = install_release(uv, prev_env, f"mimry=={previous}", previous)
     if problem:
         return problem, ""
-    prev_mimry = mimry_for(uv, prev_env)
     new_seconds, problem = timed_index(
         mimry, env, copy_fixture(fixture, work / "index-new"), INDEX_LIMIT_SECONDS
     )
@@ -294,33 +317,6 @@ def check_index_time(
     return None, detail
 
 
-TOOL_PROBE = """
-import json, pathlib, sys, traceback, mimry, mimry.state as st
-print("python", sys.version)
-print("mimry", getattr(mimry, "__version__", "?"), mimry.__file__)
-p = json.loads(pathlib.Path(".mimry/pointer.json").read_text(encoding="utf-8"))
-i = pathlib.Path(p["indexPath"])
-checks = (
-    ("lstat", i.lstat),
-    ("exists", i.exists),
-    ("manifest exists", (i / "generation.json").exists),
-    ("files exists", (i / "files.jsonl").exists),
-)
-for label, fn in checks:
-    try:
-        print(label, fn())
-    except Exception as e:
-        print(label, "raised", repr(e))
-import inspect
-print(inspect.getsource(st._validate_generation)[:1200])
-try:
-    st._validate_generation(p, p["generationId"])
-    print("validate ok")
-except Exception:
-    traceback.print_exc()
-"""
-
-
 def check_missing_generation(uv: str, env, fixture: Path, work: Path) -> str | None:
     mimry = mimry_for(uv, env)
     repo = copy_fixture(fixture, work / "missing-generation")
@@ -329,26 +325,7 @@ def check_missing_generation(uv: str, env, fixture: Path, work: Path) -> str | N
     problem = _missing_generation(mimry, env, repo, pointer_path, evidence)
     if problem is None:
         return None
-    evidence["tool_probe"] = _tool_probe(uv, env, repo)
     return problem + "\n" + _generation_evidence(pointer_path, evidence)
-
-
-def _tool_probe(uv: str, env, repo: Path) -> str:
-    """Run the installed mimry's own interpreter on the failed index.
-
-    The interpreter is inside uv's tool environment, so the probe sees
-    the code that actually ran, not the checkout.
-    """
-    tools = run([uv, "tool", "dir"], env)
-    if tools.returncode:
-        return f"uv tool dir exited {tools.returncode}: {tail(tools.output)}"
-    tools_dir = Path(tools.stdout.strip().splitlines()[-1])
-    relative = Path("Scripts/python.exe") if os.name == "nt" else Path("bin/python")
-    python = tools_dir / "mimry" / relative
-    if not python.exists():
-        return f"interpreter missing: {python}"
-    probe = run([python, "-c", TOOL_PROBE], env, cwd=repo, timeout=300)
-    return f"{python} exit {probe.returncode}\n{probe.output.rstrip()}"
 
 
 def _missing_generation(mimry: Path, env, repo: Path, pointer_path: Path, evidence: dict):
@@ -445,8 +422,6 @@ def _generation_evidence(pointer_path: Path, evidence: dict) -> str:
             f"second mimry find -v, exit code {retry.returncode}:",
             retry.output.rstrip(),
         ]
-    if "tool_probe" in evidence:
-        lines += ["installed mimry interpreter probe:", evidence["tool_probe"]]
     generation = evidence.get("generation")
     if generation is None:
         lines.append("generations folder: (not known)")
@@ -469,15 +444,14 @@ def _generation_evidence(pointer_path: Path, evidence: dict) -> str:
 
 def check_upgrade(uv: str, previous: str, wheel: Path, fixture: Path, work: Path) -> str | None:
     env = isolated_env(work / "home-upgrade")
-    problem = uv_install(uv, env, f"mimry=={previous}")
+    mimry, problem = install_release(uv, env, f"mimry=={previous}", previous)
     if problem:
         return problem
-    mimry = mimry_for(uv, env)
     repo = copy_fixture(fixture, work / "upgrade-repo")
     _seconds, problem = timed_index(mimry, env, repo, BASELINE_TIMEOUT_SECONDS)
     if problem:
         return f"index on {previous}: {problem}"
-    problem = uv_install(uv, env, str(wheel), force=True)
+    _mimry, problem = install_release(uv, env, str(wheel), wheel_version(wheel), force=True)
     if problem:
         return problem
     problem = command_problem(
