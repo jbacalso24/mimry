@@ -1,0 +1,251 @@
+# Each line is <file name><TAB><text>. \n in the text is a line break and \t a tab.
+# A keep is code or documentation that must come back byte for byte from indexable_bytes.
+# Harvested from tests/test_auth_*.py, tests/test_document_placeholders.py and
+# tests/test_privacy_hardening.py.
+
+# Code that names an authorization or token, not a credential (#596).
+sample.py	def check(authorization: str) -> bool:
+sample.py	def check(request, authorization: str, x: int):
+sample.py	def check(authorization: "str | None" = None):
+sample.ts	function check(authorization: string): boolean {
+sample.py	token = request.headers["Authorization"]
+sample.py	auth = req.headers['authorization']
+sample.py	h = {"Authorization": "Bearer <TOKEN>"}
+sample.py	h = {"Authorization": "Bearer ${TOKEN}"}
+sample.ts	const token = req.headers.authorization;
+sample.py	res.set("Authorization", "Bearer " + token)
+sample.py	res.setHeader("Authorization", `Bearer ${token}`)
+sample.py	headers.append("Authorization", auth)
+sample.py	x = "Bearer token"
+sample.py	x = "Bearer YOUR_TOKEN"
+sample.py	msg = "Bearer is required"
+sample.py	label = "Basic Plan"
+sample.py	name = "Key Vault"
+sample.py	action = "Token refresh"
+sample.py	tier = "Basic tier-2"
+sample.md	The Acme scheme is described below.
+sample.md	Authorization: Custom header values are listed in the table.
+sample.md	Use Authorization: Bearer YOUR_TOKEN for the API.
+sample.md	Authorization: see docs/auth-headers.md for details.
+sample.md	Authorization: See docs/auth-headers.md
+
+# Typed fields, capitalised types and lookups next to a credential name (#608).
+sample.md	class Cfg:\n    authorization: str\n
+sample.md	authorization: Optional[str]\n
+sample.md	authorization: number\n
+sample.md	interface Cfg {\n  token: string;\n}\n
+sample.md	fun check(authorization: String): Boolean\n
+sample.md	func check(authorization: String) -> Bool {\n
+sample.md	fun f(token: String?): Unit\n
+sample.md	auth = request.headers.get("Authorization")\n
+sample.md	auth = request.headers.get('authorization', '')\n
+sample.md	String authorization = request.getHeader("Authorization");\n
+sample.md	let auth = req.headers().get("authorization");\n
+sample.md	$auth = $_SERVER['HTTP_AUTHORIZATION'];\n
+sample.md	Authorization: Bearer {token}\n
+sample.md	Authorization: docs/auth-headers.md\n
+sample.md	Authorization: src/mimry/security.py\n
+sample.md	def check(api_key: str) -> bool:\n
+sample.md	password: string\n
+sample.md	token = request.headers["X-Custom"]\n
+sample.md	password = row["pw_hash"]\n
+sample.md	api_key = settings["key"]\n
+sample.md	token = os.getenv("API_TOKEN")\n
+sample.md	session = request.cookies.get("session")\n
+sample.md	password = getpass.getpass("Password: ")\n
+sample.txt	class Cfg:\n    authorization: str\n
+sample.txt	token = os.getenv("API_TOKEN")\n
+sample.txt	password = getpass.getpass("Password: ")\n
+
+# Basic user:password placeholders and encoder calls that document a format (#607, #616).
+sample.md	Authorization: Basic base64(user:pass)
+sample.md	Authorization: Basic base64(username:password)
+sample.md	Authorization: Basic user:pass
+sample.md	Authorization: Basic username:password
+sample.md	Authorization: Basic btoa(client_id:client_secret)
+sample.md	Authorization: Basic https://example.com/auth/login
+sample.md	Authorization: Custom: see below for details
+sample.md	Authorization: Digest realm="Photos"
+sample.md	Authorization: Bearer YOUR_TOKEN
+sample.md	Authorization: Basic base64( user:pass )
+sample.md	Authorization: Basic base64(user: pass)
+sample.md	Authorization: Basic base64(user:pass )
+sample.md	headers = {"Authorization": "Basic base64(user:pass)"}
+sample.md	headers = {"Authorization": "Basic user:pass"}
+sample.md	const h = { Authorization: "Basic base64(user:pass)" };
+
+# Placeholders in documentation, kept indexable (#602, #592).
+sample.md	Use Authorization: Bearer YOUR_TOKEN for the API.
+sample.md	Set Authorization: Bearer API_KEY in the request.
+sample.md	Authorization: Bearer REPLACE_ME
+sample.md	Authorization: Bearer ACCESS_TOKEN
+sample.md	Authorization: Bearer TOKEN
+sample.md	Send Authorization: Bearer your-token-here with each call.
+sample.md	The header Authorization: Basic base64(user:pass) is sent over TLS only.
+sample.md	Authorization: Bearer xxx
+sample.md	Authorization: Bearer <token>
+sample.md	Authorization: Bearer <your-token>
+sample.md	Authorization: Bearer [TOKEN]
+sample.md	Authorization: Bearer ${TOKEN}
+sample.md	Authorization: Bearer {{token}}
+sample.md	Authorization: Bearer <access_token> is the expected format.
+sample.md	- Authorization: Bearer <token>
+sample.md	| Authorization | Bearer <token> |
+sample.md	| Authorization | Bearer YOUR_TOKEN |
+sample.md	The header must start with Token, for example Authorization: Token abc.
+sample.md	Authorization: Token from the env
+sample.txt	Use Authorization: Bearer YOUR_TOKEN for the API.
+sample.txt	Authorization: Bearer xxx
+sample.txt	| Authorization | Bearer <token> |
+
+# Documentation examples that look like credentials and are not (test_document_placeholders.py).
+sample.md	api_key: <your-api-key>
+sample.md	password: [your password]
+sample.md	password: xxxxxxxx
+sample.md	```yaml\ntoken: <API_TOKEN>\npassword: ${DB_PASSWORD}\n```
+sample.md	password = input('Password: ')
+sample.md	Authorization: header
+sample.md	Authorization: Bearer
+sample.md	Authorization: Basic
+sample.md	password: [your-password]
+sample.md	password = input("Password: ")
+sample.md	password = input()
+sample.txt	api_key: <your-api-key>
+sample.txt	password: [your password]
+sample.txt	password: xxxxxxxx
+sample.txt	```yaml\ntoken: <API_TOKEN>\npassword: ${DB_PASSWORD}\n```
+sample.txt	password = input('Password: ')
+sample.txt	Authorization: header
+sample.txt	Authorization: Bearer
+sample.txt	Authorization: Basic
+sample.txt	password: [your-password]
+sample.txt	password = input("Password: ")
+sample.txt	password = input()
+
+# Prose after an Authorization header is kept (#586, #561).
+sample.md	print("Authorization: required")
+sample.md	print("Authorization: header missing")
+sample.md	log.info("Authorization: header is invalid")
+sample.md	print("Authorization: Bearer <token>")
+sample.md	print("Authorization: Bearer token is missing")
+sample.md	msg = "Authorization: basic auth is required"
+sample.md	print("Authorization: disabled")
+sample.md	print("Authorization: needed")
+sample.md	print("Authorization: default")
+sample.md	msg = "Authorization: Basic is not supported"
+sample.md	msg = "Authorization: Token from the env"
+sample.md	msg = "Authorization: Bearer must be set"
+sample.md	print("Authorization: Bearer is required")
+sample.md	print("Authorization: Bearer tokens are required")
+sample.md	The Authorization: header carries the token.
+sample.md	The Authorization: Bearer is required, see the docs.
+sample.md	Set the Authorization: Bearer is required.
+sample.md	Authorization: OAuth realm="Photos",
+sample.md	def f(authorization: str = Header(None)):
+sample.md	authorization: Optional[str] = None
+sample.md	authorization: Token = None
+sample.md	MSG = ("Authorization: "\n       "disabled")\n
+
+# Tuples and string literals that carry no credential (#519).
+sample.py	user, count = "admin", 3
+sample.py	token_type, scheme = "bearer", "Bearer"
+sample.py	h = "Authorization: Bearer $TOKEN"
+sample.py	h = "Authorization: Bearer {tok}"
+sample.py	h = "X-Authorization: Bearer abcdef1234567890XYZ"
+sample.py	user, password = "admin", os.environ["PW"]
+sample.py	log(token, "some message here")
+sample.py	h = "Authorization: %s" % tok
+sample.py	h = "Authorization: " + "$TOKEN"
+sample.py	h = "Authorization: Bearer " "<token>"
+sample.py	h = "Authorization: Bearer " "{tok}"
+
+# Chained and split assignments with no credential (#540, #559).
+sample.py	count = total = 3
+sample.py	count = password_length = 3
+sample.py	a = password = os.environ["PW"]
+sample.py	x, = values
+sample.py	user, = "admin",
+sample.py	a = b = (\n  1\n)\n
+sample.py	x = y = \\n3\n
+sample.py	msg = "a" \\n"b"\n
+sample.py	h = ("Authorization: Bearer "\n    "<token>")\n
+
+# Comparisons and empty checks are not assignments (#473, #500).
+sample.py	if token != "":\n    pass\n
+sample.js	if (token === "") {\n  go();\n}\n
+sample.go	if token != "" {\n\treturn\n}\n
+sample.php	<?php\nif ($token == "x") {\n  go();\n}\n
+sample.sh	if [ "$password" = "" ]; then exit 0; fi\n
+sample.py	ok = token == compute()\n
+sample.py	if token == ', ':\n    pass\n
+sample.py	if password == "x":\n    pass\n
+sample.js	if secret === 'abc':\n    pass\n
+sample.py	if api_key == value:\n    pass\n
+sample.py	if api key == value:\n    pass\n
+sample.py	if token != 'abc':\n    pass\n
+sample.py	if password >= 3:\n    pass\n
+
+# URLs, paths and metadata under a credential label are locations, not secrets (#168).
+sample.js	const TOKEN_URL = "https://auth.example.com/oauth/token";\n
+sample.py	PASSWORD_RESET_URL = "/accounts/reset/"\n
+sample.yaml	password_policy: strict\n
+sample.py	password_hint = 'x'\n
+sample.py	TOKEN = "https://auth.example.com/oauth/token"\n
+sample.py	TOKEN_PATH = "./keys/token.txt"\n
+sample.py	TOKEN_DIR = "~/keys"\n
+sample.py	SECRET_FILE = "/run/secrets/x"\n
+sample.py	TOKEN = "https://x/y?page=2"\n
+sample.py	token_url = "https://x/y?page=2"\n
+sample.py	TOKEN = "https://api.example.com/?key=..."\n
+sample.py	TOKEN = "https://x/y?key="\n
+
+# Source that names a credential without holding one (#167, #324, #596).
+sample.py	self._auth = self._build_auth(auth)\n
+sample.py	auth = (self.auth[0], "********") if self.auth else None\n
+sample.js	const AuthUserKey = "user"\n
+sample.js	const AuthProxyUserKey = "proxy_user"\n
+sample.py	def auth(self, auth: AuthTypes | None) -> None:\n
+sample.rs	pub fn new(token: &'a str, auth: Option<Auth<'a>>) -> Self {\n
+sample.py	headers = {"Authorization": "Bearer " + token}\n
+sample.py	self.auth = auth or {}\n
+sample.py	    :param private_key: a private key\n    :param name: the "display" name\n
+sample.py	    """Args:\n        token: which token?\n    """\n
+sample.py	    auth: (optional) An auth tuple, e.g. ("user", "pass").\n
+sample.py	    token: the user's token, e.g. 'abc'.\n
+sample.py	pages[24] = f"deploy notes, api_key = {value}"\n
+sample.js	items.filter(token => token.value === "async")\n
+sample.md	Authorization: Digest realm="Photos"\n
+
+# Output and placeholders in an Authorization header with no credential after the scheme.
+sample.txt	Authorization: Basic\n
+sample.txt	Authorization: Bearer\n
+sample.txt	Authorization: Custom: see below for details\n
+sample.txt	Authorization: docs/auth-headers.md\n
+sample.txt	Authorization: See docs/auth-headers.md\n
+
+# #628
+a.py	password = os.environ.get("DB_PASS")
+a.py	password = os.environ.get("DB_PASS", "")
+a.py	password = get_secret("DB_PASSWORD")
+a.py	password = get_secret("prod/db/password")
+a.py	token = get_token(user_id)
+a.py	password = getpass("Password: ")
+a.py	token: str = field(default=None)
+a.py	token: str = field(default_factory=str)
+a.py	token = req.headers.get("X-Token", "")
+guide.md	Authorization: {token}
+a.sh	curl -u $USER:$PASS https://api.example.com
+a.sh	curl -u admin:<password> https://api.example.com
+a.kt	val token: String = BuildConfig.TOKEN
+a.ts	token?: string;
+deploy.txt	AUTH_HEADER=Bearer ${TOKEN}
+notes.md	`password = <your password>`
+a.py	token = re.compile(r"[A-Za-z0-9]+")
+a.py	token = translate("Token expired")
+a.py	token = logger.info("token refreshed")
+a.py	password = click.option("--password", prompt=True, hide_input=True)
+a.py	token = parser.add_argument("--token", help="API token to use")
+a.py	# the password is read from the environment
+a.py	# api key: <your key here>
+a.py	// token: ...
+a.py	# password = os.environ["PASSWORD"]
