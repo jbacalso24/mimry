@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -368,9 +369,31 @@ def check_redaction_corpus(env, work: Path) -> str | None:
     return command_problem("pytest tests/test_redaction_corpus.py", result)
 
 
-def latest_release() -> str:
+def wheel_version(wheel: Path) -> str:
+    """The version in a wheel name, mimry-<version>-py3-none-any.whl."""
+    match = re.fullmatch(r"mimry-([^-]+)-.+\.whl", wheel.name)
+    if match is None:
+        raise ValueError(f"not a mimry wheel name: {wheel.name}")
+    return match.group(1)
+
+
+def newest_other_release(own_version: str) -> str:
+    """The newest final PyPI release that is not `own_version`.
+
+    Pre-releases and releases with no files are skipped; the comparison
+    reads plain dotted numbers, so no packaging module is needed.
+    """
     with urllib.request.urlopen(PYPI_JSON, timeout=60) as response:
-        return json.load(response)["info"]["version"]
+        releases = json.load(response)["releases"]
+    final = re.compile(r"\d+(\.\d+)*")
+    candidates = [
+        version
+        for version, files in releases.items()
+        if files and final.fullmatch(version) and version != own_version
+    ]
+    if not candidates:
+        raise RuntimeError("PyPI lists no final release other than " + own_version)
+    return max(candidates, key=lambda v: tuple(int(part) for part in v.split(".")))
 
 
 def run_check(name: str, check) -> bool:
@@ -401,7 +424,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wheel", type=Path, required=True, help="the built wheel to gate")
     parser.add_argument(
         "--previous",
-        help="the last release on PyPI (default: the latest version the PyPI JSON API reports)",
+        help=(
+            "the release to compare against (default: the newest PyPI release"
+            " other than the wheel's own version)"
+        ),
     )
     args = parser.parse_args(argv)
     wheel = args.wheel.resolve()
@@ -415,9 +441,9 @@ def main(argv: list[str] | None = None) -> int:
     previous = args.previous
     if previous is None:
         try:
-            previous = latest_release()
+            previous = newest_other_release(wheel_version(wheel))
         except Exception as exc:
-            print(f"FAIL setup: could not read the latest release from PyPI: {exc}")
+            print(f"FAIL setup: could not read the previous release from PyPI: {exc}")
 
     work = Path(tempfile.mkdtemp(prefix="mimry-release-gate-"))
     failures = 0

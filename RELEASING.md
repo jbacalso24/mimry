@@ -111,6 +111,17 @@ script and source from the extracted artifact, never from the checkout. Import s
 evidence of parser compatibility, which is why `tree-sitter` carries an upper bound
 (`>=0.25.2,<0.26`) alongside the exact `tree-sitter-language-pack` pin.
 
+## Release gate
+
+The release gate is [`scripts/release_gate.py`](scripts/release_gate.py), run on the built wheel by [`release-gate.yml`](.github/workflows/release-gate.yml).
+It runs on a release pull request, which changes the version in `pyproject.toml`, and it can be started by hand with `workflow_dispatch`.
+It installs the wheel into a clean home, then checks the user-level and project-level installs for Claude Code and Codex, and that a project install leaves `git status --porcelain` empty.
+It indexes a 20,000-line CRLF SQL fixture and a 4,000-file C# fixture, and fails when indexing takes over 300 seconds, or is more than 25% and 10 seconds slower than the newest PyPI release other than this one.
+It deletes the active index generation and checks that `mimry find` recovers it, with no damaged or corrupt report from `status` or `doctor`.
+It upgrades from the previous release and checks that the index stays usable with no rebuild prompt.
+It runs the redaction corpus at 64 KB.
+The tag waits for the gate: do not tag the release until the gate is green on the release commit.
+
 ## Choosing the version
 
 MIMRY is pre-1.0, so the minor number marks the bigger changes and the patch number the rest.
