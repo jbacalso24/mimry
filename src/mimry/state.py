@@ -522,6 +522,12 @@ def _validate_generation(pointer: dict[str, Any], generation_id: str) -> None:
         # Cache cleanup can remove a whole generation. Freshness treats
         # that as missing; a present, damaged generation still fails.
         return
+    # On Windows a deleted folder can linger with its files already
+    # gone (#637). No manifest and no files.jsonl means missing or
+    # mid-delete, so it is treated as missing. files.jsonl with a bad
+    # manifest is damaged.
+    if not (idx / GENERATION_MANIFEST).exists() and not (idx / "files.jsonl").exists():
+        return
     manifest_path = idx / GENERATION_MANIFEST
     manifest, _ = load_json_state(manifest_path)
     if not isinstance(manifest, dict) or manifest.get("generationId") != generation_id:
