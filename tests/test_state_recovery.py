@@ -419,6 +419,67 @@ def test_symbol_rebuilds_a_deleted_generation_before_reporting_matches(tmp_path,
     assert "not indexed" not in status.stdout.lower()
 
 
+def _git_indexed_repo(tmp_path: Path):
+    repo = copy_fixture(tmp_path)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Mimry test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    cache = tmp_path / "cache"
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index", "--full").returncode == 0
+    return repo, cache
+
+
+def test_emptied_generation_folder_rebuilds_without_reporting_damage(tmp_path, monkeypatch):
+    # Windows can keep a deleted generation folder while its files are
+    # already gone (#637). That must rebuild, not read as damaged data.
+    repo, cache = _git_indexed_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    generation = Path(load_pointer(repo)["indexPath"])
+    for entry in generation.iterdir():
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    assert generation.is_dir() and not any(generation.iterdir())
+
+    result = run_cli(repo, cache, "find", "auth")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "src/auth/middleware.py" in result.stdout
+    status = run_cli(repo, cache, "status")
+    report = (status.stdout + status.stderr).lower()
+    assert status.returncode == 0, status.stdout + status.stderr
+    assert "damaged" not in report
+    assert "corrupt" not in report
+
+
+def test_generation_without_manifest_but_with_files_is_still_damaged(tmp_path, monkeypatch):
+    repo, cache = _git_indexed_repo(tmp_path)
+    monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
+    generation = Path(load_pointer(repo)["indexPath"])
+    (generation / state.GENERATION_MANIFEST).unlink()
+
+    result = run_cli(repo, cache, "find", "auth")
+
+    assert result.returncode != 0
+    assert "damaged" in result.stdout + result.stderr
+
+
 def test_mcp_rebuilds_a_deleted_generation(tmp_path, monkeypatch):
     repo, cache = _initialized_repo(tmp_path)
     monkeypatch.setenv("MIMRY_CACHE_HOME", str(cache))
