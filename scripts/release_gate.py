@@ -294,6 +294,33 @@ def check_index_time(
     return None, detail
 
 
+TOOL_PROBE = """
+import json, pathlib, sys, traceback, mimry, mimry.state as st
+print("python", sys.version)
+print("mimry", getattr(mimry, "__version__", "?"), mimry.__file__)
+p = json.loads(pathlib.Path(".mimry/pointer.json").read_text(encoding="utf-8"))
+i = pathlib.Path(p["indexPath"])
+checks = (
+    ("lstat", i.lstat),
+    ("exists", i.exists),
+    ("manifest exists", (i / "generation.json").exists),
+    ("files exists", (i / "files.jsonl").exists),
+)
+for label, fn in checks:
+    try:
+        print(label, fn())
+    except Exception as e:
+        print(label, "raised", repr(e))
+import inspect
+print(inspect.getsource(st._validate_generation)[:1200])
+try:
+    st._validate_generation(p, p["generationId"])
+    print("validate ok")
+except Exception:
+    traceback.print_exc()
+"""
+
+
 def check_missing_generation(uv: str, env, fixture: Path, work: Path) -> str | None:
     mimry = mimry_for(uv, env)
     repo = copy_fixture(fixture, work / "missing-generation")
@@ -302,7 +329,26 @@ def check_missing_generation(uv: str, env, fixture: Path, work: Path) -> str | N
     problem = _missing_generation(mimry, env, repo, pointer_path, evidence)
     if problem is None:
         return None
+    evidence["tool_probe"] = _tool_probe(uv, env, repo)
     return problem + "\n" + _generation_evidence(pointer_path, evidence)
+
+
+def _tool_probe(uv: str, env, repo: Path) -> str:
+    """Run the installed mimry's own interpreter on the failed index.
+
+    The interpreter is inside uv's tool environment, so the probe sees
+    the code that actually ran, not the checkout.
+    """
+    tools = run([uv, "tool", "dir"], env)
+    if tools.returncode:
+        return f"uv tool dir exited {tools.returncode}: {tail(tools.output)}"
+    tools_dir = Path(tools.stdout.strip().splitlines()[-1])
+    relative = Path("Scripts/python.exe") if os.name == "nt" else Path("bin/python")
+    python = tools_dir / "mimry" / relative
+    if not python.exists():
+        return f"interpreter missing: {python}"
+    probe = run([python, "-c", TOOL_PROBE], env, cwd=repo, timeout=300)
+    return f"{python} exit {probe.returncode}\n{probe.output.rstrip()}"
 
 
 def _missing_generation(mimry: Path, env, repo: Path, pointer_path: Path, evidence: dict):
@@ -399,6 +445,8 @@ def _generation_evidence(pointer_path: Path, evidence: dict) -> str:
             f"second mimry find -v, exit code {retry.returncode}:",
             retry.output.rstrip(),
         ]
+    if "tool_probe" in evidence:
+        lines += ["installed mimry interpreter probe:", evidence["tool_probe"]]
     generation = evidence.get("generation")
     if generation is None:
         lines.append("generations folder: (not known)")
