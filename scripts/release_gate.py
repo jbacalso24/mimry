@@ -315,13 +315,22 @@ def _missing_generation(mimry: Path, env, repo: Path, pointer_path: Path, eviden
     if not generation.is_dir():
         return f"active generation {generation} is not a folder"
     shutil.rmtree(generation)
+    evidence["state_after_rmtree"] = _folder_state(generation)
+    evidence["state_before_find"] = _folder_state(generation)
     found = invoke(mimry, env, repo, "find", "-v", SYMBOL)
     evidence["found"] = found
     problem = command_problem("mimry find -v", found)
-    if problem:
+    if problem is None and SYMBOL not in found.output:
+        problem = f"mimry find did not list {SYMBOL}: {tail(found.output)}"
+    if problem is not None:
+        # A retry shows whether the failure is timing or a stable state.
+        time.sleep(3)
+        evidence["state_after_find"] = _folder_state(generation)
+        retry = invoke(mimry, env, repo, "find", "-v", SYMBOL)
+        evidence["retry"] = retry
+        if retry.returncode == 0 and SYMBOL in retry.output:
+            return f"transient: passed on retry after 3 s (first attempt: {problem})"
         return problem
-    if SYMBOL not in found.output:
-        return f"mimry find did not list {SYMBOL}: {tail(found.output)}"
     for command in ("status", "doctor"):
         lowered = invoke(mimry, env, repo, command).output.lower()
         hit = next((marker for marker in DAMAGED_MARKERS if marker in lowered), None)
@@ -337,6 +346,31 @@ def _read_or_note(path: Path) -> str:
         return f"(unreadable: {exc})"
 
 
+def _folder_state(generation: Path) -> list[str]:
+    """Whether the generation folder exists and what is in it.
+
+    Each entry also gets an open attempt, and its error repr on failure.
+    """
+    if not os.path.lexists(generation):
+        return ["lexists=False"]
+    lines = [f"lexists=True {generation}"]
+    try:
+        entries = sorted(os.listdir(generation))
+    except OSError as exc:
+        return lines + [f"listdir failed: {exc!r}"]
+    for name in entries:
+        entry = generation / name
+        line = f"  {name}: exists={os.path.exists(entry)}"
+        try:
+            with open(entry, "rb"):
+                pass
+            line += " open=ok"
+        except OSError as exc:
+            line += f" open={exc!r}"
+        lines.append(line)
+    return lines
+
+
 def _generation_evidence(pointer_path: Path, evidence: dict) -> str:
     """Everything a failed missing-generation run needs to be diagnosed.
 
@@ -346,8 +380,25 @@ def _generation_evidence(pointer_path: Path, evidence: dict) -> str:
     lines += ["pointer.json before the delete:", evidence.get("pointer_before", "(not read)")]
     after = _read_or_note(pointer_path) if pointer_path.exists() else "(missing)"
     lines += ["pointer.json after find:", after]
+    for key, title in (
+        ("state_after_rmtree", "generation folder right after rmtree:"),
+        ("state_before_find", "generation folder right before the first find:"),
+    ):
+        if key in evidence:
+            lines += [title, *evidence[key]]
     found = evidence.get("found")
     lines += ["mimry find -v output, in full:", found.output.rstrip() if found else "(not run)"]
+    if "state_after_find" in evidence:
+        lines += [
+            "generation folder after the failed find, after 3 s:",
+            *evidence["state_after_find"],
+        ]
+    retry = evidence.get("retry")
+    if retry is not None:
+        lines += [
+            f"second mimry find -v, exit code {retry.returncode}:",
+            retry.output.rstrip(),
+        ]
     generation = evidence.get("generation")
     if generation is None:
         lines.append("generations folder: (not known)")
