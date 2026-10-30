@@ -222,3 +222,30 @@ sample.txt	Authorization: Bearer\n
 sample.txt	Authorization: Custom: see below for details\n
 sample.txt	Authorization: docs/auth-headers.md\n
 sample.txt	Authorization: See docs/auth-headers.md\n
+
+# #628
+a.py	password = os.environ.get("DB_PASS")
+a.py	password = os.environ.get("DB_PASS", "")
+a.py	password = get_secret("DB_PASSWORD")
+a.py	password = get_secret("prod/db/password")
+a.py	token = get_token(user_id)
+a.py	password = getpass("Password: ")
+a.py	token: str = field(default=None)
+a.py	token: str = field(default_factory=str)
+a.py	token = req.headers.get("X-Token", "")
+guide.md	Authorization: {token}
+a.sh	curl -u $USER:$PASS https://api.example.com
+a.sh	curl -u admin:<password> https://api.example.com
+a.kt	val token: String = BuildConfig.TOKEN
+a.ts	token?: string;
+deploy.txt	AUTH_HEADER=Bearer ${TOKEN}
+notes.md	`password = <your password>`
+a.py	token = re.compile(r"[A-Za-z0-9]+")
+a.py	token = translate("Token expired")
+a.py	token = logger.info("token refreshed")
+a.py	password = click.option("--password", prompt=True, hide_input=True)
+a.py	token = parser.add_argument("--token", help="API token to use")
+a.py	# the password is read from the environment
+a.py	# api key: <your key here>
+a.py	// token: ...
+a.py	# password = os.environ["PASSWORD"]

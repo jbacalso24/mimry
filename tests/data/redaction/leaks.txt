@@ -272,3 +272,23 @@ sample.py	DB_PASSWORD = config("DB_PASSWORD", default=None) or "canary-test-valu
 sample.py	const getToken = () => ("canary-test-value-123");
 sample.js	const cfg = { password: "canary-test-value-123" || fallback };
 sample.py	password = "canary-test-value-123" | flags
+
+# #628
+guide.md	Authorization: {token} tomatocanary42xyz
+guide.md	Authorization: {token}, Bearer tomatocanary42xyz
+a.py	token = base64.b64encode(b"user:tomatocanary42")
+a.py	auth = b64encode("admin:tomatocanary42")
+a.py	password = os.environ.get("DB_PASS", "tomatocanary42")
+a.py	password = get_secret("tomatocanary42")
+a.py	token: str = field(default="tomatocanary42")
+a.py	token = req.headers.get("X-Token", "tomatocanary42")
+a.ts	token?: string = "tomato-canary-1"
+a.kt	val token: String = "tomatocanary42"
+deploy.txt	AUTH_HEADER=Bearer tomatocanary42xyz
+notes.md	`password = tomato-canary-1`
+a.py	API_TOKEN = os.environ.get(\n    "API_TOKEN", "tomatocanary42"\n)\n
+a.py	x = 1  # password = tomatocanary42\n
+a.py	# api_key = tomatocanary42\n
+a.js	// token: tomatocanary42\n
+a.go	package main\n\n// token: tomatocanary42\n
+a.py	DOC = """\npassword: tomatocanary42\n"""\n
