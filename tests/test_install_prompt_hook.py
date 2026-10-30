@@ -43,7 +43,7 @@ def _base(repo: Path) -> list[str]:
 
 
 def _settings(repo: Path) -> dict:
-    return json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    return json.loads((repo / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
 
 
 def _commands(settings: dict, event: str) -> list[str]:
@@ -80,7 +80,7 @@ def test_prompt_hook_is_added_only_with_its_flag(repo, capsys):
 def test_prompt_hook_needs_hooks_and_claude_code(repo, home, capsys):
     with pytest.raises(SystemExit):
         _install(repo, "--prompt-hook", *NO_MCP)
-    assert not (repo / ".claude" / "settings.json").exists()
+    assert not (repo / ".claude" / "settings.local.json").exists()
 
     with pytest.raises(SystemExit):
         main(
@@ -131,7 +131,7 @@ def test_uninstall_hooks_removes_the_prompt_hook(repo):
         )
         == 0
     )
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     # The file goes when MIMRY created it and nothing else is left.
     assert not settings.exists() or "hook-prompt" not in settings.read_text(encoding="utf-8")
 
@@ -140,7 +140,7 @@ def test_refresh_keeps_the_prompt_hook(repo, capsys):
     _install(repo, "--hooks", "--prompt-hook", *NO_MCP)
     settings = _settings(repo)
     del settings["hooks"]["Stop"]
-    (repo / ".claude" / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    (repo / ".claude" / "settings.local.json").write_text(json.dumps(settings), encoding="utf-8")
 
     assert main([*_base(repo), "install", "--refresh"]) == 0
 
@@ -153,7 +153,7 @@ def test_stop_hook_is_required_until_refresh_adds_it(repo, capsys):
     _install(repo, "--hooks", *NO_MCP)
     settings = _settings(repo)
     del settings["hooks"]["Stop"]
-    (repo / ".claude" / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    (repo / ".claude" / "settings.local.json").write_text(json.dumps(settings), encoding="utf-8")
     capsys.readouterr()
 
     assert _status(repo) == 2

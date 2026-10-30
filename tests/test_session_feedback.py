@@ -485,7 +485,7 @@ def test_installed_claude_code_config_restores_context_in_the_foreground(tmp_pat
     res = run_cli(repo, cache, "install", "--project", "--platform", "claude-code", "--hooks")
     assert res.returncode == 0, res.stderr
 
-    settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    settings = json.loads((repo / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
     [group] = [g for g in settings["hooks"]["SessionStart"] if g["matcher"] == "compact"]
     [handler] = group["hooks"]
     assert handler["command"].endswith(" hook-compact")

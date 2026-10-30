@@ -10,6 +10,7 @@ mimry uninstall --platform <name>           # remove it
 ```
 
 Add `--project` to any of these to work on the current repository only.
+A project install is hidden from `git status` through Git's global ignore file, so a team that wants to commit the skill can run `git add -f` on its folder.
 `--status` exits 0 when the install is up to date, 1 when the skill is not installed, and 2 when it needs repair.
 It also reports a skill or always-on block written by an older MIMRY as out of date.
 

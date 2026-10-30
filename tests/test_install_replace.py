@@ -31,7 +31,7 @@ def test_unparseable_settings_file_is_left_alone_and_install_exits_1(tmp_path, c
     """#171: --hooks must not merge into a settings file it cannot
     parse."""
     repo = tmp_path / "repo"
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     settings.parent.mkdir(parents=True)
     settings.write_text(BROKEN_SETTINGS, encoding="utf-8")
 
@@ -43,7 +43,7 @@ def test_unparseable_settings_file_is_left_alone_and_install_exits_1(tmp_path, c
     out = capsys.readouterr()
     text = out.out + out.err
     assert "Skipped the MIMRY hooks" in text
-    assert ".claude/settings.json" in text
+    assert ".claude/settings.local.json" in text
     assert '"PreToolUse"' in text  # the snippet to add by hand
     assert (repo / ".claude" / "skills" / "mimry" / "SKILL.md").is_file()
 
@@ -54,7 +54,7 @@ def test_status_and_uninstall_survive_an_unparseable_settings_file(tmp_path, cap
     repo = tmp_path / "repo"
     repo.mkdir()
     installer.install_skill("claude-code", project=True, root=repo)
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     settings.write_text(BROKEN_SETTINGS, encoding="utf-8")
     capsys.readouterr()
 
@@ -77,7 +77,7 @@ def test_uninstall_hooks_skips_an_unparseable_settings_file_with_a_warning(tmp_p
     repo = tmp_path / "repo"
     repo.mkdir()
     installer.install_skill("claude-code", project=True, root=repo)
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     settings.write_text(BROKEN_SETTINGS, encoding="utf-8")
     capsys.readouterr()
 
@@ -133,7 +133,7 @@ def test_atomic_write_leaves_no_tmp_file_when_the_replace_fails(tmp_path, monkey
 
 
 def _hook_commands(repo: Path) -> list[str]:
-    settings = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    settings = json.loads((repo / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
     return [
         handler["command"]
         for entries in settings["hooks"].values()
@@ -144,8 +144,10 @@ def _hook_commands(repo: Path) -> list[str]:
 
 
 def test_hooks_run_bare_mimry_when_path_is_this_install(tmp_path, monkeypatch, capsys):
-    """#175: when PATH resolves to this mimry, the hooks run `mimry` and
-    the hooks file is one the team can commit."""
+    """#175: when PATH resolves to this mimry, the hooks run `mimry`.
+
+    The hooks file is per machine, so no share step is named.
+    """
     exe = str(tmp_path / "bin" / "mimry")
     monkeypatch.setattr(installer, "_resolve_mimry_exe", lambda: exe)
     monkeypatch.setattr(installer.shutil, "which", lambda name: exe if name == "mimry" else None)
@@ -164,16 +166,15 @@ def test_hooks_run_bare_mimry_when_path_is_this_install(tmp_path, monkeypatch, c
     }
     captured = capsys.readouterr()
     text = captured.out + captured.err
-    git_line = next(line for line in text.splitlines() if "git add" in line)
-    assert ".claude/settings.json" in git_line
+    assert "git add" not in text
     assert "points at this machine" not in text
 
 
 def test_hooks_point_at_this_machine_when_mimry_is_not_on_path(tmp_path, monkeypatch, capsys):
     """#175: without mimry on PATH the hooks keep this install's path.
 
-    They are left out of the git add line, and the user is told to share
-    them by running the install.
+    The install prints no share or machine note for them: the hooks file
+    is per machine and Git ignores it.
     """
     exe = str(tmp_path / "bin" / "mimry")
     monkeypatch.setattr(installer, "_resolve_mimry_exe", lambda: exe)
@@ -188,13 +189,8 @@ def test_hooks_point_at_this_machine_when_mimry_is_not_on_path(tmp_path, monkeyp
     assert all(c.startswith(installer._posix_executable() + " ") for c in commands)
     captured = capsys.readouterr()
     text = captured.out + captured.err
-    git_line = next(line for line in text.splitlines() if "git add" in line)
-    assert ".claude/settings.json" not in git_line
-    assert ".claude/skills/mimry/SKILL.md" in git_line
-    assert (
-        ".claude/settings.json points at this machine's mimry; teammates should run"
-        " `mimry install --platform claude-code --project --hooks` themselves." in text
-    )
+    assert "git add" not in text
+    assert "points at this machine" not in text
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="only Windows paths ignore case")

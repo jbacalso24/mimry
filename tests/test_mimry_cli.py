@@ -311,8 +311,7 @@ def test_install_project_codex_writes_mimry_skill_references_and_always_on(tmp_p
     agents = repo / "AGENTS.md"
     assert agents.exists()
     assert "## MIMRY" in agents.read_text(encoding="utf-8")
-    assert "To share it with your team: git add .codex/skills/mimry/SKILL.md" in _posix(res.stdout)
-    assert ".codex/skills/mimry/references/" in _posix(res.stdout)
+    assert "git add" not in _posix(res.stdout)
     assert "AGENTS.md" in res.stdout
     assert "Codex:" in body
 
@@ -614,7 +613,7 @@ def test_partly_installed_hooks_need_repair_and_the_repair_adds_hooks(tmp_path):
         repo, cache, "install", "--project", "--platform", "claude-code", "--always-on", "--hooks"
     )
     assert install.returncode == 0, install.stderr
-    settings_path = repo / ".claude" / "settings.json"
+    settings_path = repo / ".claude" / "settings.local.json"
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     settings["hooks"] = {
         "PreToolUse": [
@@ -780,7 +779,7 @@ def test_claude_skill_body_is_platform_specific(tmp_path):
     assert "Claude Code:" in skill
     assert "$mimry" not in skill
     assert "mimry hook-check" in _norm_hook(
-        (repo / ".claude" / "settings.json").read_text(encoding="utf-8")
+        (repo / ".claude" / "settings.local.json").read_text(encoding="utf-8")
     )
 
 

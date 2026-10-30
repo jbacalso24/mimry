@@ -104,7 +104,7 @@ def test_refresh_rewrites_only_the_always_on_rules_and_hooks_that_were_added(hom
         claude_md.read_text(encoding="utf-8").replace("Start every task", "Start old task"),
         encoding="utf-8",
     )
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     data = json.loads(settings.read_text(encoding="utf-8"))
     data["hooks"]["PreToolUse"][0]["matcher"] = "Stale"
     settings.write_text(json.dumps(data), encoding="utf-8")
@@ -183,7 +183,7 @@ def test_old_search_matcher_needs_repair_until_refresh_rewrites_it(home, repo):
     install = ["install", "--platform", "claude-code", "--project", "--always-on", "--hooks"]
     assert main([*base, *install]) == 0
     assert _status("claude-code", repo, True) == 0
-    settings = repo / ".claude" / "settings.json"
+    settings = repo / ".claude" / "settings.local.json"
     data = json.loads(settings.read_text(encoding="utf-8"))
     # The subcommand is still there, only the matcher is the old one.
     data["hooks"]["PreToolUse"][0]["matcher"] = "Bash|Glob|Grep|Read"
