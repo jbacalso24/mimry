@@ -123,7 +123,7 @@ sample.py	password = ("to"\n    "matocanary")\n
 sample.py	h = ("Authorization: Bearer "\n    "tomato-canary")\n
 
 # Authorization header literals in code, with a scheme (#519, #540, #561, #573).
-sample.py	h = "Authorization: Bearer abcanary1234567890XYZ"
+sample.py	h = "Authorization: Bearer tomatocanarybearer42"
 sample.py	h = "Authorization: Basic canary1234567890XYZ"
 sample.py	h = "Authorization: Token canary1234567890XYZ"
 sample.py	h = "Proxy-Authorization: Bearer canary1234567890XYZ"
