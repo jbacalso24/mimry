@@ -58,7 +58,6 @@ SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" uv build
 ```
 
 Install the built wheel into a clean environment and smoke-test `mimry --help`. See [`RELEASING.md`](RELEASING.md) for the complete artifact gate.
-The release steps and the end-to-end release gate are in [`docs/releasing.md`](docs/releasing.md).
 
 ## Change requirements
 
