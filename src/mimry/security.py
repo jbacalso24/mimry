@@ -135,12 +135,15 @@ ASSIGNMENT_RE = re.compile(
     # A spaced boundary is only the last blank before the label: any
     # earlier blank of the run would rescan the rest of it, which made
     # long runs of spaces quadratic.
-    r"(?ims)(?P<boundary>^|(?<=[{(,;\[])|(?P<spaced>(?<=[ \t])(?![ \t])))"
+    # A backtick opens inline code, as in ``password = ...`` (#628).
+    # After ``val``, a label takes ``:`` too, as in Kotlin.
+    r"(?ims)(?P<boundary>^|(?<=[{(,;\[`])|(?P<spaced>(?<=[ \t])(?![ \t])(?<!\bval[ \t]))"
+    r"|(?<=\bval[ \t])(?![ \t]))"
     # A PHP or Perl variable keeps its sigil in front of the label.
     # A quoted shell variable (``"$password"``) has its quote in front
     # of the ``$``.
     r"(?P<prefix>[ \t]*(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<label_quote>['\"]?)\$?"
-    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)(?:\])?"
+    r"(?P<label>[A-Za-z_][A-Za-z0-9_.-]*)(?P=label_quote)(?:\])?\??"
     # A comparison is an operator of its own, so the first ``=`` of
     # ``==`` never reads as an assignment (#473). ``!=`` and ``!==``
     # are comparisons too (#500).
@@ -159,7 +162,7 @@ ASSIGNMENT_RE = re.compile(
     # literal is one value, so its placeholders stay inside it (#494).
     r"(?P<value>(?:[rR]?[fF])?(?:\"\"\".*?\"\"\"|'''.*?'''|\"(?:\\.|[^\"\\\r\n])*\"|"
     r"'(?:\\.|[^'\\\r\n])*')|`(?:\\.|[^`\\\r\n])*`|"
-    r"(?:\[[^\[\]\r\n]*\]|\\(?![nrt\"'])|[^,{;})\]\\\r\n'\"])*"
+    r"(?:\[[^\[\]\r\n]*\]|\\(?![nrt\"'])|[^,{;})\]\\\r\n'\"`])*"
     r"(?:(?=[\"'])[^,{;})\r\n]*)?)"
     r"(?P<newline>\r?\n|$)?"
 )
@@ -768,6 +771,27 @@ _ATTRIBUTE_LOOKUP_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+")
 # A single-brace word is a placeholder, as ``{token}`` is. Digits make
 # it a value, as in ``{tomatocanary42}`` (#608).
 _BRACED_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_][A-Za-z_-]*\}")
+# An Authorization header whose value is a braced placeholder, as in
+# ``Authorization: {token} tomatocanary42`` (#628). The placeholder is
+# kept, and the rest of the header is judged by _placeholder_rest_span.
+_PLAIN_AUTH_BRACED_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9-])(?<![A-Za-z0-9]_)(?:Proxy-)?Authorization(?:\*\*|__|[*_`])?[ \t]*:"
+    r"(?:\*\*|__|[*_`])?[ \t]*(?P<value>\{[A-Za-z_][A-Za-z_-]*\})"
+)
+# What follows a placeholder: a comma or a blank, then a value, after a
+# scheme when one is written (#628). Read as the rest of the header.
+_PLACEHOLDER_REST_RE = re.compile(
+    r"(?:[ \t\x00]*[,;][ \t\x00]*|[ \t\x00]+)"
+    rf"(?:(?P<scheme>{_KNOWN_AUTH_SCHEME_RE})(?![A-Za-z0-9-])[ \t\x00]+)?"
+    rf"(?P<value>{_AUTH_VALUE})"
+)
+# ``curl -u user:password``, the Basic credential a shell writes (#628).
+# The value is a user and a password joined by a colon, so ``-u user``
+# (a prompt) and ``-u $USER:$PASS`` (references) are not matched.
+_CURL_USER_RE = re.compile(
+    r"(?<![\w.-])curl(?:[ \t]+-[A-Za-z-]+)*[ \t]+(?:-u|--user)(?:[ \t]+|=)"
+    r"(?P<value>[A-Za-z0-9_.~+/=%!@-]+:[A-Za-z0-9_.~+/=%!@:-]+)"
+)
 # A path after the header, as ``docs/auth-headers.md`` or
 # ``src/mimry/security.py``: a value with a slash that ends in a file
 # extension is a file name, not a credential (#608).
@@ -911,8 +935,7 @@ def _contains_sensitive_text(text: str, *, code: bool, depth: int) -> bool:
     ):
         return True
     if depth < _SUB_TEXT_DEPTH and any(
-        _sub_text_is_sensitive(match, code=code, depth=depth)
-        for match in SUB_TEXT_RE.finditer(text)
+        _sub_text_is_sensitive(match, depth=depth) for match in SUB_TEXT_RE.finditer(text)
     ):
         return True
     if any(
@@ -1029,8 +1052,21 @@ def _is_sensitive_label(label: str, value: str = "") -> bool:
     if not _has_credential_words(label):
         return False
     if re.split(r"[_.-]", label)[-1].lower() in _NON_CREDENTIAL_LABEL_SEGMENTS:
-        return _carries_credential(value)
+        return _carries_credential(value) or _is_auth_scheme_value(value)
     return True
+
+
+def _is_auth_scheme_value(value: str) -> bool:
+    """Whether a value is an Authorization value with its scheme, as in
+    ``AUTH_HEADER=Bearer tomatocanary42``. A placeholder after the
+    scheme, as in ``Bearer ${TOKEN}``, is not one (#628).
+    """
+    header = _AUTH_LABEL_VALUE_RE.fullmatch(value.strip(" \t"))
+    return (
+        header is not None
+        and header.group("scheme") is not None
+        and _auth_value_is_credential(header.group("scheme"), header.group("value"), last=True)
+    )
 
 
 # Parsed languages whose unquoted values are literal data, not
@@ -1108,6 +1144,28 @@ def _is_type_annotation(text: str, start: int, operator: str) -> bool:
         and _is_known_type(name.group())
         and _TYPE_ENDS_RE.match(text, name.end()) is not None
     )
+
+
+def _typed_value_is_credential(
+    text: str, start: int, label: str, *, code: bool, scanner: _Scanner
+) -> bool:
+    """Whether ``label: Type = value`` is a credential (#628).
+
+    The type is code, not the value. The value after its ``=`` is judged
+    as an assigned value is: in parsed source, its string arguments too
+    (see _code_value_is_credential), and in text, a literal anywhere in
+    it (see _expression_is_credential). A type with no ``=`` assigns
+    nothing.
+    """
+    quoted = _QUOTED_TYPE_RE.match(text, start)
+    typed = quoted if quoted is not None else _TYPE_RE.match(text, start)
+    ends = _TYPE_ENDS_RE.match(text, typed.end())
+    if ends is None or not ends.group().endswith("="):
+        return False
+    rhs = _skip_blanks(text, ends.end())
+    if code:
+        return _code_value_is_credential(text, rhs, "=", label, scanner)
+    return _expression_is_credential(text, rhs, scanner)
 
 
 def _is_lookup(text: str, start: int, *, code: bool) -> bool:
@@ -1196,8 +1254,12 @@ def _value_is_credential(
             rhs += 1
         rhs_value = _VALUE_RE.match(text, rhs).group()
         return _value_is_credential(text, rhs, rhs_value, "=", label, code=code, scanner=scanner)
-    if _is_type_annotation(text, start, operator) or _is_lookup(text, start, code=code):
-        return False  # ``authorization: str)`` or ``req.headers["Authorization"]``: code
+    if _is_lookup(text, start, code=code):
+        return False  # ``req.headers["Authorization"]``: code
+    if _is_type_annotation(text, start, operator):
+        # ``authorization: str)`` is code. ``token: str = field(...)``
+        # is judged by its value (#628).
+        return _typed_value_is_credential(text, start, label, code=code, scanner=scanner)
     if _AUTH_PATH_RE.fullmatch(candidate) and _AUTH_LABEL_RE.fullmatch(label):
         return False  # ``Authorization: docs/auth-headers.md``: a file name (#608)
     if code:
@@ -1439,6 +1501,60 @@ def _in_typeof_comparison(text: str, literal: re.Match[str]) -> bool:
     )
 
 
+# A prompt, as ``getpass("Password: ")``, is text for the user.
+_PROMPT_CALLS = frozenset({"input", "getpass"})
+# A name a secret store is asked for, as ``DB_PASSWORD``, ``X-Token`` or
+# ``prod/db/password``: letters joined by separators, with no digit. A
+# route, as ``/v1/tokens``, is a name too.
+# shortcut: letters-only secrets joined by a separator read as names,
+# so such a secret in a call is kept; upgrade if one is seen.
+_CALL_NAME_RE = re.compile(r"/[\w./-]*|[A-Za-z]+(?:[_./-][A-Za-z]+)+")
+# The calls that take a regex pattern, as ``re.compile(r"...")``.
+_PATTERN_CALLS = frozenset(
+    {"compile", "match", "fullmatch", "search", "sub", "subn", "split", "findall", "finditer"}
+)
+# The name of a keyword argument, just before the literal it is given.
+_KEYWORD_ARG_RE = re.compile(r"\b(?P<name>[A-Za-z_]\w*)[ \t]*=[ \t]*\Z")
+
+
+def _is_first_argument(text: str, literal: re.Match[str]) -> bool:
+    """Whether a literal is the first argument of the call it is in."""
+    before = literal.start()
+    while before > 0 and text[before - 1] in " \t\r\n":
+        before -= 1
+    return before > 0 and text[before - 1] == "("
+
+
+def _argument_may_be_credential(text: str, literal: re.Match[str], callee: str) -> bool:
+    """Whether a string passed to a call may hold a credential (#628).
+
+    It is not a prompt, a name or a route, nor the key of a getter, as
+    ``resp.get("data", {})``, nor the value of a keyword that names no
+    credential, as ``filter_by(name="x")``. A ``default=`` keyword holds
+    a fallback, as in ``field(default="...")``.
+    """
+    method = callee.rsplit(".", 1)[-1]
+    value = _literal_text(literal)
+    if method in _PROMPT_CALLS or _CALL_NAME_RE.fullmatch(value):
+        return False
+    # Prose has blanks between its words, not a secret (#628).
+    if any(char.isspace() for char in value):
+        return False
+    # A command-line option name, as ``--password`` (#628).
+    if value.startswith("-"):
+        return False
+    # A regex function takes a pattern, not a secret (#628).
+    if method in _PATTERN_CALLS:
+        return False
+    if method in _LOOKUP_GETTERS and _is_first_argument(text, literal):
+        return False
+    keyword = _KEYWORD_ARG_RE.search(text, max(0, literal.start() - 64), literal.start())
+    if keyword is None:
+        return True
+    name = keyword["name"].lower()
+    return name == "default" or _is_credential_param(name)
+
+
 def _code_value_is_credential(
     text: str, start: int, operator: str, label: str, scanner: _Scanner
 ) -> bool:
@@ -1484,6 +1600,15 @@ def _code_value_is_credential(
         and not (in_array and _RELATIVE_PATH_RE.match(_literal_text(literal)))
     ):
         return True
+    # A string passed to a call is judged by the same literal check
+    # (#628), unless it names a secret rather than holding one.
+    if any(
+        _string_literal_is_credential(literal, code=True)
+        for literal, callee in value.arguments
+        if _argument_may_be_credential(text, literal, callee)
+        and not _literal_names_field(literal, label)
+    ):
+        return True
     if not shape or shape[0] in "_([":
         return False  # nothing assigned, or a value made of the literals just judged
     if operator == ":" and any(char.isspace() for char in shape):
@@ -1500,6 +1625,8 @@ class _Value(NamedTuple):
     shape: str
     end: int
     closed: bool
+    # Each string literal passed to a call, with the call's name (#628).
+    arguments: list[tuple[re.Match[str], str]]
 
 
 class _Scanner:
@@ -1572,10 +1699,13 @@ def _scan_value(
     inside brackets, and fewer operators carry it on to the next line.
     """
     literals: list[re.Match[str]] = []
+    arguments: list[tuple[re.Match[str], str]] = []
     shape: list[str] = []
     # Per open bracket: whether literals directly inside it are part of
     # the value.
     counted: list[bool] = []
+    # Per open bracket: the name of the call it opens, or the bracket.
+    openers: list[str] = []
     comment = None  # where a top-level comment on the current line starts
     ternary = False  # whether a top-level ``?`` has been seen
     pos, end = start, len(text)
@@ -1611,16 +1741,20 @@ def _scan_value(
             literal = _STRING_LITERAL_RE.match(text, prefix)
             if literal is None:
                 newline = text.find("\n", at)
-                return _Value(literals, "".join(shape), end if newline < 0 else newline, False)
+                return _Value(
+                    literals, "".join(shape), end if newline < 0 else newline, False, arguments
+                )
             triple = lead * 3 if lead in "\"'" else lead
             if text.startswith(triple, at) and not literal["literal"].startswith(triple):
                 # A triple quote the text never closes, as the closing
                 # quotes of a docstring after a value, ends the value.
                 # The short pattern would read its first two quotes as
                 # an empty string.
-                return _Value(literals, "".join(shape), prefix, True)
+                return _Value(literals, "".join(shape), prefix, True, arguments)
             if every_literal or not counted or counted[-1]:
                 literals.append(literal)
+            elif "{" not in openers and openers[-1] not in ("(", "[", "{"):
+                arguments.append((literal, openers[-1]))  # (#628)
             if not counted:
                 shape[-1] = shape[-1][
                     : len(shape[-1]) - (at - prefix)
@@ -1630,15 +1764,16 @@ def _scan_value(
         elif lead in "([{":
             if not counted:
                 shape.append(lead)
-            counted.append(
-                lead != "{" and _opens_group(text, start, at) and (not counted or counted[-1])
-            )
+            tuple_like = lead != "{" and _opens_group(text, start, at)
+            counted.append(tuple_like and (not counted or counted[-1]))
+            openers.append(_callee(text, start, at) if lead == "(" and not tuple_like else lead)
         elif lead in ")]}":
             if not counted:
                 return _Value(
-                    literals, "".join(shape), at, True
+                    literals, "".join(shape), at, True, arguments
                 )  # closes the bracket the value sits in
             counted.pop()
+            openers.pop()
             if not counted:
                 shape.append(lead)
         elif lead in "\r\n":
@@ -1648,13 +1783,28 @@ def _scan_value(
             if counted or not _line_goes_on(
                 text, start, line_end, pos, source=not by_line, ternary=ternary
             ):
-                return _Value(literals, "".join(shape), line_end, True)
+                return _Value(literals, "".join(shape), line_end, True, arguments)
             comment = None
         elif not counted:
-            return _Value(literals, "".join(shape), at, True)  # a top-level comma or semicolon
+            return _Value(
+                literals, "".join(shape), at, True, arguments
+            )  # a top-level comma or semicolon
     if not counted:
         shape.append(text[pos:end])
-    return _Value(literals, "".join(shape), max(pos, end), True)
+    return _Value(literals, "".join(shape), max(pos, end), True, arguments)
+
+
+def _callee(text: str, start: int, at: int) -> str:
+    """The name of the call whose ``(`` is at ``text[at]``, read back
+    from ``text[start:]``: ``get_secret``, ``os.environ.get`` (#628).
+    """
+    end = at
+    while end > start and text[end - 1] in " \t":
+        end -= 1
+    begin = end
+    while begin > start and (text[begin - 1].isalnum() or text[begin - 1] in "_$."):
+        begin -= 1
+    return text[begin:end]
 
 
 def _line_goes_on(
@@ -2552,6 +2702,23 @@ def _header_end(text: str, low: int) -> int:
     return end
 
 
+def _placeholder_rest_span(text: str, value_end: int) -> tuple[int, int] | None:
+    """The span of the credential in the rest of an Authorization
+    header, after the braced placeholder that ends at ``value_end``
+    (#628).
+
+    A placeholder is kept, but the text after it is judged as the
+    header value that follows. Each placeholder in a row is skipped in
+    turn, so a long line of them is read in linear time.
+    """
+    while (rest := _PLACEHOLDER_REST_RE.match(text, value_end)) is not None:
+        low, high = rest.span("value")
+        if not _BRACED_PLACEHOLDER_RE.fullmatch(text[low:high]):
+            return _auth_header_credential_span(text, rest.group("scheme"), low, high)
+        value_end = high
+    return None
+
+
 def _auth_header_credential_span(
     text: str, scheme: str | None, low: int, raw_high: int
 ) -> tuple[int, int] | None:
@@ -2564,11 +2731,14 @@ def _auth_header_credential_span(
     break, a comma, a semicolon or a bar follows it, and a sentence end
     before that break counts as the break. A colon-joined credential
     after a known scheme, and an encoder call judged one, are redacted
-    to the end of the header instead (#616).
+    to the end of the header instead (#616). A braced placeholder is
+    kept, and the rest of its header is judged (#628).
     """
     high = low + len(text[low:raw_high].rstrip(_SENTENCE_PUNCTUATION))
-    last = _AUTH_VALUE_TAIL_RE.match(text, raw_high) is not None
     value = text[low:high]
+    if _BRACED_PLACEHOLDER_RE.fullmatch(value):
+        return _placeholder_rest_span(text, raw_high)
+    last = _AUTH_VALUE_TAIL_RE.match(text, raw_high) is not None
     inside = _auth_encoder_call(text, raw_high, value)
     if not _auth_value_is_credential(scheme, value, last=last, inside=inside):
         return None
@@ -2623,10 +2793,15 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
     (_PLAIN_AUTH_TABLE_RE, #592). A header inside a literal is left to
     the literal pass, so each header is judged once.
     """
+    # A curl user and password is a Basic credential too (#628).
+    spans: list[tuple[int, int]] = [
+        match.span("value")
+        for match in _CURL_USER_RE.finditer(text)
+        if _auth_value_is_credential("Basic", match["value"], last=True)
+    ]
     hinted = _AUTH_HEADER_HINT_RE.search(text) is not None
     if not hinted and _AUTH_SCHEME_WORD_RE.search(text) is None:
-        return []
-    spans: list[tuple[int, int]] = []
+        return spans
     literal_starts: list[int] = []
     literal_ends: list[int] = []
     for chain in _literal_chains(text):
@@ -2661,6 +2836,10 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
                     # end (#616).
                     runs = _auth_value_runs_to_end(scheme, value, inside)
                     values.append((low, _header_end(joined, low) if runs else high))
+                elif _BRACED_PLACEHOLDER_RE.fullmatch(value):
+                    rest = _placeholder_rest_span(joined, high)  # (#628)
+                    if rest is not None:
+                        values.append(rest)
         # One literal only. A scheme in one literal and a value in the
         # next, joined with ``+``, is ``"Bearer " + token``: kept. With
         # no header name the value must read as a token, so UI text such
@@ -2688,7 +2867,9 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
                     spans.append((source + lo - piece_start, source + hi - piece_start))
                 index += 1
     # The plain-text passes need the word Authorization (the hint).
-    patterns = (_PLAIN_AUTH_HEADER_RE, _PLAIN_AUTH_TABLE_RE) if hinted else ()
+    patterns = (
+        (_PLAIN_AUTH_HEADER_RE, _PLAIN_AUTH_TABLE_RE, _PLAIN_AUTH_BRACED_RE) if hinted else ()
+    )
     for pattern in patterns:
         for header in pattern.finditer(text):
             index = bisect.bisect_right(literal_starts, header.start()) - 1
@@ -2742,11 +2923,13 @@ def _sub_text_parts(match: re.Match[str]) -> tuple[str, str, str]:
     return marker, whole[len(marker) :], ""
 
 
-def _sub_text_is_sensitive(match: re.Match[str], *, code: bool, depth: int) -> bool:
+def _sub_text_is_sensitive(match: re.Match[str], *, depth: int) -> bool:
+    # Judged as prose, as redaction does: a bare word after "=" in a
+    # comment is a value, not a name in code (#628).
     _opening, body, _closing = _sub_text_parts(match)
     if _SENSITIVE_HINT_RE.search(body) is None:
         return False
-    return _contains_sensitive_text(body, code=code, depth=depth + 1)
+    return _contains_sensitive_text(body, code=False, depth=depth + 1)
 
 
 def _redact_sub_text(match: re.Match[str], *, depth: int) -> str:

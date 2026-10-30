@@ -525,27 +525,32 @@ def test_source_code_that_names_or_computes_a_credential_is_not_a_secret():
         assert not contains_sensitive_text(line, code=True), line
 
 
-def test_literal_credentials_in_source_code_stay_sensitive_and_redacted():
+def test_literal_credentials_in_source_code_stay_sensitive_and_redacted(tmp_path: Path):
     for line in LITERAL_CREDENTIALS_IN_CODE:
         assert contains_sensitive_text(line, code=True), line
         # Redaction stays conservative at every output boundary.
         redacted = redact_sensitive_text(line)
         assert DEFENSIVE_MARKER not in redacted and VALUE_CANARY not in redacted, redacted
-    # As in detect-secrets, a call's arguments are not its value, so
-    # these files are indexed; text taken from them is still redacted
-    # through the whole call.
+    # A call's literal arguments are judged as literals and redacted
+    # before indexing (#628). The file stays indexed, with the same line
+    # count.
     for line in (
         f'SECRET_KEY = os.environ.get("SECRET_KEY", "{DEFENSIVE_MARKER}")\n',
         f'token = jwt.encode(payload, "{DEFENSIVE_MARKER}", algorithm="HS256")\n',
         f'auth = "Basic " + base64.b64encode(b"admin:{DEFENSIVE_MARKER}").decode()\n',
-        # A value naming its own label marks a keyword table (see
-        # NAMED_OR_COMPUTED).
-        f'password = "password" or "{DEFENSIVE_MARKER}"\n',
         # As Black wraps it.
         f'API_TOKEN = os.environ.get(\n    "API_TOKEN", "{DEFENSIVE_MARKER}"\n)\n',
     ):
-        assert not contains_sensitive_text(line, code=True), line
+        assert contains_sensitive_text(line, code=True), line
         assert DEFENSIVE_MARKER not in redact_sensitive_text(line), line
+        indexed = indexable_bytes(tmp_path / "a.py", line.encode("utf-8"))
+        assert DEFENSIVE_MARKER.encode("utf-8") not in indexed, line
+        assert indexed.count(b"\n") == line.count("\n"), line
+    # A value naming its own label marks a keyword table (see
+    # NAMED_OR_COMPUTED).
+    line = f'password = "password" or "{DEFENSIVE_MARKER}"\n'
+    assert not contains_sensitive_text(line, code=True), line
+    assert DEFENSIVE_MARKER not in redact_sensitive_text(line), line
     # A value that merely contains a credential word is still a value.
     assert contains_sensitive_text('token = "my_secret"\n', code=True)
     assert contains_sensitive_text('password = "!@#$%^&*"\n', code=True)
@@ -600,16 +605,18 @@ def test_configuration_literals_are_sensitive_and_redacted():
 
 def test_file_hints_are_redacted_line_by_line(tmp_path: Path):
     # Hints join lines with spaces, which hid every line-anchored
-    # assignment from redaction. A docstring example is not code, so the
-    # file is indexed.
-    from mimry.scanner import text_hint
+    # assignment from redaction. A docstring body is judged as prose, so
+    # its value is redacted and the file stays indexed with the same
+    # line count (#628).
+    from mimry.scanner import indexable_bytes, text_hint
 
     source = tmp_path / "config.py"
-    source.write_text(
-        f'"""Example .env:\n\nDATABASE_PASSWORD={DEFENSIVE_MARKER}\n"""\n', encoding="utf-8"
-    )
+    text = f'"""Example .env:\n\nDATABASE_PASSWORD={DEFENSIVE_MARKER}\n"""\n'
+    source.write_text(text, encoding="utf-8")
 
-    assert not has_sensitive_content(source)
+    kept = indexable_bytes(source, source.read_bytes())
+    assert DEFENSIVE_MARKER.encode("utf-8") not in kept
+    assert kept.count(b"\n") == text.count("\n")
     assert DEFENSIVE_MARKER not in text_hint(source)
 
 
