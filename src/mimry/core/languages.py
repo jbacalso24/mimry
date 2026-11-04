@@ -16,7 +16,13 @@ from .data_files import (
     extract_yaml,
     loads_jsonc,
 )
-from .sql_files import extract_statement, new_result, statement_spans, trigger_header
+from .sql_files import (
+    extract_statement,
+    new_result,
+    procedure_header,
+    statement_spans,
+    trigger_header,
+)
 
 EXTENSION_LANGUAGE = {
     ".py": "python",
@@ -3304,6 +3310,7 @@ def _extract_sql(source: str) -> dict:
         root = parser.parse(chunk).root_node
         if not extract_statement(root, chunk, row, result, seen):
             trigger_header(chunk, row, result, seen)
+            procedure_header(chunk, row, result, seen)
     return {**result, "status": "ok"}
 
 
