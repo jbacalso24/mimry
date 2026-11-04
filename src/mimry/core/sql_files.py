@@ -42,6 +42,14 @@ _QUOTES = '"`[]'
 # its \r, so a backtracking run tries 2^lines splits when no CREATE
 # follows (#619).
 _CREATE_START = re.compile(rb"(?:\s|--[^\n]*)*+CREATE\b", re.IGNORECASE)
+# A procedure header, for the procedures the grammar cannot read (#641).
+# One identifier: [bracketed], "quoted" or bare. A dot splits the parts.
+_IDENT = rb'(?:\[[^\]\r\n]{1,128}\]|"[^"\r\n]{1,128}"|[^\s(;.\[\]"]+)'
+_PROCEDURE_HEADER = re.compile(
+    rb"(?:\s|--[^\n]*)*+(?P<head>CREATE\s+(?:OR\s+(?:REPLACE|ALTER)\s+)?(?:PROCEDURE|PROC)\s+)"
+    rb"(?P<name>" + _IDENT + rb"(?:\s*\.\s*" + _IDENT + rb"){0,2})",
+    re.IGNORECASE,
+)
 # A trigger the grammar cannot read: its name, and the table after ON.
 _TRIGGER_HEADER = re.compile(
     rb"(?:\s|--[^\n]*)*+(?P<head>CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?"
@@ -243,6 +251,25 @@ def trigger_header(raw: bytes, row: int, out: dict, seen: set) -> None:
     out["definitions"].append(_symbol(name, "trigger", first, last))
     table_line = row + raw.count(b"\n", 0, match.start("table")) + 1
     out["calls"].append({"name": table, "line": table_line})
+
+
+def procedure_header(raw: bytes, row: int, out: dict, seen: set) -> None:
+    """A procedure the grammar cannot read, from its name alone.
+
+    T-SQL's `CREATE PROCEDURE p AS SELECT 1;` has a bare body that the
+    grammar drops, so only the name is left to take (#641).
+    """
+    match = _PROCEDURE_HEADER.match(raw)
+    if match is None:
+        return
+    parts = re.findall(_IDENT, match.group("name"))
+    name = ".".join(_unquoted(part.decode("utf-8", "replace")) for part in parts)
+    if not name or (name, "function") in seen:
+        return
+    seen.add((name, "function"))
+    first = row + raw.count(b"\n", 0, match.start("head")) + 1
+    last = row + raw.count(b"\n") + 1
+    out["definitions"].append(_symbol(name, "function", first, last))
 
 
 def new_result() -> dict:

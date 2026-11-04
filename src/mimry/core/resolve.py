@@ -1824,3 +1824,32 @@ def resolve_table_refs(
     # Sort deterministically
     results.sort(key=lambda r: (r["source"], r["target_file"], r["target_symbol_id"]))
     return results
+
+
+def resolve_sql_literal_refs(
+    literal_refs: dict[str, list[str]], routine_symbols: dict[str, list[tuple[str, str]]]
+) -> list[dict]:
+    """Link files whose string literals name a view or routine (#641).
+
+    A literal is a weak signal (`"name"` is any string), so it links
+    only on an exact name and only when one symbol defines it.
+    routine_symbols holds views and functions, never tables. The
+    return shape is that of resolve_table_refs.
+    """
+    results = []
+    for source, names in literal_refs.items():
+        for name in names:
+            definitions = routine_symbols.get(name, [])
+            if len(definitions) == 1:
+                target_file, symbol_id = definitions[0]
+                if source != target_file:
+                    results.append(
+                        {
+                            "source": source,
+                            "target_file": target_file,
+                            "target_symbol_id": symbol_id,
+                            "confidence": "INFERRED",
+                        }
+                    )
+    results.sort(key=lambda r: (r["source"], r["target_file"], r["target_symbol_id"]))
+    return results

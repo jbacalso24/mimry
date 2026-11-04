@@ -176,8 +176,10 @@ A variable or nested function inside a function, method or component body is not
 When none of a changed file's symbols has a caller, `--changed` uses the tests that `mimry impact <file>` selects for that file, and lists the file in `fallback`.
 Document headings and SQL tables are not code, so they are never targets; a changed Markdown file still counts for importers.
 
-The answer starts with a summary line, then the targets, the callers grouped by how many calls away they are, the files that import the target file directly, and the tests to run.
-Test files are those among the callers or importers, and the test command is the project's own (`uv run pytest` runs with the test files appended).
+The answer starts with a summary line, then the targets, the callers grouped by how many calls away they are, the files that import the target file directly, the referencing files, and the tests to run.
+Referencing files are files that name the target without importing it: code that queries a table or calls a procedure, or a doc that links to the file.
+An edge counts only when it ends on a target symbol or on the target file itself, so a query on one table in a schema file does not list files that use its neighbours.
+Test files are those among the callers, importers or referencing files, and the test command is the project's own (`uv run pytest` runs with the test files appended).
 
 ```bash
 mimry impact a
@@ -186,7 +188,7 @@ mimry impact --changed --json
 ```
 
 ```text
-a: 1 direct source caller, 2 source callers within 3 calls, 2 importing files, 1 test file.
+a: 1 direct source caller, 2 source callers within 3 calls, 2 importing files, 0 referencing files, 1 test file.
 
 Targets (1)
   a (app/chain.py:1)
@@ -207,7 +209,7 @@ Tests to run (1)
 
 Text output leaves out callers in test files, which already appear under `Tests to run`; their count is shown in each depth heading.
 
-`--json` returns `targets`, `callers` (each with `name`, `kind`, `path`, `line`, `depth`, `confidence` and `test`, and including test callers), `importers`, `tests`, `fallback`, `test_command` and `summary`.
+`--json` returns `targets`, `callers` (each with `name`, `kind`, `path`, `line`, `depth`, `confidence` and `test`, and including test callers), `importers`, `referencing_files`, `tests`, `fallback`, `test_command` and `summary`.
 The MCP tool `mimry_impact(target, file, changed, depth, root)` returns the same payload.
 
 ## History

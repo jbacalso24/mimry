@@ -31,6 +31,7 @@ from .core.resolve import (
     resolve_doc_links,
     resolve_imports,
     resolve_inheritance,
+    resolve_sql_literal_refs,
     resolve_table_refs,
 )
 from .core.tsconfig import build_ts_paths
@@ -199,6 +200,7 @@ PARALLEL_MIN_FILES = 64
 _REFERENCE_KEYS = (
     "doc_links",
     "table_refs",
+    "sql_literal_refs",
     "inherits",
     "alembic",
     "xcode",
@@ -667,24 +669,33 @@ def _declared_modules(files, symbols, language: str, *, fold_case: bool = False)
     return modules
 
 
-def _table_symbols(files, symbols) -> dict:
-    """lower(table_name) -> [(rel_path, symbol_id), ...].
+# SQL objects a reference can name (#641). Routines are views and
+# functions or procedures; a string literal may name only these.
+_SQL_OBJECT_KINDS = frozenset({"table", "sql_table", "view", "function"})
+_SQL_ROUTINE_KINDS = frozenset({"view", "function"})
 
-    A table is listed under its full name and its last name, so the
+
+def _sql_object_symbols(files, symbols, kinds=_SQL_OBJECT_KINDS) -> dict:
+    """lower(object_name) -> [(rel_path, symbol_id), ...] for the SQL
+    objects of the given kinds.
+
+    An object is listed under its full name and its last name, so the
     reference `users` finds `public.users`.
     """
     rel_path_of = {f["file_id"]: f["rel_path"] for f in files}
-    tables: dict[str, list] = {}
+    objects: dict[str, list] = {}
     for sym in symbols:
         kind = sym.get("kind")
-        if kind != "sql_table" and not (kind == "table" and sym.get("language") == "sql"):
+        if kind not in kinds:
+            continue
+        if kind != "sql_table" and sym.get("language") != "sql":
             continue
         rel_path = rel_path_of.get(sym["file_id"])
         if rel_path is not None:
             name = sym.get("name", "").lower()
             for key in {name, name.rpartition(".")[2]}:
-                tables.setdefault(key, []).append((rel_path, sym["symbol_id"]))
-    return tables
+                objects.setdefault(key, []).append((rel_path, sym["symbol_id"]))
+    return objects
 
 
 def _split_references(references) -> dict[str, dict]:
@@ -795,10 +806,10 @@ def _xcode_reference_edges(xcode_refs, rel_paths, file_id_of) -> list[dict]:
     return edges
 
 
-def _table_ref_graph_edges(table_refs, table_symbols, file_id_of) -> list[dict]:
-    """file -> symbol, from SQL table mentions."""
+def _sql_ref_graph_edges(resolved, file_id_of) -> list[dict]:
+    """file -> symbol, from resolved SQL object mentions."""
     edges = []
-    for e in resolve_table_refs(table_refs, table_symbols):
+    for e in resolved:
         source, target = file_id_of.get(e["source"]), e.get("target_symbol_id")
         if source and target:
             edges.append(
@@ -880,8 +891,16 @@ def _build_core_graph(
         split_refs["inherits"], symbols_by_file, import_edges, symbol_ids
     )
     graph["edges"] += _doc_link_graph_edges(split_refs["doc_links"], rel_paths, file_id_of)
-    graph["edges"] += _table_ref_graph_edges(
-        split_refs["table_refs"], _table_symbols(files, symbols), file_id_of
+    graph["edges"] += _sql_ref_graph_edges(
+        resolve_table_refs(split_refs["table_refs"], _sql_object_symbols(files, symbols)),
+        file_id_of,
+    )
+    graph["edges"] += _sql_ref_graph_edges(
+        resolve_sql_literal_refs(
+            split_refs["sql_literal_refs"],
+            _sql_object_symbols(files, symbols, _SQL_ROUTINE_KINDS),
+        ),
+        file_id_of,
     )
     graph["edges"] += _revises_graph_edges(split_refs["alembic"], file_id_of)
     graph["edges"] += _xcode_reference_edges(split_refs["xcode"], rel_paths, file_id_of)

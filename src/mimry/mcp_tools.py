@@ -870,7 +870,8 @@ def mimry_impact(
     root: str | None = None,
     line: int | None = None,
 ) -> dict[str, Any]:
-    """What a change touches: callers, importers and tests to run.
+    """What a change touches: callers, importers, referencing files and
+    tests to run.
 
     target is a symbol name (file picks one when several share it, and
     line picks by the line it starts on or spans) or a repo-relative

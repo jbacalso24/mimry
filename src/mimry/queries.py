@@ -34,6 +34,7 @@ from .core.artifacts import (
     line_missed_message,
     load_graph,
     node_source_file,
+    referencing_files,
     relationship_lines,
     shortest_path,
     split_file_line,
@@ -1490,7 +1491,12 @@ def _graph_symbol_ids(graph: dict) -> dict[tuple, str]:
 
 
 def _impact_summary(
-    label: str, callers: list[dict], importers: list[str], tests: list[str], depth: int
+    label: str,
+    callers: list[dict],
+    importers: list[str],
+    referencing: list[str],
+    tests: list[str],
+    depth: int,
 ) -> str:
     """One line. Caller counts leave out callers in test files."""
     source = [c for c in callers if not c["test"]]
@@ -1498,7 +1504,11 @@ def _impact_summary(
     parts = [ui.count(direct, "direct source caller")]
     if depth > 1:
         parts.append(f"{len(source):,} source callers within {depth} calls")
-    parts += [ui.count(len(importers), "importing file"), ui.count(len(tests), "test file")]
+    parts += [
+        ui.count(len(importers), "importing file"),
+        ui.count(len(referencing), "referencing file"),
+        ui.count(len(tests), "test file"),
+    ]
     return f"{label}: {', '.join(parts)}."
 
 
@@ -1552,6 +1562,23 @@ def _file_picks(symbols_by_path: dict[str, list[dict]], rel: str) -> list[tuple[
     return [(rel, sym) for sym in _targetable(symbols_by_path.get(rel, []))]
 
 
+def _file_sql_objects(fresh: dict, rel: str) -> list[tuple[str, dict]]:
+    """The SQL tables and views a file defines. The index keeps them out
+    of ``_symbols_by_path`` as non-code, but impact on a file names them
+    too, so a query on one of them can be found (#641).
+    """
+    files_by_id = {f["file_id"]: f["rel_path"] for f in fresh["files"]}
+    return [
+        (rel, sym)
+        for sym in fresh["symbols"]
+        if files_by_id.get(sym.get("file_id")) == rel
+        and (
+            sym.get("kind") == "sql_table"
+            or (sym.get("language") == "sql" and sym.get("kind") in ("table", "view"))
+        )
+    ]
+
+
 def _picked_ids(ids: dict[tuple, str], picks: list[tuple[str, dict]]) -> set[str]:
     """Graph node ids of picked symbols, found by (path, name, line)."""
     keys = ((rel, sym["name"], sym.get("line_start")) for rel, sym in picks)
@@ -1585,10 +1612,12 @@ def _impact_selection(
     """
     callers = _caller_rows(graph, ids, picks, depth)
     importers = importing_files(graph, target_files)
+    referencing = referencing_files(graph, target_files, _picked_ids(ids, picks))
     tests = sorted(
-        {c["path"] for c in callers if c["test"]} | {p for p in importers if is_test_file(p)}
+        {c["path"] for c in callers if c["test"]}
+        | {p for p in importers + referencing if is_test_file(p)}
     )
-    return callers, importers, tests
+    return callers, importers, referencing, tests
 
 
 def impact_payload(
@@ -1616,6 +1645,7 @@ def impact_payload(
         "targets": [],
         "callers": [],
         "importers": [],
+        "referencing_files": [],
         "tests": [],
         "fallback": [],
         "test_command": None,
@@ -1663,7 +1693,7 @@ def impact_payload(
             ]
         target_files, label = touched, "The working tree"
     elif not file and line is None and (rel := normalize_file_filter(target, root)) in indexed:
-        picks = _file_picks(symbols_by_path, rel)
+        picks = _file_picks(symbols_by_path, rel) + _file_sql_objects(fresh, rel)
         target_files, label = {rel}, rel
     else:
         wanted = normalize_file_filter(file, root) if file else None
@@ -1714,14 +1744,16 @@ def impact_payload(
         ),
         key=lambda t: (t["path"], t["line"] or 0, t["name"]),
     )
-    callers, importers, tests = _impact_selection(graph, ids, picks, target_files, depth)
+    callers, importers, referencing, tests = _impact_selection(
+        graph, ids, picks, target_files, depth
+    )
     fallback: list[str] = []
     if changed:
         for rel in sorted(target_files & indexed):
             changed_picks = [p for p in picks if p[0] == rel]
             if changed_picks and _caller_rows(graph, ids, changed_picks, depth):
                 continue
-            _, _, file_tests = _impact_selection(
+            _, _, _, file_tests = _impact_selection(
                 graph, ids, _file_picks(symbols_by_path, rel), {rel}, depth
             )
             if file_tests:
@@ -1731,9 +1763,10 @@ def impact_payload(
         targets=targets,
         callers=callers,
         importers=importers,
+        referencing_files=referencing,
         tests=tests,
         fallback=fallback,
-        summary=_impact_summary(label, callers, importers, tests, depth),
+        summary=_impact_summary(label, callers, importers, referencing, tests, depth),
     )
     return payload
 
@@ -1807,6 +1840,10 @@ def _print_impact(payload: dict) -> None:
         print()
         ui.title(f"Importing files ({len(payload['importers']):,})")
         ui.listing(payload["importers"], IMPACT_SHOWN)
+    if payload["referencing_files"]:
+        print()
+        ui.title(f"Referencing files ({len(payload['referencing_files']):,})")
+        ui.listing(payload["referencing_files"], IMPACT_SHOWN)
     tests, command = payload["tests"], payload["test_command"]
     print()
     if not tests:

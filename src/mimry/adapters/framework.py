@@ -20,10 +20,21 @@ _SQL_TABLE_RE = re.compile(
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
 _MD_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+\.mdx?(?:#[^)]+)?)\)", re.IGNORECASE)
 _MD_LINK_TARGET_RE = re.compile(r"\[[^\]]+\]\(([^)]+?)(?:#[^)]+)?\)", re.IGNORECASE)
+# One SQL identifier: [bracketed], "quoted", `backticked` or bare. The
+# quoted forms are length-bounded so an unclosed bracket cannot make the
+# scan quadratic on a long line (#641).
+_SQL_NAME = r"(?:\[[^\]\r\n]{1,128}\]|\"[^\"\r\n]{1,128}\"|`[^`\r\n]{1,128}`|[A-Za-z_]\w*)"
+# A possibly schema-qualified name. The object is its last part (#641).
+_SQL_QNAME = rf"{_SQL_NAME}(?:\s*\.\s*{_SQL_NAME}){{0,2}}"
 _SQL_TABLE_REF_RE = re.compile(
-    r"\b(?:FROM|JOIN|UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+[\"`\[]?([A-Za-z_][\w.]*)",
+    rf"\b(?:FROM|JOIN|UPDATE|INSERT\s+INTO|DELETE\s+FROM|EXECUTE|EXEC)\s+(?P<name>{_SQL_QNAME})",
     re.IGNORECASE,
 )
+_SQL_NAME_PART_RE = re.compile(_SQL_NAME)
+# A string literal whose whole text is an object name (#641). The body
+# ends at the closing quote of the same kind, at most 260 characters on.
+_SQL_LITERAL_RE = re.compile(r"""(?P<quote>["'])(?P<body>[^\r\n]{1,260}?)(?P=quote)""")
+_SQL_LITERAL_NAME_RE = re.compile(rf"{_SQL_NAME}(?:\.{_SQL_NAME}){{0,2}}")
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(?P<body>.*?)\n---\s*\n", re.DOTALL)
 
 
@@ -428,13 +439,20 @@ def markdown_link_targets(path: Path, root: Path, source: str | None = None) -> 
     return result[:50]
 
 
-def sql_table_references(text: str) -> list[str]:
-    """Return table names a source file appears to query.
+def _sql_name_parts(name: str) -> list[str]:
+    """The identifiers of a qualified name, quotes removed."""
+    return [part[1:-1] if part[0] in '[`"' else part for part in _SQL_NAME_PART_RE.findall(name)]
 
-    Scans for SQL DML/DDL keywords followed by an identifier.
+
+def sql_table_references(text: str) -> list[str]:
+    """Return SQL object names a source file appears to use.
+
+    Scans for FROM, JOIN, UPDATE, INSERT INTO, DELETE FROM, EXEC and
+    EXECUTE followed by a name. The name may be bare, bracketed, quoted
+    or schema-qualified: `[dbo].[Voyages]` and `"dbo"."Voyages"` give
+    voyages (#641).
     Rules:
-    - Take the last dotted segment (public.sessions -> sessions)
-    - Strip surrounding quotes/backticks/brackets
+    - Take the last name part (public.sessions -> sessions)
     - Ignore SQL keywords that follow (SELECT, WHERE, SET, VALUES, ON,
       AS, INTO)
     - Return sorted, de-duplicated, capped at 50
@@ -443,15 +461,8 @@ def sql_table_references(text: str) -> list[str]:
     keywords_to_skip = {"SELECT", "WHERE", "SET", "VALUES", "ON", "AS", "INTO"}
 
     for match in _SQL_TABLE_REF_RE.finditer(text):
-        # Get the matched table identifier
-        identifier = match.group(1).strip()
-
-        # Strip surrounding quotes/backticks/brackets
-        identifier = identifier.strip('"`[]')
-
-        # Take the last dotted segment
-        if "." in identifier:
-            identifier = identifier.split(".")[-1]
+        parts = _sql_name_parts(match.group("name"))
+        identifier = parts[-1] if parts else ""
 
         # Check if this looks like a valid identifier, not a SQL keyword
         if identifier and identifier.upper() not in keywords_to_skip:
@@ -459,6 +470,21 @@ def sql_table_references(text: str) -> list[str]:
 
     result = sorted(tables)
     return result[:50]
+
+
+def sql_literal_references(text: str) -> list[str]:
+    """Return the names of string literals that are a whole SQL object
+    name, such as "dbo.usp_GetVoyage" or "[dbo].[Voyages]" (#641).
+
+    Names are lowercased and kept whole, so the resolver matches them
+    exactly. Sorted, de-duplicated, capped at 50.
+    """
+    names = set()
+    for match in _SQL_LITERAL_RE.finditer(text):
+        body = match.group("body")
+        if _SQL_LITERAL_NAME_RE.fullmatch(body):
+            names.add(".".join(_sql_name_parts(body)).lower())
+    return sorted(names)[:50]
 
 
 def _frontmatter_facts(text: str) -> list[str]:

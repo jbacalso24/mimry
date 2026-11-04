@@ -22,6 +22,7 @@ from .adapters.framework import (
     alembic_migration,
     enrich_framework_facts,
     markdown_link_targets,
+    sql_literal_references,
     sql_table_references,
 )
 from .adapters.ts_ast import TS_EXTENSIONS, parse_ts_like
@@ -812,6 +813,9 @@ def _populate_references(ext, data, references, inherits, path, root, rel_path):
             table_refs = sql_table_references(data_decoded)
             if table_refs:
                 references["table_refs"] = table_refs
+            literal_refs = sql_literal_references(data_decoded)
+            if literal_refs:
+                references["sql_literal_refs"] = literal_refs
         except (OSError, UnicodeError):
             pass
 
