@@ -559,12 +559,15 @@ def importing_files(graph: dict, target_files: set[str]) -> list[str]:
     return sorted(found)
 
 
-def referencing_files(graph: dict, target_files: set[str]) -> list[str]:
-    """Files with a ``references`` edge into one of ``target_files``.
+def referencing_files(
+    graph: dict, target_files: set[str], target_symbol_ids: set[str]
+) -> list[str]:
+    """Files with a ``references`` edge onto the impact target.
 
-    The edge may end on a symbol of a target file or on the file itself
-    (a link, or a SQL object a query names). The targets are left out
-    (#641).
+    An edge counts when it ends on one of ``target_symbol_ids`` or on
+    the file node of one of ``target_files``. An edge to another symbol
+    of a target file (a table beside the view a query names) does not
+    count. The targets are left out (#641).
     """
     nodes = {str(n["id"]): n for n in graph.get("nodes") or [] if n.get("id") is not None}
     found: set[str] = set()
@@ -572,9 +575,14 @@ def referencing_files(graph: dict, target_files: set[str]) -> list[str]:
         source, target = _edge_endpoints(edge)
         if _edge_relation(edge) != "references" or not source or not target:
             continue
+        target_node = nodes.get(target, {})
+        on_file = (
+            target_node.get("type") == "file" and node_source_file(target_node) in target_files
+        )
+        if not (target in target_symbol_ids or on_file):
+            continue
         referencer = node_source_file(nodes.get(source, {}))
-        referenced = node_source_file(nodes.get(target, {}))
-        if referencer and referenced in target_files and referencer not in target_files:
+        if referencer and referencer not in target_files:
             found.add(referencer)
     return sorted(found)
 

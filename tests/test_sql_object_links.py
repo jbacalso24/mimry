@@ -213,3 +213,30 @@ def test_plain_string_is_not_a_referencing_file(tmp_path: Path) -> None:
     text = _impact_text(repo, cache, "dbo.name")
 
     assert "src/Plain.cs" not in text, text
+
+
+def test_referencing_files_follow_the_symbol_not_the_file(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "db").mkdir(parents=True)
+    (repo / "src").mkdir()
+    (repo / "db" / "procs.sql").write_text(
+        "CREATE VIEW dbo.vw_VesselFeed AS SELECT 1 AS x;\nCREATE TABLE dbo.Voyages (id int);\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "A.cs").write_text(
+        'class A { string q = "SELECT * FROM vw_VesselFeed"; }\n', encoding="utf-8"
+    )
+    (repo / "src" / "B.cs").write_text(
+        'class B { string q = "SELECT * FROM [dbo].[Voyages]"; }\n', encoding="utf-8"
+    )
+    cache = tmp_path / "cache"
+    for args in (("init", "--skip-graph"), ("index",)):
+        assert _run_cli(repo, cache, *args).returncode == 0
+
+    def referencing(target: str) -> list[str]:
+        payload = json.loads(_run_cli(repo, cache, "impact", target, "--json").stdout)
+        return payload["referencing_files"]
+
+    assert referencing("dbo.vw_VesselFeed") == ["src/A.cs"]
+    assert referencing("dbo.Voyages") == ["src/B.cs"]
+    assert referencing("db/procs.sql") == ["src/A.cs", "src/B.cs"]

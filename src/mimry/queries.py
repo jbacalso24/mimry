@@ -1562,6 +1562,23 @@ def _file_picks(symbols_by_path: dict[str, list[dict]], rel: str) -> list[tuple[
     return [(rel, sym) for sym in _targetable(symbols_by_path.get(rel, []))]
 
 
+def _file_sql_objects(fresh: dict, rel: str) -> list[tuple[str, dict]]:
+    """The SQL tables and views a file defines. The index keeps them out
+    of ``_symbols_by_path`` as non-code, but impact on a file names them
+    too, so a query on one of them can be found (#641).
+    """
+    files_by_id = {f["file_id"]: f["rel_path"] for f in fresh["files"]}
+    return [
+        (rel, sym)
+        for sym in fresh["symbols"]
+        if files_by_id.get(sym.get("file_id")) == rel
+        and (
+            sym.get("kind") == "sql_table"
+            or (sym.get("language") == "sql" and sym.get("kind") in ("table", "view"))
+        )
+    ]
+
+
 def _picked_ids(ids: dict[tuple, str], picks: list[tuple[str, dict]]) -> set[str]:
     """Graph node ids of picked symbols, found by (path, name, line)."""
     keys = ((rel, sym["name"], sym.get("line_start")) for rel, sym in picks)
@@ -1595,7 +1612,7 @@ def _impact_selection(
     """
     callers = _caller_rows(graph, ids, picks, depth)
     importers = importing_files(graph, target_files)
-    referencing = referencing_files(graph, target_files)
+    referencing = referencing_files(graph, target_files, _picked_ids(ids, picks))
     tests = sorted(
         {c["path"] for c in callers if c["test"]}
         | {p for p in importers + referencing if is_test_file(p)}
@@ -1676,7 +1693,7 @@ def impact_payload(
             ]
         target_files, label = touched, "The working tree"
     elif not file and line is None and (rel := normalize_file_filter(target, root)) in indexed:
-        picks = _file_picks(symbols_by_path, rel)
+        picks = _file_picks(symbols_by_path, rel) + _file_sql_objects(fresh, rel)
         target_files, label = {rel}, rel
     else:
         wanted = normalize_file_filter(file, root) if file else None
