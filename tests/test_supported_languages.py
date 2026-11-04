@@ -25,9 +25,7 @@ COUNTED_FILES = [README, SITE, HOW_IT_WORKS]
 
 def _languages_table_rows() -> list[tuple[str, list[str]]]:
     text = LANGUAGES_DOC.read_text(encoding="utf-8")
-    section = re.search(
-        r"^# Supported languages\n(.*?)(?=^# |\Z)", text, re.DOTALL | re.MULTILINE
-    )
+    section = re.search(r"^# Supported languages\n(.*?)(?=^# |\Z)", text, re.DOTALL | re.MULTILINE)
     assert section, "docs/languages.md has no '# Supported languages' section"
     rows = []
     for line in section.group(1).splitlines():
