@@ -81,11 +81,9 @@ Get started in four steps.
    or run `mimry install --platform claude-code`.
    Other agents: run `mimry install --platform <name>`, see [Supported agents](#supported-agents).
 
-   > [!TIP]
-   > The hooks and the prompt hook are on by default with `mimry install --platform claude-code`, at user level and with `--project`.
-   > They steer the agent to MIMRY without being told, and they do nothing in folders MIMRY has not set up.
-   > `--always-on`, with `--project`, is the one opt-in left: it adds MIMRY's rules to the agent's always-read file.
-   > Add `--no-hooks` or `--no-prompt-hook` to opt out.
+   `mimry install --platform claude-code` also adds MIMRY's hooks, which steer the agent to MIMRY and do nothing in folders MIMRY has not set up.
+   Add `--no-hooks` to leave them out.
+   With `--project`, `--always-on` also adds MIMRY's rules to the agent's always-read file.
 
 4. Check it works.
    In a repository, run `mimry preflight "<a task in your own words>"`.
