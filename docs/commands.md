@@ -129,6 +129,39 @@ The hooks also add a `Stop` hook that runs `mimry hook-stop` in the background w
 It closes the turn's open feedback window and flushes the session feedback, so the record is written without waiting for the next command.
 `mimry install --refresh`, which `mimry upgrade` runs, adds it to installs made before it existed.
 
+### Name the files for each task
+
+The prompt hook adds a note next to the hooks in Claude Code.
+When you submit a task, the hook ranks it against the index and adds a short note naming the files MIMRY ranks first, with the lines to read.
+The note stays under 800 characters, and the hook prints nothing for a slash command, a prompt under five words, a chat prompt that names no code, a prompt repeated in the same session, or a repo over 3000 indexed files or with a graph over 8 MB.
+A prompt names code when it has an identifier, a source file name, or a word that appears in an indexed file path.
+It is on by default with the hooks. Add `--no-prompt-hook` to leave it out:
+
+```bash
+mimry install --platform claude-code --no-prompt-hook
+```
+
+On a small repo it adds about half a second to each prompt, most of it loading the search code.
+Set `MIMRY_PROMPT_HOOK=0` in the environment Claude Code starts in to turn it off without removing it.
+Running `mimry install --platform claude-code --no-prompt-hook` again removes it.
+
+The hooks also add a Stop hook.
+When a turn ends it closes that turn's feedback window and writes the session's feedback, so the record does not wait for your next command.
+
+## Stats
+
+### See the tokens MIMRY saved
+
+`mimry stats` shows the tokens MIMRY saved in this session and across the repo.
+It counts a ranged Read (one with `offset` or `limit`) of a file MIMRY named in the session, as the tokens of the rest of the file.
+A search the hooks answer from the index counts as one search, never as tokens.
+Tokens are estimated as characters / 4, so every number is about, not exact.
+To show the session total in Claude Code's status line, set this in your Claude Code settings:
+
+```json
+{"statusLine": {"type": "command", "command": "mimry stats --statusline"}}
+```
+
 ## Output
 
 Every command answers the same way: one line that says what happened, a few indented details, and a next step only when something needs doing.
@@ -304,4 +337,4 @@ Ship feature [node-...]
 `split` works on leaves only, and repeated `--child` arguments set sibling order.
 Trees are canonical versioned JSON under `.mimry/plans/`, written atomically.
 IDs, projections, and the semantic SHA-256 from `mimry plan digest` exclude paths, timestamps, locale, and formatting.
-With `MIMRY_MCP_TOOLS=all` (see the README's MCP setup), MCP exposes read-only parity (`mimry_plan_tree`, `mimry_plan_check`, `mimry_plan_digest`, `mimry_plan_list`); changing a plan is CLI-only.
+With `MIMRY_MCP_TOOLS=all` (see [manual MCP setup](agents.md#manual-mcp-setup)), MCP exposes read-only parity (`mimry_plan_tree`, `mimry_plan_check`, `mimry_plan_digest`, `mimry_plan_list`); changing a plan is CLI-only.

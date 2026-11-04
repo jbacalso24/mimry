@@ -14,7 +14,7 @@ The pin is deliberate: `1.13.x` changes the TSX grammar shape and breaks exporte
 function and component extraction. Do not raise it without re-running the locked and
 unlocked artifact tests.
 
-The language pack provides every grammar MIMRY uses (see Supported languages in the README).
+The language pack provides every grammar MIMRY uses (see Supported languages in docs/languages.md).
 It downloads each grammar on first use from the pack's GitHub release, checked against the release's checksum manifest.
 So adding a supported language costs a table entry in `src/mimry/core/languages.py` rather than a new dependency.
 

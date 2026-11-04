@@ -456,5 +456,5 @@ It appears on Arch, CachyOS, Debian 12 and later, and Ubuntu 23.04 and later.
 
 **Fix**
 
-Install MIMRY with pipx or into a virtual environment of its own, as described in [Without uv](../README.md#without-uv).
+Install MIMRY with pipx or into a virtual environment of its own, as described in [Without uv](install.md#without-uv).
 Do not use `--break-system-packages`, because it can break the tools your system depends on.

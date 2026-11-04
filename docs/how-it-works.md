@@ -3,6 +3,12 @@
 This page covers what MIMRY builds and how it keeps that up to date.
 For the commands themselves, see [commands.md](commands.md).
 
+## The three steps
+
+1. **Index.** MIMRY parses each file into symbols and edges for imports, calls and inheritance, and stores the index in your user cache directory, outside the repository.
+2. **Rank.** MIMRY matches a task against file names, paths, content, symbols and the graph, and drops imports it cannot resolve rather than guessing.
+3. **Refresh.** Like Git, MIMRY compares file metadata and re-reads only the files that changed.
+
 ## What it builds
 
 ```text

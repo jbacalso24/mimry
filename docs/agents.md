@@ -40,6 +40,51 @@ In a Git repository where that file cannot be written, `mimry init` adds `.mimry
 `mimry doctor` warns when the line is missing and prints `mimry install --refresh` as the fix.
 `mimry uninstall --git-ignore` removes those lines again.
 
+## Install options
+
+| Option | Description |
+|---|---|
+| `--project` | Install into the current repository only, instead of for every repository |
+| `--always-on` | Add a short rules block to the agent's always-read file, such as `AGENTS.md` |
+| `--hooks` | Install the hooks, which suggest `mimry find` when the agent starts a broad search of the repository, at most three times a session, answer a search for a known symbol with its definition and callers, outline a large file when the agent reads it whole, record the files it reads and edits after a find as feedback (`MIMRY_SESSION_FEEDBACK=0` turns that off), and refresh the index in the background when a session starts and after each file edit. In Claude Code they also restore the files it was working on after the context is compacted, and close each turn's feedback window when the turn ends (a Stop hook). Claude Code gets them by default, at user level in `~/.claude/settings.json` and with `--project`. Codex needs `--project --hooks`, and its project hooks run after you trust them with `/hooks`. |
+| `--no-hooks` | Do not install the hooks, and remove MIMRY's hooks from an existing install, keeping the rest of the settings file. The choice is kept, so `mimry install --refresh` and `mimry upgrade` will not add them. |
+| `--prompt-hook` | Also name the files MIMRY ranks first for each submitted task, in a note of under 800 characters. On by default with Claude Code's hooks (`MIMRY_PROMPT_HOOK=0` turns it off). |
+| `--no-prompt-hook` | Do not add the prompt hook; the choice is kept, so refresh will not add it. |
+| `--no-mcp` | Install the skill without registering the MCP server |
+| `--no-global-gitignore` | Do not add `.mimry/` to Git's global ignore file |
+
+## Manual MCP setup
+
+<details>
+<summary>Manual MCP setup</summary>
+
+```bash
+claude mcp add --scope user mimry -- mimry-mcp   # Claude Code
+codex mcp add mimry -- mimry-mcp                 # Codex
+```
+
+Other MCP clients:
+
+```json
+{
+  "mcpServers": {
+    "mimry": { "command": "mimry-mcp" }
+  }
+}
+```
+
+`uvx mimry mcp` runs the server without installing it.
+
+By default the server lists 9 core tools: `mimry_status`, `mimry_preflight`, `mimry_find`, `mimry_related`, `mimry_symbol`, `mimry_path`, `mimry_impact`, `mimry_why` and `mimry_feedback`.
+The other tools stay off by default to keep the tool list small, so use the CLI for them unless you ask for them.
+Set `MIMRY_MCP_TOOLS=all` in the server's environment to list all 24 tools, or give a comma-separated list of tool names, such as `MIMRY_MCP_TOOLS=mimry_find,mimry_path`.
+Commands with no tool, such as `mimry callers`, `mimry callees`, `mimry bench`, `mimry doctor`, `mimry report` and `mimry install`, stay CLI-only.
+An unknown name prints one line to stderr and falls back to the core tools.
+
+MIMRY is listed in the [MCP Registry](https://registry.modelcontextprotocol.io/) as `io.github.jbacalso24/mimry`.
+
+</details>
+
 ## OpenCode
 
 Install MIMRY for OpenCode with:
