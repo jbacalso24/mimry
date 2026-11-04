@@ -694,3 +694,17 @@ def test_windows_script_refreshes_only_inside_the_success_branch():
     quoted = upgrade._ps_quote(MIMRY_EXE) + " 'install' '--refresh'"
     assert f"$refresh = (& {quoted} 2>&1 | Out-String)" in script
     assert upgrade._ps_quote(upgrade._refresh_failed_line()) in script[success:failure]
+
+
+@pytest.mark.parametrize(
+    ("channel", "command"),
+    [
+        ("uv tool", 'uv tool install "mimry[embed]"'),
+        ("pipx", 'pipx inject mimry "mimry[embed]"'),
+        (None, 'pip install "mimry[embed]"'),
+    ],
+)
+def test_embed_command_names_the_channel_that_installed_mimry(monkeypatch, channel, command):
+    monkeypatch.setattr(install_info, "install_channel", lambda: channel)
+
+    assert install_info.embed_command() == command
