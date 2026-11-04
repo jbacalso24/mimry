@@ -116,6 +116,14 @@ def _shell(command: str, session: str = "s1") -> dict:
     return {"tool_name": "Bash", "session_id": session, "tool_input": {"command": command}}
 
 
+def _ranked_head(query: str) -> str:
+    """The first line of the ranked-files answer (#656)."""
+    return (
+        f'MIMRY ranked these files for "{query}". '
+        "Read the lines it names first; your search still runs."
+    )
+
+
 def test_grep_for_a_known_function_gets_its_definition_and_callers(repo, monkeypatch, capsys):
     text = _hook(monkeypatch, capsys, repo, _grep("leaf"))
 
@@ -170,10 +178,11 @@ def test_search_of_one_named_file_gets_no_symbol_answer(repo, monkeypatch, capsy
     assert _hook(monkeypatch, capsys, repo, _shell("rg leaf app/one.py 2>/dev/null")) == ""
 
 
-def test_one_named_file_keeps_todays_reminder_when_broad(repo, monkeypatch, capsys):
+def test_one_named_file_gets_the_ranked_files_when_broad(repo, monkeypatch, capsys):
     text = _hook(monkeypatch, capsys, repo, _grep("leaf|main", path="app/one.py"))
 
-    assert text.startswith('MIMRY can answer this: run `mimry find "leaf main"`')
+    assert text.startswith(_ranked_head("leaf main"))
+    assert "\n- app/one.py: lines " in text
 
 
 def test_symbol_in_a_file_edited_after_indexing_is_skipped(repo, monkeypatch, capsys):
@@ -181,7 +190,7 @@ def test_symbol_in_a_file_edited_after_indexing_is_skipped(repo, monkeypatch, ca
 
     assert _hook(monkeypatch, capsys, repo, _grep("leaf")) == ""
     text = _hook(monkeypatch, capsys, repo, _grep("leaf|main"))
-    assert text.startswith("MIMRY can answer this")
+    assert text.startswith(_ranked_head("leaf main"))
 
 
 def test_graph_over_the_size_limit_shows_definition_and_command(repo, monkeypatch, capsys):
@@ -229,12 +238,12 @@ def test_the_same_symbol_twice_in_one_session_prints_once(repo, monkeypatch, cap
     assert other_session.startswith("MIMRY knows leaf")
 
 
-def test_missing_index_falls_back_to_the_reminder(repo, monkeypatch, capsys):
+def test_missing_index_database_still_ranks_from_the_file_list(repo, monkeypatch, capsys):
     (_index(repo) / "mimry.sqlite").unlink()
 
     assert _hook(monkeypatch, capsys, repo, _grep("leaf")) == ""
     text = _hook(monkeypatch, capsys, repo, _grep("leaf|main"))
-    assert text.startswith("MIMRY can answer this")
+    assert text.startswith(_ranked_head("leaf main"))
 
 
 def test_corrupt_index_falls_back_without_raising(repo, monkeypatch, capsys):
@@ -294,7 +303,7 @@ def test_heading_and_sql_table_named_like_a_function_are_not_answered(repo, monk
     assert _hook(monkeypatch, capsys, repo, _grep("files")) == ""
     # files is not a symbol, so the alternation with leaf names nothing.
     text = _hook(monkeypatch, capsys, repo, _grep("leaf|files"))
-    assert text.startswith("MIMRY can answer this")
+    assert text.startswith(_ranked_head("leaf files"))
     assert "MIMRY knows" not in text
 
 
@@ -311,12 +320,12 @@ def test_nudge_query_drops_regex_fragments(repo, monkeypatch, capsys):
 
 
 @pytest.mark.parametrize("pattern", ["helper call|leaf", "(helper|leaf)_file"])
-def test_phrase_with_a_symbol_name_gets_the_nudge_not_its_symbol(
+def test_phrase_with_a_symbol_name_gets_the_ranked_files_not_its_symbol(
     repo, monkeypatch, capsys, pattern
 ):
     text = _hook(monkeypatch, capsys, repo, _grep(pattern))
 
-    assert text.startswith("MIMRY can answer this: run `mimry find")
+    assert text.startswith("MIMRY ranked these files for")
     assert "MIMRY knows" not in text
 
 
@@ -360,11 +369,11 @@ def test_search_that_reads_a_pipe_gets_no_answer_or_nudge(repo, monkeypatch, cap
         ),
         (
             'cat app/one.py | rg -i "helper|notasymbol" app',
-            'MIMRY can answer this: run `mimry find "helper notasymbol"`',
+            _ranked_head("helper notasymbol"),
         ),
         (
             'cat app/one.py && rg -i "helper|notasymbol"',
-            'MIMRY can answer this: run `mimry find "helper notasymbol"`',
+            _ranked_head("helper notasymbol"),
         ),
     ],
 )
@@ -385,7 +394,7 @@ def test_search_fed_by_a_pipe_still_counts_when_it_names_a_path(
 def test_word_regex_with_an_unknown_branch_names_nothing(repo, monkeypatch, capsys, payload):
     text = _hook(monkeypatch, capsys, repo, payload)
 
-    assert text.startswith("MIMRY can answer this: run `mimry find")
+    assert text.startswith("MIMRY ranked these files for")
     assert "MIMRY knows" not in text
 
 
@@ -435,7 +444,7 @@ def test_more_than_five_named_files_is_a_tree_search(repo, monkeypatch, capsys):
 
     text = _hook(monkeypatch, capsys, repo, _shell(f'rg -i "helper|notasymbol" {files}'))
 
-    assert text.startswith('MIMRY can answer this: run `mimry find "helper notasymbol"`')
+    assert text.startswith(_ranked_head("helper notasymbol"))
 
 
 def _module(total: int, defs: dict[int, str]) -> str:
@@ -544,6 +553,7 @@ def test_outline_stops_at_25_symbols_and_counts_the_rest(outline_repo, monkeypat
 
 
 def test_generic_nudge_is_capped_per_session(repo, monkeypatch, capsys):
+    # No file matches these words, so each search gets the reminder.
     queries = ["alpha|bravo", "charlie|delta", "echo|foxtrot", "golf|hotel", "india|juliet"]
     texts = [
         _hook(monkeypatch, capsys, repo, _shell(f'rg -n "{query}" app', session="capped"))
