@@ -85,10 +85,9 @@ Get started in four steps.
    > Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` when it starts a broad search of the repository, at most three times a session, answers a grep for a known symbol with its definition and callers, and outlines a large file when the agent reads it whole. The hooks also refresh the index in the background when a session starts and after each file edit, and restore the files it was working on after the context is compacted.
 
 4. Check it works.
-   Run `mimry doctor`, which warns about any problem it finds with the install.
-   A warning that the root is not initialized is expected until you run preflight once.
-   Then, in a repository, run `mimry preflight "<a task in your own words>"`.
+   In a repository, run `mimry preflight "<a task in your own words>"`.
    The first run builds the index and downloads the tree-sitter grammars it needs, once per user.
+   If something looks off, run `mimry doctor`.
 
 > [!NOTE]
 > To upgrade, run `mimry upgrade`.
