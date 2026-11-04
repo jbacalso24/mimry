@@ -78,9 +78,11 @@ Run `mimry status --verify` to re-hash every file, and `mimry index --full` to r
 
 ### Keep the index fresh automatically
 
-Three opt-in ways refresh the index for you; none runs by default.
+Three ways refresh the index for you.
+Claude Code's hooks are on by default; the other two are opt-in.
 
-- `mimry install --project --platform claude-code --hooks` (or `--platform codex`) adds agent hooks that answer a search for a known symbol with its definition and callers, suggest `mimry find` for other broad searches, and refresh the index in the background when a session starts and after each file edit.
+- `mimry install --platform claude-code` adds agent hooks, at user level and with `--project`, that answer a search for a known symbol with its definition and callers, suggest `mimry find` for other broad searches, and refresh the index in the background when a session starts and after each file edit.
+  Codex needs `mimry install --project --platform codex --hooks`.
   The agent's next query does not wait for that refresh.
 - `mimry watch [--interval SECONDS]` polls in the foreground (every 2 seconds by default) and refreshes once a burst of edits settles.
 - `mimry git-hooks install` adds post-commit, post-merge, post-checkout, and post-rewrite hooks that refresh in the background, so `git commit` returns immediately.

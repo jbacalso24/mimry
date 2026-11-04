@@ -603,7 +603,8 @@ def test_plain_project_install_is_healthy_and_optional_extras_are_neutral(tmp_pa
         "-",
         "not added (optional, --always-on)",
     )
-    assert _status_table_row(status.stdout, "Hook") == ("-", "not added (optional, --hooks)")
+    # Claude Code's hooks are on by default.
+    assert _status_table_row(status.stdout, "Hook") == ("OK", ".claude/settings.local.json")
 
 
 def test_partly_installed_hooks_need_repair_and_the_repair_adds_hooks(tmp_path):

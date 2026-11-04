@@ -181,7 +181,7 @@ def test_uninstall_keeps_an_empty_settings_file_the_user_already_had(repo):
 
 def test_uninstall_keeps_a_folder_the_user_already_had_even_when_empty(repo):
     (repo / ".claude").mkdir()
-    installer.install_skill("claude-code", project=True, root=repo, mcp=False)
+    installer.install_skill("claude-code", project=True, root=repo, hooks=False, mcp=False)
 
     installer.uninstall_skill("claude-code", project=True, root=repo, mcp=False)
 
@@ -242,7 +242,7 @@ def test_later_hooks_uninstall_keeps_a_settings_file_with_a_user_key(repo):
 
 
 def test_a_plain_uninstall_with_nothing_to_keep_leaves_no_record(repo):
-    installer.install_skill("claude-code", project=True, root=repo, mcp=False)
+    installer.install_skill("claude-code", project=True, root=repo, hooks=False, mcp=False)
 
     installer.uninstall_skill("claude-code", project=True, root=repo, mcp=False)
 
@@ -449,21 +449,22 @@ def test_a_second_plain_uninstall_still_names_the_hooks_left(repo, capsys):
 # Hooks are per project: a user-scope install says how to get them
 
 
-def test_user_scope_claude_code_install_says_hooks_are_per_project(user, capsys):
+def test_user_scope_claude_code_install_adds_user_hooks_and_no_per_project_hint(user, capsys):
     installer.install_skill("claude-code", project=False, root=user, mcp=False)
 
-    hint = [line.strip() for line in capsys.readouterr().out.splitlines() if "per project" in line]
+    out = capsys.readouterr().out
 
-    assert hint == [
-        "Hooks are per project: run mimry install --platform claude-code --project --hooks"
-        " in a repo"
-    ]
+    assert "per project" not in out
+    assert (user / ".claude" / "settings.json").is_file()
 
 
-def test_user_scope_dry_run_says_hooks_are_per_project(user, capsys):
+def test_user_scope_dry_run_names_the_user_settings_file(user, capsys):
     installer.install_skill("claude-code", project=False, root=user, dry_run=True, mcp=False)
 
-    assert "Hooks are per project" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Would add hooks in" in out
+    assert "settings.json" in out
+    assert "per project" not in out
     assert not _global_skill(user).exists()
 
 

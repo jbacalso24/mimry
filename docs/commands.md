@@ -63,18 +63,20 @@ MCP `scope` reports the normalized `offset` and whether pagination was requested
 `mimry install --refresh` rewrites the MIMRY skills that are already installed, so they match the version you are running.
 It covers every platform in your user profile and, when the current directory is inside a Git repository, that repository's project install.
 For each install it rewrites the skill and its references, plus the always-on rules and hooks where those were added.
-It installs nothing new: a platform without a skill, or a missing always-on rule or hook, stays missing.
+Claude Code's hooks are added to an install that lacks them, unless the install opted out with `--no-hooks`; an install made before the record kept that choice counts as not opted out.
+It installs nothing else: a platform without a skill, or a missing always-on rule, stays missing.
 It does not register MCP servers.
 It adds `.mimry/` to Git's global ignore file only when that line is missing, so a second run writes nothing.
 
 `mimry upgrade` runs the refresh with the new version after a successful upgrade, so usually you do not need to run it yourself.
-`--refresh` cannot be combined with `--platform`, `--project`, `--status`, `--dry-run`, `--list-platforms`, `--always-on` or `--hooks`.
+`--refresh` cannot be combined with `--platform`, `--project`, `--status`, `--dry-run`, `--list-platforms`, `--always-on`, `--hooks`, `--no-hooks`, `--prompt-hook` or `--no-prompt-hook`.
 A `--no-mcp` install stays without MCP after a refresh.
 
 ## Removing an install
 
 `mimry uninstall --platform <name>` removes the skill, its references and its version marker.
-Add `--project` to remove a project install, and `--always-on` or `--hooks` to remove its always-on rules or hooks too.
+Add `--project` to remove a project install, and `--always-on` or `--hooks` to remove its always-on rules or project hooks too.
+Claude Code's user-level hooks in `~/.claude/settings.json` are removed with the install.
 MIMRY removes only its own part of a file it shares with you, and says so: `Removed MIMRY's hooks from .claude/settings.json` means the file stays with your settings.
 A file is deleted only when MIMRY created it and nothing else is left in it, and a folder is removed only when MIMRY created it and it is empty.
 Git's global ignore file is shared by every install on the machine, so uninstall leaves MIMRY's lines there and prints how to remove them.
@@ -114,16 +116,16 @@ When files changed since the last index, `find`, `explain`, `path`, `why` and th
 
 ## Prompt hook and turn-end hook
 
-`mimry install --platform claude-code --project --hooks --prompt-hook` adds a `UserPromptSubmit` hook that runs `mimry hook-prompt`.
+`mimry install --platform claude-code` adds a `UserPromptSubmit` hook that runs `mimry hook-prompt`, along with the other hooks, at user level and with `--project`.
 For each submitted task it ranks the prompt against the index, as `find` does, and adds a note naming the files MIMRY ranks first, with the lines to read, and the `mimry preflight` command for the full pack.
 The note is at most 800 characters and names at most five files.
 It prints nothing for a slash command, for a prompt under five words once code blocks and links are removed, for a chat prompt that names no code, for a prompt with the same words as an earlier one in the session, for a repo with no index, and for an index past 3000 files or with a graph over 8 MB, where a search takes over a second.
 A prompt names code when it has an identifier, a source file name, or a word that appears in an indexed file path.
 The hook never refreshes the index, and it logs each query with the session id, so session feedback and `mimry stats` see it.
-`MIMRY_PROMPT_HOOK=0` turns it off, and running `mimry install --platform claude-code --project --hooks` without `--prompt-hook` removes it.
-It is opt-in and is not part of the Claude Code plugin, which ships the default hooks only.
+`MIMRY_PROMPT_HOOK=0` turns it off, and `mimry install --platform claude-code --no-prompt-hook` leaves it out, removing it from an install that has it.
+It is on by default with Claude Code's hooks and is not part of the Claude Code plugin, which ships the default hooks only.
 
-The `--hooks` install also adds a `Stop` hook that runs `mimry hook-stop` in the background when a turn ends.
+The hooks also add a `Stop` hook that runs `mimry hook-stop` in the background when a turn ends.
 It closes the turn's open feedback window and flushes the session feedback, so the record is written without waiting for the next command.
 `mimry install --refresh`, which `mimry upgrade` runs, adds it to installs made before it existed.
 
