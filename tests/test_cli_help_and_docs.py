@@ -1,4 +1,4 @@
-"""Help text, README tool counts and the Windows alias listing."""
+"""Help text, the docs' MCP tool counts and the Windows aliases."""
 
 from __future__ import annotations
 
@@ -77,12 +77,12 @@ def test_windows_alias_is_accepted_everywhere_and_listed_only_on_windows():
     assert "windows" in installer._listed_aliases(cfg, windows=True)
 
 
-def test_readme_tool_counts_match_the_mcp_registry():
-    text = (ROOT / "README.md").read_text(encoding="utf-8")
+def test_docs_tool_counts_match_the_mcp_registry():
+    text = (ROOT / "docs" / "agents.md").read_text(encoding="utf-8")
     core = re.search(r"lists (\d+) core tools", text)
     everything = re.search(r"list all (\d+) tools", text)
 
-    assert core and everything, "README no longer states the MCP tool counts"
+    assert core and everything, "docs/agents.md no longer states the MCP tool counts"
     assert int(core.group(1)) == len(CORE_TOOLS)
     assert int(everything.group(1)) == len(registered_names())
     for name in CORE_TOOLS:

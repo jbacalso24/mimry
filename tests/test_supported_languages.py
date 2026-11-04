@@ -1,7 +1,7 @@
 """The supported-languages list has one source of truth.
 
-``supported_languages()`` in ``core/languages.py`` drives the README
-"Supported languages" table. The language count stated in the README,
+``supported_languages()`` in ``core/languages.py`` drives the table in
+docs/languages.md. The language count stated in the README,
 the website and docs/how-it-works.md must match it. When a language
 is added, add its label to ``LANGUAGE_LABELS`` and update the table
 and the counts. When a language lands, add it to the table and remove
@@ -17,17 +17,16 @@ from mimry.core.languages import EXTENSION_LANGUAGE, LANGUAGE_LABELS, supported_
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
+LANGUAGES_DOC = ROOT / "docs" / "languages.md"
 SITE = ROOT / "site" / "index.html"
 HOW_IT_WORKS = ROOT / "docs" / "how-it-works.md"
 COUNTED_FILES = [README, SITE, HOW_IT_WORKS]
 
 
-def _readme_table_rows() -> list[tuple[str, list[str]]]:
-    text = README.read_text(encoding="utf-8")
-    section = re.search(
-        r"^## Supported languages\n(.*?)(?=^## |\Z)", text, re.DOTALL | re.MULTILINE
-    )
-    assert section, "README.md has no '## Supported languages' section; add it after '## Features'"
+def _languages_table_rows() -> list[tuple[str, list[str]]]:
+    text = LANGUAGES_DOC.read_text(encoding="utf-8")
+    section = re.search(r"^# Supported languages\n(.*?)(?=^# |\Z)", text, re.DOTALL | re.MULTILINE)
+    assert section, "docs/languages.md has no '# Supported languages' section"
     rows = []
     for line in section.group(1).splitlines():
         if not line.startswith("|") or set(line) <= set("|-: "):
@@ -78,9 +77,9 @@ def test_every_language_has_a_label():
     )
 
 
-def test_readme_table_matches_supported_languages():
-    assert _readme_table_rows() == supported_languages(), (
-        "the README '## Supported languages' table differs from supported_languages(); "
+def test_languages_table_matches_supported_languages():
+    assert _languages_table_rows() == supported_languages(), (
+        "the table in docs/languages.md differs from supported_languages(); "
         "update its rows to match src/mimry/core/languages.py"
     )
 
