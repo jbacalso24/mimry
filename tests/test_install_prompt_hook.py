@@ -62,24 +62,27 @@ def _install(repo: Path, *flags: str) -> None:
     assert main([*_base(repo), "install", "--platform", "claude-code", "--project", *flags]) == 0
 
 
-def test_prompt_hook_is_added_only_with_its_flag(repo, capsys):
-    _install(repo, "--hooks", *NO_MCP)
-    assert "UserPromptSubmit" not in _settings(repo)["hooks"]
-
-    _install(repo, "--hooks", "--prompt-hook", *NO_MCP)
+def test_prompt_hook_is_on_by_default_and_its_opt_out_removes_it(repo, capsys):
+    _install(repo, *NO_MCP)
     [command] = _commands(_settings(repo), "UserPromptSubmit")
     assert command.split()[-1].endswith("hook-prompt")
     group = _settings(repo)["hooks"]["UserPromptSubmit"][0]
     assert "matcher" not in group
     assert "async" not in group["hooks"][0]
 
-    _install(repo, "--hooks", *NO_MCP)
+    _install(repo, "--no-prompt-hook", *NO_MCP)
+    assert "UserPromptSubmit" not in _settings(repo)["hooks"]
+
+    _install(repo, "--hooks", "--prompt-hook", *NO_MCP)
+    assert _commands(_settings(repo), "UserPromptSubmit")
+
+    _install(repo, "--no-prompt-hook", *NO_MCP)
     assert "UserPromptSubmit" not in _settings(repo)["hooks"]
 
 
 def test_prompt_hook_needs_hooks_and_claude_code(repo, home, capsys):
     with pytest.raises(SystemExit):
-        _install(repo, "--prompt-hook", *NO_MCP)
+        _install(repo, "--no-hooks", "--prompt-hook", *NO_MCP)
     assert not (repo / ".claude" / "settings.local.json").exists()
 
     with pytest.raises(SystemExit):

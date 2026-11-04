@@ -12,7 +12,7 @@ import sys
 import time
 import tomllib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from shutil import which
 
@@ -286,11 +286,13 @@ def _hermes_global_path() -> Path:
     return _home() / ".hermes" / "skills" / "mimry" / "SKILL.md"
 
 
-def _claude_global_path() -> Path:
+def _claude_config_dir() -> Path:
     config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
-    if config_dir:
-        return Path(config_dir) / "skills" / "mimry" / "SKILL.md"
-    return _home() / ".claude" / "skills" / "mimry" / "SKILL.md"
+    return Path(config_dir) if config_dir else _home() / ".claude"
+
+
+def _claude_global_path() -> Path:
+    return _claude_config_dir() / "skills" / "mimry" / "SKILL.md"
 
 
 def _codex_global_path() -> Path:
@@ -1123,11 +1125,40 @@ def _has_hook(root: Path, cfg: MimryPlatform) -> bool | None:
     )
 
 
+# Claude Code reads its user-level hooks from settings.json in its
+# config folder. It is the only agent with user-level hooks.
+_USER_HOOK_FILE = Path("settings.json")
+
+
+def _user_level_hooks(key: str) -> bool:
+    """True when this platform's user-level install adds hooks.
+
+    Those hooks are on by default. Codex hooks are per project.
+    """
+    return key == "claude-code"
+
+
+def _hook_scope(root: Path, cfg: MimryPlatform, project: bool) -> tuple[Path, MimryPlatform]:
+    """The folder and platform whose hooks file one scope uses.
+
+    The user scope of Claude Code is its config folder and
+    settings.json, so the functions that take a root and a platform
+    work on it as they do on a project. Only call it for a platform
+    with user-level hooks.
+    """
+    if project:
+        return root, cfg
+    return _claude_config_dir().resolve(), replace(cfg, hook_path=_USER_HOOK_FILE)
+
+
 def _legacy_hooks_file(root: Path, cfg: MimryPlatform) -> Path | None:
     """The settings file MIMRY used for hooks before the hooks file.
 
-    None when the agent never had one.
+    None when the agent never had one, and for user-level hooks, which
+    never lived anywhere else.
     """
+    if cfg.hook_path == _USER_HOOK_FILE:
+        return None
     legacy = _LEGACY_HOOK_PATHS.get(cfg.key)
     return (root / legacy).resolve() if legacy else None
 
@@ -2032,13 +2063,25 @@ def _missing_paths(targets: list[Path]) -> list[Path]:
     return list(missing)
 
 
-def _record_install(dst: Path, *, created: list[Path], base: Path, mcp: bool, key: str) -> None:
+def _record_install(
+    dst: Path,
+    *,
+    created: list[Path],
+    base: Path,
+    mcp: bool,
+    key: str,
+    hooks: bool | None = None,
+    prompt_hook: bool = False,
+) -> None:
     """Merge what this install created into the record.
 
     Entries that are absolute or outside base are dropped, not carried
     forward. Also note whether MCP was turned off: a plain install (mcp)
     clears the --no-mcp choice. The platform key joins "platforms", the
-    list of platforms installed into this folder.
+    list of platforms installed into this folder. ``hooks`` is the
+    choice for the default hooks: false is an opt-out, and a record
+    without the field counts as not opted out. ``prompt_hook`` only
+    matters with hooks.
     """
     state = _read_state(dst)
     known = _read_created(state, base) | set(created)
@@ -2049,9 +2092,33 @@ def _record_install(dst: Path, *, created: list[Path], base: Path, mcp: bool, ke
         state.pop("no_mcp", None)
     else:
         state["no_mcp"] = True
+    if hooks is not None:
+        state["hooks"] = hooks
+        state["prompt_hook"] = bool(hooks and prompt_hook)
     listed = state.get("platforms")
     state["platforms"] = sorted({*(listed if isinstance(listed, list) else []), key})
     _atomic_write(dst.parent / _STATE_FILE, json.dumps(state, indent=2) + "\n")
+
+
+def _remove_opted_out_hooks(
+    root: Path, cfg: MimryPlatform, dst: Path, *, project: bool, hooks: bool | None
+) -> list[Path]:
+    """Take MIMRY's hooks out of a scope when the install opted out.
+
+    --no-hooks works as --no-prompt-hook does for the prompt hook. Other
+    keys and hooks stay, and a file MIMRY made goes once it is empty.
+    """
+    if hooks is not False or cfg.key != "claude-code":
+        return []
+    scope_root, scope_cfg = _hook_scope(root, cfg, project)
+    recorded = frozenset(_read_created(_read_state(dst), _state_base(dst, root, project)))
+    return _remove_hooks(scope_root, scope_cfg, recorded)
+
+
+def _say_removed_hooks(paths: list[Path], root: Path, project: bool) -> None:
+    """Name each hooks file an install took MIMRY's hooks out of."""
+    for path in paths:
+        ui.detail(_settings_line(path, root, project, "hooks"))
 
 
 def install_skill(
@@ -2061,18 +2128,24 @@ def install_skill(
     root: Path,
     dry_run: bool = False,
     always_on: bool = False,
-    hooks: bool = False,
+    hooks: bool | None = None,
     mcp: bool = True,
-    prompt_hook: bool = False,
+    prompt_hook: bool | None = None,
 ) -> Path:
     key = canonical_platform(platform_name)
     cfg = platforms()[key]
     root = root.resolve()
+    # None means the platform's default. Claude Code gets its hooks and
+    # the prompt hook by default, in both scopes. Codex stays opt-in.
+    if hooks is None:
+        hooks = _user_level_hooks(key)
+    if prompt_hook is None:
+        prompt_hook = hooks and key == "claude-code"
     # Refuse before writing anything, so a bad flag never leaves a
     # half-done install.
     if always_on and not project:
         raise SystemExit(ui.error_text("--always-on only works with --project"))
-    if hooks and not project:
+    if hooks and not project and not _user_level_hooks(key):
         raise SystemExit(ui.error_text("--hooks only works with --project"))
     if prompt_hook and not hooks:
         raise SystemExit(ui.error_text("--prompt-hook only works with --hooks"))
@@ -2080,28 +2153,33 @@ def install_skill(
         raise SystemExit(ui.error_text("--prompt-hook only works with Claude Code"))
     _refuse_throwaway_path_mismatch()
     dst = (root / cfg.project_path if project else cfg.global_path).resolve()
+    # The Claude Code plugin ships user-level hooks of its own, so MIMRY
+    # adds none beside it. The choice is still recorded as made.
+    plugin_hooks = hooks and not project and _user_level_hooks(key) and _plugin_installed()
+    add_hooks = hooks and not plugin_hooks
+    hook_root, hook_cfg = _hook_scope(root, cfg, project) if hooks else (root, cfg)
     # Never merge into a hooks file that cannot be parsed: that would
     # replace everything in it. Skip the hooks, show them, exit 1.
-    hooks_problem = _hooks_problem(root, cfg) if hooks else None
+    hooks_problem = _hooks_problem(hook_root, hook_cfg) if add_hooks else None
     if hooks_problem:
         ui.warn(f"Skipped the MIMRY hooks: {hooks_problem}")
         ui.detail('Add them by hand under "hooks" in that file:')
         print(json.dumps({"hooks": _mimry_hook_entries(cfg)}, indent=2))
-        hooks = False
+        add_hooks = False
     extras = []
     if always_on and cfg.always_on_file:
         extras.append(f"always-on instructions in {cfg.always_on_file.as_posix()}")
-    hook_target = _install_hooks(root, cfg, dry_run=True) if hooks else None
+    hook_target = _install_hooks(hook_root, hook_cfg, dry_run=True) if add_hooks else None
     if hook_target:
         extras.append(
-            f"hooks in {cfg.hook_path.as_posix()} that name `mimry find` for broad searches,"
-            " answer searches for known symbols, refresh the index in the background,"
+            f"hooks in {_shown(hook_target, root, project)} that name `mimry find` for broad"
+            " searches, answer searches for known symbols, refresh the index in the background,"
             " and close the session's feedback window when a turn ends"
         )
     if hook_target and prompt_hook:
         extras.append(
-            f"a prompt hook in {cfg.hook_path.as_posix()} that names the files to read first"
-            " for each task"
+            f"a prompt hook in {_shown(hook_target, root, project)} that names the files to read"
+            " first for each task"
         )
     _warn_if_path_differs()
     if dry_run:
@@ -2112,9 +2190,11 @@ def install_skill(
         )
         for extra in extras:
             ui.detail(f"Would add {extra}")
-        if hooks and not hook_target:
+        if plugin_hooks:
+            ui.detail(_PLUGIN_HOOKS_NOTE)
+        if add_hooks and not hook_target:
             ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
-        if not project and cfg.hook_path is not None:
+        if not project and key == "codex":
             ui.detail(_hooks_hint(key))
         if not _mcp_disabled(not mcp):
             register_mcp(cfg, dry_run=True)
@@ -2132,26 +2212,38 @@ def install_skill(
     created = [path for path in _missing_paths(targets) if path not in skill_paths]
     _write_skill_files(dst, key)
     base = _state_base(dst, root, project)
-    _record_install(dst, created=created, base=base, mcp=mcp, key=key)
+    opted_out = _remove_opted_out_hooks(root, cfg, dst, project=project, hooks=hooks)
+    _record_install(
+        dst,
+        created=created,
+        base=base,
+        mcp=mcp,
+        key=key,
+        hooks=hooks if key == "claude-code" else None,
+        prompt_hook=prompt_hook,
+    )
     if always_on:
         _install_always_on(root, cfg, dry_run=False)
-    if hooks:
-        _install_hooks(root, cfg, dry_run=False, prompt=prompt_hook)
+    if add_hooks:
+        _install_hooks(hook_root, hook_cfg, dry_run=False, prompt=prompt_hook)
     moved_hooks: list[Path] = []
     excluded = False
     if project:
         recorded = frozenset(_read_created(_read_state(dst), base))
         moved_hooks = _move_legacy_hooks(
-            root, cfg, recorded, prompt=prompt_hook if hooks else None
+            root, cfg, recorded, prompt=prompt_hook if add_hooks else None
         )
         excluded = _exclude_hooks_file(root, cfg, recorded)
     ui.ok(f"Installed the MIMRY skill for {cfg.label} ({_scope(project)})")
     ui.detail(_shown(dst, root, project))
+    _say_removed_hooks(opted_out, root, project)
     for extra in extras:
         ui.detail(f"Added {extra}")
-    if hooks and not hook_target:
+    if plugin_hooks:
+        ui.detail(_PLUGIN_HOOKS_NOTE)
+    if add_hooks and not hook_target:
         ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
-    if not project and cfg.hook_path is not None:
+    if not project and key == "codex":
         ui.detail(_hooks_hint(key))
     if not _mcp_disabled(not mcp):
         register_mcp(cfg, dry_run=False)
@@ -2165,6 +2257,9 @@ def install_skill(
     if hooks_problem:
         raise SystemExit(1)
     return dst
+
+
+_PLUGIN_HOOKS_NOTE = "Skipped the user-level hooks: the MIMRY Claude Code plugin ships its own"
 
 
 def _hooks_hint(key: str) -> str:
@@ -2301,10 +2396,13 @@ def uninstall_skill(
     settings: list[str] = []
     if always_on and project and (path := _remove_always_on(root, cfg, created)):
         settings.append(_settings_line(path, root, project, "always-on block"))
-    if hooks and project:
-        removed_hooks = _remove_hooks(root, cfg, created)
+    # Project hooks go with --hooks. Claude Code's user-level hooks are
+    # on by default, so they go with the install.
+    if (hooks and project) or (not project and _user_level_hooks(key)):
+        hook_root, hook_cfg = _hook_scope(root, cfg, project)
+        removed_hooks = _remove_hooks(hook_root, hook_cfg, created)
         settings.extend(_settings_line(path, root, project, "hooks") for path in removed_hooks)
-        _drop_hooks_exclude(root, cfg, removed_hooks)
+        _drop_hooks_exclude(hook_root, hook_cfg, removed_hooks)
     keep_record = project and not shared_with and _record_still_needed(root, cfg, created)
     removed: list[Path] = []
     if shared_with:
@@ -2641,6 +2739,44 @@ def _install_path(cfg: MimryPlatform, root: Path, project: bool) -> Path:
     return (root / cfg.project_path if project else cfg.global_path).resolve()
 
 
+def _refresh_hooks(
+    key: str, cfg: MimryPlatform, root: Path, project: bool, dst: Path
+) -> list[Path]:
+    """Rewrite one install's hooks and add the default ones it lacks.
+
+    An install that has hooks keeps and repairs them. Claude Code adds
+    its default hooks where there are none, unless the record opted out
+    or the plugin ships them. Codex hooks are opt-in, so Codex gets the
+    repair only.
+    """
+    written: list[Path] = []
+    if project:
+        # Hooks an older install left in the legacy settings file move
+        # to the hooks file, as a plain install moves them.
+        recorded = frozenset(_read_created(_read_state(dst), _state_base(dst, root, project)))
+        moved = _move_legacy_hooks(root, cfg, recorded)
+        written.extend(moved)
+        if moved:
+            return written
+    hook_root, hook_cfg = _hook_scope(root, cfg, project)
+    present = _has_any_hook(hook_root, hook_cfg)
+    if present is None:
+        return written
+    if present:
+        # An install that has the prompt hook keeps it.
+        prompt = _has_prompt_hook(hook_root, hook_cfg)
+    else:
+        state = _read_state(dst)
+        if key != "claude-code" or state.get("hooks") is False:
+            return written
+        if not project and _plugin_installed():
+            return written
+        prompt = state.get("prompt_hook") is not False
+    if not _hooks_current(hook_root, hook_cfg, prompt=prompt):
+        written.append(_install_hooks(hook_root, hook_cfg, prompt=prompt))
+    return written
+
+
 def _refresh_one(key: str, cfg: MimryPlatform, root: Path, project: bool) -> InstallRefresh:
     """Rewrite what this one install already has, and nothing else."""
     dst = _install_path(cfg, root, project)
@@ -2654,17 +2790,8 @@ def _refresh_one(key: str, cfg: MimryPlatform, root: Path, project: bool) -> Ins
         if cfg.always_on_file and _has_always_on(root, cfg):
             if not _always_on_current(root, cfg):
                 written.append(_install_always_on(root, cfg, dry_run=False))
-        if cfg.hook_path:
-            # Hooks an older install left in the legacy settings file
-            # move to the hooks file, as a plain install moves them.
-            recorded = frozenset(_read_created(_read_state(dst), _state_base(dst, root, project)))
-            moved = _move_legacy_hooks(root, cfg, recorded)
-            written.extend(moved)
-            if not moved and _has_any_hook(root, cfg) is True:
-                # An install that has the prompt hook keeps it.
-                prompt = _has_prompt_hook(root, cfg)
-                if not _hooks_current(root, cfg, prompt=prompt):
-                    written.append(_install_hooks(root, cfg, prompt=prompt))
+    if cfg.hook_path and (project or _user_level_hooks(key)):
+        written.extend(_refresh_hooks(key, cfg, root, project, dst))
     name = f"{cfg.label} (this project)" if project else cfg.label
     return InstallRefresh(name, root, project, tuple(p for p in written if p is not None))
 
@@ -2673,9 +2800,10 @@ def refresh_installed(start: Path) -> list[InstallRefresh]:
     """Rewrite each MIMRY install that is already there.
 
     Covers every platform in the user scope and, when start is inside a
-    Git repository, that repository's project scope. Nothing new is
-    installed: a missing skill, always-on rules or hooks stay missing,
-    and MCP registration and Git's global ignore are not touched.
+    Git repository, that repository's project scope. No skill is added
+    and always-on rules stay missing. Claude Code's default hooks are
+    added where an install lacks them, unless its record opted out, and
+    MCP registration and Git's global ignore are not touched.
     """
     # Refuse like install does: hooks written here would run PATH's
     # older copy.
@@ -2712,7 +2840,9 @@ def _refresh_command(a) -> int:
             ("--list-platforms", getattr(a, "list_platforms", False)),
             ("--always-on", a.always_on),
             ("--hooks", a.hooks),
+            ("--no-hooks", getattr(a, "no_hooks", False)),
             ("--prompt-hook", getattr(a, "prompt_hook", False)),
+            ("--no-prompt-hook", getattr(a, "no_prompt_hook", False)),
         )
         if given
     ]
@@ -2768,15 +2898,26 @@ def cmd_install(a) -> int:
             " runs every hook twice. Uninstall one of them."
         )
         return 1
+    no_hooks = getattr(a, "no_hooks", False)
+    no_prompt_hook = getattr(a, "no_prompt_hook", False)
+    prompt_flag = getattr(a, "prompt_hook", False)
+    if a.hooks and no_hooks:
+        raise SystemExit(ui.error_text("--hooks and --no-hooks cannot be combined"))
+    if prompt_flag and no_prompt_hook:
+        raise SystemExit(ui.error_text("--prompt-hook and --no-prompt-hook cannot be combined"))
+    # None keeps the platform's default: Claude Code's hooks and prompt
+    # hook are on, and Codex hooks stay opt-in.
+    hooks = False if no_hooks else (True if a.hooks else None)
+    prompt_hook = False if no_prompt_hook else (True if prompt_flag else None)
     install_skill(
         a.platform,
         project=a.project,
         root=Path(a.root),
         dry_run=a.dry_run,
         always_on=a.always_on,
-        hooks=a.hooks,
+        hooks=hooks,
         mcp=not a.no_mcp,
-        prompt_hook=getattr(a, "prompt_hook", False),
+        prompt_hook=prompt_hook,
     )
     # Once per run, after the install itself, so a refused install
     # leaves the machine's git ignore file alone.

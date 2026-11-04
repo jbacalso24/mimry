@@ -421,15 +421,47 @@ def _hook_repair_command(key: str, cfg: installer.MimryPlatform, root: Path) -> 
     return f"mimry install --platform {key} --project{flags}{no_mcp}"
 
 
+_HOOKS_INCOMPLETE = "incomplete"
+_HOOKS_MISSING = "missing"
+_REFRESH_FIX = "mimry install --refresh"
+
+
+def _hook_gaps(key: str, cfg: installer.MimryPlatform, root: Path) -> list[tuple[str, str]]:
+    """Each place where this agent's MIMRY hooks are partial or missing,
+    as (kind, fix). Claude Code's default hooks count as missing only
+    where the install did not opt out, and not while the plugin ships
+    the user-level ones."""
+    gaps: list[tuple[str, str]] = []
+    if cfg.hook_path is None:
+        return gaps
+    if _hooks_incomplete(root, cfg):
+        gaps.append((_HOOKS_INCOMPLETE, _hook_repair_command(key, cfg, root)))
+    if key != "claude-code":
+        return gaps
+    for project in (True, False):
+        dst = installer._install_path(cfg, root, project)
+        if not _exists(dst) or installer._read_state(dst).get("hooks") is False:
+            continue
+        if not project and installer._plugin_installed():
+            continue
+        hook_root, hook_cfg = installer._hook_scope(root, cfg, project)
+        present = installer._has_any_hook(hook_root, hook_cfg)
+        if present is False:
+            gaps.append((_HOOKS_MISSING, _REFRESH_FIX))
+        elif present and not project and installer._has_hook(hook_root, hook_cfg) is False:
+            gaps.append((_HOOKS_INCOMPLETE, _REFRESH_FIX))
+    return gaps
+
+
 def _registrations_check(root: Path) -> dict[str, Any]:
     """Which agents have MIMRY set up, from their config files."""
     agents: list[dict[str, Any]] = []
-    hook_repairs: list[str] = []
+    hook_gaps: list[tuple[str, str]] = []
     for key, cfg in installer.platforms().items():
         skill = _skill_state(cfg, root)
         registered, command = _mcp_registration(cfg)
-        incomplete = _hooks_incomplete(root, cfg)
-        if skill is None and registered is not True and not incomplete:
+        gaps = _hook_gaps(key, cfg, root)
+        if skill is None and registered is not True and not gaps:
             continue
         agents.append(
             {
@@ -440,8 +472,7 @@ def _registrations_check(root: Path) -> dict[str, Any]:
                 "command_resolves": _command_resolves(command) if registered else None,
             }
         )
-        if incomplete:
-            hook_repairs.append(_hook_repair_command(key, cfg, root))
+        hook_gaps.extend(gaps)
     if not agents:
         return _check(
             "agents.registrations",
@@ -452,7 +483,7 @@ def _registrations_check(root: Path) -> dict[str, Any]:
         )
     labels = ", ".join(agent["label"] for agent in agents)
     broken = [agent["key"] for agent in agents if agent["command_resolves"] is False]
-    if not broken and not hook_repairs:
+    if not broken and not hook_gaps:
         return _check(
             "agents.registrations",
             "ok",
@@ -465,9 +496,14 @@ def _registrations_check(root: Path) -> dict[str, Any]:
         fixes = " and ".join(f"`mimry install --platform {key}`" for key in broken)
         problems.append("a registered command does not resolve")
         suggestions.append(f"Run {fixes} to register the current server.")
-    if hook_repairs:
+    kinds = {kind for kind, _ in hook_gaps}
+    if _HOOKS_INCOMPLETE in kinds:
         problems.append("the hook table is incomplete")
-        suggestions.extend(f"Run `{command}` to repair the hooks." for command in hook_repairs)
+    if _HOOKS_MISSING in kinds:
+        problems.append("MIMRY's hooks are missing")
+    for kind, fix in dict.fromkeys(hook_gaps):
+        verb = "repair" if kind == _HOOKS_INCOMPLETE else "add"
+        suggestions.append(f"Run `{fix}` to {verb} the hooks.")
     return _check(
         "agents.registrations",
         "warning",

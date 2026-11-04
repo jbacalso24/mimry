@@ -31,6 +31,10 @@ files to read first. It prints nothing for a slash command, a chat
 prompt, a repeated prompt, or a prompt no file matches. ``hook-stop`` is
 the Stop hook: it marks the end of the turn and flushes the session
 feedback.
+
+The hooks are installed user-wide, so they run in every folder. In a
+folder MIMRY has not set up (no ``.mimry/`` in it or above it) each one
+exits at once, prints nothing and writes nothing.
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .constants import HEAVY_IGNORES, MCP_QUERY_NAME, NON_CODE_KINDS
+from .hookfast import set_up_at_or_above
 from .session import (
     SESSION_STOP_LOCK_WAIT,
     compact_note,
@@ -267,8 +272,11 @@ class _Search(NamedTuple):
 
 
 def cmd_hook_check(a) -> int:
+    root = Path(getattr(a, "root", None) or ".")
+    if not set_up_at_or_above(root):
+        return 0
     try:
-        _hook_check(Path(getattr(a, "root", None) or "."))
+        _hook_check(root)
     except Exception:
         # A nudge is optional; breaking the user's tool call is not.
         pass
@@ -276,8 +284,11 @@ def cmd_hook_check(a) -> int:
 
 
 def cmd_hook_refresh(a) -> int:
+    root = Path(getattr(a, "root", None) or ".")
+    if not set_up_at_or_above(root):
+        return 0
     try:
-        _hook_refresh(Path(getattr(a, "root", None) or "."))
+        _hook_refresh(root)
     except Exception:
         # The next query reindexes stale files anyway, so a failed
         # background refresh costs nothing but time.
@@ -286,8 +297,11 @@ def cmd_hook_refresh(a) -> int:
 
 
 def cmd_hook_compact(a) -> int:
+    root = Path(getattr(a, "root", None) or ".")
+    if not set_up_at_or_above(root):
+        return 0
     try:
-        _hook_compact(Path(getattr(a, "root", None) or "."))
+        _hook_compact(root)
     except Exception:
         # The note is optional; never fail the session over it.
         pass
@@ -296,6 +310,7 @@ def cmd_hook_compact(a) -> int:
 
 def cmd_hook_prompt(a) -> int:
     try:
+        # _hook_prompt checks the folder the payload names.
         _hook_prompt(Path(getattr(a, "root", None) or "."))
     except Exception:
         # The note is optional; never fail the user's prompt over it.
@@ -304,8 +319,11 @@ def cmd_hook_prompt(a) -> int:
 
 
 def cmd_hook_stop(a) -> int:
+    root = Path(getattr(a, "root", None) or ".")
+    if not set_up_at_or_above(root):
+        return 0
     try:
-        _hook_stop(Path(getattr(a, "root", None) or "."))
+        _hook_stop(root)
     except Exception:
         # The window waits for the next flush; never fail the turn.
         pass
@@ -1679,6 +1697,8 @@ def _hook_prompt(root: Path) -> None:
     from .lifecycle import indexed_root
 
     root = indexed_root((Path(cwd) if isinstance(cwd, str) and cwd else root).resolve())
+    if not set_up_at_or_above(root):
+        return
     mimry_dir = root / ".mimry"
     pointer_path = mimry_dir / "pointer.json"
     if not pointer_path.is_file():

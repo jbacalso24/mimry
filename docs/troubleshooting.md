@@ -271,7 +271,7 @@ $ mimry install --platform claude-code --status
 Run the command the status output names, for example `mimry install --platform claude-code`.
 If the status only reports an out-of-date version, run `mimry install --refresh` to rewrite every installed skill to the version you are running.
 Add `--project` to install into the current project instead of your user profile.
-Add `--always-on` with `--project` to add the project's always-on instructions, and `--hooks` with `--project` to add the hooks.
+Add `--always-on` with `--project` to add the project's always-on instructions. Claude Code's hooks are added by default; `--hooks` with `--project` adds Codex's.
 Run `mimry install --list-platforms` to see every platform name.
 
 ## A copied .mimry folder

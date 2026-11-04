@@ -157,12 +157,13 @@ def test_hooks_run_bare_mimry_when_path_is_this_install(tmp_path, monkeypatch, c
     installer.install_skill("claude-code", project=True, root=repo, hooks=True)
 
     commands = _hook_commands(repo)
-    assert len(commands) == 5
+    assert len(commands) == 6  # the five table rows, and the prompt hook on by default
     assert set(commands) == {
         "mimry hook-check",
         "mimry hook-refresh",
         "mimry hook-compact",
         "mimry hook-stop",
+        "mimry hook-prompt",
     }
     captured = capsys.readouterr()
     text = captured.out + captured.err
@@ -185,7 +186,7 @@ def test_hooks_point_at_this_machine_when_mimry_is_not_on_path(tmp_path, monkeyp
     installer.install_skill("claude-code", project=True, root=repo, hooks=True)
 
     commands = _hook_commands(repo)
-    assert len(commands) == 5
+    assert len(commands) == 6  # the five table rows, and the prompt hook on by default
     assert all(c.startswith(installer._posix_executable() + " ") for c in commands)
     captured = capsys.readouterr()
     text = captured.out + captured.err

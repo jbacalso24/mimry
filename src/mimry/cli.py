@@ -589,15 +589,28 @@ def build_parser():
     i.add_argument(
         "--hooks",
         action="store_true",
-        help="With --project, also install the supported hooks",
+        help=(
+            "Install the hooks. Claude Code gets them by default, at user level and with"
+            " --project; Codex needs this with --project"
+        ),
+    )
+    i.add_argument(
+        "--no-hooks",
+        action="store_true",
+        help="Do not install the hooks; the choice is kept, so --refresh will not add them",
     )
     i.add_argument(
         "--prompt-hook",
         action="store_true",
         help=(
-            "With --hooks on Claude Code, also add the prompt hook that names the files to read"
-            " first for each task"
+            "Add the prompt hook that names the files to read first for each task. Claude Code"
+            " gets it by default with its hooks"
         ),
+    )
+    i.add_argument(
+        "--no-prompt-hook",
+        action="store_true",
+        help="Do not add the prompt hook; the choice is kept, so --refresh will not add it",
     )
     i.add_argument(
         "--status", action="store_true", help="Check install health for the target platform/scope"
@@ -607,7 +620,7 @@ def build_parser():
         action="store_true",
         help=(
             "Rewrite the MIMRY skills already installed for every platform and this project,"
-            " installing nothing new"
+            " and add the default hooks an install lacks unless it opted out with --no-hooks"
         ),
     )
     i.add_argument(
@@ -641,7 +654,10 @@ def build_parser():
     u.add_argument(
         "--hooks",
         action="store_true",
-        help="With --project, also remove the supported hooks",
+        help=(
+            "With --project, also remove the supported hooks. Claude Code's user-level hooks"
+            " are always removed"
+        ),
     )
     u.add_argument(
         "--no-mcp",

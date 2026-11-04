@@ -646,6 +646,8 @@ def test_registrations_read_each_agents_config_file(tmp_path, monkeypatch):
     claude = {"mcpServers": {"mimry": {"type": "stdio", "command": command, "args": []}}}
     _write(home / ".claude.json", json.dumps(claude))
     _write(home / ".claude" / "skills" / "mimry" / "SKILL.md", "")
+    # Opted out of Claude Code's hooks, so none is missing.
+    _write(home / ".claude" / "skills" / "mimry" / ".mimry_state.json", '{"hooks": false}')
     _write(home / ".codex" / "config.toml", f"[mcp_servers.mimry]\ncommand = '{command}'\n")
     _write(root / ".codex" / "skills" / "mimry" / "SKILL.md", "")
     kiro = {"mcpServers": {"mimry": {"command": command, "args": []}}}
