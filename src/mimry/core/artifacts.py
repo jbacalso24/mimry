@@ -559,6 +559,26 @@ def importing_files(graph: dict, target_files: set[str]) -> list[str]:
     return sorted(found)
 
 
+def referencing_files(graph: dict, target_files: set[str]) -> list[str]:
+    """Files with a ``references`` edge into one of ``target_files``.
+
+    The edge may end on a symbol of a target file or on the file itself
+    (a link, or a SQL object a query names). The targets are left out
+    (#641).
+    """
+    nodes = {str(n["id"]): n for n in graph.get("nodes") or [] if n.get("id") is not None}
+    found: set[str] = set()
+    for edge in graph.get("links") or graph.get("edges") or []:
+        source, target = _edge_endpoints(edge)
+        if _edge_relation(edge) != "references" or not source or not target:
+            continue
+        referencer = node_source_file(nodes.get(source, {}))
+        referenced = node_source_file(nodes.get(target, {}))
+        if referencer and referenced in target_files and referencer not in target_files:
+            found.add(referencer)
+    return sorted(found)
+
+
 def _symbol_label(node: dict) -> str:
     return str(node.get("label") or node.get("id"))
 

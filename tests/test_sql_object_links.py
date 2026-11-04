@@ -175,3 +175,41 @@ def test_a_64_kb_line_scans_in_under_a_second(scan, line: str) -> None:
     started = time.perf_counter()
     scan(line)
     assert time.perf_counter() - started < 1.0
+
+
+def _impact_text(repo: Path, cache: Path, *args: str) -> str:
+    result = _run_cli(repo, cache, "impact", *args)
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def test_impact_lists_the_csharp_file_as_a_referencing_file(tmp_path: Path) -> None:
+    repo, cache = _build_repo(tmp_path)
+
+    for target in ("dbo.usp_GetVoyage", "dbo.vw_VesselFeed", "dbo.Voyages"):
+        text = _impact_text(repo, cache, target)
+        assert "Referencing files (1)" in text, text
+        assert "src/Repo.cs" in text, text
+        assert "1 referencing file" in text.splitlines()[0], text
+
+    text = _impact_text(repo, cache, "db/procs.sql")
+    assert "src/Repo.cs" in text, text
+
+
+def test_impact_payload_has_referencing_files_key(tmp_path: Path) -> None:
+    repo, cache = _build_repo(tmp_path)
+
+    result = _run_cli(repo, cache, "impact", "dbo.usp_GetVoyage", "--json")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["referencing_files"] == ["src/Repo.cs"]
+    assert "src/Repo.cs" not in payload["importers"]
+
+
+def test_plain_string_is_not_a_referencing_file(tmp_path: Path) -> None:
+    repo, cache = _build_repo(tmp_path)
+
+    text = _impact_text(repo, cache, "dbo.name")
+
+    assert "src/Plain.cs" not in text, text

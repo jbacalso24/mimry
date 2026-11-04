@@ -256,6 +256,7 @@ def test_json_has_the_documented_shape(tmp_path):
         "targets",
         "callers",
         "importers",
+        "referencing_files",
         "tests",
         "fallback",
         "test_command",
