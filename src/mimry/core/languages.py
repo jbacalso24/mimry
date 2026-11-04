@@ -115,8 +115,8 @@ EXTENSION_LANGUAGE = {
 }
 
 # Display name for each EXTENSION_LANGUAGE value.
-# tests/test_supported_languages.py checks the docs/languages.md table and counts
-# against supported_languages().
+# tests/test_supported_languages.py checks the docs/languages.md
+# table and counts against supported_languages().
 LANGUAGE_LABELS: dict[str, str] = {
     "python": "Python",
     "javascript": "JavaScript",

@@ -1,4 +1,4 @@
-"""Help text, MCP tool counts in the docs and the Windows alias listing."""
+"""Help text, the docs' MCP tool counts and the Windows aliases."""
 
 from __future__ import annotations
 
