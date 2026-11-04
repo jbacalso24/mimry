@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .constants import HEAVY_IGNORES, MCP_QUERY_NAME, NON_CODE_KINDS
+from .hookfast import set_up_at_or_above
 from .session import (
     SESSION_STOP_LOCK_WAIT,
     compact_note,
@@ -270,22 +271,9 @@ class _Search(NamedTuple):
     reads_pipe: bool
 
 
-def _set_up_at_or_above(root: Path) -> bool:
-    """True when MIMRY set up root or a folder above it.
-
-    The user-wide hooks run in every folder, so the others must exit
-    before they read or write anything.
-    """
-    try:
-        folder = root.resolve()
-        return any((step / ".mimry").is_dir() for step in (folder, *folder.parents))
-    except OSError:
-        return False
-
-
 def cmd_hook_check(a) -> int:
     root = Path(getattr(a, "root", None) or ".")
-    if not _set_up_at_or_above(root):
+    if not set_up_at_or_above(root):
         return 0
     try:
         _hook_check(root)
@@ -297,7 +285,7 @@ def cmd_hook_check(a) -> int:
 
 def cmd_hook_refresh(a) -> int:
     root = Path(getattr(a, "root", None) or ".")
-    if not _set_up_at_or_above(root):
+    if not set_up_at_or_above(root):
         return 0
     try:
         _hook_refresh(root)
@@ -310,7 +298,7 @@ def cmd_hook_refresh(a) -> int:
 
 def cmd_hook_compact(a) -> int:
     root = Path(getattr(a, "root", None) or ".")
-    if not _set_up_at_or_above(root):
+    if not set_up_at_or_above(root):
         return 0
     try:
         _hook_compact(root)
@@ -332,7 +320,7 @@ def cmd_hook_prompt(a) -> int:
 
 def cmd_hook_stop(a) -> int:
     root = Path(getattr(a, "root", None) or ".")
-    if not _set_up_at_or_above(root):
+    if not set_up_at_or_above(root):
         return 0
     try:
         _hook_stop(root)
@@ -1709,7 +1697,7 @@ def _hook_prompt(root: Path) -> None:
     from .lifecycle import indexed_root
 
     root = indexed_root((Path(cwd) if isinstance(cwd, str) and cwd else root).resolve())
-    if not _set_up_at_or_above(root):
+    if not set_up_at_or_above(root):
         return
     mimry_dir = root / ".mimry"
     pointer_path = mimry_dir / "pointer.json"

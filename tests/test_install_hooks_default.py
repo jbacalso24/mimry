@@ -273,3 +273,43 @@ def test_uninstall_removes_a_settings_file_mimry_created(home, capsys):
     assert main(["uninstall", "--platform", "claude-code", "--no-mcp"]) == 0
 
     assert not _settings(home).exists()
+
+
+def _hooks_file_and_record(home: Path, repo: Path, project: bool) -> tuple[Path, Path]:
+    if project:
+        skill = repo / ".claude" / "skills" / "mimry"
+        return repo / ".claude" / "settings.local.json", skill / ".mimry_state.json"
+    return _settings(home), home / ".claude" / "skills" / "mimry" / ".mimry_state.json"
+
+
+@pytest.mark.parametrize("project", [False, True], ids=["user", "project"])
+def test_no_hooks_on_an_existing_install_removes_mimry_hooks_and_keeps_the_rest(
+    home, repo, project, capsys
+):
+    base = ["--root", str(repo)] if project else []
+    flags = ["--project"] if project else []
+    hooks_file, record = _hooks_file_and_record(home, repo, project)
+    hooks_file.parent.mkdir(parents=True, exist_ok=True)
+    hooks_file.write_text(
+        json.dumps({"model": "opus", "hooks": {"PreToolUse": [USER_HOOK]}}), encoding="utf-8"
+    )
+    assert main([*base, "install", "--platform", "claude-code", *flags, *NO_MCP]) == 0
+    assert _mimry_commands(_load(hooks_file))
+    capsys.readouterr()
+
+    assert (
+        main([*base, "install", "--platform", "claude-code", *flags, "--no-hooks", *NO_MCP]) == 0
+    )
+
+    assert _load(hooks_file) == {"model": "opus", "hooks": {"PreToolUse": [USER_HOOK]}}
+    assert "Removed MIMRY's hooks from" in capsys.readouterr().out
+    assert json.loads(record.read_text(encoding="utf-8"))["hooks"] is False
+
+
+def test_no_hooks_removes_a_settings_file_mimry_made(home, capsys):
+    assert main(["install", "--platform", "claude-code", *NO_MCP]) == 0
+    assert _settings(home).exists()
+
+    assert main(["install", "--platform", "claude-code", "--no-hooks", *NO_MCP]) == 0
+
+    assert not _settings(home).exists()

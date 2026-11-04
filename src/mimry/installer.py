@@ -2100,6 +2100,27 @@ def _record_install(
     _atomic_write(dst.parent / _STATE_FILE, json.dumps(state, indent=2) + "\n")
 
 
+def _remove_opted_out_hooks(
+    root: Path, cfg: MimryPlatform, dst: Path, *, project: bool, hooks: bool | None
+) -> list[Path]:
+    """Take MIMRY's hooks out of a scope when the install opted out.
+
+    --no-hooks works as --no-prompt-hook does for the prompt hook. Other
+    keys and hooks stay, and a file MIMRY made goes once it is empty.
+    """
+    if hooks is not False or cfg.key != "claude-code":
+        return []
+    scope_root, scope_cfg = _hook_scope(root, cfg, project)
+    recorded = frozenset(_read_created(_read_state(dst), _state_base(dst, root, project)))
+    return _remove_hooks(scope_root, scope_cfg, recorded)
+
+
+def _say_removed_hooks(paths: list[Path], root: Path, project: bool) -> None:
+    """Name each hooks file an install took MIMRY's hooks out of."""
+    for path in paths:
+        ui.detail(_settings_line(path, root, project, "hooks"))
+
+
 def install_skill(
     platform_name: str,
     *,
@@ -2191,6 +2212,7 @@ def install_skill(
     created = [path for path in _missing_paths(targets) if path not in skill_paths]
     _write_skill_files(dst, key)
     base = _state_base(dst, root, project)
+    opted_out = _remove_opted_out_hooks(root, cfg, dst, project=project, hooks=hooks)
     _record_install(
         dst,
         created=created,
@@ -2214,6 +2236,7 @@ def install_skill(
         excluded = _exclude_hooks_file(root, cfg, recorded)
     ui.ok(f"Installed the MIMRY skill for {cfg.label} ({_scope(project)})")
     ui.detail(_shown(dst, root, project))
+    _say_removed_hooks(opted_out, root, project)
     for extra in extras:
         ui.detail(f"Added {extra}")
     if plugin_hooks:

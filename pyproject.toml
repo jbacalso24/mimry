@@ -51,7 +51,7 @@ Issues = "https://github.com/jbacalso24/mimry/issues"
 GitHub = "https://github.com/jbacalso24"
 
 [project.scripts]
-mimry = "mimry.cli:main"
+mimry = "mimry.entry:main"
 mimry-mcp = "mimry.mcp_server:main"
 mimry-integration-smoke = "mimry.agent_integration:main"
 
