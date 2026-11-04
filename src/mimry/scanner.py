@@ -42,7 +42,9 @@ from .core.languages import (
     EXTENSION_LANGUAGE,
     is_objc_header,
     is_objc_source,
+    is_package_manifest,
     is_pascal_source,
+    package_manifest,
 )
 from .core.languages import extract as extract_language
 from .core.tsconfig import is_config_name, parse_tsconfig
@@ -1209,6 +1211,11 @@ def adapt(
                     )
             except (OSError, UnicodeError):
                 pass
+    # Packages a manifest pins are symbols too; the config branch above
+    # keeps no other symbols for package.json and pyproject.toml (#642).
+    if is_package_manifest(path):
+        language, definitions = package_manifest(path, _source_text(content))
+        symbols, edges = _definition_records(f["file_id"], language, definitions)
     if ext in {".md", ".mdx"}:
         symbols, edges = markdown_heading_symbols(f["file_id"], _source_text(content))
     rel_path = canonical_rel_path(path, root)

@@ -11,9 +11,13 @@ from .data_files import (
     blank_template_actions,
     extract_hcl,
     extract_json,
+    extract_package_json,
+    extract_pyproject_packages,
+    extract_requirements,
     extract_toml,
     extract_xml,
     extract_yaml,
+    is_requirements_name,
     loads_jsonc,
 )
 from .sql_files import extract_statement, new_result, statement_spans, trigger_header
@@ -3604,6 +3608,32 @@ def _too_deeply_nested(lang: str, source: str) -> bool:
             if len(stack) - 1 > limit:
                 return True
     return False
+
+
+def is_package_manifest(path: Path) -> bool:
+    """Files whose packages become symbols (#642)."""
+    return path.name in ("package.json", "pyproject.toml") or is_requirements_name(path.name)
+
+
+def package_manifest(path: Path, source: str) -> tuple[str, list[dict]] | None:
+    """Language and package symbols of a manifest (#642), or None."""
+    from tree_sitter import Parser
+
+    name = path.name
+    raw = source.encode("utf-8")
+    if is_requirements_name(name):
+        return "text", extract_requirements(raw)
+    if name == "package.json":
+        lang, extractor = "json", extract_package_json
+    elif name == "pyproject.toml":
+        lang, extractor = "toml", extract_pyproject_packages
+    else:
+        return None
+    try:
+        root = Parser(load_language(lang)).parse(raw).root_node
+    except GrammarUnavailableError:
+        return lang, []
+    return lang, extractor(root, raw)
 
 
 def extract(path: str | Path, source: str, language: str | None = None) -> dict:

@@ -439,6 +439,16 @@ def _xml_imports(tag: str, attributes: dict, line: int, msbuild: bool = False) -
 _MSBUILD_SUFFIXES = (".csproj", ".fsproj", ".vbproj", ".props", ".targets")
 
 
+# NuGet packages a project references or pins (#642). Include or Update
+# names the package; several names may share one ";" list.
+_MSBUILD_PACKAGE_TAGS = frozenset(("PackageReference", "PackageVersion"))
+
+
+def _msbuild_package(element, attributes: dict, definitions: list[dict], seen: set[str]) -> None:
+    for name in (attributes.get("Include") or attributes.get("Update") or "").split(";"):
+        _add_unique(definitions, seen, name.strip(), "package", element)
+
+
 def _msbuild_properties(raw: bytes, group, definitions: list[dict], seen: set[str]) -> None:
     """Each property in a PropertyGroup, named by its tag."""
     for child in _xml_child_elements(group):
@@ -480,6 +490,8 @@ def extract_xml(root, raw: bytes, filename: str) -> dict:
             _plist_keys(raw, element, definitions, seen)
         if msbuild and tag == "PropertyGroup":
             _msbuild_properties(raw, element, definitions, seen)
+        if msbuild and tag in _MSBUILD_PACKAGE_TAGS:
+            _msbuild_package(element, attributes, definitions, seen)
         # Each kind adds its names: "Name" on an MSBuild Target, and
         # "x:Name" and "x:Key" in XAML. Other files keep id and name.
         names = _XML_ID_ATTRIBUTES
@@ -615,3 +627,126 @@ def extract_hcl(root, raw: bytes) -> dict:
                 _add_unique(definitions, seen, name, kind, node)
             imports.extend(_hcl_module_source(raw, block))
     return _result(definitions, imports=imports, calls=_hcl_references(root, raw))
+
+
+# Package manifests (#642). Each dependency is a symbol named by its
+# package, on the line that declares it. The version is not stored:
+# a symbol has no detail field, and the file's text already has it.
+_NPM_DEPENDENCY_SECTIONS = frozenset(
+    ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
+)
+# A PEP 508 requirement starts with its project name.
+_PEP508_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def is_requirements_name(name: str) -> bool:
+    """requirements.txt and requirements-dev.txt and the like."""
+    return name.startswith("requirements") and name.endswith(".txt")
+
+
+def extract_package_json(root, raw: bytes) -> list[dict]:
+    """Names under the npm dependency sections of the top object."""
+    definitions: list[dict] = []
+    seen: set[str] = set()
+    top = next((c for c in root.named_children if c.type == "object"), None)
+    for pair in top.named_children if top is not None else ():
+        if pair.type != "pair":
+            continue
+        section = _json_key(raw, pair.child_by_field_name("key"))
+        value = pair.child_by_field_name("value")
+        if section not in _NPM_DEPENDENCY_SECTIONS or value is None or value.type != "object":
+            continue
+        for dep in value.named_children:
+            if dep.type == "pair":
+                name = _json_key(raw, dep.child_by_field_name("key"))
+                _add_unique(definitions, seen, name or "", "package", dep)
+    return definitions
+
+
+def _toml_pairs(root, raw: bytes):
+    """(dotted name, pair) for each pair, tables included."""
+    scope = ""
+    for child in root.named_children:
+        if child.type == "pair":
+            yield from _named_pair(scope, child, raw)
+        elif child.type in ("table", "table_array_element"):
+            scope = _toml_key(raw, _toml_key_child(child))
+            if scope is None:
+                continue
+            for pair in child.named_children:
+                if pair.type == "pair":
+                    yield from _named_pair(scope, pair, raw)
+
+
+def _named_pair(scope: str, pair, raw: bytes):
+    name = _toml_key(raw, _toml_key_child(pair))
+    if name is not None:
+        yield (f"{scope}.{name}" if scope else name), pair
+
+
+def _toml_value(pair):
+    """A TOML pair has no value field: its last named child is it."""
+    named = pair.named_children
+    return named[-1] if len(named) > 1 else None
+
+
+def _pep508_strings(raw: bytes, array, definitions: list[dict], seen: set[str]) -> None:
+    for item in array.named_children:
+        if item.type != "string":
+            continue
+        # Drop the opening quote; a package name needs no unescaping.
+        match = _PEP508_NAME.match(_text(raw, item)[1:])
+        if match:
+            _add_unique(definitions, seen, match.group(0), "package", item)
+
+
+def extract_pyproject_packages(root, raw: bytes) -> list[dict]:
+    """[project] dependencies and optional-dependencies, and the
+    [tool.poetry.dependencies] keys (python excluded).
+    """
+    definitions: list[dict] = []
+    seen: set[str] = set()
+    for full, pair in _toml_pairs(root, raw):
+        value = _toml_value(pair)
+        if value is None:
+            continue
+        if full == "project.dependencies" and value.type == "array":
+            _pep508_strings(raw, value, definitions, seen)
+        elif full.startswith("project.optional-dependencies."):
+            if value.type == "array":
+                _pep508_strings(raw, value, definitions, seen)
+        elif full == "project.optional-dependencies" and value.type == "inline_table":
+            for group in value.named_children:
+                array = _toml_value(group) if group.type == "pair" else None
+                if array is not None and array.type == "array":
+                    _pep508_strings(raw, array, definitions, seen)
+        elif full.startswith("tool.poetry.dependencies."):
+            name = full.removeprefix("tool.poetry.dependencies.")
+            if name and name != "python" and "." not in name:
+                _add_unique(definitions, seen, name, "package", pair)
+    return definitions
+
+
+def extract_requirements(raw: bytes) -> list[dict]:
+    """One package per requirement line. Comments, options such as -r or
+    --index-url, and blank lines are skipped.
+    """
+    definitions: list[dict] = []
+    seen: set[str] = set()
+    for number, line in enumerate(raw.decode("utf-8", "replace").splitlines(), 1):
+        body = re.split(r"\s+#", line, maxsplit=1)[0].strip()
+        if not body or body.startswith("-"):
+            continue
+        match = _PEP508_NAME.match(body)
+        if match and match.group(0) not in seen:
+            seen.add(match.group(0))
+            definitions.append(
+                {
+                    "name": match.group(0),
+                    "kind": "package",
+                    "line_start": number,
+                    "line_end": number,
+                    "exported": False,
+                }
+            )
+    return definitions
