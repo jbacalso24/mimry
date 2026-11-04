@@ -32,6 +32,12 @@ prompt, a repeated prompt, or a prompt no file matches. ``hook-stop`` is
 the Stop hook: it marks the end of the turn and flushes the session
 feedback.
 
+``hook-subagent`` is the SubagentStart hook (#655). When a subagent
+starts it adds a short note as context: how to start with MIMRY, and
+the top files of the parent session's context pack when that pack was
+written in the last 30 minutes. Subagents do most of the searching, and
+they do not see the session's start-up context.
+
 The hooks are installed user-wide, so they run in every folder. In a
 folder MIMRY has not set up (no ``.mimry/`` in it or above it) each one
 exits at once, prints nothing and writes nothing.
@@ -191,9 +197,9 @@ MIMRY_QUERY_COMMANDS = frozenset(
 MIMRY_SUBCOMMANDS = frozenset(
     """adapters bench brief cache callees callers context digest doctor embed
     explain export feedback find git-hooks history hook-check hook-compact
-    hook-prompt hook-refresh hook-stop impact index init install mcp path plan
-    preflight refresh reindex related report roots route semantic stats status
-    symbol uninstall update upgrade watch why""".split()
+    hook-prompt hook-refresh hook-stop hook-subagent impact index init install
+    mcp path plan preflight refresh reindex related report roots route semantic
+    stats status symbol uninstall update upgrade watch why""".split()
 )
 MIMRY_VALUED_OPTIONS = frozenset({"--root"})
 # The options of the query commands that take a value. A test keeps them
@@ -326,6 +332,15 @@ def cmd_hook_stop(a) -> int:
         _hook_stop(root)
     except Exception:
         # The window waits for the next flush; never fail the turn.
+        pass
+    return 0
+
+
+def cmd_hook_subagent(a) -> int:
+    try:
+        _hook_subagent(Path(getattr(a, "root", None) or "."))
+    except Exception:
+        # The note is optional; never fail the subagent over it.
         pass
     return 0
 
@@ -1738,6 +1753,83 @@ def _hook_prompt(root: Path) -> None:
     note = _prompt_note(rows)
     if note is not None:
         _print_context(note, event="UserPromptSubmit")
+
+
+# The SubagentStart note: the parent's pack counts while it is this
+# fresh, and the note stays under this many characters (#655).
+SUBAGENT_PACK_WINDOW = 30 * 60
+SUBAGENT_NOTE_LIMIT = 600
+SUBAGENT_FILE_LIMIT = 5
+# A pack lists its files as ### N. `path` under ## Relevant Files.
+PACK_FILE_HEADING = re.compile(r"^### \d+\. `([^`\r\n]+)`\s*$", re.MULTILINE)
+
+
+def _set_up_folder(root: Path) -> Path | None:
+    """The nearest folder at or above root that has a .mimry folder."""
+    folder = root.resolve()
+    return next((step for step in (folder, *folder.parents) if (step / ".mimry").is_dir()), None)
+
+
+def _pack_files(pack: Path) -> list[str] | None:
+    """The first files a fresh pack ranks, or None when it is stale or
+    missing."""
+    try:
+        if time.time() - pack.stat().st_mtime > SUBAGENT_PACK_WINDOW:
+            return None
+        text = pack.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    _, found, section = text.partition("## Relevant Files")
+    if not found:
+        return []
+    section = section.split("\n## ", 1)[0]
+    return PACK_FILE_HEADING.findall(section)[:SUBAGENT_FILE_LIMIT]
+
+
+def _subagent_note(folder: Path, plugin: bool) -> str:
+    if plugin:
+        start = (
+            "This repository has a MIMRY index. To find code for a task, start with the"
+            " `mimry_preflight` tool (or `mimry_find`) and read the context pack it names;"
+            " use `rg` or `git grep` only for a string you already know."
+        )
+    else:
+        start = (
+            "This repository has a MIMRY index. To find code for a task, start with"
+            ' `mimry preflight "<task>"` (or `mimry find "<query>"`) and read the context'
+            " pack it names; use `rg` or `git grep` only for a string you already know."
+        )
+    from .paths import context_file
+
+    pack = context_file(folder)
+    files = _pack_files(pack)
+    if files is None:
+        return start
+    rel = pack.relative_to(folder).as_posix()
+    note = f"{start}\nThe parent session's context pack is {rel}."
+    # Files are added while the note stays under the limit.
+    kept: list[str] = []
+    for path in files:
+        names = ", ".join([*kept, path])
+        if len(f"{note}\nIts top files: {names}.") > SUBAGENT_NOTE_LIMIT:
+            break
+        kept.append(path)
+    if kept:
+        note += f"\nIts top files: {', '.join(kept)}."
+    return note
+
+
+def _hook_subagent(root: Path) -> None:
+    raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    data = json.loads(raw) if raw.strip() else {}
+    if not isinstance(data, dict):
+        return
+    cwd = data.get("cwd")
+    folder = _set_up_folder(Path(cwd) if isinstance(cwd, str) and cwd else root)
+    if folder is None:
+        return
+    plugin = bool(os.environ.get("CLAUDE_PLUGIN_ROOT"))
+    _print_context(_subagent_note(folder, plugin), event="SubagentStart")
 
 
 def _hook_stop(root: Path) -> None:

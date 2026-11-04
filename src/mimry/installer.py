@@ -1048,6 +1048,8 @@ def hook_table(platform_key: str) -> dict[str, list[tuple[str, str, bool]]]:
         # The turn-end mark closes the session's feedback window. Only
         # Claude Code has been checked to run it.
         table["Stop"] = [("", "hook-stop", True)]
+        # Foreground: only then does its note reach the subagent.
+        table["SubagentStart"] = [("", "hook-subagent", False)]
     return {
         # Status checks every event and matcher, so an install from
         # before the refresh, restore and turn-end hooks needs repair.
@@ -1523,7 +1525,14 @@ def _is_mimry_hook(entry: object) -> bool:
     never removed them, and status always reported them missing.
     """
     text = str(entry).lower()
-    subcommands = ("hook-check", "hook-refresh", "hook-compact", "hook-prompt", "hook-stop")
+    subcommands = (
+        "hook-check",
+        "hook-refresh",
+        "hook-compact",
+        "hook-prompt",
+        "hook-stop",
+        "hook-subagent",
+    )
     return any(sub in text for sub in subcommands) and "mimry" in text
 
 

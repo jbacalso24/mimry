@@ -129,6 +129,12 @@ The hooks also add a `Stop` hook that runs `mimry hook-stop` in the background w
 It closes the turn's open feedback window and flushes the session feedback, so the record is written without waiting for the next command.
 `mimry install --refresh`, which `mimry upgrade` runs, adds it to installs made before it existed.
 
+Claude Code also gets a `SubagentStart` hook that runs `mimry hook-subagent` when a subagent starts.
+In a folder MIMRY has set up, it adds a short note as context that names `mimry preflight` and `mimry find`.
+When the parent session's `latest.md` context pack was written in the last 30 minutes, the note also names that pack and its top files.
+The note stays under 600 characters, and the hook prints nothing in a folder MIMRY has not set up.
+Codex has no such event.
+
 ### Name the files for each task
 
 The prompt hook adds a note next to the hooks in Claude Code.
@@ -187,7 +193,7 @@ Add `--file <path>` when they are in different files, or `--line N` (or `--file 
 A `--line` that starts no candidate and spans none exits 1 and lists the candidates.
 `path` between two indexed names with no connection also exits 0, because that is an answer.
 `status` keeps its own codes: 1 when MIMRY is not set up, 2 when the index is not current.
-`hook-check`, `hook-refresh`, `hook-compact`, `hook-prompt` and `hook-stop` always exit 0, so a hook never fails the agent's tool call or prompt.
+`hook-check`, `hook-refresh`, `hook-compact`, `hook-prompt`, `hook-stop` and `hook-subagent` always exit 0, so a hook never fails the agent's tool call or prompt.
 With `--json`, the JSON is printed and the exit code is the same.
 
 ## Inferred edges

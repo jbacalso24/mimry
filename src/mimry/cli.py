@@ -78,6 +78,7 @@ def build_parser():
         cmd_hook_prompt,
         cmd_hook_refresh,
         cmd_hook_stop,
+        cmd_hook_subagent,
     )
     from .installer import cmd_install, cmd_uninstall, platform_help
     from .upgrade import cmd_upgrade
@@ -700,6 +701,9 @@ def build_parser():
     sub.add_parser(
         "hook-stop", help="Internal hook: mark the end of a turn and flush session feedback"
     ).set_defaults(func=cmd_hook_stop)
+    sub.add_parser(
+        "hook-subagent", help="Internal hook: name MIMRY to a subagent as it starts"
+    ).set_defaults(func=cmd_hook_subagent)
     # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`:
     # package runners such as uvx only launch the script named after the
     # package.
@@ -739,6 +743,7 @@ def build_parser():
             "hook-compact",
             "hook-prompt",
             "hook-stop",
+            "hook-subagent",
             "plan",
             "cache",
             "embed",
@@ -765,7 +770,7 @@ def _cmd_mcp(a) -> int:
     return 0
 
 
-HOOK_FAST_PATH = ("hook-check", "hook-compact", "hook-prompt", "hook-stop")
+HOOK_FAST_PATH = ("hook-check", "hook-compact", "hook-prompt", "hook-stop", "hook-subagent")
 
 
 def _hook_root(args) -> tuple[str, str] | None:
@@ -819,7 +824,13 @@ def main(argv=None):
     if hook is not None:
         from types import SimpleNamespace
 
-        from .hook import cmd_hook_check, cmd_hook_compact, cmd_hook_prompt, cmd_hook_stop
+        from .hook import (
+            cmd_hook_check,
+            cmd_hook_compact,
+            cmd_hook_prompt,
+            cmd_hook_stop,
+            cmd_hook_subagent,
+        )
 
         name, hook_root = hook
         run = {
@@ -827,6 +838,7 @@ def main(argv=None):
             "hook-compact": cmd_hook_compact,
             "hook-prompt": cmd_hook_prompt,
             "hook-stop": cmd_hook_stop,
+            "hook-subagent": cmd_hook_subagent,
         }[name]
         configure_console()
         return run(SimpleNamespace(root=hook_root))

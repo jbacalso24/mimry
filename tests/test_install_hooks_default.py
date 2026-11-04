@@ -313,3 +313,29 @@ def test_no_hooks_removes_a_settings_file_mimry_made(home, capsys):
     assert main(["install", "--platform", "claude-code", "--no-hooks", *NO_MCP]) == 0
 
     assert not _settings(home).exists()
+
+
+def test_the_subagent_start_hook_is_added_without_a_matcher_and_removed_with_the_rest(
+    home, capsys
+):
+    _seed_user_settings(home)
+
+    assert main(["install", "--platform", "claude-code", *NO_MCP]) == 0
+
+    groups = _load(_settings(home))["hooks"]["SubagentStart"]
+    assert len(groups) == 1 and "matcher" not in groups[0]
+    assert groups[0]["hooks"][0]["command"].endswith("hook-subagent")
+
+    assert main(["install", "--platform", "claude-code", "--no-hooks", *NO_MCP]) == 0
+    assert "SubagentStart" not in _load(_settings(home))["hooks"]
+
+
+def test_uninstall_removes_the_subagent_start_hook(home, capsys):
+    assert main(["install", "--platform", "claude-code", *NO_MCP]) == 0
+    assert any(c.endswith("hook-subagent") for c in _mimry_commands(_load(_settings(home))))
+
+    assert main(["uninstall", "--platform", "claude-code", "--no-mcp"]) == 0
+
+    assert not _settings(home).exists() or "SubagentStart" not in _load(_settings(home)).get(
+        "hooks", {}
+    )
