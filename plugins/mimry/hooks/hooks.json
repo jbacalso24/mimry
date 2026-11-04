@@ -84,6 +84,22 @@
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx",
+            "args": [
+              "--from",
+              "mimry==0.8.4",
+              "mimry",
+              "hook-subagent"
+            ]
+          }
+        ]
+      }
     ]
   }
 }

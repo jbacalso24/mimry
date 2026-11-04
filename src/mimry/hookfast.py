@@ -12,7 +12,16 @@ import io
 import sys
 from pathlib import Path
 
-HOOK_COMMANDS = ("hook-check", "hook-refresh", "hook-compact", "hook-prompt", "hook-stop")
+HOOK_COMMANDS = (
+    "hook-check",
+    "hook-refresh",
+    "hook-compact",
+    "hook-prompt",
+    "hook-stop",
+    "hook-subagent",
+)
+# Hooks whose payload names their folder: their stdin is read here.
+PAYLOAD_HOOKS = ("hook-prompt", "hook-subagent")
 
 
 def set_up_at_or_above(root: Path) -> bool:
@@ -39,8 +48,8 @@ def _read_stdin() -> bytes:
 
 
 def _payload_cwd(raw: bytes) -> str | None:
-    """The cwd the prompt hook's JSON payload names, or None."""
-    # Only the prompt hook reads JSON, so the other hooks never load it.
+    """The cwd the hook's JSON payload names, or None."""
+    # Only the payload hooks read JSON, so the others never load it.
     import json
 
     try:
@@ -54,12 +63,13 @@ def _payload_cwd(raw: bytes) -> str | None:
 def fast_hook(argv: list[str]) -> int | None:
     """The exit code when a hook ends here, or None to run the command.
 
-    ``hook-prompt`` names its folder in the payload, so its stdin is
-    read once here and put back for the command that runs next.
+    ``hook-prompt`` and ``hook-subagent`` name their folder in the
+    payload, so their stdin is read once here and put back for the
+    command that runs next. (#655)
     """
     if len(argv) != 1 or argv[0] not in HOOK_COMMANDS:
         return None
-    if argv[0] != "hook-prompt":
+    if argv[0] not in PAYLOAD_HOOKS:
         return None if set_up_at_or_above(Path(".")) else 0
     raw = _read_stdin()
     if not set_up_at_or_above(Path(_payload_cwd(raw) or ".")):
