@@ -3,10 +3,13 @@
 Claude Code runs this before matched tool calls. When an agent starts a
 broad search (a regex or case-insensitive grep, rg, ag, ack or git grep
 over the tree, a Grep call with a regex, or a Glob with a ``**``), it
-names the ``mimry find`` command to run instead. Exact-string searches
-stay quiet, and so does a shell search of one named file, of up to five
-named files, or of a pipe's output. The reminder is printed once per
-session and query, at most three times per session.
+answers with the files the index ranks first for it, and the lines to
+read first, next to the search, which still runs (#656). Exact-string
+searches stay quiet, and so does a shell search of one named file, of up
+to five named files, or of a pipe's output. The answer is printed once
+per session and query. Only when the index cannot rank the query cheaply
+(a very large repository, or no file matches) does the hook print the
+older ``mimry find`` reminder, at most three times per session.
 
 When a search over the tree names a symbol the index knows, the hook
 answers with its definition and top callers instead, read from the
@@ -1492,9 +1495,16 @@ def _hook_check(root: Path) -> None:
             return
         if session and not _first_for_query(mimry_dir, session, query):
             return
-        if session and not _nudge_allowed(mimry_dir, session):
-            return
-        answer = nudge(query)
+        answer = _ranked_search_answer(root, session, query)
+        if answer is not None:
+            from .savings import record_answered_search
+
+            record_answered_search(root, session)
+        else:
+            # The reminder is the fallback, so it keeps its cap.
+            if session and not _nudge_allowed(mimry_dir, session):
+                return
+            answer = nudge(query)
     _print_context(answer)
 
 
@@ -1571,18 +1581,20 @@ def _hook_refresh(root: Path) -> None:
         lock.unlink(missing_ok=True)
 
 
-def _prompt_note(rows: list[dict]) -> str | None:
-    """The note that names the files a task ranks first, or None.
+PROMPT_HEAD = "These are the files MIMRY ranks first for this task. Read the lines it names first."
+PROMPT_FOOT = 'Run `mimry preflight "<task>"` for the full context pack.'
+
+
+def _prompt_note(rows: list[dict], head: str = PROMPT_HEAD, foot: str = PROMPT_FOOT) -> str | None:
+    """The note that names the files a query ranks first, or None.
 
     One line says what the list is, then each file with its read-first
-    lines, then the preflight command for the full pack. The note stays
-    within PROMPT_NOTE_LIMIT. Files past the limit are dropped, never
-    cut mid-line.
+    lines, then the line that points at the full context pack. The note
+    stays within PROMPT_NOTE_LIMIT. Files past the limit are dropped,
+    never cut mid-line.
     """
     if not rows or rows[0]["score"] <= 0:
         return None
-    head = "These are the files MIMRY ranks first for this task. Read the lines it names first."
-    foot = 'Run `mimry preflight "<task>"` for the full context pack.'
     body: list[str] = []
     for row in rows[:PROMPT_FILE_LIMIT]:
         path = str(row["path"]).replace("\r", " ").replace("\n", " ")
@@ -1597,6 +1609,46 @@ def _prompt_note(rows: list[dict]) -> str | None:
     if not body:
         return None
     return "\n".join([head, *body, foot])
+
+
+def _ranked_search_answer(root: Path, session: str, query: str) -> str | None:
+    """The files the index ranks first for a broad search, or None.
+
+    Ranks the query the way the prompt hook does: the index as it
+    stands, with no refresh and no freshness walk, and the same size
+    gate. None when the index is past that gate, nothing matches, or
+    anything fails, so the caller falls back to the reminder. Never
+    raises (#656).
+    """
+    try:
+        from .search import find_rows
+        from .security import sanitize_query
+
+        ptr = json.loads((root / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+        index = Path(ptr["indexPath"])
+        if _indexed_paths_for_prompt(root, index) is None:
+            return None
+        rows = find_rows(
+            index,
+            sanitize_query(query),
+            PROMPT_FILE_LIMIT,
+            root=root,
+            root_id=ptr.get("rootId"),
+            excluded_paths=(),
+        )
+        record_query(root, query, [r["path"] for r in rows], session=session)
+        if os.environ.get("CLAUDE_PLUGIN_ROOT"):
+            # The plugin's MIMRY tools are MCP tools, as in nudge().
+            foot = "Call the mimry_preflight tool with the task for the full context pack."
+        else:
+            foot = PROMPT_FOOT
+        head = (
+            f'MIMRY ranked these files for "{query}". '
+            "Read the lines it names first; your search still runs."
+        )
+        return _prompt_note(rows, head=head, foot=foot)
+    except Exception:
+        return None
 
 
 def _indexed_paths_for_prompt(root: Path, index: Path) -> list[str] | None:
