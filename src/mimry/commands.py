@@ -44,7 +44,7 @@ from .feedback import (
 )
 from .history import history_payload, path_text, plain
 from .indexer import nested_too_deep_paths, write_index
-from .install_info import repair_command
+from .install_info import embed_command, repair_command
 from .lifecycle import (
     NESTED_TOO_DEEP_REASON,
     answers_from_read_only_cache,
@@ -411,7 +411,7 @@ def _embedding_text() -> str:
     if state["override"]:
         return "Embeddings: off (MIMRY_EMBED=0)"
     if not state["numpy"]:
-        return 'Embeddings: numpy not installed (pip install "mimry[embed]")'
+        return f"Embeddings: numpy not installed ({embed_command()})"
     if state["state"] == "broken":
         return "Embeddings: model broken (run `mimry embed download`)"
     if state["state"] == "missing":
@@ -432,7 +432,7 @@ def cmd_embed_download(a):
 def _numpy_text(state: dict) -> str:
     if state["numpy"]:
         return "installed"
-    return 'not installed (pip install "mimry[embed]")'
+    return f"not installed ({embed_command()})"
 
 
 def cmd_embed_status(a):

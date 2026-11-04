@@ -39,19 +39,63 @@ Agents call it from the shell or through its MCP server.
 
 ## Installation
 
-```bash
-uv tool install mimry
-```
+Get started in four steps.
 
-Requires Python 3.11 or newer on Windows, Linux or macOS.
-`pipx install mimry` also works.
-On distros that block system pip, see [Without uv](#without-uv).
+1. Install uv, the tool that installs MIMRY.
+   Pick the command for your system.
+   macOS or Linux:
 
-The first index downloads the tree-sitter grammars it needs, once per user, and keeps them in a cache.
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+   Windows, in PowerShell:
+
+   ```powershell
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+
+   Then open a new terminal.
+   Already have uv? Skip this step.
+   For other ways to install uv, see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+2. Install MIMRY.
+
+   ```bash
+   uv tool install mimry
+   ```
+
+   MIMRY needs Python 3.11 or newer on Windows, Linux or macOS.
+   uv downloads a suitable Python itself if none is installed.
+   If the shell says `mimry` is not found, run `uv tool update-shell`, then open a new terminal.
+
+3. Connect your agent.
+   This is what makes the agent use MIMRY on its own.
+   Claude Code users pick one of these two, not both:
+
+   ```text
+   /plugin marketplace add jbacalso24/mimry
+   /plugin install mimry@mimry
+   ```
+
+   or run `mimry install --platform claude-code`.
+   Other agents: run `mimry install --platform <name>`, see [Supported agents](#supported-agents).
+
+   > [!TIP]
+   > Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` when it starts a broad search of the repository, at most three times a session, answers a grep for a known symbol with its definition and callers, and outlines a large file when the agent reads it whole. The hooks also refresh the index in the background when a session starts and after each file edit, and restore the files it was working on after the context is compacted.
+
+4. Check it works.
+   In a repository, run `mimry preflight "<a task in your own words>"`.
+   The first run builds the index and downloads the tree-sitter grammars it needs, once per user.
+   If something looks off, run `mimry doctor`.
 
 > [!NOTE]
 > To upgrade, run `mimry upgrade`.
 > On Windows, `mimry upgrade` refuses while MIMRY servers run, and `mimry upgrade --stop-servers` stops them first.
+
+## Other ways to install
+
+These replace steps 1 and 2, or add an optional feature.
 
 ### Without uv
 
@@ -109,15 +153,8 @@ In an MCP client config, use the repo's absolute path, because `$PWD` is not exp
 
 ### Claude Code plugin
 
-In Claude Code, the plugin gives the agent the MIMRY skill, the hooks and the MCP server in one step.
+The plugin gives Claude Code the MIMRY skill, the hooks and the MCP server in one step, in place of step 3's `mimry install`.
 It needs `uv` on your PATH and nothing else.
-
-```text
-/plugin marketplace add jbacalso24/mimry
-/plugin install mimry@mimry
-```
-
-It replaces `mimry install --platform claude-code`, so use one or the other.
 
 ### Other agents: npx skills
 
@@ -167,15 +204,6 @@ Start with
 ```
 
 The same result is written to `.mimry/mimry-out/context/latest.md` as a context pack for the agent, with the matched symbols, related files and the project's test commands.
-
-To have your agent use MIMRY on its own, install it for that agent:
-
-```bash
-mimry install --platform claude-code
-```
-
-> [!TIP]
-> Add `--always-on --hooks` so the agent reaches for MIMRY without being told: `--always-on` adds the rules to its always-read file, and `--hooks` suggests `mimry find` when it starts a broad search of the repository, at most three times a session, answers a grep for a known symbol with its definition and callers, and outlines a large file when the agent reads it whole. The hooks also refresh the index in the background when a session starts and after each file edit, and restore the files it was working on after the context is compacted.
 
 ### Name the files for each task (opt-in)
 

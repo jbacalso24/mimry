@@ -27,6 +27,7 @@ from .core.languages import grammar_error_reason, is_grammar_download_failure, i
 from .install_info import (
     direct_url,
     editable_folder,
+    embed_command,
     install_channel,
     local_folder,
     repair_command,
@@ -534,7 +535,7 @@ def _embeddings_check() -> dict[str, Any]:
             "embeddings.model",
             "ok",
             "embeddings are not installed",
-            'Run `pip install "mimry[embed]"` to turn them on.',
+            f"Run `{embed_command()}` to turn them on.",
             state="not_installed",
         )
     if state["state"] == "ready":

@@ -26,6 +26,18 @@ def upgrade_argv(channel: str | None) -> list[str]:
     return [sys.executable, "-m", "pip", "install", "--upgrade", "mimry"]
 
 
+def embed_command() -> str:
+    """The command that adds the embeddings extra."""
+    channel = install_channel()
+    if channel == "uv tool":
+        return 'uv tool install "mimry[embed]"'
+    # pipx inject with the extra on the main package keeps its recorded
+    # source, so the install is not swapped for the index copy.
+    if channel == "pipx":
+        return 'pipx inject mimry "mimry[embed]"'
+    return 'pip install "mimry[embed]"'
+
+
 def command_text(argv: list[str]) -> str:
     """An argument list as a command line people can read and run."""
     return " ".join(f'"{part}"' if " " in part else part for part in argv)
