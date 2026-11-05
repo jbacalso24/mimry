@@ -240,3 +240,34 @@ def test_referencing_files_follow_the_symbol_not_the_file(tmp_path: Path) -> Non
     assert referencing("dbo.vw_VesselFeed") == ["src/A.cs"]
     assert referencing("dbo.Voyages") == ["src/B.cs"]
     assert referencing("db/procs.sql") == ["src/A.cs", "src/B.cs"]
+
+
+def test_prose_article_after_from_or_join_is_not_a_table() -> None:
+    assert sql_table_references("select the rows FROM a table, then JOIN a view") == []
+
+
+def test_schema_qualified_english_word_still_links() -> None:
+    assert sql_table_references("SELECT * FROM dbo.a JOIN public.this ON 1 = 1;") == [
+        "a",
+        "this",
+    ]
+
+
+def test_prose_sentence_links_nothing_and_schema_qualified_name_links(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "db").mkdir(parents=True)
+    (repo / "src").mkdir()
+    (repo / "db" / "a.sql").write_text("CREATE TABLE dbo.a (id int);\n", encoding="utf-8")
+    (repo / "notes.md").write_text(
+        "select the rows FROM a table, then JOIN a view\n", encoding="utf-8"
+    )
+    (repo / "src" / "Qry.cs").write_text(
+        'class Qry\n{\n    string s = "SELECT * FROM dbo.a";\n}\n', encoding="utf-8"
+    )
+    cache = tmp_path / "cache"
+    for args in (("init", "--skip-graph"), ("index",)):
+        result = _run_cli(repo, cache, *args)
+        assert result.returncode == 0, result.stderr
+
+    assert _reference_targets(repo, "notes.md") == {}
+    assert set(_reference_targets(repo, "src/Qry.cs")) == {"dbo.a"}
