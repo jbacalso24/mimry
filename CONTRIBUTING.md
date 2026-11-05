@@ -8,6 +8,7 @@ MIMRY is an early public alpha. Focused bug fixes, portability improvements, pri
 - Keep the change narrow; avoid mixing refactors with behavior changes.
 - Open an issue first for large features, schema changes, new network behavior, telemetry, remote embeddings, or changes to privacy/security defaults.
 - Report vulnerabilities through [`SECURITY.md`](SECURITY.md), not a public issue.
+- Using an AI tool? Read [`AI_CONTRIBUTIONS.md`](AI_CONTRIBUTIONS.md) and disclose it in the pull request.
 - Follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
@@ -124,6 +125,7 @@ Install the built wheel into a clean environment and smoke-test `mimry --help`. 
    - exact verification commands and results, with the platform;
    - security and privacy impact;
    - documentation updates for user-facing changes.
+   - any AI assistance (see [`AI_CONTRIBUTIONS.md`](AI_CONTRIBUTIONS.md)).
 
 9. CI must be green before review is complete.
    It runs lint, the tests and the determinism matrix on Linux, macOS and Windows with Python 3.11, plus Python 3.13 on Linux, and the benchmark gate.

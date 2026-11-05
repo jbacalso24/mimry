@@ -92,6 +92,7 @@ include = [
     "/assets/banner.svg",
     "/README.md",
     "/CHANGELOG.md",
+    "/AI_CONTRIBUTIONS.md",
     "/CONTRIBUTING.md",
     "/RELEASING.md",
     "/SECURITY.md",

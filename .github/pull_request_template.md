@@ -10,6 +10,16 @@
 
 <!-- The exact commands you ran and their results, with the platform. -->
 
+## AI assistance
+
+<!-- Check one. See AI_CONTRIBUTIONS.md. Do not paste prompts, transcripts or private data. -->
+
+- [ ] No material AI assistance
+- [ ] AI-assisted, and I reviewed, tested and can explain every change
+- [ ] Mostly AI-generated, and I reviewed, tested and can explain every change
+
+<!-- If AI helped, which parts: analysis, code, tests, docs? -->
+
 ## Checklist
 
 - [ ] Tests added or updated for behavior changes
