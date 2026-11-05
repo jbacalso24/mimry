@@ -25,6 +25,16 @@ DOCUMENT_EXAMPLES = [
     "password: [your-password]",
     'password = input("Password: ")',
     "password = input()",
+    # Lines from troubleshooting.md and the tokens README (#667).
+    "`api_key: <your-api-key>`, `password: [your password]`, masked `xxxxxxxx`",
+    "  - Indexing: source files that only name a credential, such as "
+    "`token = get_token()`, were dropped as secrets, so MIMRY could never "
+    "return them.",
+    "  A nested template literal, a value that is one of its label's own name "
+    "parts or a credential field name (`secret: 'passphrase'`), a TypeScript "
+    "literal-union type (`'username' | 'password'`) and JavaScript private "
+    "member access (`this.#internals.password`) no longer count as literal "
+    "secrets.",
 ]
 
 

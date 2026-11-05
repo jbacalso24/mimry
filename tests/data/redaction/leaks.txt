@@ -292,3 +292,7 @@ a.py	# api_key = tomatocanary42\n
 a.js	// token: tomatocanary42\n
 a.go	package main\n\n// token: tomatocanary42\n
 a.py	DOC = """\npassword: tomatocanary42\n"""\n
+
+# Backtick-wrapped placeholders and literals in prose stay leaks (#667).
+notes.md	`api_key: tomatocanary42`
+notes.md	`secret: 'tomatocanary42'`
