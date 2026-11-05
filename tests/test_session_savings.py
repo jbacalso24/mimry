@@ -108,8 +108,10 @@ def test_stats_json_totals_match_the_log(tmp_path, monkeypatch):
     report = json.loads(_stats(repo, "--json", "--session", SESSION))
 
     [row] = _savings_rows(repo)
+    assert report["tracked"] is True
     assert report["session"] == {
         "id": SESSION,
+        "tracked": True,
         "estimated_tokens_saved": row["saved"],
         "ranged_reads": 1,
         "searches_answered": 0,
@@ -229,10 +231,70 @@ def test_session_feedback_off_switch_logs_no_savings(tmp_path, monkeypatch):
     assert _log_texts(repo) == before
 
 
-def test_stats_with_no_savings_reports_zero(tmp_path, monkeypatch):
+def test_untracked_repo_says_so_instead_of_zeros(tmp_path, monkeypatch):
     repo = _repo(tmp_path, monkeypatch)
+    _find(repo, QUERY)
+
+    assert _stats(repo) == f"{savings.NOT_TRACKED_REPO}\n"
+    report = json.loads(_stats(repo, "--json", "--session", SESSION))
+    assert report["tracked"] is False
+    assert report["all_time"] == {
+        "estimated_tokens_saved": None,
+        "ranged_reads": None,
+        "searches_answered": None,
+    }
+    assert report["session"] == {"id": SESSION, "tracked": False, **savings.UNTRACKED_TOTALS}
+    assert report["estimate"] == savings.ESTIMATE_NOTE
+
+
+def test_tracked_repo_with_no_ranged_read_shows_real_zeros(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    _bash(monkeypatch, repo)
+    shown = _find(repo, QUERY)
+    _ranged(monkeypatch, repo, repo / shown[0])
+
     out = _stats(repo, "--session", SESSION)
-    assert "This session: about 0 tokens saved (estimated), 0 ranged reads counted" in out
+    assert (
+        "This session: about 0 tokens saved (estimated), 0 ranged reads counted, "
+        "0 searches answered from the index."
+    ) in out
+    assert "All time: about 0 tokens saved" in out
+    assert savings.NOT_TRACKED_REPO not in out
+
+
+def test_untracked_session_in_a_tracked_repo_says_not_tracked(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    _bash(monkeypatch, repo)
+
+    out = _stats(repo, "--session", "someone-else")
+    assert out.splitlines()[0] == savings.NOT_TRACKED_SESSION
+    assert "All time: about 0 tokens saved" in out
+    report = json.loads(_stats(repo, "--json", "--session", "someone-else"))
+    assert report["tracked"] is True
+    assert report["session"] == {
+        "id": "someone-else",
+        "tracked": False,
+        **savings.UNTRACKED_TOTALS,
+    }
+
+
+def test_statusline_never_prints_zero(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path, monkeypatch)
+    _bash(monkeypatch, repo)
+    shown = _find(repo, QUERY)
+    # A ranged read that asks for the whole file saves nothing.
+    _ranged(monkeypatch, repo, repo / shown[0], offset=1, limit=100_000)
+    assert _savings_rows(repo)[0]["saved"] == 0
+
+    def statusline(payload) -> str:
+        raw = json.dumps(payload).encode("utf-8")
+        monkeypatch.setattr(sys, "stdin", SimpleNamespace(buffer=io.BytesIO(raw)))
+        assert main(["stats", "--statusline"]) == 0
+        return capsys.readouterr().out
+
+    workspace = {"workspace": {"current_dir": str(repo)}}
+    assert statusline({"session_id": SESSION, **workspace}) == ""
+    assert statusline({"session_id": "someone-else", **workspace}) == ""
 
 
 @pytest.mark.parametrize(

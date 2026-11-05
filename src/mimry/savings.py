@@ -23,9 +23,28 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .session import _append, _read_rows, _state_dir, _write_rows, session_feedback_enabled
+from .session import (
+    FILE_LOG,
+    START_LOG,
+    _append,
+    _read_rows,
+    _state_dir,
+    _write_rows,
+    session_feedback_enabled,
+)
 
 SAVINGS_LOG = "session-savings.jsonl"
+# An untracked scope shows null, never a confident 0 (#646).
+UNTRACKED_TOTALS: dict[str, None] = {
+    "estimated_tokens_saved": None,
+    "ranged_reads": None,
+    "searches_answered": None,
+}
+NOT_TRACKED_REPO = (
+    "MIMRY has no record of agent sessions here, so it cannot count savings. "
+    "The Claude Code hooks record them: run `mimry install --platform claude-code`."
+)
+NOT_TRACKED_SESSION = "This session: not tracked (the hooks have not seen it)."
 SAVINGS_LINE_LIMIT = 5000
 # A bigger file is not read for a count, as with the outline.
 SAVINGS_MAX_BYTES = 4_000_000
@@ -128,18 +147,42 @@ def _totals(rows: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _has_record(state: Path) -> bool:
+    """Whether the hooks left any record here: one stat per log."""
+    # A session start or file event, or a savings row (#646).
+    for name in (START_LOG, FILE_LOG, SAVINGS_LOG):
+        try:
+            if (state / name).stat().st_size > 0:
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def savings_report(root: Path, session: str = "") -> dict[str, Any]:
-    """Session totals (if ``session`` is known) and all-time totals."""
+    """Session totals (if ``session`` is known) and all-time totals.
+
+    Untracked scopes carry null totals, so no caller can read a 0 that
+    was never measured.
+    """
     state = _state_dir(root)
-    rows = _read_rows(state / SAVINGS_LOG) if state is not None else []
+    tracked = state is not None and _has_record(state)
+    rows = _read_rows(state / SAVINGS_LOG) if tracked else []
     report: dict[str, Any] = {
+        "tracked": tracked,
         "session": None,
-        "all_time": _totals(rows),
+        "all_time": _totals(rows) if tracked else UNTRACKED_TOTALS,
         "estimate": ESTIMATE_NOTE,
     }
     if session:
         mine = [row for row in rows if row.get("session") == session]
-        report["session"] = {"id": session, **_totals(mine)}
+        # A saving proves the session too, once its start row is gone.
+        seen = tracked and (
+            bool(mine)
+            or any(row.get("session") == session for row in _read_rows(state / START_LOG))
+        )
+        totals = _totals(mine) if seen else UNTRACKED_TOTALS
+        report["session"] = {"id": session, "tracked": seen, **totals}
     return report
 
 
@@ -154,9 +197,14 @@ def _summary(label: str, totals: dict[str, int]) -> str:
 
 
 def format_report(report: dict[str, Any]) -> list[str]:
+    if not report["tracked"]:
+        return [NOT_TRACKED_REPO]
     lines = []
     if report["session"] is not None:
-        lines.append(_summary("This session", report["session"]))
+        if report["session"]["tracked"]:
+            lines.append(_summary("This session", report["session"]))
+        else:
+            lines.append(NOT_TRACKED_SESSION)
     lines.append(_summary("All time", report["all_time"]))
     lines.append(report["estimate"])
     return lines
@@ -175,8 +223,11 @@ def statusline_text(root: Path, session: str) -> str:
     if not session:
         return ""
     totals = savings_report(root, session)["session"]
+    if not totals["tracked"]:
+        return ""
     parts = []
-    if totals["ranged_reads"]:
+    # A zero saving is nothing to show, so the line never says 0 (#646).
+    if totals["estimated_tokens_saved"]:
         saved = _short(totals["estimated_tokens_saved"])
         parts.append(f"about {saved} tokens saved this session (estimated)")
     answered = totals["searches_answered"]
