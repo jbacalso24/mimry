@@ -1752,7 +1752,10 @@ def _hook_prompt(root: Path) -> None:
     if os.environ.get("MIMRY_PROMPT_HOOK", "1").strip() == "0":
         return
     raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
-    data = json.loads(raw) if raw.strip() else {}
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except Exception:  # deep nesting raises RecursionError (#668)
+        return
     if not isinstance(data, dict):
         return
     prompt = data.get("prompt")
@@ -1873,7 +1876,10 @@ def _subagent_note(folder: Path, plugin: bool) -> str:
 
 def _hook_subagent(root: Path) -> None:
     raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
-    data = json.loads(raw) if raw.strip() else {}
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except Exception:  # deep nesting raises RecursionError (#668)
+        return
     if not isinstance(data, dict):
         return
     cwd = data.get("cwd")

@@ -455,14 +455,25 @@ def sql_table_references(text: str) -> list[str]:
     - Take the last name part (public.sessions -> sessions)
     - Ignore SQL keywords that follow (SELECT, WHERE, SET, VALUES, ON,
       AS, INTO)
+    - Ignore a bare one-letter or English word (FROM a table) (#670)
     - Return sorted, de-duplicated, capped at 50
     """
     tables = set()
     keywords_to_skip = {"SELECT", "WHERE", "SET", "VALUES", "ON", "AS", "INTO"}
+    # A bare one-letter or English word after FROM or JOIN is prose, not
+    # a table ("FROM a table"). Only the bare form is skipped, so dbo.a
+    # still links (#670).
+    prose_words = frozenset(
+        "a an the this that these those it its each every all any some which "
+        "what where there here my our your their his her one two other such "
+        "same".split()
+    )
 
     for match in _SQL_TABLE_REF_RE.finditer(text):
         parts = _sql_name_parts(match.group("name"))
         identifier = parts[-1] if parts else ""
+        if len(parts) == 1 and (len(identifier) == 1 or identifier.lower() in prose_words):
+            continue
 
         # Check if this looks like a valid identifier, not a SQL keyword
         if identifier and identifier.upper() not in keywords_to_skip:

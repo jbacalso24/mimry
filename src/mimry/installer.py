@@ -2770,6 +2770,15 @@ def _refresh_hooks(
     hook_root, hook_cfg = _hook_scope(root, cfg, project)
     present = _has_any_hook(hook_root, hook_cfg)
     if present is None:
+        # Same warning as a plain install. Never touch the file (#669).
+        for path in _hook_files(hook_root, hook_cfg):
+            try:
+                _read_hooks_file(path)
+            except (OSError, ValueError) as exc:
+                ui.warn(
+                    f"Skipped the MIMRY hooks: could not read {_shown(path, root, True)}: {exc}"
+                )
+                break
         return written
     if present:
         # An install that has the prompt hook keeps it.

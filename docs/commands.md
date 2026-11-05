@@ -31,7 +31,7 @@ Add `--verbose` (`-v`) to any command for paths, scores, and raw ranking reasons
 | `mimry watch` | Poll for changes and refresh when they settle, printing one line per refresh |
 | `mimry git-hooks` | Keep the index fresh with git hooks (`install`/`uninstall`/`status`); the post-commit hook also records feedback from the commit, and re-running `mimry git-hooks` upgrades existing hooks |
 | `mimry feedback ...` | Record what helped; `feedback stats`, `list`, `show <id>` read it back; `feedback stats` also shows, for the last 30 days, how many preflights ran and how many commits had a preflight first, and, only when at least one commit had one, how many of those held a changed file in the preflight's top five; `--from-json FILE` reads a feedback payload from a JSON file, and `--from-commit [REV]` records a commit's changed files against the last preflight before it, when the commit touches a file that preflight suggested or its message or a changed file name shares a task word with it; the hooks also record a session's reads and edits after a find, unless `MIMRY_SESSION_FEEDBACK=0` |
-| `mimry stats` | Show the tokens MIMRY saved, estimated (characters / 4): ranged Reads of files it named, and searches answered from the index, for this session and all time; the session is the Claude Code session id from `--session` or `MIMRY_SESSION_ID`; `--json` for machine output; `--statusline` reads Claude Code's status line JSON on stdin and prints one line, or nothing |
+| `mimry stats` | Show the tokens MIMRY saved, estimated (characters / 4): ranged Reads of files it named, and searches answered from the index, for this session and all time; the session is the Claude Code session id from `--session` or `MIMRY_SESSION_ID`; `--json` for machine output; `--statusline` reads Claude Code's status line JSON on stdin and prints one line, or nothing; with no hook record in the repo it says the repo is not tracked instead of showing 0 |
 | `mimry roots` | List indexed folders on this machine (`--prune` forgets deleted ones) |
 | `mimry plan ...` | Store and render explicit plan trees |
 | `mimry mcp` | Run the MCP server (same as `mimry-mcp`) |
@@ -162,6 +162,7 @@ When a turn ends it closes that turn's feedback window and writes the session's 
 It counts a ranged Read (one with `offset` or `limit`) of a file MIMRY named in the session, as the tokens of the rest of the file.
 A search the hooks answer from the index counts as one search, never as tokens.
 Tokens are estimated as characters / 4, so every number is about, not exact.
+If the hooks have left no record in the repo, `mimry stats` says so instead of showing zeros.
 To show the session total in Claude Code's status line, set this in your Claude Code settings:
 
 ```json

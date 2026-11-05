@@ -54,7 +54,7 @@ def _payload_cwd(raw: bytes) -> str | None:
 
     try:
         data = json.loads(raw.decode("utf-8", errors="replace") or "{}")
-    except ValueError:
+    except Exception:  # RecursionError on deep nesting too (#668)
         return None
     cwd = data.get("cwd") if isinstance(data, dict) else None
     return cwd if isinstance(cwd, str) and cwd else None

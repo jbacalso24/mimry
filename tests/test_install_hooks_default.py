@@ -339,3 +339,17 @@ def test_uninstall_removes_the_subagent_start_hook(home, capsys):
     assert not _settings(home).exists() or "SubagentStart" not in _load(_settings(home)).get(
         "hooks", {}
     )
+
+
+def test_refresh_warns_and_leaves_an_unreadable_settings_file_alone(home, repo, capsys):
+    # A trailing comma is not JSON, so hooks cannot merge (#669).
+    assert main(["install", "--platform", "claude-code", *NO_MCP]) == 0
+    broken = b'{\n  "model": "opus",\n}\n'
+    _settings(home).write_bytes(broken)
+    capsys.readouterr()
+
+    assert main(["--root", str(repo), "install", "--refresh"]) == 0
+
+    out = capsys.readouterr()
+    assert "Skipped the MIMRY hooks: could not read" in out.out + out.err
+    assert _settings(home).read_bytes() == broken

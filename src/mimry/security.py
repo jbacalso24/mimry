@@ -579,8 +579,9 @@ SPACED_SENSITIVE_ASSIGNMENT_RE = re.compile(
     # placeholder such as ``{value}`` is captured whole too, and is not
     # a secret (see _TEMPLATE_VALUE_RE). An unquoted value stops at an
     # escape sequence or a closing bracket (see ASSIGNMENT_RE).
+    # A closing backtick ends one too (#667).
     r"(?P<value>\"(?:\\.|[^\"\\\r\n])*\"|'(?:\\.|[^'\\\r\n])*'|"
-    r"<[^<>\r\n]*>(?=[\s,;})]|\Z)|\$?\{[A-Za-z_][A-Za-z0-9_.]*\}|"
+    r"<[^<>\r\n]*>(?=[\s,;})`]|\Z)|\$?\{[A-Za-z_][A-Za-z0-9_.]*\}|"
     r"(?=[^\s,;})])(?:\[[^\[\]\s]*\]|\\(?![nrt\"'])|[^\s,;}\)\]\\\"'])*"
     r"(?:(?=[\"'])[^\s,;})]*)?)"
 )
@@ -711,6 +712,9 @@ _VALUE_END_RE = re.compile(r"[ \t]*(?:[,;)\]}\r\n`]|\\(?=[nrt\"'])|\Z|(?<=[ \t])
 # values are scanned.
 _PROSE_AFTER_QUOTE_RE = re.compile(r"[ \t]+(?!(?:or|and|if|else)\b)[A-Za-z_]")
 _CLOSING_BACKTICK_RE = re.compile(r"[ \t]*`")
+# The head of a call, as ``get_token(`` where the value stops at the
+# parenthesis: a function call, not a literal credential (#667).
+_CALL_HEAD_RE = re.compile(r"[A-Za-z_][\w.]*\(")
 _LINE_REST_RE = re.compile(r"[^\r\n]*")
 _LINE_BREAK_RE = re.compile(r"[ \t]*\r?\n")
 # An operator that binds tighter than a comparison, so the literal
@@ -1289,7 +1293,12 @@ def _value_is_credential(
         if _CLOSING_BACKTICK_RE.match(text, literal.end()):
             # The literal ends at the backtick closing inline code.
             # Scanning on would read it as an unclosed template.
-            return _string_literal_is_credential(literal, code=False)
+            # A field name or union member is no secret in prose (#667).
+            return (
+                not _literal_names_field(literal, label)
+                and not _in_literal_union(text, literal)
+                and _string_literal_is_credential(literal, code=False)
+            )
         return _expression_is_credential(text, start, scanner)
     lookup = _ENV_LOOKUP_RE.match(text, start)
     if lookup:
@@ -1302,6 +1311,7 @@ def _value_is_credential(
         or _NUMBER_RE.fullmatch(candidate)
         or _REFERENCE_RE.match(text, start)
         or _SPACED_PLACEHOLDER_RE.fullmatch(candidate)
+        or _CALL_HEAD_RE.fullmatch(candidate)
     ):
         return False
     if operator == ":":
