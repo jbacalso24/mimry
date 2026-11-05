@@ -42,6 +42,7 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 - The hooks exit quietly on any payload, including deeply nested JSON ([#666](https://github.com/jbacalso24/mimry/pull/666)).
 - `mimry install --refresh` warns when it cannot read a settings file instead of skipping the hooks silently ([#666](https://github.com/jbacalso24/mimry/pull/666)).
 - Prose such as `FROM a table` no longer links to a SQL table named `a`; a schema-qualified `dbo.a` still links ([#666](https://github.com/jbacalso24/mimry/pull/666)).
+- `mimry` on its own prints a short guide to the main commands instead of an error that lists every command, and `mimry -h` no longer lists the internal hook commands ([#672](https://github.com/jbacalso24/mimry/pull/672)).
 - `mimry doctor` and `mimry embed status` suggest the embeddings install command that matches how MIMRY was installed: uv tool, pipx or pip ([#653](https://github.com/jbacalso24/mimry/pull/653)).
 
 ## 0.8.4 - 2026-10-22

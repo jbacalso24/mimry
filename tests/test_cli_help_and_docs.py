@@ -51,6 +51,26 @@ def test_history_has_a_description():
     assert _subparser("history").description
 
 
+def test_a_bare_mimry_prints_a_short_guide_not_an_error(capsys):
+    assert main([]) == 0
+
+    out = capsys.readouterr().out
+    assert 'mimry preflight "<task>"' in out
+    assert "mimry <command> -h" in out
+    assert "hook-" not in out
+
+
+def test_help_hides_the_internal_hooks_and_keeps_the_usage_short(capsys):
+    with pytest.raises(SystemExit):
+        main(["-h"])
+
+    out = capsys.readouterr().out
+    assert out.startswith("usage: mimry [-h] [--version] [--root ROOT] <command> ...")
+    assert "hook-" not in out
+    # Hidden from help, still runnable by the installed hooks.
+    assert _subparser("hook-session") and _subparser("hook-check")
+
+
 def test_update_help_prints_the_name_it_was_run_as(capsys):
     with pytest.raises(SystemExit) as raised:
         main(["update", "--help"])

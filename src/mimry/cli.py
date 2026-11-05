@@ -87,7 +87,8 @@ def build_parser():
     p = argparse.ArgumentParser(
         prog="mimry",
         description=(
-            "Local repo intelligence memory. Defaults --root to the current working directory."
+            "MIMRY: local repo memory for AI coding agents. Commands run on the current"
+            " folder unless you pass --root."
         ),
     )
     p.add_argument("--version", action="version", version=f"mimry {__version__}")
@@ -96,7 +97,9 @@ def build_parser():
         default=".",
         help="Repo/folder to operate on (default: current working directory)",
     )
-    sub = p.add_subparsers(dest="command", required=True)
+    # The metavar keeps the usage line short; argparse would list every
+    # command name in it.
+    sub = p.add_subparsers(dest="command", required=True, metavar="<command>", title="commands")
     s = sub.add_parser(
         "init",
         help="Initialize MIMRY metadata and ignore .mimry/ in Git worktrees",
@@ -687,27 +690,18 @@ def build_parser():
         help="Read Claude Code's status line JSON on stdin and print one line, or nothing",
     )
     st.set_defaults(func=cmd_stats)
-    sub.add_parser("hook-check", help="Internal PreToolUse hook helper").set_defaults(
-        func=cmd_hook_check
-    )
-    sub.add_parser(
-        "hook-refresh", help="Internal hook: refresh the index in the background"
-    ).set_defaults(func=cmd_hook_refresh)
-    sub.add_parser(
-        "hook-compact", help="Internal hook: restore the working set after a compaction"
-    ).set_defaults(func=cmd_hook_compact)
-    sub.add_parser(
-        "hook-prompt", help="Internal hook: name the files to read first for a prompt"
-    ).set_defaults(func=cmd_hook_prompt)
-    sub.add_parser(
-        "hook-stop", help="Internal hook: mark the end of a turn and flush session feedback"
-    ).set_defaults(func=cmd_hook_stop)
-    sub.add_parser(
-        "hook-subagent", help="Internal hook: name MIMRY to a subagent as it starts"
-    ).set_defaults(func=cmd_hook_subagent)
-    sub.add_parser(
-        "hook-session", help="Internal hook: give a session MIMRY's rules and a repo map"
-    ).set_defaults(func=cmd_hook_session)
+    # The hooks are internal: a parser without help stays out of
+    # `mimry -h`. The installed hooks run them by name.
+    for name, func in (
+        ("hook-check", cmd_hook_check),
+        ("hook-refresh", cmd_hook_refresh),
+        ("hook-compact", cmd_hook_compact),
+        ("hook-prompt", cmd_hook_prompt),
+        ("hook-stop", cmd_hook_stop),
+        ("hook-subagent", cmd_hook_subagent),
+        ("hook-session", cmd_hook_session),
+    ):
+        sub.add_parser(name).set_defaults(func=func)
     # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`:
     # package runners such as uvx only launch the script named after the
     # package.
@@ -825,8 +819,33 @@ def _run_command(a):
     return code
 
 
+QUICK_HELP = """MIMRY: local repo memory for AI coding agents.
+
+Get started:
+  mimry install --platform claude-code   connect your agent
+  mimry init && mimry index              set up this repo
+
+Find code:
+  mimry preflight "<task>"   the files to read first for a task
+  mimry find "<query>"       files that match a query, best first
+  mimry symbol <name>        where a function or class is defined
+  mimry impact <name>        what a change to it reaches
+
+Check:
+  mimry status               whether the index is current
+  mimry doctor               diagnose the install and index
+  mimry stats                what MIMRY saved your agents
+
+All commands: mimry -h. One command: mimry <command> -h."""
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
+    if not args:
+        # A bare `mimry` gets a short guide, not argparse's error.
+        configure_console()
+        print(QUICK_HELP)
+        return 0
     if _statusline_argv(args):
         from .savings import run_statusline
 
