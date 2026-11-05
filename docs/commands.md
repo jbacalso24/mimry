@@ -133,6 +133,9 @@ Claude Code also gets a `SubagentStart` hook that runs `mimry hook-subagent` whe
 In a folder MIMRY has set up, it adds a short note as context that names `mimry preflight` and `mimry find`.
 When the parent session's `latest.md` context pack was written in the last 30 minutes, the note also names that pack and its top files.
 The note stays under 600 characters, and the hook prints nothing in a folder MIMRY has not set up.
+Claude Code also gets a `SessionStart` hook that runs `mimry hook-session` on startup, resume, clear and compact.
+In a folder MIMRY has set up, it adds the same rules the subagent note gives and a short map of the repository from the index: the folders with the most indexed files, each with its most connected classes and functions.
+The map is cached in `.mimry/` for the index it was built from, and the note stays under 2000 characters.
 Codex has no such event.
 
 ### Name the files for each task
@@ -194,7 +197,7 @@ Add `--file <path>` when they are in different files, or `--line N` (or `--file 
 A `--line` that starts no candidate and spans none exits 1 and lists the candidates.
 `path` between two indexed names with no connection also exits 0, because that is an answer.
 `status` keeps its own codes: 1 when MIMRY is not set up, 2 when the index is not current.
-`hook-check`, `hook-refresh`, `hook-compact`, `hook-prompt`, `hook-stop` and `hook-subagent` always exit 0, so a hook never fails the agent's tool call or prompt.
+`hook-check`, `hook-refresh`, `hook-compact`, `hook-session`, `hook-prompt`, `hook-stop` and `hook-subagent` always exit 0, so a hook never fails the agent's tool call or prompt.
 With `--json`, the JSON is printed and the exit code is the same.
 
 ## Inferred edges

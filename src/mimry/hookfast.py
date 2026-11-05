@@ -19,9 +19,10 @@ HOOK_COMMANDS = (
     "hook-prompt",
     "hook-stop",
     "hook-subagent",
+    "hook-session",
 )
 # Hooks whose payload names their folder: their stdin is read here.
-PAYLOAD_HOOKS = ("hook-prompt", "hook-subagent")
+PAYLOAD_HOOKS = ("hook-prompt", "hook-subagent", "hook-session")
 
 
 def set_up_at_or_above(root: Path) -> bool:
@@ -63,9 +64,9 @@ def _payload_cwd(raw: bytes) -> str | None:
 def fast_hook(argv: list[str]) -> int | None:
     """The exit code when a hook ends here, or None to run the command.
 
-    ``hook-prompt`` and ``hook-subagent`` name their folder in the
-    payload, so their stdin is read once here and put back for the
-    command that runs next. (#655)
+    ``hook-prompt``, ``hook-subagent`` and ``hook-session`` name their
+    folder in the payload, so their stdin is read once here and put back
+    for the command that runs next. (#655, #657)
     """
     if len(argv) != 1 or argv[0] not in HOOK_COMMANDS:
         return None

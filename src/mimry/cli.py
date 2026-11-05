@@ -77,6 +77,7 @@ def build_parser():
         cmd_hook_compact,
         cmd_hook_prompt,
         cmd_hook_refresh,
+        cmd_hook_session,
         cmd_hook_stop,
         cmd_hook_subagent,
     )
@@ -704,6 +705,9 @@ def build_parser():
     sub.add_parser(
         "hook-subagent", help="Internal hook: name MIMRY to a subagent as it starts"
     ).set_defaults(func=cmd_hook_subagent)
+    sub.add_parser(
+        "hook-session", help="Internal hook: give a session MIMRY's rules and a repo map"
+    ).set_defaults(func=cmd_hook_session)
     # The same server as `mimry-mcp`, reachable as `uvx mimry mcp`:
     # package runners such as uvx only launch the script named after the
     # package.
@@ -744,6 +748,7 @@ def build_parser():
             "hook-prompt",
             "hook-stop",
             "hook-subagent",
+            "hook-session",
             "plan",
             "cache",
             "embed",
@@ -770,7 +775,14 @@ def _cmd_mcp(a) -> int:
     return 0
 
 
-HOOK_FAST_PATH = ("hook-check", "hook-compact", "hook-prompt", "hook-stop", "hook-subagent")
+HOOK_FAST_PATH = (
+    "hook-check",
+    "hook-compact",
+    "hook-prompt",
+    "hook-session",
+    "hook-stop",
+    "hook-subagent",
+)
 
 
 def _hook_root(args) -> tuple[str, str] | None:
@@ -828,6 +840,7 @@ def main(argv=None):
             cmd_hook_check,
             cmd_hook_compact,
             cmd_hook_prompt,
+            cmd_hook_session,
             cmd_hook_stop,
             cmd_hook_subagent,
         )
@@ -837,6 +850,7 @@ def main(argv=None):
             "hook-check": cmd_hook_check,
             "hook-compact": cmd_hook_compact,
             "hook-prompt": cmd_hook_prompt,
+            "hook-session": cmd_hook_session,
             "hook-stop": cmd_hook_stop,
             "hook-subagent": cmd_hook_subagent,
         }[name]

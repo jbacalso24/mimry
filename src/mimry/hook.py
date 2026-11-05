@@ -41,6 +41,11 @@ the top files of the parent session's context pack when that pack was
 written in the last 30 minutes. Subagents do most of the searching, and
 they do not see the session's start-up context.
 
+``hook-session`` is the SessionStart hook (#657). On startup, resume,
+clear and compact it adds the MIMRY rules and a short map of the
+folders' most connected classes and functions, read from the index. The
+map is cached under ``.mimry/`` for the generation it was built from.
+
 The hooks are installed user-wide, so they run in every folder. In a
 folder MIMRY has not set up (no ``.mimry/`` in it or above it) each one
 exits at once, prints nothing and writes nothing.
@@ -52,6 +57,7 @@ import hashlib
 import heapq
 import json
 import os
+import posixpath
 import re
 import sys
 import time
@@ -198,11 +204,14 @@ MIMRY_QUERY_COMMANDS = frozenset(
 # Written out because building the CLI parser in the hook costs half a
 # second; a test keeps them equal to the parser's.
 MIMRY_SUBCOMMANDS = frozenset(
-    """adapters bench brief cache callees callers context digest doctor embed
-    explain export feedback find git-hooks history hook-check hook-compact
-    hook-prompt hook-refresh hook-stop hook-subagent impact index init install
-    mcp path plan preflight refresh reindex related report roots route semantic
-    stats status symbol uninstall update upgrade watch why""".split()
+    """
+    adapters bench brief cache callees callers context digest doctor
+    embed explain export feedback find git-hooks history hook-check
+    hook-compact hook-prompt hook-refresh hook-session hook-stop
+    hook-subagent impact index init install mcp path plan preflight
+    refresh reindex related report roots route semantic stats status
+    symbol uninstall update upgrade watch why
+    """.split()
 )
 MIMRY_VALUED_OPTIONS = frozenset({"--root"})
 # The options of the query commands that take a value. A test keeps them
@@ -344,6 +353,15 @@ def cmd_hook_subagent(a) -> int:
         _hook_subagent(Path(getattr(a, "root", None) or "."))
     except Exception:
         # The note is optional; never fail the subagent over it.
+        pass
+    return 0
+
+
+def cmd_hook_session(a) -> int:
+    try:
+        _hook_session(Path(getattr(a, "root", None) or "."))
+    except Exception:
+        # The rules are optional; never fail the session over them.
         pass
     return 0
 
@@ -1841,19 +1859,26 @@ def _pack_files(pack: Path) -> list[str] | None:
     return PACK_FILE_HEADING.findall(section)[:SUBAGENT_FILE_LIMIT]
 
 
-def _subagent_note(folder: Path, plugin: bool) -> str:
+def _mimry_rules(plugin: bool) -> str:
+    """The rules a session and its subagents are given (#657).
+
+    The plugin's MIMRY tools are MCP tools, so the rules name those.
+    """
     if plugin:
-        start = (
+        return (
             "This repository has a MIMRY index. To find code for a task, start with the"
             " `mimry_preflight` tool (or `mimry_find`) and read the context pack it names;"
             " use `rg` or `git grep` only for a string you already know."
         )
-    else:
-        start = (
-            "This repository has a MIMRY index. To find code for a task, start with"
-            ' `mimry preflight "<task>"` (or `mimry find "<query>"`) and read the context'
-            " pack it names; use `rg` or `git grep` only for a string you already know."
-        )
+    return (
+        "This repository has a MIMRY index. To find code for a task, start with"
+        ' `mimry preflight "<task>"` (or `mimry find "<query>"`) and read the context'
+        " pack it names; use `rg` or `git grep` only for a string you already know."
+    )
+
+
+def _subagent_note(folder: Path, plugin: bool) -> str:
+    start = _mimry_rules(plugin)
     from .paths import context_file
 
     pack = context_file(folder)
@@ -1888,6 +1913,190 @@ def _hook_subagent(root: Path) -> None:
         return
     plugin = bool(os.environ.get("CLAUDE_PLUGIN_ROOT"))
     _print_context(_subagent_note(folder, plugin), event="SubagentStart")
+
+
+# The SessionStart note: the rules, then the most connected classes and
+# functions of the folders that hold the most indexed files (#657).
+SESSION_NOTE_LIMIT = 2000
+SESSION_FOLDER_LIMIT = 8
+SESSION_SYMBOL_LIMIT = 8
+SESSION_MAP_FILE = "session-map.json"
+SESSION_MAP_KINDS = frozenset({"class", "function"})
+# The edges that reach a symbol from another one: a call or a subclass.
+SESSION_EDGES = frozenset({"calls", "inherits"})
+SESSION_MAP_HEADING = "MIMRY repo map from the index, most connected symbols per folder:"
+
+
+def _session_map(index: Path, paths: list[str]) -> list[list]:
+    """[folder, names] for the folders that hold the most indexed files.
+
+    Test files are left out. Only folders with a class or a function are
+    kept. A folder ranks by the summed reach of its public classes and
+    functions, then by its file count, then by name. A symbol's reach is
+    the calls and inheritance that reach it in graph.json, which already
+    resolves them to symbols. The same index always gives the same map.
+    """
+    from .intent import is_test_file
+
+    # The graph is read here, not in the prompt hook, so its size is
+    # checked here too: past the prompt hook's limit there is no map.
+    graph_file = index / "graph.json"
+    try:
+        if not graph_file.is_file() or graph_file.stat().st_size > PROMPT_GRAPH_MAX_BYTES:
+            return []
+    except OSError:
+        return []
+    counts: dict[str, int] = {}
+    for rel_path in paths:
+        if is_test_file(rel_path):
+            continue
+        folder = posixpath.dirname(rel_path) or "."
+        counts[folder] = counts.get(folder, 0) + 1
+    graph = json.loads(graph_file.read_text(encoding="utf-8"))
+    reached: dict[str, int] = {}
+    for edge in graph["edges"]:
+        if edge.get("relation") in SESSION_EDGES:
+            reached[edge["target"]] = reached.get(edge["target"], 0) + 1
+    found: dict[str, list[tuple[str, str]]] = {}
+    for node in graph["nodes"]:
+        name, source = node.get("label"), node.get("source_file")
+        if node.get("type") != "symbol" or node.get("kind") not in SESSION_MAP_KINDS:
+            continue
+        if not isinstance(name, str) or not isinstance(source, str) or not name:
+            continue
+        if is_test_file(source):
+            continue
+        folder = posixpath.dirname(source) or "."
+        found.setdefault(folder, []).append((node["id"], name))
+    ordered: list[tuple[int, int, str]] = []
+    for folder, symbols in found.items():
+        if folder not in counts:
+            continue
+        public = [item for item in symbols if not item[1].startswith("_")]
+        reach = sum(reached.get(symbol_id, 0) for symbol_id, _ in public)
+        ordered.append((-reach, -counts[folder], folder))
+    result: list[list] = []
+    for _, _, folder in sorted(ordered):
+        symbols = found[folder]
+        # Private names give way to public ones when the folder has any.
+        public = [item for item in symbols if not item[1].startswith("_")]
+        ranked = sorted(
+            public or symbols, key=lambda item: (-reached.get(item[0], 0), item[1], item[0])
+        )
+        names = list(dict.fromkeys(name for _, name in ranked))
+        result.append([folder, names[:SESSION_SYMBOL_LIMIT]])
+        if len(result) == SESSION_FOLDER_LIMIT:
+            break
+    return result
+
+
+def _read_session_cache(cache: Path, generation: str) -> list | None:
+    try:
+        data = json.loads(cache.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("generationId") != generation:
+        return None
+    folders = data.get("folders")
+    return folders if isinstance(folders, list) else None
+
+
+def _write_session_cache(cache: Path, generation: str, folders: list) -> None:
+    tmp = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
+    try:
+        payload = {"generationId": generation, "folders": folders}
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(tmp, cache)
+    except OSError:
+        # A read-only state folder only costs the cache; the next start
+        # rebuilds it.
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _session_folders(folder: Path) -> list | None:
+    """The map's folders for the active generation, or None when there
+    is no usable index or the repository is past the prompt hook's
+    size gates.
+
+    The map is cached in .mimry/ under the generation id, so a session
+    start on an unchanged index reads only that file and the pointer.
+    """
+    from .paths import mdir
+
+    state = mdir(folder)
+    pointer = json.loads((state / "pointer.json").read_text(encoding="utf-8"))
+    generation = pointer.get("generationId")
+    if not isinstance(generation, str) or not generation:
+        return None
+    cache = state / SESSION_MAP_FILE
+    cached = _read_session_cache(cache, generation)
+    if cached is not None:
+        return cached
+    index = Path(pointer["indexPath"])
+    paths = _indexed_paths_for_prompt(folder, index)
+    if not paths:
+        return None
+    found = _session_map(index, paths)
+    _write_session_cache(cache, generation, found)
+    return found
+
+
+def _compose_session_note(rules: str, folders: list, keep: int) -> str:
+    if not folders:
+        return rules
+    lines = [rules, SESSION_MAP_HEADING]
+    for folder, names in folders:
+        label = "./" if folder == "." else f"{folder}/"
+        lines.append(f"{label}: {', '.join(names[:keep])}")
+    return "\n".join(lines)
+
+
+def _fit_session_note(rules: str, folders: list) -> str:
+    """The rules and the map, cut to SESSION_NOTE_LIMIT.
+
+    Symbols go first, one fewer per folder at a time, then whole folders
+    from the least indexed. The rules always print.
+    """
+    for keep in range(SESSION_SYMBOL_LIMIT, 0, -1):
+        note = _compose_session_note(rules, folders, keep)
+        if len(note) <= SESSION_NOTE_LIMIT:
+            return note
+    for shown in range(len(folders) - 1, 0, -1):
+        note = _compose_session_note(rules, folders[:shown], 1)
+        if len(note) <= SESSION_NOTE_LIMIT:
+            return note
+    return rules
+
+
+def _session_note(folder: Path, plugin: bool) -> str:
+    rules = _mimry_rules(plugin)
+    try:
+        return _fit_session_note(rules, _session_folders(folder) or [])
+    except Exception:
+        # The map is optional; a bad index or cache keeps the rules.
+        return rules
+
+
+def _hook_session(root: Path) -> None:
+    try:
+        raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        raw = ""
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except Exception:  # deep nesting raises RecursionError (#668)
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    cwd = data.get("cwd")
+    folder = _set_up_folder(Path(cwd) if isinstance(cwd, str) and cwd else root)
+    if folder is None:
+        return
+    plugin = bool(os.environ.get("CLAUDE_PLUGIN_ROOT"))
+    _print_context(_session_note(folder, plugin), event="SessionStart")
 
 
 def _hook_stop(root: Path) -> None:
