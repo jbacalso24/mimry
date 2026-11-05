@@ -66,3 +66,24 @@ def test_a_hook_in_a_set_up_folder_goes_on_to_the_cli(tmp_path):
     result = _run(tmp_path, ["hook-check"], stdin=b"{}")
 
     assert "mimry.cli" in result["modules"]
+
+
+_CONSOLE = "import sys; from mimry.entry import main; sys.exit(main(sys.argv[1:]))"
+
+
+@pytest.mark.parametrize("hook", ["hook-prompt", "hook-subagent"])
+@pytest.mark.parametrize("set_up", [False, True], ids=["unset-up", "set-up"])
+def test_a_deeply_nested_payload_exits_quietly(tmp_path, hook, set_up):
+    # 5000 open brackets raise RecursionError in json (#668).
+    if set_up:
+        (tmp_path / ".mimry").mkdir()
+
+    done = subprocess.run(
+        [sys.executable, "-c", _CONSOLE, hook],
+        cwd=tmp_path,
+        input=b"[" * 5000,
+        capture_output=True,
+        check=False,
+    )
+
+    assert (done.returncode, done.stdout, done.stderr) == (0, b"", b"")
