@@ -2,6 +2,49 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
+## 0.9.0 - 2026-11-05
+
+### Upgrade notes
+
+- `mimry install --platform claude-code` now adds the Claude Code hooks and the prompt hook by default, at user level in `~/.claude/settings.json` as well as with `--project` ([#654](https://github.com/jbacalso24/mimry/pull/654)).
+  `mimry upgrade` and `mimry install --refresh` add them to an existing install that lacks them.
+  Pass `--no-hooks` or `--no-prompt-hook` to opt out; the choice is recorded, and `--no-hooks` on an existing install removes the hooks.
+  Your other settings and hooks are kept, and the hooks are skipped when the MIMRY plugin is installed, since it ships its own.
+- User-level hooks run in every folder.
+  In a folder without `.mimry/` each hook exits silently before the CLI loads, but it still starts Python, which adds about 0.15 to 0.2 seconds to each prompt and to each Bash, PowerShell, Read, Grep, Glob, Edit and Write call.
+  Install with `--project` to keep the hooks in set-up repositories only, or pass `--no-hooks`.
+- A project install keeps its files out of `git status`: Claude Code hooks go to `.claude/settings.local.json`, and the project skill folders join MIMRY's global ignore block ([#635](https://github.com/jbacalso24/mimry/pull/635)).
+  `mimry install --refresh` and `mimry upgrade` move MIMRY's old entries out of `.claude/settings.json` and leave everything else there.
+
+### New features
+
+- Every Claude Code session gets MIMRY's rules and a short repo map from the index when it starts, resumes, clears or compacts: a new `mimry hook-session` on SessionStart ([#672](https://github.com/jbacalso24/mimry/pull/672)).
+  The map lists the most connected classes and functions of the main folders, within 2000 characters, and is cached until the index changes.
+- Subagents get MIMRY guidance: a new `mimry hook-subagent` on Claude Code's SubagentStart adds a short note to use MIMRY first, plus the files at the top of a fresh context pack ([#663](https://github.com/jbacalso24/mimry/pull/663)).
+- A broad search answered by the search hook gets the top ranked files with their read-first lines next to the grep result, instead of a reminder to run `mimry find` ([#665](https://github.com/jbacalso24/mimry/pull/665)).
+  The grep still runs, and exact-string, piped and named-file searches stay quiet.
+- Code that runs a stored procedure or queries a view now links to it, and `mimry impact` lists the files that reference a SQL object in a new `referencing_files` group ([#650](https://github.com/jbacalso24/mimry/pull/650)).
+- Package references and version pins are symbols, so `mimry symbol System.Text.Json` finds the project file that pins it: MSBuild `PackageReference` and `PackageVersion`, `package.json`, `pyproject.toml` and `requirements*.txt` ([#649](https://github.com/jbacalso24/mimry/pull/649)).
+- `mimry stats` says when MIMRY has no record of agent sessions in a repository or session, instead of reporting 0 tokens saved ([#666](https://github.com/jbacalso24/mimry/pull/666)).
+  `--json` adds `tracked`, with null totals for a scope that is not tracked.
+
+### Security
+
+- Secrets passed to a call on a credential assignment, such as `os.environ.get("DB_PASS", "...")`, typed fields, values after an `Authorization` placeholder, `curl -u` and Markdown code spans are redacted ([#639](https://github.com/jbacalso24/mimry/pull/639)).
+  Comments and docstrings in code files are judged as prose, so a commented-out password is redacted too.
+- pypdf is now required at 6.21.4 or later, which fixes seven published pypdf advisories ([#660](https://github.com/jbacalso24/mimry/pull/660)).
+
+### Fixes
+
+- Documentation placeholders such as `api_key: <your-api-key>`, `token = get_token()`, masked values and password prompts no longer keep a guide out of the index ([#634](https://github.com/jbacalso24/mimry/pull/634), [#666](https://github.com/jbacalso24/mimry/pull/666), thanks @abhinavrastogi2627).
+- `init --no-global-gitignore` is remembered in `.mimry/config.toml`, so later runs and `mimry doctor` no longer undo it, and updating Git's global ignore keeps the file's bytes and line endings ([#631](https://github.com/jbacalso24/mimry/pull/631), thanks @abhinavrastogi2627).
+- A deleted index generation, or one Windows is still deleting, rebuilds on the next query instead of being reported as damaged ([#632](https://github.com/jbacalso24/mimry/pull/632), thanks @abhinavrastogi2627, and [#638](https://github.com/jbacalso24/mimry/pull/638)).
+- The hooks exit quietly on any payload, including deeply nested JSON ([#666](https://github.com/jbacalso24/mimry/pull/666)).
+- `mimry install --refresh` warns when it cannot read a settings file instead of skipping the hooks silently ([#666](https://github.com/jbacalso24/mimry/pull/666)).
+- Prose such as `FROM a table` no longer links to a SQL table named `a`; a schema-qualified `dbo.a` still links ([#666](https://github.com/jbacalso24/mimry/pull/666)).
+- `mimry` on its own prints a short guide to the main commands instead of an error that lists every command, and `mimry -h` no longer lists the internal hook commands ([#672](https://github.com/jbacalso24/mimry/pull/672)).
+- `mimry doctor` and `mimry embed status` suggest the embeddings install command that matches how MIMRY was installed: uv tool, pipx or pip ([#653](https://github.com/jbacalso24/mimry/pull/653)).
+
 ## 0.8.4 - 2026-10-22
 
 ### Upgrade notes

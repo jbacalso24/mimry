@@ -32,7 +32,7 @@ EDIT_MATCHER = {
 }
 REFRESH_EVENTS = ("SessionStart", "PostToolUse")
 SESSION_START_MATCHERS = {
-    "claude-code": ["startup|resume", "compact"],
+    "claude-code": ["startup|resume", "compact", "startup|resume|clear|compact"],
     "codex": ["startup|resume"],
 }
 

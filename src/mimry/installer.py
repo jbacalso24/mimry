@@ -1026,7 +1026,9 @@ def hook_table(platform_key: str) -> dict[str, list[tuple[str, str, bool]]]:
     background when a session starts and after each file edit, so the
     index is current before the agent's next query. After a compaction
     the restore runs in the foreground: only a foreground hook can add
-    context. The installed hooks and the Claude Code plugin's hooks.json
+    context. The session note (#657) runs in the foreground on every
+    session start, so the rules and the repo map always reach it. The
+    installed hooks and the Claude Code plugin's hooks.json
     are both built from this table, so they cannot drift apart.
     """
     if platform_key == "codex":
@@ -1045,6 +1047,8 @@ def hook_table(platform_key: str) -> dict[str, list[tuple[str, str, bool]]]:
     table = {}
     if platform_key != "codex":
         session_start.append(("compact", "hook-compact", False))
+        # Foreground, so the rules and map reach each start (#657).
+        session_start.append(("startup|resume|clear|compact", "hook-session", False))
         # The turn-end mark closes the session's feedback window. Only
         # Claude Code has been checked to run it.
         table["Stop"] = [("", "hook-stop", True)]
@@ -1532,6 +1536,7 @@ def _is_mimry_hook(entry: object) -> bool:
         "hook-prompt",
         "hook-stop",
         "hook-subagent",
+        "hook-session",
     )
     return any(sub in text for sub in subcommands) and "mimry" in text
 

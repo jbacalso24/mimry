@@ -108,6 +108,7 @@ The hooks also learn from a session without a manual record.
 After a find, preflight or context run, they log the files the agent reads and edits, and the query's window closes into a feedback record when a later query runs or after two hours idle.
 The logs live in `.mimry/` and never leave the machine.
 After a context compaction, the Claude Code hook uses them to restore the last query and the files the session was working on.
+Each Claude Code session start also gets MIMRY's rules and a short repo map from the index, so the agent starts with a search plan.
 Set `MIMRY_SESSION_FEEDBACK=0` to turn this off.
 
 ```bash
