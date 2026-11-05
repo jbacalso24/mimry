@@ -71,6 +71,7 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
         "scripts",
         "src",
         "tests",
+        "AI_CONTRIBUTIONS.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
         "LICENSE",
@@ -97,6 +98,7 @@ def test_sdist_is_allow_listed_and_excludes_local_bulk(tmp_path: Path):
     assert any(path.as_posix().endswith("scripts/determinism_matrix.py") for path in payload_paths)
     assert any(path.as_posix().endswith("CONTRIBUTING.md") for path in payload_paths)
     assert any(path.as_posix().endswith("SECURITY.md") for path in payload_paths)
+    assert any(path.as_posix().endswith("AI_CONTRIBUTIONS.md") for path in payload_paths)
 
 
 def test_unlocked_ci_matrix_invokes_only_the_extracted_artifact_script():
