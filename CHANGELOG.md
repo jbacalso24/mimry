@@ -18,6 +18,8 @@ Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility c
 
 ### New features
 
+- Every Claude Code session gets MIMRY's rules and a short repo map from the index when it starts, resumes, clears or compacts: a new `mimry hook-session` on SessionStart ([#672](https://github.com/jbacalso24/mimry/pull/672)).
+  The map lists the most connected classes and functions of the main folders, within 2000 characters, and is cached until the index changes.
 - Subagents get MIMRY guidance: a new `mimry hook-subagent` on Claude Code's SubagentStart adds a short note to use MIMRY first, plus the files at the top of a fresh context pack ([#663](https://github.com/jbacalso24/mimry/pull/663)).
 - A broad search answered by the search hook gets the top ranked files with their read-first lines next to the grep result, instead of a reminder to run `mimry find` ([#665](https://github.com/jbacalso24/mimry/pull/665)).
   The grep still runs, and exact-string, piped and named-file searches stay quiet.
