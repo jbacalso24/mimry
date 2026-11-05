@@ -34,7 +34,7 @@ def set_up_at_or_above(root: Path) -> bool:
     try:
         folder = root.resolve()
         return any((step / ".mimry").is_dir() for step in (folder, *folder.parents))
-    except OSError:
+    except (OSError, ValueError):  # ValueError: a NUL in a payload cwd
         return False
 
 
