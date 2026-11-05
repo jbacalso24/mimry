@@ -2,7 +2,7 @@
 
 Notable user-facing changes are recorded here. MIMRY is pre-1.0; compatibility changes may still occur, but the supported release floor is tested before a release is tagged.
 
-## 0.9.0 - 2026-11-06
+## 0.9.0 - 2026-11-05
 
 ### Upgrade notes
 
