@@ -1,6 +1,6 @@
 # MIMRY feedback
 
-After meaningful verified work, record what mattered so future rankings improve.
+Claude Code hooks record session feedback automatically. Where hooks do not run, record what mattered after meaningful verified work, so future rankings improve.
 
 ```bash
 mimry feedback --query "<task>" \

@@ -113,15 +113,17 @@ _REFERENCES: dict[str, str] = {
         """\n"""
         """## Fast path\n"""
         """\n"""
-        """1. Run `mimry status`.\n"""
-        """2. Route the task with `mimry route \"<task>\"` to pick the likely agent lane, risk """
-        """level, and next command.\n"""
-        """3. If current, ask a focused question with `mimry context \"<task>\"` or write a """
-        """role brief with `mimry brief \"<task>\" --agent <role>`.\n"""
-        """4. If stale/missing, run `mimry preflight \"<task>\"`.\n"""
-        """5. Read the context pack that preflight names (printed as `Context pack:`) or """
-        """`.mimry/mimry-out/context/brief-<agent>.md`.\n"""
-        """6. Inspect source files directly before editing. Where a file lists `Read first: """
+        """1. Run `mimry preflight \"<task>\"`. It sets the index up when it is missing and """
+        """updates it when files changed; there is no need to reindex by hand.\n"""
+        """2. Read the context pack that preflight names (printed as `Context pack:`) or """
+        """`.mimry/mimry-out/context/brief-<agent>.md`, and the files MIMRY already listed """
+        """before searching again.\n"""
+        """3. For a function or class by name, use `mimry symbol \"<name>\"`; before changing """
+        """it, run `mimry impact \"<name>\"`. For a topic, use `mimry find \"<query>\"`. To """
+        """hand work to another agent, write `mimry brief \"<task>\" --agent <role>`.\n"""
+        """4. Use `rg` or `git grep` for literal text, such as an error message or every use """
+        """of a name before a rename, because they list every match.\n"""
+        """5. Inspect source files directly before editing. Where a file lists `Read first: """
         """lines X-Y`, read those lines before the rest of the file.\n"""
         """\n"""
         """## Source of truth\n"""
@@ -200,8 +202,13 @@ _REFERENCES: dict[str, str] = {
         """\n"""
         """Rules:\n"""
         """\n"""
-        """- Start a task with `mimry_preflight` instead of exploring by grep; for an exact"""
-        """ string you already know, use `rg` or `git grep` directly.\n"""
+        """- Start a task with `mimry_preflight` instead of exploring by grep, and read the"""
+        """ files it lists before searching again.\n"""
+        """- Use `mimry_symbol` for a function or class by name, `mimry_find` for a topic, and"""
+        """ `mimry_impact` before changing a function.\n"""
+        """- Use `rg` or `git grep` for literal text, such as an error message or every use of"""
+        """ a name before a rename; they list every match.\n"""
+        """- The index updates itself before each query; there is no need to reindex.\n"""
         """- Read the context pack preflight names (`context_path` over MCP) before editing.\n"""
         """- Where a result lists `ranges` or `Read first: lines X-Y`, read those lines (for"""
         """ example with an offset and a limit) before the rest of the file.\n"""
@@ -214,7 +221,8 @@ _REFERENCES: dict[str, str] = {
     "feedback.md": (
         """# MIMRY feedback\n"""
         """\n"""
-        """After meaningful verified work, record what mattered so future rankings improve.\n"""
+        """Claude Code hooks record session feedback automatically. Where hooks do not run,"""
+        """ record what mattered after meaningful verified work, so future rankings improve.\n"""
         """\n"""
         """```bash\n"""
         """mimry feedback --query \"<task>\" \\\n"""
@@ -767,17 +775,15 @@ Platform note: {note}
 
 Use this skill for repo/project work: architecture discovery, debugging, implementation, refactors, audits, reviews, migrations, handoffs, and "where is X?" questions.
 
-Once MIMRY has shown where to look, use `rg` (or the harness's Grep tool, or `git grep` when `rg` is missing) for exact strings you already know. Never use plain `grep -r`; it descends into `node_modules`, `.git` and build output.
+Use `mimry symbol "<name>"` for a function or class by name and `mimry find "<query>"` for a topic. Read the files MIMRY already listed (in your prompt, next to a search result or in a context pack) before searching again. Use `rg` (or the harness's Grep tool, or `git grep` when `rg` is missing) for literal text, such as an error message, a config key, or every use of a name before a rename, because they list every match. Never use plain `grep -r`; it descends into `node_modules`, `.git` and build output.
 
-1. Start with status/preflight, not broad search:
+1. Start with preflight, not broad search:
 
 ```bash
-mimry status
-mimry route "<user task>"
 mimry preflight "<user task>"
 ```
 
-2. Use the route result to pick the likely role, risk level, and next command. If delegating or handing off, write a focused brief:
+2. If delegating or handing off, write a focused brief:
 
 ```bash
 mimry brief "<user task>" --agent <role>
@@ -793,7 +799,7 @@ mimry brief "<user task>" --agent <role>
 4. Open the suggested source/test files directly and verify against real code.
    Where a file lists `Read first: lines X-Y`, read those lines (for example with an offset and a limit) before the rest of the file.
 
-5. After meaningful verified work, record feedback so future rankings improve:
+5. Claude Code hooks record session feedback automatically. Where hooks do not run, record it after verified work so future rankings improve:
 
 ```bash
 mimry feedback --query "<task>" --context <context pack path> --opened "<files opened>" --changed "<files changed>" --verification "<command/result>" --outcome passed
@@ -803,6 +809,7 @@ mimry feedback --query "<task>" --context <context pack path> --opened "<files o
 
 - If MIMRY is not initialized for an owned repo, run `mimry preflight "<task>"`; it initializes and builds useful local context.
 - `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related`, `semantic`, `explain`, `path`, `why`, `callers` and `callees` reindex first when files changed since the last index, so they never answer from a stale one.
+- The index updates itself before each query; there is no need to reindex by hand. `mimry reindex` only moves that work ahead of a query.
 - `status` and `doctor` report a stale index; the next query updates it, and `mimry reindex` updates it ahead of time.
 - Use `mimry refresh` or `mimry preflight --force-refresh "<task>"` when graph freshness matters more than speed.
 - If graph artifacts are stale/missing, say so. Do not invent relationship paths.
@@ -898,18 +905,19 @@ Load references when the task involves MCP, feedback, safety/root choice, stale 
 def always_on_body() -> str:
     return """## MIMRY
 
-This project can use MIMRY local repo memory.
+This repository has a MIMRY index: a local map of its files, symbols and how they connect.
 
-Rules:
-- Start every task with `mimry preflight "<task>"` (or `mimry_preflight` when MCP tools are available) instead of exploring with grep or guessing where code lives.
-- For an exact string you already know, use `rg` (or `git grep`) directly; never plain `grep -r`.
-- Use `mimry brief "<task>" --agent <role>` for delegation/handoff.
-- Read the context pack that preflight names (`context_path` over MCP) or `.mimry/mimry-out/context/brief-<agent>.md` after preflight/context/brief generation.
-- Where a file lists `Read first: lines X-Y`, read those lines before the rest of the file.
-- Use `mimry find`, `mimry related`, `mimry symbol`, `mimry callers`, `mimry callees`, `mimry impact`, `mimry why`, `mimry path`, `mimry semantic`, or their MCP equivalents for focused navigation.
-- To find the commits whose message or changed files match a topic, use `mimry history "<what changed>"`; use `git log -S "<string>"` for an exact string in diffs.
-- Treat MIMRY as navigation, not proof. Source files, tests, and build output remain final truth.
-- After meaningful verified work, record `mimry feedback`.
+- Start a task with `mimry preflight "<task>"` (`mimry_preflight` over MCP) and read the context pack it names, instead of exploring with grep.
+- When MIMRY has already listed files, in your prompt, next to a search result or in a context pack, read those first.
+- Where it names `Read first: lines X-Y`, read those lines before the rest of the file.
+- For a topic or a question, use `mimry find "<query>"`.
+- For a function or class by name, use `mimry symbol <name>`; before changing it, run `mimry impact <name>` to see its callers and the tests to run.
+- For past changes, use `mimry history "<what changed>"`.
+- For literal text, such as an error message, a config key, or every use of a name before a rename, use `rg` or `git grep`: they list every match, which `find` does not. Never use plain `grep -r`.
+- To hand work to another agent, run `mimry brief "<task>" --agent <role>` and pass on the brief it writes.
+- MIMRY is navigation, not proof: check the source and run the nearest test before relying on it.
+- The index updates itself before each query; there is no need to reindex.
+- Without the Claude Code hooks, record what helped with `mimry feedback` after verified work.
 """  # noqa: E501 - Markdown written verbatim; its line breaks are content
 
 

@@ -37,7 +37,10 @@ CLI commands (not MCP tools by default):
 
 Rules:
 
-- Start a task with `mimry_preflight` instead of exploring by grep; for an exact string you already know, use `rg` or `git grep` directly.
+- Start a task with `mimry_preflight` instead of exploring by grep, and read the files it lists before searching again.
+- Use `mimry_symbol` for a function or class by name, `mimry_find` for a topic, and `mimry_impact` before changing a function.
+- Use `rg` or `git grep` for literal text, such as an error message or every use of a name before a rename; they list every match.
+- The index updates itself before each query; there is no need to reindex.
 - Read the context pack preflight names (`context_path` over MCP) before editing.
 - Where a result lists `ranges` or `Read first: lines X-Y`, read those lines (for example with an offset and a limit) before the rest of the file.
 - Use `mimry_why`, or `mimry explain "<task>"` on the CLI, when a ranking is surprising.

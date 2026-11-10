@@ -101,7 +101,7 @@ def test_refresh_rewrites_only_the_always_on_rules_and_hooks_that_were_added(hom
     _mark_stale(codex_skill)
     claude_md = repo / "CLAUDE.md"
     claude_md.write_text(
-        claude_md.read_text(encoding="utf-8").replace("Start every task", "Start old task"),
+        claude_md.read_text(encoding="utf-8").replace("Start a task", "Start old task"),
         encoding="utf-8",
     )
     settings = repo / ".claude" / "settings.local.json"
@@ -119,6 +119,37 @@ def test_refresh_rewrites_only_the_always_on_rules_and_hooks_that_were_added(hom
     # Codex never had always-on rules or hooks, and refresh adds none.
     assert not (repo / "AGENTS.md").exists()
     assert not (repo / ".codex" / "hooks.json").exists()
+
+
+# The always-on block as the previous wording wrote it (#676).
+OLD_ALWAYS_ON = (
+    "## MIMRY\n\n"
+    "This project can use MIMRY local repo memory.\n\n"
+    "Rules:\n"
+    '- Start every task with `mimry preflight "<task>"` (or `mimry_preflight` when MCP tools '
+    "are available) instead of exploring with grep or guessing where code lives.\n"
+    "- For an exact string you already know, use `rg` (or `git grep`) directly; never plain "
+    "`grep -r`.\n"
+    "- Treat MIMRY as navigation, not proof. Source files, tests, and build output remain "
+    "final truth.\n"
+    "- After meaningful verified work, record `mimry feedback`.\n"
+)
+
+
+def test_refresh_rewrites_an_always_on_block_that_holds_the_old_rules(home, repo, capsys):
+    base = ["--root", str(repo)]
+    assert main([*base, "install", "--platform", "claude-code", "--project", "--always-on"]) == 0
+    claude_md = repo / "CLAUDE.md"
+    text = claude_md.read_text(encoding="utf-8")
+    claude_md.write_text(text[: text.index("## MIMRY")] + OLD_ALWAYS_ON, encoding="utf-8")
+    assert _status("claude-code", repo, True) == 2
+
+    assert main(["--root", str(repo), "install", "--refresh"]) == 0
+
+    text = claude_md.read_text(encoding="utf-8")
+    assert "mimry symbol" in text
+    assert "Start every task" not in text
+    assert _status("claude-code", repo, True) == 0
 
 
 def test_second_refresh_writes_nothing(home, repo, capsys):
