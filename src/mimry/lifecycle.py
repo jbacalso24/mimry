@@ -184,8 +184,9 @@ def run_init(a):
         record_global_ignore_opt_out(root)
     atomic_write_text(
         mdir(root) / "AGENT_RULES.md",
-        "# MIMRY Agent Rules\n\nStart every task with MIMRY instead of exploring the repo by grep."
-        " For an exact string you already know, use `rg` (or `git grep`) directly."
+        "# MIMRY Agent Rules\n\nStart every task with `mimry preflight` instead of exploring the"
+        " repo by grep. Use `rg` or `git grep` for literal text, such as an error message or every"
+        " use of a name before a rename: they list every match."
         "\nTester-owned `acceptance_tests/` is excluded from ordinary MIMRY indexing by"
         " default. This is cooperative workflow isolation, not secrecy: repository users can still"
         " open those files directly.\n",

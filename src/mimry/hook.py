@@ -1860,20 +1860,28 @@ def _pack_files(pack: Path) -> list[str] | None:
 
 
 def _mimry_rules(plugin: bool) -> str:
-    """The rules a session and its subagents are given (#657).
+    """The rules a session and its subagents are given (#657, #676).
 
-    The plugin's MIMRY tools are MCP tools, so the rules name those.
+    The plugin's MIMRY tools are MCP tools, so the rules name those. The
+    wording matches the skill, the MCP instructions and the always-on
+    block, so every channel gives agents the same rules.
     """
     if plugin:
         return (
-            "This repository has a MIMRY index. To find code for a task, start with the"
-            " `mimry_preflight` tool (or `mimry_find`) and read the context pack it names;"
-            " use `rg` or `git grep` only for a string you already know."
+            "This repository has a MIMRY index. Start a task with the `mimry_preflight` tool"
+            " and read the files it names, the `Read first` lines before the rest; read files"
+            " MIMRY already listed before searching again. Use the `mimry_symbol` tool for a"
+            " function or class and `mimry_find` for a topic. Use `rg` or `git grep` only for"
+            " literal text, such as an error message or every use of a name before a rename:"
+            " they list every match."
         )
     return (
-        "This repository has a MIMRY index. To find code for a task, start with"
-        ' `mimry preflight "<task>"` (or `mimry find "<query>"`) and read the context'
-        " pack it names; use `rg` or `git grep` only for a string you already know."
+        'This repository has a MIMRY index. Start a task with `mimry preflight "<task>"`'
+        " and read the files it names, the `Read first` lines before the rest; read files"
+        " MIMRY already listed before searching again. Use `mimry symbol <name>` for a function"
+        ' or class and `mimry find "<query>"` for a topic. Use `rg` or `git grep` only for'
+        " literal text, such as an error message or every use of a name before a rename: they"
+        " list every match."
     )
 
 

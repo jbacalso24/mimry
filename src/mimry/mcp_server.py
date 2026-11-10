@@ -33,14 +33,18 @@ CORE_TOOLS = (
 )
 
 # Sent to the agent when it connects, so it knows when to reach for
-# MIMRY instead of grep without reading the skill first.
+# MIMRY instead of grep without reading the skill first. The rules match
+# the hook, skill and always-on block (#676).
 INSTRUCTIONS = (
     "MIMRY is a local index of this repository: files, symbols and how they connect."
-    " Start a repository task with mimry_preflight and the task in your own words, then read"
-    " the context pack it names before opening files; it ranks the files the task likely"
-    " touches and says why. Use mimry_find for a focused search and mimry_symbol for a"
-    " function or class by name. For an exact string you already know, use rg or git grep"
-    " instead. Results are navigation, not proof: check the source before relying on them."
+    " Start a task with mimry_preflight and the task in your own words, then read the context"
+    " pack it names and the `Read first` lines before the rest of a file. Read files MIMRY"
+    " already listed before searching again. Use mimry_symbol for a function or class by name"
+    " and mimry_find for a topic. Before changing a function, run mimry_impact on it to see its"
+    " callers and the tests to run. Use rg or git grep for literal text, such as an error"
+    " message or every use of a name before a rename: they list every match. The index updates"
+    " itself before each query. Results are navigation, not proof: check the source before"
+    " relying on them."
 )
 
 

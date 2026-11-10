@@ -506,11 +506,14 @@ def test_claude_code_hook_matches_the_grep_tool(tmp_path):
 
 
 def test_agent_guidance_starts_with_mimry_and_keeps_rg_for_exact_strings():
-    """MIMRY replaces exploring by grep, not exact lookups: rg answers
-    a known string in one call. Plain grep -r is named only to warn
-    against it."""
+    """MIMRY replaces exploring by grep, not literal lookups: rg lists
+    every match of a known string in one call (#676). Plain grep -r is
+    named only to warn against it."""
     for text in (installer.always_on_body(), installer.skill_body("claude-code")):
         assert "mimry preflight" in text
+        assert "mimry symbol" in text
+        assert "literal text" in text
+        assert "already listed" in text
         assert "`rg`" in text and "`git grep`" in text
         text_lower = text.lower()
         assert "never plain `grep -r`" in text_lower or "never use plain `grep -r`" in text_lower
@@ -740,7 +743,7 @@ def test_always_on_section_edited_inside_is_out_of_date_and_outside_is_not(tmp_p
 
     claude_md.write_text(
         claude_md.read_text(encoding="utf-8").replace(
-            "Treat MIMRY as navigation, not proof.", "Treat MIMRY as proof."
+            "MIMRY is navigation, not proof:", "MIMRY is proof:"
         )
     )
     status = _claude_status(repo, cache)

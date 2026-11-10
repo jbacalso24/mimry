@@ -13,17 +13,15 @@ Platform note: Bundled skill (Claude Code plugin or npx skills): prefer the MIMR
 
 Use this skill for repo/project work: architecture discovery, debugging, implementation, refactors, audits, reviews, migrations, handoffs, and "where is X?" questions.
 
-Once MIMRY has shown where to look, use `rg` (or the harness's Grep tool, or `git grep` when `rg` is missing) for exact strings you already know. Never use plain `grep -r`; it descends into `node_modules`, `.git` and build output.
+Use `mimry symbol "<name>"` for a function or class by name and `mimry find "<query>"` for a topic. Read the files MIMRY already listed (in your prompt, next to a search result or in a context pack) before searching again. Use `rg` (or the harness's Grep tool, or `git grep` when `rg` is missing) for literal text, such as an error message, a config key, or every use of a name before a rename, because they list every match. Never use plain `grep -r`; it descends into `node_modules`, `.git` and build output.
 
-1. Start with status/preflight, not broad search:
+1. Start with preflight, not broad search:
 
 ```bash
-mimry status
-mimry route "<user task>"
 mimry preflight "<user task>"
 ```
 
-2. Use the route result to pick the likely role, risk level, and next command. If delegating or handing off, write a focused brief:
+2. If delegating or handing off, write a focused brief:
 
 ```bash
 mimry brief "<user task>" --agent <role>
@@ -39,7 +37,7 @@ mimry brief "<user task>" --agent <role>
 4. Open the suggested source/test files directly and verify against real code.
    Where a file lists `Read first: lines X-Y`, read those lines (for example with an offset and a limit) before the rest of the file.
 
-5. After meaningful verified work, record feedback so future rankings improve:
+5. Claude Code hooks record session feedback automatically. Where hooks do not run, record it after verified work so future rankings improve:
 
 ```bash
 mimry feedback --query "<task>" --context <context pack path> --opened "<files opened>" --changed "<files changed>" --verification "<command/result>" --outcome passed
@@ -49,6 +47,7 @@ mimry feedback --query "<task>" --context <context pack path> --opened "<files o
 
 - If MIMRY is not initialized for an owned repo, run `mimry preflight "<task>"`; it initializes and builds useful local context.
 - `preflight`, `context`, `brief`, `route`, `find`, `symbol`, `related`, `semantic`, `explain`, `path`, `why`, `callers` and `callees` reindex first when files changed since the last index, so they never answer from a stale one.
+- The index updates itself before each query; there is no need to reindex by hand. `mimry reindex` only moves that work ahead of a query.
 - `status` and `doctor` report a stale index; the next query updates it, and `mimry reindex` updates it ahead of time.
 - Use `mimry refresh` or `mimry preflight --force-refresh "<task>"` when graph freshness matters more than speed.
 - If graph artifacts are stale/missing, say so. Do not invent relationship paths.

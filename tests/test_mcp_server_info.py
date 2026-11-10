@@ -111,6 +111,9 @@ def _assert_mimry(name, version, instructions):
     assert version == __version__
     assert "mimry_preflight" in instructions
     assert "rg or git grep" in instructions
+    assert "mimry_symbol" in instructions
+    assert "literal text" in instructions
+    assert "already listed" in instructions
     assert instructions == INSTRUCTIONS
 
 
