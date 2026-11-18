@@ -784,6 +784,35 @@ def _exact_surface_matches(nodes: list[dict], query: str) -> list[dict]:
 # payments module" without letting a hub node drag in the whole
 # repository.
 _EXPANSION_DECAY = (0.35, 0.15)
+# Verb per relation: (the file to the node, the node to the file).
+_LINK_VERBS = {
+    "imports": ("imports", "imported by"),
+    "calls": ("calls", "called by"),
+    "uses": ("uses", "used by"),
+    "defines": ("defines", "defined by"),
+    "contains": ("contains", "contained by"),
+}
+
+
+def _graph_link(
+    node_by_id: dict[str, dict],
+    relation_by_pair: dict[tuple[str, str], str],
+    via_id: str,
+    node_id: str,
+) -> str:
+    """How a reached node links to the node it was reached from (#647).
+
+    Reads as the Why line does: ``imported by `hook.py``` when the via
+    node imports this one, ``calls `find_rows``` when this one calls it.
+    """
+    label = str(node_by_id.get(via_id, {}).get("label") or via_id)
+    if (via_id, node_id) in relation_by_pair:
+        relation = relation_by_pair[(via_id, node_id)]
+        verb = _LINK_VERBS.get(relation, (relation, relation + " from"))[1]
+    else:
+        relation = relation_by_pair.get((node_id, via_id), "relates")
+        verb = _LINK_VERBS.get(relation, (relation, relation + " from"))[0]
+    return f"{verb} `{label}`"
 
 
 def _expand_along_edges(
@@ -802,16 +831,20 @@ def _expand_along_edges(
     if not matched_scores:
         return
     adjacency: dict[str, set[str]] = defaultdict(set)
+    relation_by_pair: dict[tuple[str, str], str] = {}
     for edge in links:
         source, target = _edge_endpoints(edge)
         if source and target:
             adjacency[source].add(target)
             adjacency[target].add(source)
+            relation_by_pair.setdefault((source, target), _edge_relation(edge))
     if not adjacency:
         return
 
     node_by_id = {str(n.get("id")): n for n in nodes if n.get("id")}
     reached: dict[str, int] = {}
+    # The node each reached node came from, for the Why line (#647).
+    reached_from: dict[str, str] = {}
     frontier = dict(matched_scores)
     for decay in _EXPANSION_DECAY:
         nxt: dict[str, int] = {}
@@ -829,6 +862,7 @@ def _expand_along_edges(
                     continue
                 if carried > reached.get(neighbour, 0):
                     reached[neighbour] = carried
+                    reached_from[neighbour] = node_id
                     nxt[neighbour] = carried
         frontier = nxt
         if not frontier:
@@ -838,11 +872,19 @@ def _expand_along_edges(
     # Summing every reached node let large hub files, which neighbour
     # everything, top queries they have nothing specific to do with.
     best_reached: dict[str, int] = {}
+    # The strongest reached node linked from another file (#647).
+    # A file reached only from its own symbols has no such link.
+    best_link: dict[str, tuple[int, str, str]] = {}
     for node_id in sorted(reached):
         node = node_by_id.get(node_id)
         src = node_source_file(node) if node else None
-        if src:
-            best_reached[src] = max(best_reached.get(src, 0), reached[node_id])
+        if src and reached[node_id] > best_reached.get(src, 0):
+            best_reached[src] = reached[node_id]
+        via_node = node_by_id.get(reached_from[node_id])
+        via_src = node_source_file(via_node) if via_node else None
+        if src and via_src and via_src != src:
+            if reached[node_id] > best_link.get(src, (0, "", ""))[0]:
+                best_link[src] = (reached[node_id], reached_from[node_id], node_id)
 
     for src, carried in sorted(best_reached.items()):
         row = by_file.setdefault(
@@ -851,6 +893,10 @@ def _expand_along_edges(
         row["score"] += carried
         row["parts"]["graph_reached"] = carried
         row["reasons"].add("reached by MIMRY graph relationship")
+        if src in best_link:
+            # Named in the Why line, not in the reason string (#647).
+            _, via_id, node_id = best_link[src]
+            row["graph_link"] = _graph_link(node_by_id, relation_by_pair, via_id, node_id)
 
 
 _LABEL_WEIGHT = 30
@@ -1021,6 +1067,7 @@ def graph_rows(
                 "reason": reason,
                 "source": "graph",
                 "parts": row["parts"],
+                "graph_link": row.get("graph_link", ""),
             }
         )
     return sorted(rows, key=lambda r: (-r["score"], r["path"]))[:limit]

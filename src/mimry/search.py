@@ -40,7 +40,7 @@ from .mentions import (
     unindexed_file_names,
 )
 from .paths import canonical_cached_rel_path
-from .pieces import best_ranges, piece_file_ranking, piece_matches
+from .pieces import best_ranges, piece_file_ranking, piece_matches, piece_term_counts
 from .security import filter_index_records
 from .semantic import merge_semantic_rows, semantic_rows
 from .storage import connect, load_jsonl, load_pointer
@@ -455,6 +455,14 @@ def _exact_names_first(rows, exact_paths):
     return lifted + others
 
 
+def _named_identifiers(q: str) -> set[str]:
+    """Identifiers the query names: in backticks, or written as code."""
+    words = set(_QUERY_WORD_RE.findall(q))
+    named = {m.split(".")[-1] for m in _BACKTICK_NAME_RE.findall(q)}
+    named |= {w for w in words if "_" in w.strip("_") or re.search(r"[a-z][A-Z]", w)}
+    return named
+
+
 def _named_definition_lift(rows, q, symbols, id_by_path):
     """Lift files that define an identifier the task names.
 
@@ -463,9 +471,7 @@ def _named_definition_lift(rows, q, symbols, id_by_path):
     is not lifted: commit scopes such as `fix(types)` name a folder or
     a topic, not the file to edit.
     """
-    words = set(_QUERY_WORD_RE.findall(q))
-    named = {m.split(".")[-1] for m in _BACKTICK_NAME_RE.findall(q)}
-    named |= {w for w in words if "_" in w.strip("_") or re.search(r"[a-z][A-Z]", w)}
+    named = _named_identifiers(q)
     names_by_file: dict[str, set[str]] = {}
     for symbol in symbols:
         name = str(symbol.get("name") or "").split(".")[-1]
@@ -660,6 +666,82 @@ def missing_file_names(idx, q) -> list[str]:
     """File names the query writes out that the index does not hold."""
     files, _ = filter_index_records(load_jsonl(idx / "files.jsonl"))
     return unindexed_file_names(q, [f["rel_path"] for f in files])
+
+
+# Row keys that feed only the evidence, dropped after it (#647).
+_EVIDENCE_INPUTS = ("graph_link", "feedback_helped")
+# Most terms and defined names shown in one row's evidence.
+EVIDENCE_TERMS = 3
+EVIDENCE_DEFINES = 3
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _row_evidence(row, file, terms, defined, term_pieces):
+    """A row's evidence as ``(strength, text)`` pairs, unsorted (#647).
+
+    Strength orders the items: a defined identifier or a file name beats
+    a graph link, which beats a path or past feedback, which beats the
+    content counts.
+    """
+    items = []
+    name = str(file.get("filename") or row["path"].rsplit("/", 1)[-1]).lower()
+    rel = row["path"].lower()
+    if defined:
+        names = sorted(defined)[:EVIDENCE_DEFINES]
+        items.append((80, "defines " + ", ".join(f"`{n}`" for n in names)))
+    name_terms = [term for term in terms if term in name]
+    if name_terms:
+        items.append((60, "file name has " + ", ".join(f'"{t}"' for t in name_terms)))
+    path_terms = [term for term in terms if term in rel and term not in name]
+    if path_terms:
+        items.append((40, "path has " + ", ".join(f'"{t}"' for t in path_terms)))
+    if row.get("graph_link"):
+        items.append((50, row["graph_link"]))
+    if row.get("feedback_helped"):
+        items.append((40, f"helped in {_plural(row['feedback_helped'], 'past task')} like this"))
+    top_terms = sorted(term_pieces.items(), key=lambda item: (-item[1], item[0]))
+    for term, count in top_terms[:EVIDENCE_TERMS]:
+        items.append((20 + min(count, 10), f'"{term}" in {_plural(count, "piece")}'))
+    # Only the reason's own part, before the graph's node list.
+    if any("semantic" in part for part in row.get("reason", "").split("; nodes:")[0].split(", ")):
+        items.append((10, "similar wording"))
+    return items
+
+
+def _with_evidence(rows, idx, q, symbols, files, id_by_path):
+    """Write each row's ``evidence``, strongest first (#647).
+
+    Reads only what the search already holds, so the rows keep their
+    order, scores and reason strings.
+    """
+    terms = list(dict.fromkeys(query_terms(q)))
+    named = _named_identifiers(q)
+    defined_by_file: dict[str, set[str]] = {}
+    for symbol in symbols:
+        name = str(symbol.get("name") or "").split(".")[-1]
+        if name in named:
+            defined_by_file.setdefault(symbol.get("file_id"), set()).add(name)
+    file_by_path = {f["rel_path"]: f for f in files}
+    file_ids = [id_by_path[row["path"]] for row in rows if row["path"] in id_by_path]
+    pieces_by_file = piece_term_counts(idx, terms, file_ids)
+    out = []
+    for row in rows:
+        file_id = id_by_path.get(row["path"])
+        items = _row_evidence(
+            row,
+            file_by_path.get(row["path"], {}),
+            terms,
+            defined_by_file.get(file_id, set()),
+            pieces_by_file.get(file_id, {}),
+        )
+        # sorted is stable, so equal strengths keep their order.
+        ordered = [text for _, text in sorted(items, key=lambda item: -item[0])]
+        kept = {key: value for key, value in row.items() if key not in _EVIDENCE_INPUTS}
+        out.append({**kept, "evidence": ordered})
+    return out
 
 
 def _stamp_final(rows, size_by_path):
@@ -889,6 +971,7 @@ def find_rows(
                 _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path),
                 size_by_path,
             )
+            rows = _with_evidence(rows, idx, q, symbols, files, id_by_path)
             return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)
     fallback_rows = _named_definition_lift(fallback_rows, q, symbols, id_by_path)
     fallback_rows = _with_piece_parts(fallback_rows, piece_by_path)
@@ -912,4 +995,5 @@ def find_rows(
     rows = _stamp_final(
         _filter_and_page(ranked, scope=scope, languages_by_path=languages_by_path), size_by_path
     )
+    rows = _with_evidence(rows, idx, q, symbols, files, id_by_path)
     return _with_ranges(idx, q, rows, id_by_path, cut_at, minified_paths)

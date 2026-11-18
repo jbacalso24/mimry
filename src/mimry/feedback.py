@@ -435,11 +435,18 @@ def feedback_rank_signals(
     reasons: dict[str, set[str]] = {}
     touched: set[str] = set()
     suggested_unused: dict[str, int] = {}
+    # Past tasks that helped each path: changed, missed or opened in a
+    # record that did not fail. Only the evidence reads it (#647).
+    helped: dict[str, int] = {}
     for row in list_feedback(idx, root_id, limit=limit):
         sim = _similarity(query, row["query"])
         if sim <= 0:
             continue
         outcome_weight = OUTCOME_WEIGHT.get(row["outcome"], OUTCOME_WEIGHT["unknown"])
+        if outcome_weight > 0:
+            for path in {*row["changed_paths"], *row["opened_paths"], *row["missed_paths"]}:
+                if not path.startswith("external:"):
+                    helped[path] = helped.get(path, 0) + 1
         best: dict[str, float] = {}
         for key, value in (
             ("changed_paths", FEEDBACK_FACT_EVIDENCE),
@@ -481,6 +488,7 @@ def feedback_rank_signals(
             "weight": weights.get(path, 0.0),
             "unused": path in unused,
             "reasons": labels,
+            "helped": helped.get(path, 0),
         }
     return signals
 
@@ -518,6 +526,8 @@ def apply_feedback_to_rows(
             by_path[path]["parts"] = parts
             reason = by_path[path].get("reason", "")
             by_path[path]["reason"] = f"{reason}, {labels}" if reason else labels
+            if signal["helped"]:
+                by_path[path]["feedback_helped"] = signal["helped"]
         elif path in indexed_paths and weight > 0:
             gain = round(FEEDBACK_SHARE * min(weight, 1.0) * top)
             if gain > 0:
@@ -527,5 +537,6 @@ def apply_feedback_to_rows(
                     "reason": labels,
                     "source": "feedback",
                     "parts": {"feedback": gain},
+                    "feedback_helped": signal["helped"],
                 }
     return sorted(by_path.values(), key=lambda r: (-r["score"], r["path"]))

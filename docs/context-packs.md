@@ -11,7 +11,7 @@ Required sections:
 - `# MIMRY Context Pack`
 - query
 - status: root, index freshness, graph freshness, and refresh action (condensed)
-- relevant files with scores, reasons, adapter evidence, and roles (compact), and for each file the line ranges to read first (`Read first: lines 120-168 (`name`)`), when its functions, classes or sections match the query
+- relevant files with scores, a `Why:` line naming the evidence behind each rank (at most four items, 220 characters), adapter evidence, and roles (compact), and for each file the line ranges to read first (`Read first: lines 120-168 (`name`)`), when its functions, classes or sections match the query
 - tests that exercise the symbols the top three files name to read first, directly or through one caller, when the index knows them and there are any (`## Tests that exercise these`, at most 8 test files and 3 test functions per file, nearest first, within 1200 characters; the MCP `tests` key keeps every function).
   The `tests` key of the `mimry_preflight` result carries the same list.
 - relevant symbols/entities when indexed

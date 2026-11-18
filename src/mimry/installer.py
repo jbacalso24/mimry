@@ -866,14 +866,16 @@ To find the commits whose message or changed files match a topic, use `mimry his
 
 ## How to read MIMRY results
 
-Each file in a context pack has a `Why:` line. Strongest evidence first:
+Each file in a context pack has a `Why:` line with the evidence behind its rank, strongest first, at most four items:
 
-- name matches / symbol matches / path matches: a task word is in the file's name, in a symbol it defines, or in its path
-- content matches: a task word appears in the file's text
-- connected to other matches: the graph links it to other results
-- project config, helped in past tasks, similar wording: supporting evidence
+- `defines find_rows`: the file defines an identifier the task names
+- `file name has "search"` or `path has "src"`: a task word is in the file's name or its path
+- `"rank" in 9 pieces`: a task word appears in that many of the file's symbols or sections
+- `imported by hook.py` or `connected to other matches`: the graph links it to another result, and how
+- `helped in 2 past tasks like this`: earlier feedback on similar tasks named it
+- `similar wording`: a semantic match, a supporting signal only
 
-`matched:` lists the task words that hit and `symbols:` the matching symbols.
+A file with no evidence falls back to the older phrases, followed by `matched:` and `symbols:` when they apply.
 
 Weak/limited signals include generic content hints, semantic-only matches, stale graph artifacts, and broad docs/plans for code-edit queries. Use `mimry explain`, `mimry why`, or `mimry path` when the ranking is surprising.
 

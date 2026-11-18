@@ -277,6 +277,38 @@ def piece_file_ranking(idx: Path, q: str, limit: int = PIECE_LIMIT) -> list[dict
         return []
 
 
+def piece_term_counts(
+    idx: Path, terms: list[str], file_ids: list[str]
+) -> dict[str, dict[str, int]]:
+    """How many of each file's pieces hold each query term (#647).
+
+    Read from the piece index only, so the file text is never opened.
+    """
+    terms = list(dict.fromkeys(term for term in terms if term))
+    if not terms or not file_ids:
+        return {}
+    marks = ",".join("?" * len(file_ids))
+    try:
+        con = sqlite3.connect(Path(idx) / "mimry.sqlite")
+        try:
+            rows = con.execute(
+                "select file_id, body from pieces_fts "
+                f"where pieces_fts match ? and file_id in ({marks})",
+                (_exact_match(terms), *file_ids),
+            ).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
+    wanted = set(terms)
+    counts: dict[str, dict[str, int]] = {}
+    for file_id, body in rows:
+        per_file = counts.setdefault(file_id, {})
+        for term in wanted.intersection(body.split()):
+            per_file[term] = per_file.get(term, 0) + 1
+    return counts
+
+
 def _fused_ranking(con, terms: list[str], identifiers: list[str], limit: int) -> list[dict]:
     identifier_terms = _identifier_terms(identifiers)
     kept = _kept_terms(con, terms, identifier_terms) if terms else []
