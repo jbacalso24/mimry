@@ -1812,6 +1812,34 @@ PROMPT_HEAD = "These are the files MIMRY ranks first for this task. Read the lin
 PROMPT_FOOT = 'Run `mimry preflight "<task>"` for the full context pack.'
 
 
+def _ranges_label(path: str, ranges: list[dict]) -> str:
+    """What a ranked file's ranges name (#671).
+
+    Code keeps its line ranges. A document names its parts, and a
+    Markdown file names its sections by heading, as
+    ``section "Install"``, when the index knows them. This stays
+    stdlib-only, so it does not import queries.
+    """
+    unit = ranges[0].get("unit")
+    named = all(r.get("name") for r in ranges)
+    if not unit and path.lower().endswith((".md", ".mdx")) and named:
+        unit = "section"
+    if not unit:
+        return "lines " + ", ".join(f"{r['start']}-{r['end']}" for r in ranges)
+    if unit == "section" and named:
+        text = ", ".join(f'section "{r["name"]}"' for r in ranges)
+    elif unit == "page":
+        text = "pages " + ", ".join(
+            str(r["start"]) if r["start"] == r["end"] else f"{r['start']}-{r['end']}"
+            for r in ranges
+        )
+    else:
+        text = ", ".join(f"{unit} {r['start']}" for r in ranges)
+    if ranges[0].get("cut_at"):
+        text += f" (cut at {ranges[0]['cut_at']})"
+    return text
+
+
 def _prompt_note(rows: list[dict], head: str = PROMPT_HEAD, foot: str = PROMPT_FOOT) -> str | None:
     """The note that names the files a query ranks first, or None.
 
@@ -1827,9 +1855,8 @@ def _prompt_note(rows: list[dict], head: str = PROMPT_HEAD, foot: str = PROMPT_F
         path = str(row["path"]).replace("\r", " ").replace("\n", " ")
         ranges = row.get("ranges") or []
         entry = f"- {path}"
-        # A document's ranges name its parts, not lines: code only.
-        if ranges and not ranges[0].get("unit"):
-            entry += ": lines " + ", ".join(f"{r['start']}-{r['end']}" for r in ranges)
+        if ranges:
+            entry += ": " + _ranges_label(path, ranges)
         if len("\n".join([head, *body, entry, foot])) > PROMPT_NOTE_LIMIT:
             break
         body.append(entry)

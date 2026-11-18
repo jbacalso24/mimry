@@ -61,6 +61,11 @@ LEAKS = [
         "tomatocanary42",
         "refused",
     ),
+    # mysql --password X, --password=X and -pX carry the password
+    # (#671). Built from parts so no secret scanner reads it.
+    ("a.sh", "mysql --password " + "tomatocanary42 db", "tomatocanary42", "refused"),
+    ("a.sh", "mysql --password=" + "tomatocanary42 db", "tomatocanary42", "refused"),
+    ("a.sh", "mysql -p" + "tomatocanary42 db", "tomatocanary42", "refused"),
     ("notes.md", "`password = tomato-canary-1`", "tomato-canary-1", "refused"),
 ]
 
@@ -79,6 +84,12 @@ KEPT = [
     ("guide.md", "Authorization: {token}"),
     ("a.sh", "curl -u $USER:$PASS https://api.example.com"),
     ("a.sh", "curl -u admin:<password> https://api.example.com"),
+    # mysql -p X names the database X, and a placeholder is not a
+    # password (#671).
+    ("a.sh", "mysql -p mydb"),
+    ("a.sh", "mysql -u root -p mydb"),
+    ("a.sh", "mysql --password=$MYSQL_PWD db"),
+    ("a.sh", "mysql --password=<password> db"),
     ("a.kt", "val token: String = BuildConfig.TOKEN"),
     ("a.ts", "token?: string;"),
     ("deploy.txt", "AUTH_HEADER=Bearer ${TOKEN}"),
@@ -118,6 +129,8 @@ LONG_SHAPES = {
     "inline-code": ("", "`password = tomato-canary-1` "),
     "kotlin-val": ("val token: String = ", '"tomatocanary42" + '),
     "typed-call": ("token: str = field(", "default=None, "),
+    "mysql-repeat": ("", "mysql "),
+    "mysql-flags": ("", "mysql -u root -h db "),
 }
 
 
