@@ -182,3 +182,63 @@ def test_plugin_hooks_have_stop_and_no_prompt_hook():
     assert "Stop" in hooks
     assert "UserPromptSubmit" not in hooks
     assert hooks["Stop"][0]["hooks"][0]["args"][-1] == "hook-stop"
+
+
+def test_install_message_says_what_the_hooks_do_now(repo, capsys):
+    """#673: the message names the session rules, repo map and subagent
+    note that Claude Code gets, not only `mimry find`."""
+    _install(repo, *NO_MCP)
+    out = capsys.readouterr().out
+
+    assert "answer searches for named symbols and broad searches with ranked files" in out
+    assert "give each session MIMRY's rules and a repo map, brief subagents" in out
+    assert "name `mimry find`" not in out
+
+
+def test_codex_message_claims_only_the_hooks_codex_gets():
+    """Codex has no session, subagent or turn-end hook (#673)."""
+    text = installer._hooks_summary("codex")
+
+    assert "answer searches for named symbols" in text
+    assert "refresh the index in the background" in text
+    assert "rules" not in text
+    assert "subagents" not in text
+    assert "feedback" not in text
+
+
+def test_no_prompt_hook_says_it_removed_the_prompt_hook(repo, capsys):
+    """#671: the flag says what it removed, and says nothing when there
+    was no prompt hook to remove."""
+    _install(repo, *NO_MCP)
+    capsys.readouterr()
+
+    _install(repo, "--no-prompt-hook", *NO_MCP)
+    out = capsys.readouterr().out
+    assert "Removed the prompt hook from" in out
+    assert "UserPromptSubmit" not in _settings(repo)["hooks"]
+
+    _install(repo, "--no-prompt-hook", *NO_MCP)
+    assert "Removed the prompt hook" not in capsys.readouterr().out
+
+
+def test_no_prompt_hook_dry_run_says_it_would_remove_the_prompt_hook(repo, capsys):
+    _install(repo, *NO_MCP)
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                *_base(repo),
+                "install",
+                "--platform",
+                "claude-code",
+                "--project",
+                "--no-prompt-hook",
+                "--dry-run",
+                *NO_MCP,
+            ]
+        )
+        == 0
+    )
+    assert "Would remove the prompt hook from" in capsys.readouterr().out
+    assert "UserPromptSubmit" in _settings(repo)["hooks"]

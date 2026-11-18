@@ -266,3 +266,32 @@ def test_powershell_select_string_of_a_pipe_gets_no_answer(mixed_repo, monkeypat
     command = r"Get-Content app\billing.py | Select-String 'invoice.*refund'"
 
     assert _hook(monkeypatch, capsys, mixed_repo, _powershell(command, "ps-pipe")) == ""
+
+
+def test_a_markdown_range_names_its_section_and_code_keeps_its_lines():
+    """#671: a document names the section the index knows, and code
+    keeps its lines."""
+    rows = [
+        {
+            "path": "docs/guide.md",
+            "score": 9,
+            "ranges": [{"start": 1, "end": 3, "name": "Install"}],
+        },
+        {"path": "pkg/a.py", "score": 8, "ranges": [{"start": 5, "end": 9, "name": "run"}]},
+        {
+            "path": "spec.docx",
+            "score": 7,
+            "ranges": [{"start": 2, "end": 2, "name": "3.2 Retention", "unit": "section"}],
+        },
+    ]
+    note = _prompt_note(rows)
+
+    assert 'docs/guide.md: section "Install"' in note
+    assert "pkg/a.py: lines 5-9" in note
+    assert 'spec.docx: section "3.2 Retention"' in note
+
+
+def test_a_markdown_range_without_a_known_section_keeps_its_lines():
+    rows = [{"path": "notes.md", "score": 9, "ranges": [{"start": 1, "end": 3}]}]
+
+    assert "notes.md: lines 1-3" in _prompt_note(rows)

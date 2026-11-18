@@ -202,3 +202,77 @@ def test_same_file_ignores_case_on_windows(tmp_path):
     exe.parent.mkdir()
     exe.write_text("", encoding="utf-8")
     assert installer._same_file(str(exe), str(exe).lower())
+
+
+MIMRY_COMMANDS = [
+    "mimry hook-check",
+    "/usr/local/bin/mimry hook-refresh",
+    "'C:/Users/Example User/.local/bin/mimry.EXE' hook-session",
+    r"C:\Users\Example\.local\bin\mimry.EXE hook-stop",
+    "uvx --from mimry==0.9.0 mimry hook-check",
+    "uv tool run mimry hook-subagent",
+    # shlex.quote writes an apostrophe in a path this way (#671).
+    "'/home/o'\"'\"'brien/.local/bin/mimry' hook-refresh",
+    "'C:/Users/j bacalso/.local/bin/mimry.exe' hook-check",
+    '"C:/Program Files/mimry/mimry.exe" hook-stop',
+]
+
+USER_COMMANDS = [
+    "echo hook-check-notes",
+    "my-hook-check.sh",
+    "mimry hook-check-notes",
+    "echo mimry hook-check",
+    "python hook-check.py",
+    "mimry hook-check extra",
+    "uvx --from other-tool other-tool hook-check",
+    "'unclosed hook-check",
+    "mimry find hook-check",
+]
+
+
+def _group(command: str) -> dict:
+    return {"hooks": [{"type": "command", "command": command}]}
+
+
+@pytest.mark.parametrize("command", MIMRY_COMMANDS)
+def test_is_mimry_hook_accepts_every_form_mimry_has_written(command):
+    """#671: the exact forms MIMRY writes, quoted or not, are ours."""
+    assert installer._is_mimry_hook(_group(command))
+
+
+@pytest.mark.parametrize("command", USER_COMMANDS)
+def test_is_mimry_hook_rejects_a_user_hook_that_names_a_subcommand(command):
+    """#671: a substring is not enough, so a look-alike is kept."""
+    assert not installer._is_mimry_hook(_group(command))
+
+
+def test_is_mimry_hook_accepts_a_quoted_path_with_an_apostrophe():
+    """#671: the path shlex.quote writes for an apostrophe is ours."""
+    command = installer.shlex.quote("/home/o'brien/.local/bin/mimry") + " hook-refresh"
+    assert installer._is_mimry_hook(_group(command))
+
+
+def test_is_mimry_hook_accepts_the_plugin_args_form():
+    entry = {
+        "hooks": [
+            {
+                "type": "command",
+                "command": "uvx",
+                "args": ["--from", "mimry==0.9.0", "mimry", "hook-check"],
+            }
+        ]
+    }
+    assert installer._is_mimry_hook(entry)
+
+
+def test_a_user_hook_named_like_mimry_survives_a_reinstall(tmp_path):
+    cfg = installer.platforms()["claude-code"]
+    dst = tmp_path / cfg.hook_path
+    dst.parent.mkdir(parents=True)
+    user = _group("echo hook-check-notes")
+    dst.write_text(json.dumps({"hooks": {"Stop": [user]}}), encoding="utf-8")
+
+    hooks = json.loads(installer._merged_hooks_text(dst, cfg))["hooks"]
+
+    assert user in hooks["Stop"]
+    assert len(hooks["Stop"]) == 2

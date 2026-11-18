@@ -796,6 +796,16 @@ _CURL_USER_RE = re.compile(
     r"(?<![\w.-])curl(?:[ \t]+-[A-Za-z-]+)*[ \t]+(?:-u|--user)(?:[ \t]+|=)"
     r"(?P<value>[A-Za-z0-9_.~+/=%!@-]+:[A-Za-z0-9_.~+/=%!@:-]+)"
 )
+# ``mysql --password X``, ``--password=X`` and ``-pX``, the password a
+# shell passes mysql (#671). A separate ``-p X`` is not one: mysql reads
+# X as the database. Each token is one blank-led run, and at most 16 of
+# them are read before the flag, which keeps the scan linear.
+# shortcut: a quoted value with a blank inside is cut at the blank, and
+# only 16 words before the flag are read; upgrade if either leaks.
+_MYSQL_PASSWORD_RE = re.compile(
+    r"(?<![\w.-])mysql(?:[ \t]+[^\s;|&]+){0,16}?[ \t]+"
+    r"(?:--password(?:[ \t]+|=)|-p(?=\S))(?P<value>[^\s;|&]+)"
+)
 # A path after the header, as ``docs/auth-headers.md`` or
 # ``src/mimry/security.py``: a value with a slash that ends in a file
 # extension is a file name, not a credential (#608).
@@ -2808,6 +2818,12 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
         match.span("value")
         for match in _CURL_USER_RE.finditer(text)
         if _auth_value_is_credential("Basic", match["value"], last=True)
+    ]
+    # A mysql password is any value that is not a placeholder (#671).
+    spans += [
+        match.span("value")
+        for match in _MYSQL_PASSWORD_RE.finditer(text)
+        if not _is_placeholder_value(match["value"])
     ]
     hinted = _AUTH_HEADER_HINT_RE.search(text) is not None
     if not hinted and _AUTH_SCHEME_WORD_RE.search(text) is None:

@@ -1531,16 +1531,8 @@ def _install_hooks(
     return dst
 
 
-def _is_mimry_hook(entry: object) -> bool:
-    """Identify a MIMRY hook regardless of how the launcher resolved.
-
-    The stored command embeds the resolved executable, which on Windows
-    is `mimry.EXE`. Matching the literal "mimry hook-check" therefore
-    never matched there: hooks duplicated on every install, uninstall
-    never removed them, and status always reported them missing.
-    """
-    text = str(entry).lower()
-    subcommands = (
+_HOOK_SUBCOMMANDS = frozenset(
+    {
         "hook-check",
         "hook-refresh",
         "hook-compact",
@@ -1548,8 +1540,57 @@ def _is_mimry_hook(entry: object) -> bool:
         "hook-stop",
         "hook-subagent",
         "hook-session",
-    )
-    return any(sub in text for sub in subcommands) and "mimry" in text
+    }
+)
+
+
+def _is_mimry_hook(entry: object) -> bool:
+    """True when a hooks entry runs one of MIMRY's own hook subcommands.
+
+    The command must be exactly a mimry invocation, so a user hook such
+    as ``echo hook-check-notes`` is never taken for MIMRY's (#671). The
+    executable may be quoted or a full path, as ``mimry.EXE`` on
+    Windows, and the plugin's ``uvx`` and ``uv tool run`` forms count
+    too.
+    """
+    if not isinstance(entry, dict):
+        return False
+    handlers = entry.get("hooks")
+    if not isinstance(handlers, list):
+        handlers = [entry]
+    return any(_is_mimry_command(handler) for handler in handlers)
+
+
+def _is_mimry_command(handler: object) -> bool:
+    if not isinstance(handler, dict) or not isinstance(handler.get("command"), str):
+        return False
+    args = handler.get("args")
+    if isinstance(args, list) and all(isinstance(arg, str) for arg in args):
+        return _is_mimry_words([handler["command"], *args])
+    # POSIX splitting reads the form MIMRY writes, quoted with
+    # shlex.quote (#671). The legacy unquoted Windows path only splits
+    # without POSIX escapes, where backslashes are kept.
+    forms = []
+    for posix in (True, False):
+        try:
+            forms.append(shlex.split(handler["command"], posix=posix))
+        except ValueError:
+            continue
+    return any(_is_mimry_words([word.strip("'\"") for word in words]) for words in forms)
+
+
+def _is_mimry_words(words: list[str]) -> bool:
+    if len(words) < 2 or words[-1] not in _HOOK_SUBCOMMANDS:
+        return False
+    if _tool_name(words[0]) == "mimry":
+        return len(words) == 2
+    is_runner = words[0] == "uvx" or words[:3] == ["uv", "tool", "run"]
+    return is_runner and _tool_name(words[-2]) == "mimry"
+
+
+def _tool_name(word: str) -> str:
+    """The lowercase name of an executable, without a .exe suffix."""
+    return re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe")
 
 
 def _move_legacy_hooks(
@@ -2196,11 +2237,10 @@ def install_skill(
         extras.append(f"always-on instructions in {cfg.always_on_file.as_posix()}")
     hook_target = _install_hooks(hook_root, hook_cfg, dry_run=True) if add_hooks else None
     if hook_target:
-        extras.append(
-            f"hooks in {_shown(hook_target, root, project)} that name `mimry find` for broad"
-            " searches, answer searches for known symbols, refresh the index in the background,"
-            " and close the session's feedback window when a turn ends"
-        )
+        extras.append(f"hooks in {_shown(hook_target, root, project)} that {_hooks_summary(key)}")
+    # --no-prompt-hook drops a prompt hook the install already has
+    # (#671).
+    dropped_prompt = _dropped_prompt_hook(hook_root, hook_cfg, prompt_hook) if add_hooks else None
     if hook_target and prompt_hook:
         extras.append(
             f"a prompt hook in {_shown(hook_target, root, project)} that names the files to read"
@@ -2217,6 +2257,7 @@ def install_skill(
             ui.detail(f"Would add {extra}")
         if plugin_hooks:
             ui.detail(_PLUGIN_HOOKS_NOTE)
+        _say_dropped_prompt_hook(dropped_prompt, root, project, dry_run=True)
         if add_hooks and not hook_target:
             ui.detail(f"{cfg.label} has no hook support; the always-on instructions cover it")
         if not project and key == "codex":
@@ -2262,6 +2303,7 @@ def install_skill(
     ui.ok(f"Installed the MIMRY skill for {cfg.label} ({_scope(project)})")
     ui.detail(_shown(dst, root, project))
     _say_removed_hooks(opted_out, root, project)
+    _say_dropped_prompt_hook(dropped_prompt, root, project, dry_run=False)
     for extra in extras:
         ui.detail(f"Added {extra}")
     if plugin_hooks:
@@ -2285,6 +2327,40 @@ def install_skill(
 
 
 _PLUGIN_HOOKS_NOTE = "Skipped the user-level hooks: the MIMRY Claude Code plugin ships its own"
+
+
+def _dropped_prompt_hook(root: Path, cfg: MimryPlatform, prompt: bool) -> Path | None:
+    """The hooks file that a prompt-less install drops the prompt hook
+    from, or None when there is none to drop (#671)."""
+    if prompt or not _has_prompt_hook(root, cfg):
+        return None
+    return _install_hooks(root, cfg, dry_run=True)
+
+
+def _say_dropped_prompt_hook(
+    path: Path | None, root: Path, project: bool, *, dry_run: bool
+) -> None:
+    if path:
+        verb = "Would remove" if dry_run else "Removed"
+        ui.detail(f"{verb} the prompt hook from {_shown(path, root, project)}")
+
+
+def _hooks_summary(key: str) -> str:
+    """What the installed hooks do on this platform, for the install
+    message (#673). Codex gets only the search answers and the index
+    refresh: hook_table gives it no session, subagent or turn-end hook.
+    """
+    if key == "codex":
+        return (
+            "answer searches for named symbols and broad searches with ranked files,"
+            " and refresh the index in the background"
+        )
+    return (
+        "answer searches for named symbols and broad searches with ranked files,"
+        " give each session MIMRY's rules and a repo map, brief subagents,"
+        " refresh the index in the background, and close the session's feedback"
+        " window when a turn ends"
+    )
 
 
 def _hooks_hint(key: str) -> str:
