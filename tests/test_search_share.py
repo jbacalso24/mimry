@@ -90,6 +90,18 @@ def test_pipe_filter_read_and_other_shell_calls_count_nothing(tmp_path, monkeypa
     assert _kinds(repo) == []
 
 
+def test_powershell_searches_count_like_shell_ones(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, monkeypatch)
+    for command in (
+        "Get-ChildItem -Recurse | Select-String login",
+        "rg -n login -g '*.py' | Select-Object -First 40",
+        "Get-Content notes.txt | Select-String login",
+    ):
+        _hook(monkeypatch, repo, "PowerShell", {"command": command})
+
+    assert _kinds(repo) == [(SESSION, "grep"), (SESSION, "grep")]
+
+
 def test_stats_prints_the_share_per_session_and_repo(tmp_path, monkeypatch):
     repo = _repo(tmp_path, monkeypatch)
     _hook(monkeypatch, repo, "Grep", {"pattern": "def login"})
