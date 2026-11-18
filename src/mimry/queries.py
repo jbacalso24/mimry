@@ -467,6 +467,7 @@ def write_context_pack(
     graph: dict | None = None,
     history: list[str] | None = None,
     read_only: bool = False,
+    tests_out: list[dict] | None = None,
 ) -> tuple[list[dict], Path]:
     # The session lookup takes the query as the caller sent it: the hook
     # hashed that text, and the stored query is the redacted one.
@@ -535,6 +536,9 @@ def write_context_pack(
         "",
     ]
     mark_uncommitted(root, rows)
+    tests = preflight_tests(root, rows, graph)
+    if tests_out is not None:
+        tests_out.extend(tests)
     for i, r in enumerate(rows, 1):
         role = _file_role(r["path"], minified=bool(r.get("minified")))
         phrases = ui.reason_phrases(r["reason"])
@@ -570,6 +574,7 @@ def write_context_pack(
             lines += ["Framework facts:", *[f"- {detail}" for detail in framework_details]]
         lines += [""]
     lines += [
+        *_preflight_test_lines(tests),
         "## Relevant Symbols / Entities",
         *(
             _symbol_lines(fresh, rows)
@@ -745,6 +750,7 @@ def run_preflight(a):
             history = history_mentions(
                 Path(ptr["indexPath"]), sanitize_query(a.task), fresh["files"]
             )
+            tests: list[dict] = []
             rows, pack_path = write_context_pack(
                 root,
                 ptr,
@@ -754,7 +760,10 @@ def run_preflight(a):
                 graph=graph,
                 history=history,
                 read_only=cache_read_only,
+                tests_out=tests,
             )
+            # The MCP tool reads these back for its JSON (#640).
+            a.tests = tests
 
     total = ui.took(time.perf_counter() - started_all)
     ui.ok(f"Context ready for {ui.quote(sanitize_query(a.task))} ({total})")
@@ -1618,6 +1627,97 @@ def _impact_selection(
         | {p for p in importers + referencing if is_test_file(p)}
     )
     return callers, importers, referencing, tests
+
+
+PREFLIGHT_TEST_FILES = 8
+PREFLIGHT_TEST_SOURCE_FILES = 3
+# The pack shows fewer than the MCP key carries, so agents
+# do not pay for a long list (#640).
+PREFLIGHT_TEST_FUNCTIONS = 3
+PREFLIGHT_TEST_SECTION_CHARS = 1200
+
+
+def preflight_tests(root: Path, rows: list[dict], health: dict) -> list[dict]:
+    """Test files that call the symbols the top files say to read first,
+    directly or through one caller (#640). A stale graph lists none.
+    """
+    if health["status"] != "current":
+        return []
+    graph = load_graph(root)
+    found: dict[str, dict] = {}
+    for row in rows[:PREFLIGHT_TEST_SOURCE_FILES]:
+        # A document's ranges name its parts, not symbols.
+        names = dict.fromkeys(r["name"] for r in row.get("ranges") or [] if not r.get("unit"))
+        for name in names:
+            lookup = call_lookup(graph, name, "callers", 2, file=row["path"])
+            for caller in lookup["results"]:
+                if not is_test_file(caller["path"]):
+                    continue
+                entry = found.setdefault(
+                    caller["path"],
+                    {"path": caller["path"], "depth": caller["depth"], "functions": {}},
+                )
+                entry["depth"] = min(entry["depth"], caller["depth"])
+                key = (caller["line"] or 0, caller["name"])
+                function = entry["functions"].setdefault(
+                    key,
+                    {
+                        "name": caller["name"],
+                        "line": caller["line"],
+                        "symbols": [],
+                        "depth": caller["depth"],
+                    },
+                )
+                function["depth"] = min(function["depth"], caller["depth"])
+                function["symbols"].append(name)
+    tests = sorted(found.values(), key=lambda t: (t["depth"], t["path"]))[:PREFLIGHT_TEST_FILES]
+    for test in tests:
+        functions = [test["functions"][key] for key in sorted(test["functions"])]
+        for function in functions:
+            function["symbols"] = sorted(set(function["symbols"]))
+        test["functions"] = functions
+    return tests
+
+
+def _test_file_line(test: dict) -> str:
+    """One test file: nearest functions, then a count of the rest."""
+    ranked = sorted(test["functions"], key=lambda f: (f["depth"], f["line"] or 0, f["name"]))
+    shown = [
+        f"{_code_name(f['name'])}"
+        + (f" (line {f['line']})" if f["line"] else "")
+        + " reaches "
+        + ", ".join(_code_name(name) for name in f["symbols"])
+        for f in ranked[:PREFLIGHT_TEST_FUNCTIONS]
+    ]
+    if len(ranked) > len(shown):
+        shown.append(f"and {len(ranked) - len(shown)} more")
+    return f"- {_code_name(test['path'])}: " + "; ".join(shown)
+
+
+def _preflight_test_lines(tests: list[dict]) -> list[str]:
+    """The pack's test section: whole files, within its size cap."""
+    if not tests:
+        return []
+    header = "## Tests that exercise these"
+
+    def size(lines: list[str]) -> int:
+        return len("\n".join([header, *lines]))
+
+    def more(count: int) -> str:
+        return f"- and {count} more test files"
+
+    kept: list[str] = []
+    for i, test in enumerate(tests):
+        rest = len(tests) - i - 1
+        candidate = [*kept, _test_file_line(test)]
+        if size(candidate + ([more(rest)] if rest else [])) > PREFLIGHT_TEST_SECTION_CHARS:
+            break
+        kept = candidate
+    # The "more" count can gain a digit, so drop files until it fits.
+    while kept and size([*kept, more(len(tests) - len(kept))]) > PREFLIGHT_TEST_SECTION_CHARS:
+        kept.pop()
+    dropped = len(tests) - len(kept)
+    return [header, *kept, *([more(dropped)] if dropped else []), ""]
 
 
 def impact_payload(
