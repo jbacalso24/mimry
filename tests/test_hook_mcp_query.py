@@ -22,7 +22,6 @@ from types import SimpleNamespace
 import pytest
 from test_mimry_cli import copy_fixture, run_cli
 
-from mimry import hook as hook_module
 from mimry import installer, mcp_tools
 from mimry import session as mimry_session
 from mimry.constants import MCP_QUERY_NAME
@@ -686,7 +685,6 @@ def test_powershell_find_is_logged_and_its_later_find_is_tagged(tmp_path, monkey
     "command",
     [
         "rg -n fetch_user .",
-        "Select-String -Path src\\*.py -Pattern fetch_user",
         "Get-Content fetch_user.txt",
     ],
 )
@@ -700,19 +698,8 @@ def test_powershell_call_without_mimry_prints_and_logs_nothing(
     context.mkdir(parents=True, exist_ok=True)
     (context / "latest.md").write_text("", encoding="utf-8")
 
-    # The nudge parses POSIX shell: PowerShell calls must not reach it.
-    # cmd_hook_check swallows errors, so record the calls instead.
-    reached: list[str] = []
-
-    def record(name):
-        def run(*args, **kwargs):
-            reached.append(name)
-            return None
-
-        return run
-
-    monkeypatch.setattr(hook_module, "_symbol_answer", record("_symbol_answer"))
-    monkeypatch.setattr(hook_module, "broad_search_query", record("broad_search_query"))
+    # Neither command is a broad search of the tree, so the PowerShell
+    # answer path (#622) stays quiet for them too.
     code = _hook(
         monkeypatch,
         repo,
@@ -720,6 +707,5 @@ def test_powershell_call_without_mimry_prints_and_logs_nothing(
     )
 
     assert code == 0
-    assert reached == []
     assert capsys.readouterr().out == ""
     assert _command_rows(repo) == []

@@ -161,3 +161,108 @@ def test_prompt_note_keeps_its_head_and_foot_by_default():
     assert note.splitlines()[0] == PROMPT_HEAD
     assert note.splitlines()[-1] == 'Run `mimry preflight "<task>"` for the full context pack.'
     assert len(note) <= PROMPT_NOTE_LIMIT
+
+
+REFUNDS = "# Refunds\n\nAn invoice refund returns part of an invoice to the customer.\n"
+
+
+@pytest.fixture(scope="module")
+def mixed_repo(tmp_path_factory):
+    """A repo with code and notes that both match one query (#622)."""
+    root = tmp_path_factory.mktemp("mixed") / "repo"
+    cache = root.parent / "cache"
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "billing.py").write_text(BILLING, encoding="utf-8")
+    (root / "app" / "refunds.md").write_text(REFUNDS, encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "config", "user.name", "MIMRY Test")
+    _git(root, "config", "user.email", "test@example.com")
+    assert _mimry(root, cache, "init").returncode == 0
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "Initial commit")
+    assert _mimry(root, cache, "index").returncode == 0
+    return root
+
+
+def _powershell(command: str, session: str) -> dict:
+    return {"tool_name": "PowerShell", "session_id": session, "tool_input": {"command": command}}
+
+
+def test_rg_glob_narrows_the_ranked_files(mixed_repo, monkeypatch, capsys):
+    text = _hook(
+        monkeypatch, capsys, mixed_repo, _shell("rg -i 'invoice.*refund' -g '*.md'", "gmd")
+    )
+
+    assert text.startswith(_ranked_head("invoice refund"))
+    assert "app/refunds.md" in text
+    assert "app/billing.py" not in text
+
+
+def test_negated_glob_excludes_its_files(mixed_repo, monkeypatch, capsys):
+    text = _hook(
+        monkeypatch, capsys, mixed_repo, _shell("rg -i 'invoice.*refund' -g '!*.md'", "nmd")
+    )
+
+    assert "app/billing.py" in text
+    assert "app/refunds.md" not in text
+
+
+def test_a_glob_that_leaves_no_file_gets_the_unnarrowed_answer(mixed_repo, monkeypatch, capsys):
+    text = _hook(
+        monkeypatch, capsys, mixed_repo, _shell("rg -i 'invoice.*refund' -g '*.ts'", "nots")
+    )
+
+    assert text.startswith(_ranked_head("invoice refund"))
+    assert "app/billing.py" in text
+    assert "app/refunds.md" in text
+
+
+def test_grep_tool_glob_narrows_the_ranked_files(mixed_repo, monkeypatch, capsys):
+    text = _hook(
+        monkeypatch,
+        capsys,
+        mixed_repo,
+        _grep("invoice.*refund", session="tool-glob", glob="*.{md,txt}"),
+    )
+
+    assert "app/refunds.md" in text
+    assert "app/billing.py" not in text
+
+
+def test_each_glob_set_is_answered_once_per_session(mixed_repo, monkeypatch, capsys):
+    session = "keys"
+    only_md = "rg -i 'invoice.*refund' -g '*.md'"
+    no_md = "rg -i 'invoice.*refund' -g '!*.md'"
+    md = _hook(monkeypatch, capsys, mixed_repo, _shell(only_md, session))
+    code = _hook(monkeypatch, capsys, mixed_repo, _shell(no_md, session))
+    again = _hook(monkeypatch, capsys, mixed_repo, _shell(only_md, session))
+
+    assert "app/refunds.md" in md
+    assert "app/billing.py" in code, "the same query with other globs is answered again"
+    assert again == "", "the same query with the same globs stays quiet"
+
+
+def test_powershell_pipe_into_an_output_limiter_gets_the_ranked_files(
+    mixed_repo, monkeypatch, capsys
+):
+    command = "rg -n -i 'invoice.*refund' -g '*.md' | Select-Object -First 40"
+    text = _hook(monkeypatch, capsys, mixed_repo, _powershell(command, "ps-limit"))
+
+    assert text.startswith(_ranked_head("invoice refund"))
+    assert "app/refunds.md" in text
+    assert "app/billing.py" not in text
+
+
+def test_powershell_select_string_of_the_tree_gets_the_ranked_files(
+    mixed_repo, monkeypatch, capsys
+):
+    command = r"Select-String -Path app\*.py -Pattern 'invoice.*refund'"
+    text = _hook(monkeypatch, capsys, mixed_repo, _powershell(command, "ps-select"))
+
+    assert text.startswith(_ranked_head("invoice refund"))
+
+
+def test_powershell_select_string_of_a_pipe_gets_no_answer(mixed_repo, monkeypatch, capsys):
+    command = r"Get-Content app\billing.py | Select-String 'invoice.*refund'"
+
+    assert _hook(monkeypatch, capsys, mixed_repo, _powershell(command, "ps-pipe")) == ""

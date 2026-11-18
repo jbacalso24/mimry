@@ -6,6 +6,8 @@ import pytest
 
 from mimry import hook
 from mimry.hook import (
+    BroadSearch,
+    broad_search,
     broad_search_query,
     glob_is_broad,
     query_for,
@@ -459,4 +461,148 @@ def test_shell_search_pattern_parses_repeated_bodies_quickly(tmp_path, unit):
     # CPU time, not wall time: a busy machine is not a complexity bug.
     started = time.process_time()
     assert shell_search_pattern(command, tmp_path) is None
+    assert time.process_time() - started < 1.0
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rg -n -i 'email' -g '*.ts' | Select-Object -First 40",
+        "rg -n -i 'email' -g '*.ts' | Select -First 40",
+        "rg -n -i 'email' -g '*.ts' | Out-String",
+        "rg -n -i 'email' -g '*.ts' | Format-Table",
+        "rg -n -i 'email' -g '*.ts' | Sort-Object Path",
+        "rg -n -i 'email' -g '*.ts' | Select-Object -First 40 | Out-String",
+    ],
+)
+def test_output_limiters_after_a_powershell_pipe_keep_the_tree_search(tmp_path, command):
+    # A pipe into an output limiter does not hide the search before it
+    # (#622).
+    assert shell_search_pattern(command, tmp_path) == "email"
+
+
+@pytest.mark.parametrize(
+    ("command", "pattern"),
+    [
+        (r"Select-String -Path src\*.py -Pattern session", "session"),
+        (r"Select-String -Pattern 'auth|session' -Path src\*.py", "auth|session"),
+        (r"Select-String session src\*.py", "session"),
+        ("Select-String -CaseSensitive -Pattern 'a|b' src", "a|b"),
+        ("Get-ChildItem -Recurse | Select-String session", "session"),
+        ("gci -r -Filter *.ts | Select-String -Pattern 'auth|session'", "auth|session"),
+        ("Get-ChildItem -Recurse | Select-Object -First 5 | Select-String foo", None),
+        ("Get-ChildItem | Select-String session", None),
+        ("Get-Content x.txt | Select-String session", None),
+        (r"Select-String -Path app\one.py -Pattern session", None),
+        (r"Select-String -Path app\missing.py -Pattern session", "session"),
+        ("Select-String session", None),
+    ],
+)
+def test_select_string_is_a_search_of_the_tree_unless_it_reads_a_pipe(tmp_path, command, pattern):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "one.py").write_text("session = 1\n", encoding="utf-8")
+    assert shell_search_pattern(command, tmp_path) == pattern
+
+
+def test_select_string_pattern_is_case_insensitive_by_default(tmp_path):
+    # Select-String ignores case unless -CaseSensitive is given, so a
+    # plain word is a broad search, as rg -i is.
+    assert broad_search("", {}, "Select-String session src", tmp_path).query == "session"
+    assert broad_search("", {}, "Select-String -CaseSensitive session src", tmp_path) is None
+
+
+@pytest.mark.parametrize(
+    ("command", "path_globs", "exclude_globs"),
+    [
+        ("rg -i session -g '*.ts'", ("**/*.ts",), ()),
+        ("rg -i session --glob '*.ts'", ("**/*.ts",), ()),
+        ("rg -i session --glob=src/**/*.ts", ("src/**/*.ts",), ()),
+        ("rg -i session -g'*.ts'", ("**/*.ts",), ()),
+        ("rg -i session -g '!*.test.ts'", (), ("**/*.test.ts",)),
+        ("rg -i session -g '*.ts' -g '!*.test.ts'", ("**/*.ts",), ("**/*.test.ts",)),
+        ("rg -i session -g '*.{ts,tsx}'", ("**/*.ts", "**/*.tsx"), ()),
+        ("grep -rni --include='*.md' session .", ("**/*.md",), ()),
+        (
+            "grep -rni --include *.md --exclude='*.min.js' session .",
+            ("**/*.md",),
+            ("**/*.min.js",),
+        ),
+        ("rg -i session", (), ()),
+    ],
+)
+def test_globs_of_a_shell_search_narrow_the_ranking(tmp_path, command, path_globs, exclude_globs):
+    found = broad_search("", {}, command, tmp_path)
+    assert found is not None
+    assert found.path_globs == path_globs
+    assert found.exclude_globs == exclude_globs
+
+
+@pytest.mark.parametrize(
+    ("tool_input", "path_globs", "exclude_globs"),
+    [
+        ({"pattern": "session", "-i": True, "glob": "*.md"}, ("**/*.md",), ()),
+        ({"pattern": "auth|session", "glob": "*.{ts,tsx}"}, ("**/*.ts", "**/*.tsx"), ()),
+        ({"pattern": "auth|session", "type": "py"}, ("**/*.py", "**/*.pyi"), ()),
+        ({"pattern": "auth|session", "type": "cobol"}, (), ()),
+        ({"pattern": "auth|session", "glob": "*.md", "type": "py"}, ("**/*.md",), ()),
+        ({"pattern": "auth|session"}, (), ()),
+    ],
+)
+def test_grep_tool_glob_and_type_narrow_the_ranking(
+    tmp_path, tool_input, path_globs, exclude_globs
+):
+    found = broad_search("grep", tool_input, "", tmp_path)
+    assert found is not None
+    assert found.path_globs == path_globs
+    assert found.exclude_globs == exclude_globs
+
+
+def test_an_invalid_glob_is_dropped_so_the_answer_is_only_widened(tmp_path):
+    found = broad_search("", {}, "rg -i session -g '../secret' -g '*.md'", tmp_path)
+    assert found.path_globs == ("**/*.md",)
+
+
+def test_brace_groups_expand_and_long_lists_do_not(tmp_path):
+    assert hook._expand_braces("*.{ts,tsx}") == ["*.ts", "*.tsx"]
+    assert hook._expand_braces("src/*.py") == ["src/*.py"]
+    too_many = "{" + ",".join(str(n) for n in range(hook.MAX_BRACE_ALTERNATIVES + 1)) + "}"
+    assert hook._expand_braces(f"*.{too_many}") == [f"*.{too_many}"]
+
+
+def test_a_brace_group_past_the_limit_is_kept_literal(tmp_path):
+    # Kept literal, it matches no file, so the answer falls back.
+    found = broad_search("", {}, "rg -i session -g '*.{a,b,c,d,e,f,g,h,i}'", tmp_path)
+    assert found.path_globs == ("**/*.{a,b,c,d,e,f,g,h,i}",)
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("rg -i session -g '*.md'", "session"),
+        ("rg -i session -g '*.md' src", "session"),
+    ],
+)
+def test_globs_do_not_change_the_query_or_the_tree_check(tmp_path, command, expected):
+    (tmp_path / "src").mkdir()
+    assert broad_search_query("", {}, command, tmp_path) == expected
+
+
+def test_search_key_keeps_the_query_and_its_globs(tmp_path):
+    plain = hook._search_key(BroadSearch("session"))
+    narrowed = hook._search_key(BroadSearch("session", ("**/*.md",), ("**/*.min.js",)))
+    assert plain == "session"
+    assert narrowed == "session -g **/*.md -g !**/*.min.js"
+
+
+def test_glob_scope_and_braces_parse_a_64k_line_quickly(tmp_path):
+    import time
+
+    # Each variant is adversarial for a brace or glob scan: unclosed,
+    # nested and repeated groups over a line of about 64 KB.
+    lines = ["{" * 65536, "{a" * 32768, "{a,b}" * 13107, "}{" * 32768]
+    started = time.process_time()
+    for line in lines:
+        assert len(hook._expand_braces(line)) <= max(1, hook.MAX_BRACE_ALTERNATIVES)
+        command = f"rg -i session -g '{line}'"
+        assert broad_search("", {}, command, tmp_path) is not None
     assert time.process_time() - started < 1.0

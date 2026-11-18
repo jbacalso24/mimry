@@ -93,13 +93,41 @@ CALL_OPENER = re.compile(r"(?:\\s\*)?\\?\($")
 # A plain name, or a dotted one such as Foo.bar.
 DOTTED_NAME = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*")
 LEADING_WORD = re.compile(r"([A-Za-z]+)\s+")
-SEARCH_PROGRAMS = {"grep", "rg", "ag", "ack", "git"}
+SEARCH_PROGRAMS = {"grep", "rg", "ag", "ack", "git", "select-string"}
 # These recurse into subdirectories without needing -r.
 RECURSIVE_BY_DEFAULT = {"rg", "ag", "ack", "git"}
 # Searches that read a pipe when they name no path. grep reads one only
 # without -r, since grep -r searches the tree. git grep never reads one.
 PIPE_READERS = {"grep", "rg", "ag"}
 PIPE_OPERATORS = frozenset({"|", "|&"})
+# PowerShell listings that recurse when given -Recurse, the tree that a
+# piped Select-String then searches (#622).
+TREE_LISTERS = {"get-childitem", "gci", "ls", "dir"}
+# Select-String options that take a value and are not a pattern or path.
+SELECT_STRING_VALUED = {"-encoding", "-context", "-include", "-exclude", "-culture", "-tail"}
+# Options whose value is a path glob: rg -g, grep --include, and
+# --exclude, which is stored with a leading !.
+GLOB_OPTIONS = {"--glob", "--include", "--exclude"}
+# Ripgrep's built-in types for the Grep tool's type input, for the types
+# the hook knows. A type not listed narrows nothing (#622).
+RG_TYPE_GLOBS = {
+    "py": ("*.py", "*.pyi"),
+    "ts": ("*.ts", "*.tsx", "*.cts", "*.mts"),
+    "js": ("*.js", "*.jsx", "*.mjs", "*.cjs"),
+    "md": ("*.md", "*.markdown"),
+    "json": ("*.json",),
+    "yaml": ("*.yaml", "*.yml"),
+    "toml": ("*.toml",),
+    "go": ("*.go",),
+    "rust": ("*.rs",),
+    "java": ("*.java",),
+    "html": ("*.html", "*.htm"),
+    "css": ("*.css", "*.scss", "*.sass", "*.less"),
+    "sh": ("*.sh", "*.bash", "*.zsh"),
+}
+# One brace group, as in *.{ts,tsx}. A longer list stays literal (#622).
+BRACE_GROUP = re.compile(r"\{([^{}]*)\}")
+MAX_BRACE_ALTERNATIVES = 8
 # Short and long options that take a separate value.
 SHORT_WITH_VALUE = set("eABCDdfgjmMtT")
 LONG_WITH_VALUE = {
@@ -279,14 +307,25 @@ def _subcommand_index(words: list[str], i: int) -> int | None:
 
 
 class _Search(NamedTuple):
-    """One shell search: its pattern, flags, the paths it names, and
-    whether it reads a pipe rather than the tree."""
+    """One shell search: its pattern, flags, the paths it names, whether
+    it reads a pipe rather than the tree, and its globs as written (a
+    leading ! excludes)."""
 
     pattern: str | None
     ignore_case: bool
     recursive: bool
     paths: list[str]
     reads_pipe: bool
+    globs: tuple[str, ...] = ()
+
+
+class BroadSearch(NamedTuple):
+    """A broad search's ranking query, and the path globs that narrow
+    the ranked files (#622)."""
+
+    query: str
+    path_globs: tuple[str, ...] = ()
+    exclude_globs: tuple[str, ...] = ()
 
 
 def cmd_hook_check(a) -> int:
@@ -414,17 +453,72 @@ def _next_value(args: list[str], i: int, attached: str = "") -> tuple[str, int]:
     return "", i
 
 
-def _parse_search(words: list[str], piped: bool = False) -> _Search | None:
-    """Pattern, flags and paths of one command.
+def _program_name(word: str) -> str:
+    """The lower-case command name of a word, without path or .exe."""
+    return re.split(r"[\\/]", word)[-1].lower().removesuffix(".exe")
 
-    ``piped`` says the command is fed by a pipe. Returns None when the
-    command is not grep, rg, ag, ack or git grep.
+
+def _lists_tree(words: list[str]) -> bool:
+    """Whether a PowerShell listing is recursive (-Recurse)."""
+    if not words or _program_name(words[0]) not in TREE_LISTERS:
+        return False
+    return any(tok.lower() == "-r" or tok.lower().startswith("-rec") for tok in words[1:])
+
+
+def _parse_select_string(args: list[str], piped: bool, tree_fed: bool) -> _Search | None:
+    """A PowerShell Select-String: the -Pattern or first positional, and
+    the -Path values or the rest. It is case-insensitive unless
+    -CaseSensitive is given. ``tree_fed`` is set when a recursive
+    listing feeds it (#622)."""
+    pattern: str | None = None
+    paths: list[str] = []
+    positional: list[str] = []
+    ignore_case = True
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        i += 1
+        name = tok.lower()
+        if name in ("-pattern", "-path", "-literalpath") and i < len(args):
+            value, i = args[i], i + 1
+            if name == "-pattern":
+                pattern = value
+            else:
+                paths.extend(value.split(","))
+        elif name == "-casesensitive":
+            ignore_case = False
+        elif name in SELECT_STRING_VALUED:
+            i += 1
+        elif not name.startswith("-"):
+            positional.append(tok)
+    if pattern is None:
+        if not positional:
+            return None
+        pattern, positional = positional[0], positional[1:]
+    paths.extend(positional)
+    return _Search(
+        pattern,
+        ignore_case,
+        tree_fed or bool(paths),
+        paths,
+        piped and not paths and not tree_fed,
+    )
+
+
+def _parse_search(words: list[str], piped: bool = False, tree_fed: bool = False) -> _Search | None:
+    """Pattern, flags, paths and globs of one command.
+
+    ``piped`` says the command is fed by a pipe, and ``tree_fed`` that
+    the pipe comes from a recursive listing. Returns None when the
+    command is not grep, rg, ag, ack, git grep or Select-String.
     """
     if not words:
         return None
-    program = re.split(r"[\\/]", words[0])[-1].lower().removesuffix(".exe")
+    program = _program_name(words[0])
     if program not in SEARCH_PROGRAMS:
         return None
+    if program == "select-string":
+        return _parse_select_string(words[1:], piped, tree_fed)
     args = words[1:]
     if program == "git":
         if not args or args[0] != "grep":
@@ -434,6 +528,7 @@ def _parse_search(words: list[str], piped: bool = False) -> _Search | None:
     ignore_case = False
     explicit: str | None = None
     positional: list[str] = []
+    globs: list[str] = []
     i = 0
     while i < len(args):
         tok = args[i]
@@ -449,6 +544,9 @@ def _parse_search(words: list[str], piped: bool = False) -> _Search | None:
                 recursive = True
             elif name == "--regexp":
                 explicit, i = _next_value(args, i, value if sep else "")
+            elif name in GLOB_OPTIONS:
+                glob, i = _next_value(args, i, value if sep else "")
+                globs.append("!" + glob if name == "--exclude" else glob)
             elif not sep and name in LONG_WITH_VALUE:
                 i += 1
         elif tok.startswith("-") and len(tok) > 1:
@@ -462,6 +560,8 @@ def _parse_search(words: list[str], piped: bool = False) -> _Search | None:
                     value, i = _next_value(args, i, letters[n + 1 :])
                     if letter == "e":
                         explicit = value
+                    elif letter == "g":
+                        globs.append(value)
                     break
         elif re.fullmatch(r"[<>]+&?", tok):
             # A redirection and its target are not search arguments.
@@ -480,7 +580,7 @@ def _parse_search(words: list[str], piped: bool = False) -> _Search | None:
     reads_pipe = (
         piped and not paths and program in PIPE_READERS and (program != "grep" or not recursive)
     )
-    return _Search(explicit, ignore_case, recursive, paths, reads_pipe)
+    return _Search(explicit, ignore_case, recursive, paths, reads_pipe, tuple(globs))
 
 
 def _line_break_len(command: str, i: int) -> int:
@@ -767,8 +867,16 @@ def _shell_searches(command: str) -> list[_Search]:
     Every ``|``, ``&&``, ``;`` or newline segment is checked. Returns []
     when the command does not parse.
     """
-    found = (_parse_search(words, fed) for words, fed in _shell_segments(command))
-    return [search for search in found if search is not None]
+    segments = _shell_segments(command)
+    found = []
+    for i, (words, fed) in enumerate(segments):
+        # Select-String after Get-ChildItem -Recurse searches the tree
+        # (#622).
+        tree_fed = fed and i > 0 and _lists_tree(segments[i - 1][0])
+        search = _parse_search(words, fed, tree_fed)
+        if search is not None:
+            found.append(search)
+    return found
 
 
 def mimry_queries(command: str) -> list[str]:
@@ -797,12 +905,8 @@ def mimry_queries(command: str) -> list[str]:
     return queries
 
 
-def shell_search_pattern(command: str, root: Path) -> str | None:
-    """Pattern of the first broad search of the tree in a shell command.
-
-    A search of a few named files, or of a pipe's output, is skipped.
-    Returns None when there is none, or when the command does not parse.
-    """
+def _broad_shell_search(command: str, root: Path) -> _Search | None:
+    """The first broad search of the tree in a command, or None."""
     for search in _shell_searches(command):
         if (
             search.recursive
@@ -810,8 +914,18 @@ def shell_search_pattern(command: str, root: Path) -> str | None:
             and (search.ignore_case or regex_is_broad(search.pattern))
             and _searches_tree(search, root)
         ):
-            return search.pattern
+            return search
     return None
+
+
+def shell_search_pattern(command: str, root: Path) -> str | None:
+    """Pattern of the first broad search of the tree in a shell command.
+
+    A search of a few named files, or of a pipe's output, is skipped.
+    Returns None when there is none, or when the command does not parse.
+    """
+    search = _broad_shell_search(command, root)
+    return None if search is None else search.pattern
 
 
 def _searches_tree(search: _Search, root: Path) -> bool:
@@ -845,27 +959,100 @@ def shell_tree_patterns(command: str, root: Path) -> list[str]:
     ]
 
 
-def broad_search_query(tool_name: str, tool_input: dict, command: str, root: Path) -> str | None:
-    """The ``mimry find`` query for a broad search, else None.
+def _expand_braces(glob: str) -> list[str]:
+    """``*.{ts,tsx}`` as ``*.ts`` and ``*.tsx``, one group at a time.
+
+    A glob with more than MAX_BRACE_ALTERNATIVES alternatives stays as
+    it is, so fnmatch matches it literally and the answer falls back
+    (#622).
+    """
+    match = BRACE_GROUP.search(glob)
+    if match is None:
+        return [glob]
+    alternatives = match.group(1).split(",")
+    if len(alternatives) > MAX_BRACE_ALTERNATIVES:
+        return [glob]
+    head, tail = glob[: match.start()], glob[match.end() :]
+    return [head + alternative + tail for alternative in alternatives]
+
+
+def _glob_scope(globs) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Path globs and exclude globs for ripgrep-style globs (#622).
+
+    A glob with no slash matches a file name at any depth, as rg does,
+    so it gets a ``**/`` prefix. A glob the ranking rejects is dropped,
+    which only widens the answer.
+    """
+    if not globs:
+        return (), ()
+    from .search import _validated_globs
+
+    include: list[str] = []
+    exclude: list[str] = []
+    for raw in globs:
+        negated = raw.startswith("!")
+        for glob in _expand_braces(raw[1:] if negated else raw):
+            glob = glob.strip().lstrip("/")
+            if not glob:
+                continue
+            if "/" not in glob:
+                glob = "**/" + glob
+            try:
+                (value,) = _validated_globs([glob], "path glob")
+            except ValueError:
+                continue
+            (exclude if negated else include).append(value)
+    return tuple(include), tuple(exclude)
+
+
+def _grep_tool_globs(tool_input: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The path globs of a Grep tool call's glob, else its type (#622).
+
+    The glob wins when both are given: the ranking takes any one of its
+    path globs, so combining the two would widen the answer.
+    """
+    glob = tool_input.get("glob")
+    if isinstance(glob, str) and glob.strip():
+        return _glob_scope([glob.strip()])
+    kind = tool_input.get("type")
+    if isinstance(kind, str) and kind in RG_TYPE_GLOBS:
+        return _glob_scope(RG_TYPE_GLOBS[kind])
+    return (), ()
+
+
+def broad_search(tool_name: str, tool_input: dict, command: str, root: Path) -> BroadSearch | None:
+    """The ranking query and path globs of a broad search, else None.
 
     ``tool_name`` is lower case. Grep and Glob are identified by name;
-    every other tool is checked by its ``command`` text, and ``root`` is
-    the repository the searched paths are checked against.
+    every other tool, PowerShell included, is checked by its ``command``
+    text, and ``root`` is the repository the searched paths are checked
+    against.
     """
     if tool_name == "grep":
         pattern = str(tool_input.get("pattern") or "")
-        if regex_is_broad(pattern) or tool_input.get("-i") is True:
-            return query_for(pattern)
-        return None
+        if not (regex_is_broad(pattern) or tool_input.get("-i") is True):
+            return None
+        query = query_for(pattern)
+        return None if query is None else BroadSearch(query, *_grep_tool_globs(tool_input))
     if tool_name == "glob":
         pattern = str(tool_input.get("pattern") or "")
         if not glob_is_broad(pattern):
             return None
         # File extensions say what kind of file, not what it is about:
         # "**/*.py" has no words left, so it gets no nudge at all.
-        return query_for(re.sub(r"\.[A-Za-z0-9]+(?=/|$)", "", pattern))
-    pattern = shell_search_pattern(command, root)
-    return None if pattern is None else query_for(pattern)
+        query = query_for(re.sub(r"\.[A-Za-z0-9]+(?=/|$)", "", pattern))
+        return None if query is None else BroadSearch(query)
+    search = _broad_shell_search(command, root)
+    if search is None or search.pattern is None:
+        return None
+    query = query_for(search.pattern)
+    return None if query is None else BroadSearch(query, *_glob_scope(search.globs))
+
+
+def broad_search_query(tool_name: str, tool_input: dict, command: str, root: Path) -> str | None:
+    """The ``mimry find`` query for a broad search, else None."""
+    found = broad_search(tool_name, tool_input, command, root)
+    return None if found is None else found.query
 
 
 def tree_search_patterns(tool_name: str, tool_input: dict, command: str, root: Path) -> list[str]:
@@ -1489,10 +1676,6 @@ def _hook_check(root: Path) -> None:
         if "mimry" in command:
             # The find this command starts is tagged with the session.
             log_hook_command(root, session, mimry_queries(command))
-        if tool_name == "powershell":
-            # PowerShell gets query logging only. The search answer
-            # below parses POSIX shell, so it is skipped.
-            return
     except Exception:
         command = raw
     mimry_dir = root / ".mimry"
@@ -1508,12 +1691,13 @@ def _hook_check(root: Path) -> None:
 
         record_answered_search(root, session)
     else:
-        query = broad_search_query(tool_name, tool_input, command, root)
-        if query is None:
+        search = broad_search(tool_name, tool_input, command, root)
+        if search is None:
             return
-        if session and not _first_for_query(mimry_dir, session, query):
+        query = search.query
+        if session and not _first_for_query(mimry_dir, session, _search_key(search)):
             return
-        answer = _ranked_search_answer(root, session, query)
+        answer = _ranked_search_answer(root, session, search)
         if answer is not None:
             from .savings import record_answered_search
 
@@ -1629,31 +1813,53 @@ def _prompt_note(rows: list[dict], head: str = PROMPT_HEAD, foot: str = PROMPT_F
     return "\n".join([head, *body, foot])
 
 
-def _ranked_search_answer(root: Path, session: str, query: str) -> str | None:
+def _search_key(search: BroadSearch) -> str:
+    """The once-per-session key of a broad search: query and globs.
+
+    A new narrowing is answered again, so globs are in the key (#622).
+    """
+    globs = [*search.path_globs, *(f"!{glob}" for glob in search.exclude_globs)]
+    key = " ".join([search.query, *(f"-g {glob}" for glob in globs)])
+    return re.sub(r"[\t\r\n]", " ", key)
+
+
+def _ranked_rows(root: Path, ptr: dict, index: Path, search: BroadSearch, narrow: bool) -> list:
+    """The ranked rows of a broad search, narrowed when ``narrow``."""
+    from .search import find_rows
+    from .security import sanitize_query
+
+    return find_rows(
+        index,
+        sanitize_query(search.query),
+        PROMPT_FILE_LIMIT,
+        root=root,
+        root_id=ptr.get("rootId"),
+        excluded_paths=(),
+        path_globs=search.path_globs if narrow else None,
+        exclude_globs=search.exclude_globs if narrow else None,
+    )
+
+
+def _ranked_search_answer(root: Path, session: str, search: BroadSearch) -> str | None:
     """The files the index ranks first for a broad search, or None.
 
     Ranks the query the way the prompt hook does: the index as it
     stands, with no refresh and no freshness walk, and the same size
-    gate. None when the index is past that gate, nothing matches, or
-    anything fails, so the caller falls back to the reminder. Never
-    raises (#656).
+    gate. The globs narrow the ranking, and when they leave no file the
+    query is ranked without them (#622). None when the index is past
+    that gate, nothing matches, or anything fails, so the caller falls
+    back to the reminder. Never raises (#656).
     """
     try:
-        from .search import find_rows
-        from .security import sanitize_query
-
         ptr = json.loads((root / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
         index = Path(ptr["indexPath"])
         if _indexed_paths_for_prompt(root, index) is None:
             return None
-        rows = find_rows(
-            index,
-            sanitize_query(query),
-            PROMPT_FILE_LIMIT,
-            root=root,
-            root_id=ptr.get("rootId"),
-            excluded_paths=(),
-        )
+        narrowed = bool(search.path_globs or search.exclude_globs)
+        rows = _ranked_rows(root, ptr, index, search, narrowed)
+        if not rows and narrowed:
+            rows = _ranked_rows(root, ptr, index, search, False)
+        query = search.query
         record_query(root, query, [r["path"] for r in rows], session=session)
         if os.environ.get("CLAUDE_PLUGIN_ROOT"):
             # The plugin's MIMRY tools are MCP tools, as in nudge().
