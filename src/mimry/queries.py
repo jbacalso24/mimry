@@ -456,6 +456,37 @@ def mark_uncommitted(root: Path, rows: list[dict]) -> None:
             row["uncommitted"] = True
 
 
+# Why line caps: evidence items and characters (#647).
+WHY_ITEMS = 4
+WHY_CHARS = 220
+
+
+def _why_line(row: dict) -> str:
+    """The evidence if the row has any, else the older phrases."""
+    if row.get("evidence"):
+        prefix = "Why: "
+        kept: list[str] = []
+        for item in row["evidence"][:WHY_ITEMS]:
+            if len(prefix + "; ".join([*kept, item])) > WHY_CHARS:
+                break
+            kept.append(item)
+        if not kept:
+            room = WHY_CHARS - len(prefix) - 3
+            kept = [row["evidence"][0][:room] + "..."]
+        return prefix + "; ".join(kept)
+    phrases = ui.reason_phrases(row["reason"])
+    why_line = f"Why: {', '.join(phrases) or 'matches your query'}"
+
+    matched = _extract_matched_terms(row["reason"])
+    if matched:
+        why_line += "; matched: " + ", ".join(matched)
+
+    symbols = extract_symbol_nodes(row["reason"], row["path"])
+    if symbols:
+        why_line += "; symbols: " + ", ".join(symbols)
+    return why_line
+
+
 def write_context_pack(
     root: Path,
     ptr: dict,
@@ -541,16 +572,7 @@ def write_context_pack(
         tests_out.extend(tests)
     for i, r in enumerate(rows, 1):
         role = _file_role(r["path"], minified=bool(r.get("minified")))
-        phrases = ui.reason_phrases(r["reason"])
-        why_line = f"Why: {', '.join(phrases) or 'matches your query'}"
-
-        matched = _extract_matched_terms(r["reason"])
-        if matched:
-            why_line += "; matched: " + ", ".join(matched)
-
-        symbols = extract_symbol_nodes(r["reason"], r["path"])
-        if symbols:
-            why_line += "; symbols: " + ", ".join(symbols)
+        why_line = _why_line(r)
 
         lines += [
             f"### {i}. `{markdown_inline(r['path'])}`",
@@ -764,6 +786,8 @@ def run_preflight(a):
             )
             # The MCP tool reads these back for its JSON (#640).
             a.tests = tests
+            # MCP preflight reads the ranked rows back from here (#647).
+            a.context_rows = rows
 
     total = ui.took(time.perf_counter() - started_all)
     ui.ok(f"Context ready for {ui.quote(sanitize_query(a.task))} ({total})")

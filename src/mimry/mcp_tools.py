@@ -578,6 +578,18 @@ def mimry_preflight(
             "initialized": status.get("initialized"),
             "index_state": status.get("index_state"),
             "status": status,
+            # Ranked files, each with the evidence for its rank (#647).
+            "results": sanitize_data(
+                [
+                    {
+                        "path": row["path"],
+                        "score": row["score"],
+                        "reason": row["reason"],
+                        "evidence": row.get("evidence", []),
+                    }
+                    for row in getattr(args, "context_rows", [])
+                ]
+            ),
         }
     )
     return payload
