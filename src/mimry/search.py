@@ -673,10 +673,29 @@ _EVIDENCE_INPUTS = ("graph_link", "feedback_helped")
 # Most terms and defined names shown in one row's evidence.
 EVIDENCE_TERMS = 3
 EVIDENCE_DEFINES = 3
+EVIDENCE_SYMBOLS = 3
 
 
 def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _places(count: int) -> str:
+    return f"{count} place" if count == 1 else f"{count} places"
+
+
+def _matched_symbols(reason: str, path: str) -> list[str]:
+    """Matched symbol names of a row, as the old ``symbols:`` list had
+    them, by the rules of queries.extract_symbol_nodes (#647).
+    """
+    file_name = path.rsplit("/", 1)[-1]
+    names: dict[str, None] = {}
+    for part in reason.split(";"):
+        if "nodes:" in part:
+            for name in (t.strip() for t in part.split("nodes:", 1)[1].split(",")):
+                if name and " " not in name and name not in (path, file_name):
+                    names[name] = None
+    return list(names)
 
 
 def _row_evidence(row, file, terms, defined, term_pieces):
@@ -692,6 +711,11 @@ def _row_evidence(row, file, terms, defined, term_pieces):
     if defined:
         names = sorted(defined)[:EVIDENCE_DEFINES]
         items.append((80, "defines " + ", ".join(f"`{n}`" for n in names)))
+    # Matched symbols the defines item does not already name (#647).
+    symbols = [n for n in _matched_symbols(row.get("reason", ""), row["path"]) if n not in defined]
+    if symbols:
+        shown = symbols[:EVIDENCE_SYMBOLS]
+        items.append((70, "has " + ", ".join(f"`{n}`" for n in shown)))
     name_terms = [term for term in terms if term in name]
     if name_terms:
         items.append((60, "file name has " + ", ".join(f'"{t}"' for t in name_terms)))
@@ -704,7 +728,7 @@ def _row_evidence(row, file, terms, defined, term_pieces):
         items.append((40, f"helped in {_plural(row['feedback_helped'], 'past task')} like this"))
     top_terms = sorted(term_pieces.items(), key=lambda item: (-item[1], item[0]))
     for term, count in top_terms[:EVIDENCE_TERMS]:
-        items.append((20 + min(count, 10), f'"{term}" in {_plural(count, "piece")}'))
+        items.append((20 + min(count, 10), f'"{term}" in {_places(count)}'))
     # Only the reason's own part, before the graph's node list.
     if any("semantic" in part for part in row.get("reason", "").split("; nodes:")[0].split(", ")):
         items.append((10, "similar wording"))

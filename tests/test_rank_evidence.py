@@ -17,7 +17,7 @@ from mimry.indexer import write_index
 from mimry.lifecycle import run_init
 from mimry.mcp_tools import mimry_find, mimry_preflight
 from mimry.queries import WHY_CHARS, WHY_ITEMS, _why_line
-from mimry.search import find_rows
+from mimry.search import _row_evidence, find_rows
 from mimry.storage import load_pointer
 
 SESSION_STORE = """\
@@ -104,7 +104,7 @@ def test_content_evidence_names_the_term_and_how_often(indexed):
     rows = _rows(repo, ptr, "token")
 
     # Four functions in session_store.py hold the word "token".
-    assert '"token" in 4 pieces' in _row(rows, "src/session_store.py")["evidence"]
+    assert '"token" in 4 places' in _row(rows, "src/session_store.py")["evidence"]
 
 
 def test_a_graph_connected_file_names_the_connected_result(indexed):
@@ -113,6 +113,20 @@ def test_a_graph_connected_file_names_the_connected_result(indexed):
     rows = _rows(repo, ptr, "session store")
 
     assert "imports `src/session_store.py`" in _row(rows, "src/hook.py")["evidence"]
+
+
+def test_matched_symbols_are_named_unless_the_defines_item_names_them():
+    row = {
+        "path": "src/x.py",
+        "reason": "graph node label match; nodes: a_fn, b_fn, c_fn, d_fn",
+    }
+
+    named = _row_evidence(row, {}, [], set(), {})
+    assert ("has `a_fn`, `b_fn`, `c_fn`") in [text for _, text in named]
+
+    defined = {"a_fn", "b_fn", "c_fn", "d_fn"}
+    texts = [text for _, text in _row_evidence(row, {}, [], defined, {})]
+    assert not any(text.startswith("has ") for text in texts)
 
 
 def test_every_row_carries_an_evidence_list(indexed):

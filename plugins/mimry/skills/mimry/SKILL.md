@@ -108,8 +108,9 @@ Each file in a context pack has a `Why:` line with the evidence behind its rank,
 
 - `defines find_rows`: the file defines an identifier the task names
 - `file name has "search"` or `path has "src"`: a task word is in the file's name or its path
-- `"rank" in 9 pieces`: a task word appears in that many of the file's symbols or sections
-- `imported by hook.py` or `connected to other matches`: the graph links it to another result, and how
+- `has find_rows`: the graph matched these symbols in the file
+- `"rank" in 9 places`: a task word appears in that many of the file's symbols or sections
+- `imported by hook.py`: the graph links it to another result, and how
 - `helped in 2 past tasks like this`: earlier feedback on similar tasks named it
 - `similar wording`: a semantic match, a supporting signal only
 

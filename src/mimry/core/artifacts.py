@@ -14,6 +14,7 @@ from typing import Any
 from ..intent import (
     apply_intent_adjustment,
     intent_terms,
+    is_test_file,
     location_terms,
     matching_tokens,
     query_terms,
@@ -882,7 +883,8 @@ def _expand_along_edges(
             best_reached[src] = reached[node_id]
         via_node = node_by_id.get(reached_from[node_id])
         via_src = node_source_file(via_node) if via_node else None
-        if src and via_src and via_src != src:
+        # A test file is not a result the task connects to (#647).
+        if src and via_src and via_src != src and not is_test_file(via_src):
             if reached[node_id] > best_link.get(src, (0, "", ""))[0]:
                 best_link[src] = (reached[node_id], reached_from[node_id], node_id)
 
