@@ -89,6 +89,7 @@ Claude Code's hooks are on by default; the other two are opt-in.
 
 - `mimry install --platform claude-code` adds agent hooks, at user level and with `--project`, that answer a search for a known symbol with its definition and callers, answer other broad searches with the files MIMRY ranks first, add a short note to each subagent as it starts, and refresh the index in the background when a session starts and after each file edit.
   Codex needs `mimry install --project --platform codex --hooks`.
+  PowerShell searches are read like bash ones, and a `-g`, `--include` or Grep tool `glob` narrows the ranked files to the matching paths.
   The agent's next query does not wait for that refresh.
 - `mimry watch [--interval SECONDS]` polls in the foreground (every 2 seconds by default) and refreshes once a burst of edits settles.
 - `mimry git-hooks install` adds post-commit, post-merge, post-checkout, and post-rewrite hooks that refresh in the background, so `git commit` returns immediately.
