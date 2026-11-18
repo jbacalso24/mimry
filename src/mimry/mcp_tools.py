@@ -560,19 +560,18 @@ def mimry_preflight(
     root_path = _root(root)
     raw_query = query
     query = sanitize_query(query)
-    payload = _capture_command(
-        run_preflight,
-        SimpleNamespace(
-            root=str(root_path),
-            task=raw_query,
-            force_refresh=force_refresh,
-            semantic=semantic,
-        ),
+    args = SimpleNamespace(
+        root=str(root_path),
+        task=raw_query,
+        force_refresh=force_refresh,
+        semantic=semantic,
     )
+    payload = _capture_command(run_preflight, args)
     status = _status_payload(root_path)
     payload.update(
         {
             "query": redact_sensitive_text(query),
+            "tests": getattr(args, "tests", []),
             "root": str(root_path),
             "context_path": str(task_context_file(root_path, query)),
             "latest_path": str(context_file(root_path)),
