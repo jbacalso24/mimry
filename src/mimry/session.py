@@ -69,6 +69,11 @@ COMPACT_QUERY_LIMIT = 300
 COMPACT_NOTE_LIMIT = 1500
 QUERY_LOG = "session-queries.jsonl"
 FILE_LOG = "session-files.jsonl"
+# One row per search a hook call made, by kind (#658). Trimmed only once
+# the file passes its byte cap, so the hook never reads it to append.
+SEARCH_LOG = "session-searches.jsonl"
+SEARCH_LINE_LIMIT = 5000
+SEARCH_LOG_MAX_BYTES = 1_000_000
 START_LOG = "session-starts.jsonl"
 # The Stop hook's marks: the turn ended, so the open window closes.
 STOP_LOG = "session-stops.jsonl"
@@ -426,6 +431,28 @@ def log_hook_command(root: Path, session: str, queries: list[str]) -> None:
             {"time": datetime.now(UTC).isoformat(), "session": session, "queries": keys},
         ]
         _write_rows(state / HOOK_COMMAND_LOG, rows[-HOOK_COMMAND_LIMIT:])
+    except Exception:
+        pass
+
+
+def log_searches(root: Path, session: str, kinds: list[str]) -> None:
+    """Append one row per search a hook call made: mimry or grep.
+
+    The append is the locked one the file log uses. The file is read
+    only once it has grown past SEARCH_LOG_MAX_BYTES, and is then cut
+    to its newest SEARCH_LINE_LIMIT rows (#658). Never raises.
+    """
+    try:
+        state = _state_dir(root)
+        if state is None or not kinds or not session_feedback_enabled():
+            return
+        when = datetime.now(UTC).isoformat()
+        path = state / SEARCH_LOG
+        with _append_lock(state):
+            for kind in kinds:
+                _append(path, {"time": when, "session": session, "kind": kind})
+            if path.stat().st_size > SEARCH_LOG_MAX_BYTES:
+                _write_rows(path, _read_rows(path), limit=SEARCH_LINE_LIMIT)
     except Exception:
         pass
 

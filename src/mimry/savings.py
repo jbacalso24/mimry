@@ -25,6 +25,7 @@ from typing import Any
 
 from .session import (
     FILE_LOG,
+    SEARCH_LOG,
     START_LOG,
     _append,
     _read_rows,
@@ -39,6 +40,8 @@ UNTRACKED_TOTALS: dict[str, None] = {
     "estimated_tokens_saved": None,
     "ranged_reads": None,
     "searches_answered": None,
+    # Searches through MIMRY and with grep or Glob (#658).
+    "searches": None,
 }
 NOT_TRACKED_REPO = (
     "MIMRY has no record of agent sessions here, so it cannot count savings. "
@@ -147,10 +150,21 @@ def _totals(rows: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _searches(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Searches through MIMRY and with grep or Glob, and MIMRY's share.
+
+    The share is None when no search was recorded, never a 0 (#658).
+    """
+    mimry = sum(1 for row in rows if row.get("kind") == "mimry")
+    grep = sum(1 for row in rows if row.get("kind") == "grep")
+    total = mimry + grep
+    return {"mimry": mimry, "grep": grep, "share": round(mimry / total, 2) if total else None}
+
+
 def _has_record(state: Path) -> bool:
     """Whether the hooks left any record here: one stat per log."""
-    # A session start or file event, or a savings row (#646).
-    for name in (START_LOG, FILE_LOG, SAVINGS_LOG):
+    # A session start, file event, savings row (#646) or search (#658).
+    for name in (START_LOG, FILE_LOG, SAVINGS_LOG, SEARCH_LOG):
         try:
             if (state / name).stat().st_size > 0:
                 return True
@@ -168,10 +182,12 @@ def savings_report(root: Path, session: str = "") -> dict[str, Any]:
     state = _state_dir(root)
     tracked = state is not None and _has_record(state)
     rows = _read_rows(state / SAVINGS_LOG) if tracked else []
+    found = _read_rows(state / SEARCH_LOG) if tracked else []
+    all_time = _totals(rows) if tracked else UNTRACKED_TOTALS
     report: dict[str, Any] = {
         "tracked": tracked,
         "session": None,
-        "all_time": _totals(rows) if tracked else UNTRACKED_TOTALS,
+        "all_time": {**all_time, "searches": _searches(found) if tracked else None},
         "estimate": ESTIMATE_NOTE,
     }
     if session:
@@ -182,7 +198,9 @@ def savings_report(root: Path, session: str = "") -> dict[str, Any]:
             or any(row.get("session") == session for row in _read_rows(state / START_LOG))
         )
         totals = _totals(mine) if seen else UNTRACKED_TOTALS
-        report["session"] = {"id": session, "tracked": seen, **totals}
+        mine_found = [row for row in found if row.get("session") == session]
+        searches = _searches(mine_found) if seen else None
+        report["session"] = {"id": session, "tracked": seen, **totals, "searches": searches}
     return report
 
 
@@ -196,6 +214,17 @@ def _summary(label: str, totals: dict[str, int]) -> str:
     )
 
 
+def _searches_line(counts: dict[str, Any] | None) -> list[str]:
+    """The searches line for a scope, or nothing when none was seen."""
+    if not counts or not counts["mimry"] + counts["grep"]:
+        return []
+    percent = round(counts["share"] * 100)
+    return [
+        f"Searches: {counts['mimry']:,} through MIMRY, {counts['grep']:,} with grep/Glob "
+        f"({percent}% MIMRY)"
+    ]
+
+
 def format_report(report: dict[str, Any]) -> list[str]:
     if not report["tracked"]:
         return [NOT_TRACKED_REPO]
@@ -203,9 +232,11 @@ def format_report(report: dict[str, Any]) -> list[str]:
     if report["session"] is not None:
         if report["session"]["tracked"]:
             lines.append(_summary("This session", report["session"]))
+            lines.extend(_searches_line(report["session"]["searches"]))
         else:
             lines.append(NOT_TRACKED_SESSION)
     lines.append(_summary("All time", report["all_time"]))
+    lines.extend(_searches_line(report["all_time"]["searches"]))
     lines.append(report["estimate"])
     return lines
 
