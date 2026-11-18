@@ -115,6 +115,7 @@ def test_stats_json_totals_match_the_log(tmp_path, monkeypatch):
         "estimated_tokens_saved": row["saved"],
         "ranged_reads": 1,
         "searches_answered": 0,
+        "searches": {"mimry": 0, "grep": 0, "share": None},
     }
     assert report["all_time"]["estimated_tokens_saved"] == row["saved"]
     assert report["all_time"]["ranged_reads"] == 1
@@ -242,6 +243,7 @@ def test_untracked_repo_says_so_instead_of_zeros(tmp_path, monkeypatch):
         "estimated_tokens_saved": None,
         "ranged_reads": None,
         "searches_answered": None,
+        "searches": None,
     }
     assert report["session"] == {"id": SESSION, "tracked": False, **savings.UNTRACKED_TOTALS}
     assert report["estimate"] == savings.ESTIMATE_NOTE

@@ -164,6 +164,9 @@ When a turn ends it closes that turn's feedback window and writes the session's 
 `mimry stats` shows the tokens MIMRY saved in this session and across the repo.
 It counts a ranged Read (one with `offset` or `limit`) of a file MIMRY named in the session, as the tokens of the rest of the file.
 A search the hooks answer from the index counts as one search, never as tokens.
+It also counts the searches each session made, through MIMRY (a `mimry` query in the shell or a MIMRY MCP query tool) and with grep (the Grep and Glob tools, or `rg`, `grep` or `git grep` over the tree, not a filter on a pipe).
+It prints them as `Searches: 34 through MIMRY, 120 with grep/Glob (22% MIMRY)`, for the session and for the repo, and prints nothing for a scope with no search.
+`--json` gives each scope `searches` with `mimry`, `grep` and `share` (MIMRY's share, or `null` when there is no search).
 Tokens are estimated as characters / 4, so every number is about, not exact.
 If the hooks have left no record in the repo, `mimry stats` says so instead of showing zeros.
 To show the session total in Claude Code's status line, set this in your Claude Code settings:

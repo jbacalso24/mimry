@@ -73,6 +73,7 @@ from .session import (
     flush_session_feedback,
     log_file_event,
     log_hook_command,
+    log_searches,
     log_session_start,
     log_session_stop,
     named_in_session,
@@ -1071,6 +1072,26 @@ def tree_search_patterns(tool_name: str, tool_input: dict, command: str, root: P
     return shell_tree_patterns(command, root)
 
 
+def search_kinds(tool_name: str, command: str, root: Path) -> list[str]:
+    """The kinds of search this call makes: ``mimry``, ``grep`` or both.
+
+    Grep and Glob are always grep searches. A shell command counts a
+    mimry query and each search over the tree, the way the answer does.
+    Never raises, so counting cannot change the answer (#658).
+    """
+    try:
+        if tool_name in ("grep", "glob"):
+            return ["grep"]
+        if not command:
+            return []
+        kinds = ["mimry"] if mimry_queries(command) else []
+        if shell_tree_patterns(command, root):
+            kinds.append("grep")
+        return kinds
+    except Exception:
+        return []
+
+
 def _group_end(tokens: list[str]) -> int:
     """Index of the ``)`` closing the group opened at ``tokens[0]``.
 
@@ -1661,6 +1682,8 @@ def _hook_check(root: Path) -> None:
             query = tool_input.get("query")
             if isinstance(query, str) and query.strip():
                 log_hook_command(root, session, [query])
+            # Every MCP query tool call is one mimry search (#658).
+            log_searches(root, session, ["mimry"])
             return
         # A Read only ever gets the outline of a large file, never a
         # search answer, so a path containing "grep" cannot trigger one.
@@ -1676,6 +1699,8 @@ def _hook_check(root: Path) -> None:
         if "mimry" in command:
             # The find this command starts is tagged with the session.
             log_hook_command(root, session, mimry_queries(command))
+        # Counted before any answer (#658).
+        log_searches(root, session, search_kinds(tool_name, command, root))
     except Exception:
         command = raw
     mimry_dir = root / ".mimry"
