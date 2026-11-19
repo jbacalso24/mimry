@@ -131,6 +131,12 @@ LONG_SHAPES = {
     "typed-call": ("token: str = field(", "default=None, "),
     "mysql-repeat": ("", "mysql "),
     "mysql-flags": ("", "mysql -u root -h db "),
+    # Connection strings (#684): a key after each ";", a quote run, a
+    # run of blanks as a value, and keys with no value.
+    "connection-password-repeat": ("", ";Password="),
+    "connection-server-repeat": ("", "Server=db;"),
+    "connection-quote-repeat": ("", ";Password='"),
+    "connection-blank-value": ("Server=db;Pwd=", " "),
 }
 
 

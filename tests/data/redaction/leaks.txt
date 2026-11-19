@@ -296,3 +296,10 @@ a.py	DOC = """\npassword: tomatocanary42\n"""\n
 # Backtick-wrapped placeholders and literals in prose stay leaks (#667).
 notes.md	`api_key: tomatocanary42`
 notes.md	`secret: 'tomatocanary42'`
+Db.cs	string Cs = "Server=db;User Id=sa;Password=pearcanary31;";
+Db.cs	var cs = "Server=db;Uid=sa;Pwd=pearcanary31;";
+Db.cs	conn = "Data Source=db;Password=pearcanary31"
+appsettings.json	"ConnectionStrings": {"Default": "Server=db;Password=pearcanary31;"}
+web.config	<add name="Db" connectionString="Data Source=db;Uid=sa;Pwd=pearcanary31;" />
+Db.cs	string Cs = "Server=db;Password='pearcanary31;x';";
+Db.cs	conn = 'Server=db;Password="pearcanary31;x";'

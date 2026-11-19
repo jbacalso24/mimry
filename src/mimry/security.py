@@ -806,6 +806,24 @@ _MYSQL_PASSWORD_RE = re.compile(
     r"(?<![\w.-])mysql(?:[ \t]+[^\s;|&]+){0,16}?[ \t]+"
     r"(?:--password(?:[ \t]+|=)|-p(?=\S))(?P<value>[^\s;|&]+)"
 )
+# The Password or Pwd key of a ``;``-separated connection string, as in
+# ``Server=db;Uid=sa;Pwd=...;`` (#684). The key follows ``;`` or a
+# quote. The value is quoted, or runs to the next ``;``, quote, ``<`` or
+# line end. Each branch is one run to a delimiter: a linear scan.
+# A quote-led key needs a ``;`` after its pair, as ``"password = 1"`` is
+# prose. shortcut: a quoted value with a blank, bracket or comma, a lone
+# pair with no ``;``, a value that is a call, and an escaped quote are
+# not read; upgrade if a real value leaks.
+_CONNECTION_PASSWORD_RE = re.compile(
+    r"(?:(?<=;)[ \t]*|(?<=[\"'])(?=(?i:password|pwd)[ \t]*=[^;\"'<\r\n]*;))"
+    r"(?i:password|pwd)[ \t]*=(?![ \t]*\w[\w.]*\()[ \t]*"
+    r"(?:'(?P<single>[^'\s(),]*)'(?=[ \t]*(?:[;\"'),<\r\n]|\Z))"
+    r"|\"(?P<double>[^\"\s(),]*)\"(?=[ \t]*(?:[;\"'),<\r\n]|\Z))"
+    r"|(?P<value>[^;\"'<\r\n]*))"
+)
+# A format or printf placeholder as a connection value, such as ``{0}``,
+# ``{}``, ``%DB_PWD%`` or ``%s``, is not a password (#684).
+_CONNECTION_PLACEHOLDER_RE = re.compile(r"\{[^{}\s]*\}|%[A-Za-z_]\w*%|%(?:\(\w+\))?[sdr]")
 # A path after the header, as ``docs/auth-headers.md`` or
 # ``src/mimry/security.py``: a value with a slash that ends in a file
 # extension is a file name, not a credential (#608).
@@ -2825,6 +2843,15 @@ def _auth_header_value_spans(text: str) -> list[tuple[int, int]]:
         for match in _MYSQL_PASSWORD_RE.finditer(text)
         if not _is_placeholder_value(match["value"])
     ]
+    # A connection string's Password or Pwd value (#684).
+    for match in _CONNECTION_PASSWORD_RE.finditer(text):
+        group = next((name for name in ("single", "double") if match[name] is not None), "value")
+        start, end = match.span(group)
+        value = text[start:end].rstrip(" \t")
+        if value and not (
+            _is_placeholder_value(value) or _CONNECTION_PLACEHOLDER_RE.fullmatch(value)
+        ):
+            spans.append((start, start + len(value)))
     hinted = _AUTH_HEADER_HINT_RE.search(text) is not None
     if not hinted and _AUTH_SCHEME_WORD_RE.search(text) is None:
         return spans

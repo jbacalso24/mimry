@@ -788,6 +788,40 @@ def test_code_with_a_secret_is_indexed_and_the_value_is_nowhere_stored_or_shown(
     assert CANARY not in found.stdout + found.stderr + context.stdout + context.stderr
 
 
+def test_connection_string_password_stays_out_of_the_cache_and_the_owned_output(tmp_path: Path):
+    # Built from parts, so no scanner reads a password here (#684).
+    canary = "pearcanary31"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "appsettings.json").write_text(
+        '{"ConnectionStrings": {"Default": "Server=db;Password=' + canary + ';"}}\n',
+        encoding="utf-8",
+    )
+    (repo / "Db.cs").write_text(
+        'public static class Db {\n    public const string Cs = "Server=db;User Id=sa;Password='
+        + canary
+        + ';";\n}\n',
+        encoding="utf-8",
+    )
+    cache = tmp_path / "cache"
+
+    assert run_cli(repo, cache, "init", "--skip-graph").returncode == 0
+    assert run_cli(repo, cache, "index").returncode == 0
+    pointer = json.loads((repo / ".mimry" / "pointer.json").read_text(encoding="utf-8"))
+    indexed = (Path(pointer["indexPath"]) / "files.jsonl").read_text(encoding="utf-8")
+    assert "Db.cs" in indexed
+    assert "appsettings.json" not in indexed
+
+    # Every file under the cache and the owned output, as bytes, so the
+    # SQLite database and its journals count too.
+    owned = [path for root in (cache, repo / ".mimry") for path in root.rglob("*")]
+    assert any(path.is_file() for path in owned)
+    secret = canary.encode("utf-8")
+    for candidate in owned:
+        if candidate.is_file():
+            assert secret not in candidate.read_bytes(), candidate.name
+
+
 def test_line_leading_javascript_declarations_and_yaml_quoted_multiline_scalars_are_redacted():
     samples = (
         f'const auth = "{DEFENSIVE_MARKER}";\n',
